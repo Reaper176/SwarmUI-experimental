@@ -1,0 +1,124 @@
+.whattheduck-settings {
+    padding: 0.5rem;
+    max-width: 600px;
+}
+
+.whattheduck-actions {
+    display: flex;
+    justify-content: flex-start;
+    padding: 0.5rem 0;
+}
+
+.whattheduck-status {
+    min-height: 1.5rem;
+    padding: 0.5rem;
+    border-radius: 4px;
+    font-size: 0.9rem;
+}
+
+.whattheduck-status:empty {
+    display: none;
+}
+
+.whattheduck-status-success {
+    display: block;
+    background: rgba(40, 167, 69, 0.2);
+    color: #28a745;
+    border: 1px solid rgba(40, 167, 69, 0.3);
+}
+
+.whattheduck-status-error {
+    display: block;
+    background: rgba(220, 53, 69, 0.2);
+    color: #dc3545;
+    border: 1px solid rgba(220, 53, 69, 0.3);
+}
+
+.whattheduck-datadump-info {
+    padding: 0.5rem;
+    font-size: 0.85rem;
+    border-radius: 4px;
+    margin-top: 0.5rem;
+}
+
+.whattheduck-datadump-active {
+    color: #28a745;
+}
+
+.whattheduck-datadump-inactive {
+    color: #6c757d;
+}
+
+.whattheduck-datadump-actions {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    margin-top: 0.75rem;
+    padding-top: 0.75rem;
+    border-top: 1px solid rgba(128, 128, 128, 0.2);
+}
+
+.whattheduck-datadump-actions button:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+}
+
+/* Modified placeholders warning report */
+.whattheduck-modified-report {
+    background: rgba(255, 193, 7, 0.15);
+    border: 1px solid rgba(255, 193, 7, 0.4);
+    border-radius: 6px;
+    padding: 0.75rem;
+    margin-top: 0.75rem;
+    font-size: 0.85rem;
+}
+
+.whattheduck-modified-header {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    margin-bottom: 0.5rem;
+}
+
+.whattheduck-modified-icon {
+    font-size: 1.1rem;
+}
+
+.whattheduck-modified-title {
+    font-weight: 600;
+    color: #d39e00;
+}
+
+.whattheduck-modified-description {
+    color: #856404;
+    margin-bottom: 0.5rem;
+    line-height: 1.4;
+}
+
+.whattheduck-modified-list {
+    margin: 0.5rem 0;
+    padding-left: 1.5rem;
+    max-height: 150px;
+    overflow-y: auto;
+}
+
+.whattheduck-modified-list li {
+    margin: 0.25rem 0;
+    color: #856404;
+}
+
+.whattheduck-modified-list code {
+    background: rgba(0, 0, 0, 0.1);
+    padding: 0.1rem 0.3rem;
+    border-radius: 3px;
+    font-size: 0.8rem;
+}
+
+.whattheduck-modified-hint {
+    font-size: 0.8rem;
+    color: #6c757d;
+    font-style: italic;
+    margin-top: 0.5rem;
+    padding-top: 0.5rem;
+    border-top: 1px solid rgba(255, 193, 7, 0.3);
+}

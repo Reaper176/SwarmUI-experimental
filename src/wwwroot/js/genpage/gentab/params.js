@@ -916,6 +916,18 @@ function getGenInput(input_overrides = {}, input_preoverrides = {}) {
             }
         }
     }
+    // Backwards-compatible manual checkbox support: if the DOM contains our
+    // `input_refinebeforeupscale` element (injected below when params render),
+    // include its value in the generated input so the backend receives it.
+    try {
+        let cb = document.getElementById('input_refinebeforeupscale');
+        if (cb) {
+            input['refinebeforeupscale'] = cb.checked;
+        }
+    }
+    catch (e) {
+        // ignore
+    }
     for (let type of gen_param_types) {
         if (type.depend_non_default) {
             let otherParam = gen_param_types.find(p => p.id == type.depend_non_default);
@@ -1487,3 +1499,36 @@ function addInstallButton(groupId, featureId, installId, buttonText) {
         }
     });
 }
+
+// Insert the 'refine before upscale' checkbox into the Refine / Upscale group
+postParamBuildSteps.push(() => {
+    let group = document.getElementById('input_group_content_refineupscale');
+    if (!group) {
+        return;
+    }
+    // If the param already exists (server provided), don't duplicate
+    if (document.getElementById('input_refinebeforeupscale')) {
+        return;
+    }
+    // Create a simple checkbox row matching input styles
+    let wrapper = document.createElement('div');
+    wrapper.className = 'auto-input';
+    wrapper.innerHTML = `
+        <div class="auto-input-label"><label for="input_refinebeforeupscale" class="translate">refine before upscale</label></div>
+        <div class="auto-input-control"><input type="checkbox" id="input_refinebeforeupscale"/></div>
+    `;
+    // Insert before the Refiner Do Tiling control if present
+    let refinerTiling = document.getElementById('input_refinerdotiling');
+    if (refinerTiling) {
+        let parentAuto = findParentOfClass(refinerTiling, 'auto-input');
+        if (parentAuto && parentAuto.parentElement) {
+            parentAuto.parentElement.insertBefore(wrapper, parentAuto);
+        }
+        else {
+            group.prepend(wrapper);
+        }
+    }
+    else {
+        group.prepend(wrapper);
+    }
+});

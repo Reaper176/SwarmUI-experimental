@@ -282,6 +282,7 @@ public abstract class ComfyUIAPIAbstractBackend : AbstractT2IBackend
         }
         int nodesDone = 0;
         float curPercent = 0;
+        string currentNode = "";
         void yieldProgressUpdate()
         {
             JObject toSend = new()
@@ -359,7 +360,6 @@ public abstract class ComfyUIAPIAbstractBackend : AbstractT2IBackend
             bool isReceivingOutputs = false;
             bool isExpectingVideo = false;
             bool isExpectingText = false;
-            string currentNode = "";
             bool isMe = false;
             // autoCanceller will be cancelled via the using to end the task and not leave it waiting when the method clears
             using CancellationTokenSource autoCanceller = new();

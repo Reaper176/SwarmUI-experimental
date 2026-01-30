@@ -1267,6 +1267,7 @@ public class WorkflowGeneratorSteps
                 negPrompt = g.CreateConditioning(g.UserInput.Get(T2IParamTypes.NegativePrompt), g.FinalClip, g.FinalLoadedModel, false, isRefiner: true);
                 bool doSave = g.UserInput.Get(T2IParamTypes.OutputIntermediateImages, false);
                 bool doUspcale = g.UserInput.TryGet(T2IParamTypes.RefinerUpscale, out double refineUpscale) && refineUpscale != 1;
+                bool refineBeforeUpscale = g.UserInput.Get(T2IParamTypes.RefineBeforeUpscale, false);
                 string upscaleMethod = g.UserInput.Get(ComfyUIBackendExtension.RefinerUpscaleMethod, "None");
                 // TODO: Better same-VAE check
                 bool doPixelUpscale = doUspcale && (upscaleMethod.StartsWith("pixel-") || upscaleMethod.StartsWith("model-"));
@@ -1274,7 +1275,7 @@ public class WorkflowGeneratorSteps
                 int height = (int)Math.Round(g.UserInput.GetImageHeight() * refineUpscale);
                 width = (width / 16) * 16; // avoid unworkable output sizes
                 height = (height / 16) * 16;
-                if (modelMustReencode || doPixelUpscale || doSave || g.MaskShrunkInfo.BoundsNode is not null)
+                if (!refineBeforeUpscale && (modelMustReencode || doPixelUpscale || doSave || g.MaskShrunkInfo.BoundsNode is not null))
                 {
                     g.CreateVAEDecode(origVae, g.FinalSamples, "24");
                     JArray pixelsNode = ["24", 0];
@@ -1329,7 +1330,7 @@ public class WorkflowGeneratorSteps
                         g.FinalSamples = ["25", 0];
                     }
                 }
-                if (doUspcale && upscaleMethod.StartsWith("latent-"))
+                if (!refineBeforeUpscale && doUspcale && upscaleMethod.StartsWith("latent-"))
                 {
                     g.CreateNode("LatentUpscaleBy", new JObject()
                     {
@@ -1339,7 +1340,7 @@ public class WorkflowGeneratorSteps
                     }, "26");
                     g.FinalSamples = ["26", 0];
                 }
-                else if (doUspcale && upscaleMethod.StartsWith("latentmodel-"))
+                else if (!refineBeforeUpscale && doUspcale && upscaleMethod.StartsWith("latentmodel-"))
                 {
                     g.CreateNode("LatentUpscaleModelLoader", new JObject()
                     {
@@ -1412,6 +1413,128 @@ public class WorkflowGeneratorSteps
                     g.UserInput.Get(T2IParamTypes.Seed) + 1, false, method != "StepSwapNoisy", id: "23", doTiled: g.UserInput.Get(T2IParamTypes.RefinerDoTiling, false),
                     explicitSampler: explicitSampler, explicitScheduler: explicitScheduler, sectionId: T2IParamInput.SectionID_Refiner);
                 g.FinalSamples = ["23", 0];
+                if (refineBeforeUpscale && doUspcale)
+                {
+                    // Perform upscale after refiner instead of before.
+                    if (doPixelUpscale)
+                    {
+                        string decodeNode = g.CreateVAEDecode(g.FinalVae, g.FinalSamples);
+                        JArray pixelsNode = [decodeNode, 0];
+                        pixelsNode = doMaskShrinkApply(g, pixelsNode);
+                        if (doSave)
+                        {
+                            g.CreateImageSaveNode(pixelsNode, g.GetStableDynamicID(50000, 0));
+                        }
+                        if (upscaleMethod.StartsWith("pixel-"))
+                        {
+                            string scaleNode = g.CreateNode("ImageScale", new JObject()
+                            {
+                                ["image"] = pixelsNode,
+                                ["width"] = width,
+                                ["height"] = height,
+                                ["upscale_method"] = upscaleMethod.After("pixel-"),
+                                ["crop"] = "disabled"
+                            });
+                            pixelsNode = [scaleNode, 0];
+                        }
+                        else
+                        {
+                            string upLoader = g.CreateNode("UpscaleModelLoader", new JObject()
+                            {
+                                ["model_name"] = upscaleMethod.After("model-")
+                            });
+                            string upNode = g.CreateNode("ImageUpscaleWithModel", new JObject()
+                            {
+                                ["upscale_model"] = NodePath(upLoader, 0),
+                                ["image"] = pixelsNode
+                            });
+                            string scaleNode = g.CreateNode("ImageScale", new JObject()
+                            {
+                                ["image"] = NodePath(upNode, 0),
+                                ["width"] = width,
+                                ["height"] = height,
+                                ["upscale_method"] = "lanczos",
+                                ["crop"] = "disabled"
+                            });
+                            pixelsNode = [scaleNode, 0];
+                        }
+                        if (refinerControl <= 0)
+                        {
+                            g.FinalImageOut = pixelsNode;
+                            return;
+                        }
+                        string encoded = g.CreateVAEEncode(g.FinalVae, pixelsNode);
+                        g.FinalSamples = [encoded, 0];
+                    }
+                    else if (upscaleMethod.StartsWith("latent-"))
+                    {
+                        string latentNode = g.CreateNode("LatentUpscaleBy", new JObject()
+                        {
+                            ["samples"] = g.FinalSamples,
+                            ["upscale_method"] = upscaleMethod.After("latent-"),
+                            ["scale_by"] = refineUpscale
+                        });
+                        g.FinalSamples = [latentNode, 0];
+                    }
+                    else if (upscaleMethod.StartsWith("latentmodel-"))
+                    {
+                        string loader = g.CreateNode("LatentUpscaleModelLoader", new JObject()
+                        {
+                            ["model_name"] = upscaleMethod.After("latentmodel-")
+                        });
+                        if (g.IsHunyuanVideo15())
+                        {
+                            string upNode = g.CreateNode("HunyuanVideo15LatentUpscaleWithModel", new JObject()
+                            {
+                                ["model"] = NodePath(loader, 0),
+                                ["samples"] = g.FinalSamples,
+                                ["upscale_method"] = "bilinear",
+                                ["width"] = width,
+                                ["height"] = height,
+                                ["crop"] = "disabled"
+                            });
+                            g.FinalSamples = [upNode, 0];
+                        }
+                        else if (g.IsLTXV2())
+                        {
+                            string separated = g.CreateNode("LTXVSeparateAVLatent", new JObject()
+                            {
+                                ["av_latent"] = g.FinalSamples
+                            });
+                            g.FinalLatentAudio = [separated, 1];
+                            string cropGuides = g.CreateNode("LTXVCropGuides", new JObject()
+                            {
+                                ["positive"] = prompt,
+                                ["negative"] = negPrompt,
+                                ["latent"] = NodePath(separated, 0)
+                            });
+                            prompt = [cropGuides, 0];
+                            negPrompt = [cropGuides, 1];
+                            g.CreateNode("LTXVLatentUpsampler", new JObject()
+                            {
+                                ["vae"] = g.FinalVae,
+                                ["samples"] = NodePath(cropGuides, 2),
+                                ["upscale_model"] = NodePath(loader, 0)
+                            }, "26");
+                            string reconcat = g.CreateNode("LTXVConcatAVLatent", new JObject()
+                            {
+                                ["video_latent"] = NodePath("26", 0),
+                                ["audio_latent"] = g.FinalLatentAudio
+                            });
+                            g.FinalSamples = [reconcat, 0];
+                        }
+                        else
+                        {
+                            throw new SwarmUserErrorException($"Cannot latent-upscale for {g.CurrentCompatClass()}");
+                        }
+                    }
+                    // After performing the upscale on the pre-refiner output, run a second refiner sampler
+                    // so the sequence becomes: base -> pre-refiner (id 23) -> upscale -> post-refiner (id 24).
+                    g.CreateKSampler(model, prompt, negPrompt, g.FinalSamples, cfg, steps, (int)Math.Round(steps * (1 - refinerControl)), 10000,
+                        g.UserInput.Get(T2IParamTypes.Seed) + 2, false, method != "StepSwapNoisy", id: "24", doTiled: g.UserInput.Get(T2IParamTypes.RefinerDoTiling, false),
+                        explicitSampler: explicitSampler, explicitScheduler: explicitScheduler, sectionId: T2IParamInput.SectionID_Refiner);
+                    g.FinalSamples = ["24", 0];
+                }
                 g.IsRefinerStage = false;
             }
         }, -4);

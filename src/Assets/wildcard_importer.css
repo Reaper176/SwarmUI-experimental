@@ -1,0 +1,57 @@
+
+#wildcardimportertabcontent div.history-list {
+    display: grid;
+    grid-template-columns: 16px max-content max-content max-content minmax(40px, 1fr);
+    align-items: center;
+    justify-items: start;
+    gap: 0.5em;
+}
+
+#wildcardimportertabcontent div.history-list .pass {
+    background-color: var(--green);
+    opacity: 0.50;
+    width: 100%;
+    height: 100%;
+}
+
+#wildcardImporter-processing-status .warn {
+    margin: 0;
+    padding: 0;
+    color: color-mix(in hsl, var(--green), var(--red));
+}
+
+#wildcardimportertabcontent div.history-list .warn {
+    background-color: color-mix(in hsl, var(--green), var(--red));
+    opacity: 0.50;
+    width: 100%;
+    height: 100%;
+}
+
+#wildcardimportertabcontent div.history-list .fail {
+    background-color: var(--red);
+    opacity: 0.50;
+    width: 100%;
+    height: 100%;
+}
+
+#wildcardimportertabcontent .card-body {
+    background-color: var(--background-panel);
+}
+
+#wildcardimportertabcontent .dropzone {
+    background-color: var(--background);
+}
+
+.wildcard-status-inprogress {
+    font-weight: bold;
+}
+
+.wildcard-status-completed {
+    color: var(--green);
+    font-weight: bold;
+}
+
+.wildcard-status-failed {
+    color: var(--red);
+    font-weight: bold;
+}
