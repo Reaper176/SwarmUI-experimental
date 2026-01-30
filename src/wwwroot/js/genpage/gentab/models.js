@@ -583,22 +583,27 @@ class ModelBrowserWrapper {
         this.browser.update();
     }
 
-    createCopyableTriggerPhrase(phrase) {
-        let copyPhrase = phrase;
-        if (getUserSetting('ui.copytriggerphrasewithtrailingcomma', false) && !phrase.endsWith(',')) {
-          copyPhrase += ', ';
-        }
-        let safePhrase = escapeHtmlNoBr(escapeJsString(phrase));
-        let safeCopyPhrase = escapeHtmlNoBr(escapeJsString(copyPhrase));
-        return `${safePhrase}<button title="Click to copy" class="basic-button trigger-phrase-copy-button" onclick="copyText('${safeCopyPhrase}');doNoticePopover('Copied!', 'notice-pop-green');">&#x29C9;</button>`;
-    }
-
+    // Render trigger phrases as selectable bubbles with controls.
     formatTriggerPhrases(val) {
-        let phrases = val.split(';').map(phrase => phrase.trim()).filter(phrase => phrase.length > 0);
+        if (!val) { return '(Unset)'; }
+        // Accept either semicolon- or comma-separated lists (some metadata uses commas)
+        let sep = null;
+        if (val.includes(';')) sep = ';';
+        else if (val.includes(',')) sep = ',';
+        let phrases = sep ? val.split(sep) : [val];
+        phrases = phrases.map(phrase => phrase.trim()).filter(phrase => phrase.length > 0);
         if (phrases.length > 128) {
             phrases = phrases.slice(0, 128);
         }
-        return phrases.map(phrase => this.createCopyableTriggerPhrase(phrase)).join('');
+        let bubbles = phrases.map(phrase => {
+            let safe = escapeHtmlNoBr(phrase);
+            return `<span class="trigger-bubble" data-trigger="${escapeHtmlNoBr(escapeJsString(phrase))}">${safe}</span>`;
+        }).join('');
+        // wrapper stores the separator used so copy handler knows what to join with
+        let sepAttr = sep ? escapeHtmlNoBr(sep) : ',';
+        // Only provide a single Copy button; if nothing is selected, copying will copy all phrases.
+        // Only provide a single Copy button; if nothing is selected, copying will copy all phrases.
+        return `<div class="trigger-phrases-wrapper" data-sep="${sepAttr}"><div class="trigger-controls"><button class="basic-button trigger-copy-selected">Copy</button></div><div class="trigger-bubbles">${bubbles}</div></div>`;
     }
 
     describeModel(model) {

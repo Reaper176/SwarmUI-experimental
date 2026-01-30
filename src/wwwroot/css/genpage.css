@@ -1729,3 +1729,38 @@ body {
     height: 1lh;
     padding-top: 0 !important;
 }
+
+/* Trigger phrase selectable bubbles */
+.trigger-phrases-wrapper {
+    display: block;
+}
+.trigger-phrases-wrapper .trigger-controls {
+    margin-bottom: 0.25rem;
+}
+.trigger-phrases-wrapper .trigger-controls .basic-button {
+    margin-right: 0.5rem;
+}
+.trigger-bubbles {
+    display: inline-block;
+    vertical-align: middle;
+}
+.trigger-bubble {
+    display: inline-block;
+    padding: 0.18rem 0.5rem;
+    border-radius: 999px;
+    border: 1px solid var(--light-border);
+    margin: 0 0.25rem 0.25rem 0;
+    cursor: pointer;
+    background-color: var(--input-background, var(--background-soft));
+    color: var(--text);
+    user-select: none;
+    transition: background-color 0.12s ease, color 0.12s ease, transform 0.06s ease;
+}
+.trigger-bubble:hover {
+    transform: translateY(-1px);
+}
+.trigger-bubble.selected {
+    background-color: var(--accent);
+    color: var(--button-text);
+    border-color: var(--accent);
+}

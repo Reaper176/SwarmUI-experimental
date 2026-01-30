@@ -358,3 +358,35 @@ class LoraHelper {
 }
 
 loraHelper = new LoraHelper();
+
+// Initialize delegated handlers for trigger-phrase bubbles (only once)
+if (!window._triggerPhraseUIInit) {
+    window._triggerPhraseUIInit = true;
+    document.addEventListener('click', (e) => {
+        let target = e.target;
+        if (target.classList && target.classList.contains('trigger-bubble')) {
+            target.classList.toggle('selected');
+            return;
+        }
+        if (target.classList && target.classList.contains('trigger-copy-selected')) {
+            let wrapper = target.closest('.trigger-phrases-wrapper');
+            if (!wrapper) return;
+            // If none are selected, copy all bubbles.
+            let selected = [...wrapper.querySelectorAll('.trigger-bubble.selected')];
+            let bubbles = selected.length > 0 ? selected : [...wrapper.querySelectorAll('.trigger-bubble')];
+            if (bubbles.length == 0) {
+                doNoticePopover('No phrases available to copy', 'notice-pop-red');
+                return;
+            }
+            let sep = wrapper.dataset.sep || ',';
+            let parts = bubbles.map(b => b.textContent.trim());
+            let copyVal = parts.join(sep + (sep == ',' ? ' ' : ' '));
+            copyText(copyVal);
+            doNoticePopover('Copied!', 'notice-pop-green');
+            // Clear selection to avoid confusion after copying
+            let selectedBubbles = wrapper.querySelectorAll('.trigger-bubble.selected');
+            for (let b of selectedBubbles) { b.classList.remove('selected'); }
+            return;
+        }
+    });
+}
