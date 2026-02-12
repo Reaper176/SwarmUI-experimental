@@ -1,5 +1,21 @@
 I have made this fork to add some basic functionality to the ui.
 # Added Functionality
+
+## Added Save Image Option For Inpainting.
+
+<br/>
+
+When generating images or inpainting often you do not want to save every single image or iteration of the inpainting process. I added a manual save button that saves a selected image while respecting user defined settings under the settings tab such as save folder, naming conventions, etc. This allows you to toggle the "do not save" option on and only save the things you want. This is different than the current "Download" option in that it acknowledges the users settings and is a single click instead of needing to click thru context menues or dropdowns. 
+
+<br/>
+
+<img width="2256" height="1326" alt="image" src="https://github.com/user-attachments/assets/98c13717-7e54-4ded-be63-f4bf6daafc49" />
+
+<br/>
+
+<img width="2256" height="1298" alt="image" src="https://github.com/user-attachments/assets/534cb447-dce3-4d73-a1bf-257c3ce15af7" />
+
+
 ## Multi image selection in history
 
 <br/>
