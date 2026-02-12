@@ -5,7 +5,7 @@ I have made this fork to add some basic functionality to the ui.
 
 <br/>
 
-When generating images or inpainting often you do not want to save every single image or iteration of the inpainting process. I added a manual save button that saves a selected image while respecting user defined settings under the settings tab such as save folder, naming conventions, etc. This allows you to toggle the "do not save" option on and only save the things you want. This is different than the current "Download" option in that it acknowledges the users settings and is a single click instead of needing to click thru context menues or dropdowns. 
+When generating images or inpainting often you do not want to save every single image or iteration of the inpainting process. I added a manual save button that saves a selected image while respecting user defined settings under the settings tab such as save folder, naming conventions, etc. This allows you to toggle the "do not save" option on and only save the things you want. This is different than the current "Download" option in that it acknowledges the users settings and is a single click instead of needing to click thru context menues or dropdowns. Note: this does also work for normal image generation if you want to que a batch of 50 and go thru them to see what ones you want to save.
 
 <br/>
 
