@@ -756,10 +756,17 @@ function toggleStar(path, rawSrc) {
     });
 }
 
+function getFallbackSaveInput() {
+    let input = getGenInput();
+    input.donotsave = false;
+    input.images = 1;
+    delete input.initimage;
+    delete input.maskimage;
+    return input;
+}
+
 function getSaveInputFromMetadata(metadata) {
-    let fallback = getGenInput();
-    fallback.donotsave = false;
-    fallback.images = 1;
+    let fallback = getFallbackSaveInput();
     if (!metadata) {
         return fallback;
     }
@@ -772,6 +779,8 @@ function getSaveInputFromMetadata(metadata) {
         let input = { ...metaObj.sui_image_params };
         input.donotsave = false;
         input.images = 1;
+        delete input.initimage;
+        delete input.maskimage;
         if (metaObj.sui_extra_data && typeof metaObj.sui_extra_data == 'object' && !Array.isArray(metaObj.sui_extra_data)) {
             input.extra_metadata = { ...metaObj.sui_extra_data };
         }
@@ -798,6 +807,7 @@ function saveCurrentImageToHistory(img, button = null) {
     let oldSrc = img.dataset.src || img.src;
     let batchId = img.dataset.batch_id || '';
     let requestData = getSaveInputFromMetadata(img.dataset.metadata || currentMetadataVal || '');
+    let fallbackRequestData = getFallbackSaveInput();
     let releaseButton = () => {
         if (!button) {
             return;
@@ -805,53 +815,81 @@ function saveCurrentImageToHistory(img, button = null) {
         delete button.dataset.saving;
         button.disabled = false;
     };
-    let finish = (imageData) => {
-        requestData.image = imageData;
-        genericRequest('AddImageToHistory', requestData, res => {
-            releaseButton();
-            if (!res || res.error) {
-                showError(res?.error || 'Failed to save image.');
-                return;
-            }
-            let saved = res.images?.[0];
-            if (!saved?.image) {
-                showError('Image save did not return an output file.');
-                return;
-            }
-            let savedMetadata = saved.metadata || img.dataset.metadata || currentMetadataVal || '{}';
-            setCurrentImage(saved.image, savedMetadata, batchId);
-            let batchContainer = document.getElementById('current_image_batch');
-            if (batchContainer) {
-                for (let block of batchContainer.getElementsByClassName('image-block')) {
-                    if (block.dataset.src == oldSrc) {
-                        block.dataset.src = saved.image;
-                        block.dataset.metadata = savedMetadata;
-                        let blockImg = block.querySelector('img');
-                        if (blockImg) {
-                            blockImg.src = saved.image;
-                        }
+    let completeSave = (res) => {
+        releaseButton();
+        if (!res || res.error) {
+            showError(res?.error || 'Failed to save image.');
+            return;
+        }
+        let saved = res.images?.[0];
+        if (!saved?.image) {
+            showError('Image save did not return an output file.');
+            return;
+        }
+        let savedMetadata = saved.metadata || img.dataset.metadata || currentMetadataVal || '{}';
+        setCurrentImage(saved.image, savedMetadata, batchId);
+        let batchContainer = document.getElementById('current_image_batch');
+        if (batchContainer) {
+            for (let block of batchContainer.getElementsByClassName('image-block')) {
+                if (block.dataset.src == oldSrc) {
+                    block.dataset.src = saved.image;
+                    block.dataset.metadata = savedMetadata;
+                    let blockImg = block.querySelector('img');
+                    if (blockImg) {
+                        blockImg.src = saved.image;
                     }
                 }
             }
-            if (imageFullView.isOpen() && imageFullView.currentSrc == oldSrc) {
-                let state = imageFullView.copyState();
-                imageFullView.showImage(saved.image, savedMetadata, imageFullView.currentBatchId);
-                imageFullView.pasteState(state);
-            }
-            if (typeof imageHistoryBrowser !== 'undefined' && imageHistoryBrowser?.lightRefresh) {
-                imageHistoryBrowser.lightRefresh();
-            }
-            doNoticePopover('Saved image and metadata.', 'notice-pop-green');
+        }
+        if (imageFullView.isOpen() && imageFullView.currentSrc == oldSrc) {
+            let state = imageFullView.copyState();
+            imageFullView.showImage(saved.image, savedMetadata, imageFullView.currentBatchId);
+            imageFullView.pasteState(state);
+        }
+        if (typeof imageHistoryBrowser !== 'undefined' && imageHistoryBrowser?.lightRefresh) {
+            imageHistoryBrowser.lightRefresh();
+        }
+        doNoticePopover('Saved image and metadata.', 'notice-pop-green');
+    };
+    let sendSave = (baseRequestData, imageData, allowRetry) => {
+        let fullRequest = { ...baseRequestData, image: imageData };
+        genericRequest('AddImageToHistory', fullRequest, res => {
+            completeSave(res);
         }, 0, error => {
+            if (allowRetry) {
+                sendSave(fallbackRequestData, imageData, false);
+                return;
+            }
             releaseButton();
             showError(error);
         });
     };
-    if (img.src.startsWith('data:')) {
+    let finish = (imageData) => {
+        sendSave(requestData, imageData, requestData !== fallbackRequestData);
+    };
+    if (img.src?.startsWith('data:')) {
         finish(img.src);
     }
     else {
-        toDataURL(img.src, finish);
+        fetch(img.src).then(response => {
+            if (!response.ok) {
+                throw new Error(`Image request failed (${response.status})`);
+            }
+            return response.blob();
+        }).then(blob => {
+            let reader = new FileReader();
+            reader.onloadend = () => {
+                finish(reader.result);
+            };
+            reader.onerror = () => {
+                releaseButton();
+                showError('Failed to read image data for save.');
+            };
+            reader.readAsDataURL(blob);
+        }).catch(err => {
+            releaseButton();
+            showError(`Failed to load image data for save: ${err}`);
+        });
     }
 }
 
