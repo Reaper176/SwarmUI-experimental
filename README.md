@@ -67,6 +67,8 @@ When doing upscales it is well known that you will simply amplify the errors tha
 ## Added better save folder override
 Currently in swarm you have to manualy type out the save path override when doing so from the generate tab. I don't like this. I have added an option directly under this current implementation that shows all your current folders and also the option to add a new folder if you want that. Yes searching works.
 
+<br/>
+
 <img width="541" height="352" alt="image" src="https://github.com/user-attachments/assets/fe1cabb5-e185-4d43-96c9-4f0bcd6fdb9c" />
 
 
