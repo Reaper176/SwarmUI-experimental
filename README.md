@@ -60,7 +60,11 @@ This lets you set a resolution manualy for inpainting so you can do a part of an
 
 <br/>
 
-When doing upscales it is well known that you will simply amplify the errors that are already present this is somewhat offset by doing a refiner pass after the fact. However doing a refiner pass to add detail and correct mistakes before upscalling makes even the after upscale refiner even more effective. <img width="602" height="138" alt="image" src="https://github.com/user-attachments/assets/b80eb9a2-18af-494b-90ac-fa1cf06e33f1" />
+When doing upscales it is well known that you will simply amplify the errors that are already present this is somewhat offset by doing a refiner pass after the fact. However doing a refiner pass to add detail and correct mistakes before upscalling makes even the after upscale refiner even more effective.
+
+<br/>
+
+<img width="602" height="138" alt="image" src="https://github.com/user-attachments/assets/b80eb9a2-18af-494b-90ac-fa1cf06e33f1" />
 
 <br/>
 
@@ -81,6 +85,8 @@ Currently in swarm you have to manualy type out the save path override when doin
 Nothing big but when resizing images at spacific resolutions with spacific ui positioning some times the center image will "jiter" or resize repeatedly over and over. This was anoying and should be fixed now. I will try to keep this repo in parody with the origional but may be a day behind.
 
 <br/>
+
+Fixed my own save image button. It now saves metadata correctly.
 
 <br/>
 
