@@ -469,6 +469,7 @@ class GenPageBrowserClass {
             img.addEventListener('click', () => {
                 this.select(file, div);
             });
+            img.classList.add('image-block-img-inner');
             div.appendChild(img);
             if (desc.checkbox) {
                 let checkboxWrap = createSpan(null, 'browser-entry-checkbox-wrap');

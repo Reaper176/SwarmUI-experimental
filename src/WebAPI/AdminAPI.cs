@@ -583,7 +583,15 @@ public static class AdminAPI
     public static async Task<JObject> GetUpdatesDataFor(string folder, bool nullOnNone)
     {
         await Utilities.RunGitProcess("fetch", folder);
-        string[] commits = (await Utilities.RunGitProcess("rev-list HEAD..origin", folder)).Trim().Replace("\r", "").Split('\n', StringSplitOptions.RemoveEmptyEntries);
+        string commitRaw = (await Utilities.RunGitProcess("rev-list HEAD..origin", folder)).Trim().Replace("\r", "");
+        string[] commits;
+        if (commitRaw.StartsWith("fatal: "))
+        {
+            Logs.Error($"Git rev-list failed for folder '{folder}' with message: {commitRaw}");
+            commits = ["(unknown revisions, see error in logs. Use Aggressive Update to auto-resolve this issue.)"];
+            return new JObject() { ["count"] = 1, ["preview"] = JArray.FromObject(commits) };
+        }
+        commits = commitRaw.Split('\n', StringSplitOptions.RemoveEmptyEntries);
         int updatesCount = commits.Length;
         if (commits.Length > 6)
         {
@@ -694,7 +702,7 @@ public static class AdminAPI
     {
         string priorHash = (await Utilities.RunGitProcess("rev-parse HEAD", folder)).Trim();
         string pullResult = await Utilities.RunGitProcess(aggressive ? "pull --autostash" : "pull", folder);
-        Logs.Verbose($"Git pull of {folder} says: {pullResult}");
+        Logs.Debug($"Git pull of {folder} says: {pullResult}");
         if (aggressive)
         {
             if (pullResult.Contains("There is no tracking information for the current branch") || pullResult.Contains("You are not currently on a branch"))
@@ -817,18 +825,17 @@ public static class AdminAPI
         {
             return new JObject() { ["error"] = "Unknown extension." };
         }
-        string extensionsFolder = Utilities.CombinePathWithAbsolute(Environment.CurrentDirectory, "src/Extensions");
+        Program.Extensions.CleanDisabledExtensions();
         foreach (string folderName in ext.FolderNames)
         {
-            string folder = Utilities.CombinePathWithAbsolute(extensionsFolder, folderName);
-            if (Directory.Exists(folder))
+            if (Directory.Exists($"./src/Extensions/{folderName}"))
             {
                 return new JObject() { ["error"] = "Extension already installed." };
             }
             Program.Extensions.RemoveDisabledExtensionSetting(folderName);
         }
         Program.SaveSettingsFile();
-        await Utilities.RunGitProcess($"clone {ext.URL}", extensionsFolder);
+        await Utilities.RunGitProcess($"clone {ext.URL}", Path.GetFullPath("./src/Extensions"));
         return new JObject() { ["success"] = true };
     }
 
