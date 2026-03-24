@@ -155,7 +155,46 @@ let aspectRatios = [
         }
         return [null, null];
     }),
-    new AspectRatio("9:21", 320, 768)
+    new AspectRatio("9:21", 320, 768),
+    new AspectRatio("4:1", 1024, 256),
+    new AspectRatio("3.88:1", 992, 256),
+    new AspectRatio("3.75:1", 960, 256),
+    new AspectRatio("3.63:1", 928, 256),
+    new AspectRatio("3.11:1", 896, 288),
+    new AspectRatio("3:1", 864, 288),
+    new AspectRatio("2.89:1", 832, 288),
+    new AspectRatio("2.5:1", 800, 320),
+    new AspectRatio("2.4:1", 768, 320),
+    new AspectRatio("2.09:1", 736, 352),
+    new AspectRatio("2:1", 704, 352),
+    new AspectRatio("1.91:1", 672, 352),
+    new AspectRatio("1.75:1", 672, 384),
+    new AspectRatio("1.67:1", 640, 384),
+    new AspectRatio("1.46:1", 608, 416),
+    new AspectRatio("1.38:1", 576, 416),
+    new AspectRatio("1.29:1", 576, 448),
+    new AspectRatio("1.21:1", 544, 448),
+    new AspectRatio("1.13:1", 544, 480),
+    new AspectRatio("1.07:1", 512, 480),
+    new AspectRatio("1:1.07", 480, 512),
+    new AspectRatio("1:1.13", 480, 544),
+    new AspectRatio("1:1.21", 448, 544),
+    new AspectRatio("1:1.29", 448, 576),
+    new AspectRatio("1:1.38", 416, 576),
+    new AspectRatio("1:1.46", 416, 608),
+    new AspectRatio("1:1.67", 384, 640),
+    new AspectRatio("1:1.75", 384, 672),
+    new AspectRatio("1:2", 352, 704),
+    new AspectRatio("1:2.09", 352, 736),
+    new AspectRatio("1:2.4", 320, 768),
+    new AspectRatio("1:2.5", 320, 800),
+    new AspectRatio("1:2.89", 288, 832),
+    new AspectRatio("1:3", 288, 864),
+    new AspectRatio("1:3.11", 288, 896),
+    new AspectRatio("1:3.63", 256, 928),
+    new AspectRatio("1:3.75", 256, 960),
+    new AspectRatio("1:3.88", 256, 992),
+    new AspectRatio("1:4", 256, 1024)
 ];
 
 
@@ -589,12 +628,18 @@ function genInputs(delay_final = false) {
                         targetHeight = inputSideLength.value;
                         doAltLogic = false;
                     }
-                    let width, height;
+                    let width = parseInt(inputWidth.value) || targetWidth || 512;
+                    let height = parseInt(inputHeight.value) || targetHeight || 512;
+                    let found = false;
                     for (let ratio of aspectRatios) {
                         if (ratio.id == aspectRatio) {
                             [width, height] = ratio.read(targetWidth, targetHeight, doAltLogic);
+                            found = true;
                             break;
                         }
+                    }
+                    if (!found) {
+                        console.warn(`Unknown aspect ratio '${aspectRatio}', preserving current resolution values.`);
                     }
                     inputWidth.value = width;
                     inputHeight.value = height;

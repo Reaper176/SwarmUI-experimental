@@ -446,7 +446,14 @@ public class T2IParamTypes
         // ================================================ Resolution ================================================
         GroupResolution = new("Resolution", Toggles: false, Open: false, OrderPriority: -11);
         AspectRatio = Register<string>(new("Aspect Ratio", "Image aspect ratio - that is, the shape of the image (wide vs square vs tall).\nSet to 'Custom' to define a manual width/height instead.\nSome models can stretch better than others.\nNotably Flux models support almost any resolution you feel like trying.",
-            "1:1", GetValues: (_) => ["1:1///1:1 (Square)", "4:3///4:3 (Old PC)", "3:2///3:2 (Semi-wide)", "8:5///8:5", "16:9///16:9 (Standard Widescreen)", "21:9///21:9 (Ultra-Widescreen)", "3:4///3:4", "2:3///2:3 (Semi-tall)", "5:8///5:8", "9:16///9:16 (Tall)", "9:21///9:21 (Ultra-Tall)", "Custom"], OrderPriority: -11, Group: GroupResolution, IntentionalUnused: true
+            "1:1", GetValues: (_) => [
+                "1:1///1:1 (Square)", "4:3///4:3 (Old PC)", "3:2///3:2 (Semi-wide)", "8:5///8:5", "16:9///16:9 (Standard Widescreen)", "21:9///21:9 (Ultra-Widescreen)", "3:4///3:4", "2:3///2:3 (Semi-tall)", "5:8///5:8", "9:16///9:16 (Tall)", "9:21///9:21 (Ultra-Tall)",
+                "4:1///4:1", "3.88:1///3.88:1", "3.75:1///3.75:1", "3.63:1///3.63:1", "3.11:1///3.11:1", "3:1///3:1", "2.89:1///2.89:1", "2.5:1///2.5:1", "2.4:1///2.4:1", "2.09:1///2.09:1", "2:1///2:1", "1.91:1///1.91:1", "1.75:1///1.75:1",
+                "1.67:1///1.67:1", "1.46:1///1.46:1", "1.38:1///1.38:1", "1.29:1///1.29:1", "1.21:1///1.21:1", "1.13:1///1.13:1", "1.07:1///1.07:1",
+                "1:1.07///1:1.07", "1:1.13///1:1.13", "1:1.21///1:1.21", "1:1.29///1:1.29", "1:1.38///1:1.38", "1:1.46///1:1.46", "1:1.67///1:1.67", "1:1.75///1:1.75", "1:2///1:2", "1:2.09///1:2.09", "1:2.4///1:2.4", "1:2.5///1:2.5",
+                "1:2.89///1:2.89", "1:3///1:3", "1:3.11///1:3.11", "1:3.63///1:3.63", "1:3.75///1:3.75", "1:3.88///1:3.88", "1:4///1:4",
+                "Custom"
+            ], OrderPriority: -11, Group: GroupResolution, IntentionalUnused: true
             ));
         Width = Register<int>(new("Width", "Image width, in pixels.\nSDv1 uses 512, SDv2 uses 768, SDXL prefers 1024.\nSome models allow variation within a range (eg 512 to 768) but almost always want a multiple of 64.\nFlux is very open to differing values.",
             "512", Min: 64, ViewMin: 256, Max: 16384, ViewMax: 2048, Step: 32, Examples: ["512", "768", "1024"], OrderPriority: -10, ViewType: ParamViewType.POT_SLIDER, Group: GroupResolution, IntentionalUnused: true
@@ -1266,6 +1273,45 @@ public class T2IParamTypes
         else if (aspectRatio == "5:8") { width = 384; height = 608; }
         else if (aspectRatio == "9:16") { width = 384; height = 672; }
         else if (aspectRatio == "9:21") { width = 320; height = 768; }
+        else if (aspectRatio == "4:1") { width = 1024; height = 256; }
+        else if (aspectRatio == "3.88:1") { width = 992; height = 256; }
+        else if (aspectRatio == "3.75:1") { width = 960; height = 256; }
+        else if (aspectRatio == "3.63:1") { width = 928; height = 256; }
+        else if (aspectRatio == "3.11:1") { width = 896; height = 288; }
+        else if (aspectRatio == "3:1") { width = 864; height = 288; }
+        else if (aspectRatio == "2.89:1") { width = 832; height = 288; }
+        else if (aspectRatio == "2.5:1") { width = 800; height = 320; }
+        else if (aspectRatio == "2.4:1") { width = 768; height = 320; }
+        else if (aspectRatio == "2.09:1") { width = 736; height = 352; }
+        else if (aspectRatio == "2:1") { width = 704; height = 352; }
+        else if (aspectRatio == "1.91:1") { width = 672; height = 352; }
+        else if (aspectRatio == "1.75:1") { width = 672; height = 384; }
+        else if (aspectRatio == "1.67:1") { width = 640; height = 384; }
+        else if (aspectRatio == "1.46:1") { width = 608; height = 416; }
+        else if (aspectRatio == "1.38:1") { width = 576; height = 416; }
+        else if (aspectRatio == "1.29:1") { width = 576; height = 448; }
+        else if (aspectRatio == "1.21:1") { width = 544; height = 448; }
+        else if (aspectRatio == "1.13:1") { width = 544; height = 480; }
+        else if (aspectRatio == "1.07:1") { width = 512; height = 480; }
+        else if (aspectRatio == "1:1.07") { width = 480; height = 512; }
+        else if (aspectRatio == "1:1.13") { width = 480; height = 544; }
+        else if (aspectRatio == "1:1.21") { width = 448; height = 544; }
+        else if (aspectRatio == "1:1.29") { width = 448; height = 576; }
+        else if (aspectRatio == "1:1.38") { width = 416; height = 576; }
+        else if (aspectRatio == "1:1.46") { width = 416; height = 608; }
+        else if (aspectRatio == "1:1.67") { width = 384; height = 640; }
+        else if (aspectRatio == "1:1.75") { width = 384; height = 672; }
+        else if (aspectRatio == "1:2") { width = 352; height = 704; }
+        else if (aspectRatio == "1:2.09") { width = 352; height = 736; }
+        else if (aspectRatio == "1:2.4") { width = 320; height = 768; }
+        else if (aspectRatio == "1:2.5") { width = 320; height = 800; }
+        else if (aspectRatio == "1:2.89") { width = 288; height = 832; }
+        else if (aspectRatio == "1:3") { width = 288; height = 864; }
+        else if (aspectRatio == "1:3.11") { width = 288; height = 896; }
+        else if (aspectRatio == "1:3.63") { width = 256; height = 928; }
+        else if (aspectRatio == "1:3.75") { width = 256; height = 960; }
+        else if (aspectRatio == "1:3.88") { width = 256; height = 992; }
+        else if (aspectRatio == "1:4") { width = 256; height = 1024; }
         else { width = -1; height = -1; }
         return (width, height);
     }
