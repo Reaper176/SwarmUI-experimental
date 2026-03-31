@@ -1278,6 +1278,7 @@ let imageEditingToolButtons = {};
 let imageEditingSplittersWired = false;
 let imageEditingLeftSidebarDrag = false;
 let imageEditingRightSidebarDrag = false;
+let imageEditingPausedGenerateEditor = false;
 let imageEditingLeftSidebarWidth = parseInt(localStorage.getItem('barspot_imageediting_leftSidebar') || `${convertRemToPixels(28)}`);
 let imageEditingRightSidebarWidth = parseInt(localStorage.getItem('barspot_imageediting_rightSidebar') || `${convertRemToPixels(16)}`);
 let imageEditingToolsCollapsed = localStorage.getItem('imageediting_toolsCollapsed') == 'true';
@@ -2774,24 +2775,18 @@ let imageEditingTopTabButton = document.getElementById('imageeditingtabbutton');
 if (imageEditingTopTabButton) {
     imageEditingTopTabButton.addEventListener('click', () => {
         imageEditingEnsureUiReady();
-        if (imageEditingTabEditor) {
-            imageEditingApplyLeftSidebarWidth();
-            imageEditingApplyRightSidebarWidth();
-            if (!imageEditingTabEditor.active) {
-                imageEditingTabEditor.activate();
-            }
-            imageEditingTabEditor.resize();
-            imageEditingRefreshToolButtons();
-            imageEditingRefreshLayerOpacityControl();
-            imageEditingApplyZoom();
-        }
     });
 }
 $('#toptablist').on('shown.bs.tab', function (e) {
-    if (!imageEditingTabEditor) {
-        return;
-    }
     if (e.target.id == 'imageeditingtabbutton') {
+        imageEditingEnsureUiReady();
+        if (!imageEditingTabEditor) {
+            return;
+        }
+        if (window.imageEditor && window.imageEditor.active) {
+            window.imageEditor.deactivate();
+            imageEditingPausedGenerateEditor = true;
+        }
         if (!imageEditingTabEditor.active) {
             imageEditingTabEditor.activate();
         }
@@ -2802,8 +2797,16 @@ $('#toptablist').on('shown.bs.tab', function (e) {
         imageEditingRefreshLayerOpacityControl();
         imageEditingApplyZoom();
     }
-    else if (imageEditingTabEditor.active) {
-        imageEditingTabEditor.deactivate();
+    else {
+        if (imageEditingTabEditor && imageEditingTabEditor.active) {
+            imageEditingTabEditor.deactivate();
+        }
+        if (e.target.id == 'text2imagetabbutton' && imageEditingPausedGenerateEditor) {
+            if (window.imageEditor && !window.imageEditor.active) {
+                window.imageEditor.activate();
+            }
+            imageEditingPausedGenerateEditor = false;
+        }
     }
 });
 

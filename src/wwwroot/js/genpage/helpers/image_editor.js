@@ -444,6 +444,9 @@ class ImageEditor {
         this.onDeactivate = null;
         this.changeCount = 0;
         this.active = false;
+        this.redrawInterval = null;
+        this.redrawFrame = null;
+        this.redrawQueued = false;
         this.rightResizeBar = null;
         this.inputDiv = div;
         this.inputDiv.tabIndex = -1;
@@ -839,7 +842,7 @@ class ImageEditor {
             this.offsetX += newX - origX;
             this.offsetY += newY - origY;
         }
-        this.redraw();
+        this.queueRedraw();
     }
 
     onMouseDown(e) {
@@ -848,7 +851,7 @@ class ImageEditor {
         }
         this.mouseDown = true;
         this.activeTool.onMouseDown(e);
-        this.redraw();
+        this.queueRedraw();
     }
 
     onMouseUp(e) {
@@ -857,7 +860,7 @@ class ImageEditor {
         }
         this.mouseDown = false;
         this.activeTool.onMouseUp(e);
-        this.redraw();
+        this.queueRedraw();
     }
 
     onGlobalMouseUp(e) {
@@ -867,7 +870,7 @@ class ImageEditor {
         let wasDown = this.mouseDown;
         this.mouseDown = false;
         if (this.activeTool.onGlobalMouseUp(e) || wasDown) {
-            this.redraw();
+            this.queueRedraw();
         }
     }
 
@@ -896,7 +899,7 @@ class ImageEditor {
             draw = true;
         }
         if (draw) {
-            this.redraw();
+            this.queueRedraw();
         }
         this.lastMouseX = this.mouseX;
         this.lastMouseY = this.mouseY;
@@ -936,7 +939,7 @@ class ImageEditor {
             this.resize();
         }
         if (!this.redrawInterval) {
-            this.redrawInterval = setInterval(() => this.redraw(), 250);
+            this.redrawInterval = setInterval(() => this.queueRedraw(), 250);
         }
     }
 
@@ -944,6 +947,11 @@ class ImageEditor {
         if (this.redrawInterval) {
             clearInterval(this.redrawInterval);
             this.redrawInterval = null;
+        }
+        if (this.redrawFrame != null) {
+            cancelAnimationFrame(this.redrawFrame);
+            this.redrawFrame = null;
+            this.redrawQueued = false;
         }
         if (this.onDeactivate) {
             this.onDeactivate();
@@ -957,6 +965,23 @@ class ImageEditor {
         this.inputDiv.style.display = 'none';
         this.unhideParams();
         this.doFit();
+    }
+
+    /**
+     * Queues a redraw on the next animation frame to avoid redundant synchronous redraw calls.
+     */
+    queueRedraw() {
+        if (this.redrawQueued) {
+            return;
+        }
+        this.redrawQueued = true;
+        this.redrawFrame = requestAnimationFrame(() => {
+            this.redrawQueued = false;
+            this.redrawFrame = null;
+            if (this.active) {
+                this.redraw();
+            }
+        });
     }
 
     setActiveLayer(layer) {
