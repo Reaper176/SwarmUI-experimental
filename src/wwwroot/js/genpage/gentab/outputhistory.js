@@ -524,8 +524,25 @@ function describeOutputFile(image) {
     let canDelete = permissions.hasPermission('user_delete_image') && !image.data.src.startsWith('data:');
     let canBulkSelect = canHide || canDelete;
     let isSelected = imageHistorySelected.has(image.data.fullsrc);
-    let formattedMetadata = formatMetadata(image.data.metadata);
-    let description = image.data.name + "\n" + formattedMetadata;
+    let format = imageHistoryBrowser ? imageHistoryBrowser.format : 'Thumbnails';
+    let shouldFormatMetadata = format.includes('Cards') || format == 'Details List';
+    let formattedMetadata = shouldFormatMetadata ? formatMetadata(image.data.metadata) : '';
+    let quickMetadata = '';
+    if (image.data.metadata) {
+        if (typeof image.data.metadata == 'string') {
+            quickMetadata = image.data.metadata;
+        }
+        else {
+            try {
+                quickMetadata = JSON.stringify(image.data.metadata);
+            }
+            catch (e) {
+                quickMetadata = '';
+            }
+        }
+    }
+    let metadataPreview = quickMetadata.length > 600 ? `${quickMetadata.substring(0, 600)}...` : quickMetadata;
+    let description = image.data.name + (formattedMetadata ? `\n${formattedMetadata}` : (metadataPreview ? `\n${metadataPreview}` : ''));
     let name = image.data.name;
     let allowAnims = localStorage.getItem('image_history_allow_anims') != 'false';
     let allowAnimToggle = allowAnims ? '' : '&noanim=true';
@@ -541,7 +558,8 @@ function describeOutputFile(image) {
     let dragImage = forceImage ?? `${image.data.src}`;
     let imageSrc = forcePreview ?? `${image.data.src}?preview=true${allowAnimToggle}`;
     let searchable = `${image.data.name}, ${image.data.metadata}, ${image.data.fullsrc}`;
-    let detail_list = [escapeHtml(image.data.name), formattedMetadata.replaceAll('<br>', '&emsp;')];
+    let detailMetadata = formattedMetadata ? formattedMetadata.replaceAll('<br>', '&emsp;') : escapeHtml(metadataPreview);
+    let detail_list = [escapeHtml(image.data.name), detailMetadata];
     let aspectRatio = parsedMeta.sui_image_params?.width && parsedMeta.sui_image_params?.height ? parsedMeta.sui_image_params.width / parsedMeta.sui_image_params.height : null;
     let className = parsedMeta.is_starred ? 'image-block-starred' : '';
     if (parsedMeta.is_hidden) {

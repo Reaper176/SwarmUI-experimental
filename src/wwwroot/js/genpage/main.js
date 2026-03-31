@@ -115,9 +115,16 @@ let reviseStatusInterval = null;
 let currentBackendFeatureSet = [];
 let rawBackendFeatureSet = [];
 let lastStatusRequestPending = 0;
+let lastStatusHiddenPoll = 0;
 function reviseStatusBar() {
     if (lastStatusRequestPending + 20 * 1000 > Date.now()) {
         return;
+    }
+    if (document.hidden) {
+        if (lastStatusHiddenPoll + 30 * 1000 > Date.now()) {
+            return;
+        }
+        lastStatusHiddenPoll = Date.now();
     }
     if (session_id == null) {
         statusBarElem.innerText = 'Loading...';
@@ -165,6 +172,14 @@ function reviseStatusBar() {
         statusBarElem.className = `top-status-bar status-bar-${status.class}`;
     });
 }
+
+document.addEventListener('visibilitychange', () => {
+    if (document.hidden) {
+        return;
+    }
+    lastStatusHiddenPoll = 0;
+    reviseStatusBar();
+});
 
 /** Array of functions called on key events (eg model selection change) to update displayed features.
  * Return format [array addMe, array removeMe]. For example `[[], ['sd3']]` indicates that the 'sd3' feature flag is not currently supported (eg by current model).

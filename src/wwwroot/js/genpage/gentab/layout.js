@@ -344,7 +344,12 @@ class GenTabLayout {
             let offset = container.getBoundingClientRect().top - parent.getBoundingClientRect().top;
             container.style.height = `calc(100% - ${offset}px)`;
         }
-        browserUtil.makeVisible(document);
+        for (let tab of this.managedTabs) {
+            if (!tab.visible || !tab.navElem.classList.contains('active')) {
+                continue;
+            }
+            browserUtil.queueMakeVisible(tab.contentElem);
+        }
     }
 
     /** Internal initialization of the generate tab. */
@@ -360,7 +365,7 @@ class GenTabLayout {
             }
             tab.update();
             tab.navElem.addEventListener('click', () => {
-                browserUtil.makeVisible(tab.contentElem);
+                browserUtil.queueMakeVisible(tab.contentElem);
             });
         }
         this.reapplyPositions();

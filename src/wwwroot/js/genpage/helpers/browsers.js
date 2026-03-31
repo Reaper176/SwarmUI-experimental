@@ -1,10 +1,43 @@
 
 /** Helper utilities for browsers. */
 class BrowserUtil {
+    constructor() {
+        this.makeVisibleQueued = new WeakSet();
+    }
+
+    /**
+     * Schedules makeVisible on the next animation frame.
+     */
+    queueMakeVisible(elem) {
+        if (!elem || !elem.querySelectorAll) {
+            return;
+        }
+        if (this.makeVisibleQueued.has(elem)) {
+            return;
+        }
+        this.makeVisibleQueued.add(elem);
+        let run = () => {
+            this.makeVisibleQueued.delete(elem);
+            if (!elem.querySelectorAll) {
+                return;
+            }
+            this.makeVisible(elem);
+        };
+        if (window.requestAnimationFrame) {
+            requestAnimationFrame(run);
+        }
+        else {
+            setTimeout(run, 16);
+        }
+    }
+
     /**
      * Make any visible images within a container actually load now.
      */
     makeVisible(elem) {
+        if (!elem || !elem.querySelectorAll) {
+            return;
+        }
         let elementsToLoad = Array.from(elem.querySelectorAll('.lazyload')).filter(e => {
             let top = e.getBoundingClientRect().top;
             return top != 0 && top < window.innerHeight + 512; // Note top=0 means not visible
@@ -98,6 +131,10 @@ class GenPageBrowserClass {
         this.folderSelectedEvent = null;
         this.builtEvent = null;
         this.sizeChangedEvent = null;
+        this.filterUpdateTimeout = null;
+        this.filterUpdateDelayMs = 120;
+        this.lastFiles = [];
+        this.lastFilesMap = new Map();
         this.maxPreBuild = 512;
         this.chunksRendered = 0;
         this.rerenderPlanned = false;
@@ -589,7 +626,7 @@ class GenPageBrowserClass {
             }
         }
         setTimeout(() => {
-            browserUtil.makeVisible(container);
+            browserUtil.queueMakeVisible(container);
         }, 100);
     }
 
@@ -606,7 +643,7 @@ class GenPageBrowserClass {
      * Returns the file object for a given path.
      */
     getFileFor(path) {
-        return this.lastFiles.find(f => f.name == path);
+        return this.lastFilesMap.get(path);
     }
 
     /**
@@ -641,6 +678,15 @@ class GenPageBrowserClass {
             files = this.lastFiles;
         }
         this.lastFiles = files;
+        this.lastFilesMap = new Map();
+        if (this.lastFiles) {
+            for (let file of this.lastFiles) {
+                if (!file || !file.name) {
+                    continue;
+                }
+                this.lastFilesMap.set(file.name, file);
+            }
+        }
         if (files && this.folderTreeShowFiles) {
             this.refillTree(path, files.map(f => {
                 let name = f.name.substring(path.length);
@@ -710,9 +756,13 @@ class GenPageBrowserClass {
                 else {
                     clearFilterBtn.style.display = 'none';
                 }
-                setTimeout(() => {
+                if (this.filterUpdateTimeout) {
+                    clearTimeout(this.filterUpdateTimeout);
+                }
+                this.filterUpdateTimeout = setTimeout(() => {
+                    this.filterUpdateTimeout = null;
                     this.update();
-                }, 1);
+                }, this.filterUpdateDelayMs);
             });
             if (!this.showFilter) {
                 filterInput.parentElement.style.display = 'none';
@@ -740,7 +790,7 @@ class GenPageBrowserClass {
             this.fullContentDiv.appendChild(this.headerBar);
             this.contentDiv = createDiv(`${this.id}-content`, 'browser-content-container');
             this.contentDiv.addEventListener('scroll', () => {
-                browserUtil.makeVisible(this.contentDiv);
+                browserUtil.queueMakeVisible(this.contentDiv);
             });
             this.fullContentDiv.appendChild(this.contentDiv);
             this.barSpot = 0;
@@ -802,7 +852,7 @@ class GenPageBrowserClass {
         applyTranslations(this.headerBar);
         if (!this.noContentUpdates) {
             this.buildContentList(this.contentDiv, files);
-            browserUtil.makeVisible(this.contentDiv);
+            browserUtil.queueMakeVisible(this.contentDiv);
             if (scrollOffset) {
                 this.contentDiv.scrollTop = scrollOffset;
             }

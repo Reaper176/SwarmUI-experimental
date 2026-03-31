@@ -697,6 +697,9 @@ function adminInterruptUser(userId) {
 }
 
 function serverResourceLoop() {
+    if (document.hidden) {
+        return;
+    }
     if (isVisible(getRequiredElementById('server_tab'))) {
         fixTabHeights();
     }
