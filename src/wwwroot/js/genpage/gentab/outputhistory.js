@@ -49,6 +49,23 @@ function parseHistoryMetadata(metadata) {
     return parsed;
 }
 
+/**
+ * Interpret history metadata when possible, but never let a bad blob abort the list render.
+ */
+function safeInterpretHistoryMetadata(metadata, fullsrc = '') {
+    if (!metadata) {
+        return metadata;
+    }
+    try {
+        let interpreted = interpretMetadata(metadata);
+        return interpreted ?? metadata;
+    }
+    catch (e) {
+        console.log(`Failed to interpret history metadata${fullsrc ? ` for '${fullsrc}'` : ''}: ${e}`);
+        return metadata;
+    }
+}
+
 function setMetadataBoolValue(metadata, key, value) {
     if (!metadata) {
         return JSON.stringify({ [key]: value });
@@ -413,7 +430,7 @@ function listOutputHistoryFolderAndFiles(path, isRefresh, callback, depth) {
         data.files = preFiles.concat(postFiles);
         let mapped = data.files.map(f => {
             let fullSrc = `${prefix}${f.src}`;
-            return { 'name': fullSrc, 'data': { 'src': `${getImageOutPrefix()}/${fullSrc}`, 'fullsrc': fullSrc, 'name': f.src, 'metadata': interpretMetadata(f.metadata) } };
+            return { 'name': fullSrc, 'data': { 'src': `${getImageOutPrefix()}/${fullSrc}`, 'fullsrc': fullSrc, 'name': f.src, 'metadata': safeInterpretHistoryMetadata(f.metadata, fullSrc) } };
         });
         callback(folders, mapped);
         if (fix) {
