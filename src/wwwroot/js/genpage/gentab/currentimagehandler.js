@@ -2834,7 +2834,13 @@ function getImageFullSrc(src) {
 function setCurrentImage(src, metadata = '', batchId = '', previewGrow = false, smoothAdd = false, canReparse = true, isPlaceholder = false) {
     currentImgSrc = src;
     if (metadata) {
-        metadata = interpretMetadata(metadata);
+        try {
+            metadata = interpretMetadata(metadata);
+        }
+        catch (e) {
+            console.log(`Failed to interpret current image metadata: ${e}`);
+            metadata = null;
+        }
     }
     currentMetadataVal = metadata;
     if (src == null) {
