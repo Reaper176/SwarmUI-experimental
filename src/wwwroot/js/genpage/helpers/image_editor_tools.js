@@ -321,6 +321,20 @@ class ImageEditorToolOptions extends ImageEditorTool {
             { key: 'Paste Image as Layer', action: () => {
                 this.editor.pasteSelectionFromClipboard();
             }},
+            { key: 'Flip / Mirror Active Layer Horizontal', action: () => {
+                if (!this.editor.activeLayer) {
+                    doNoticePopover('No active layer selected!', 'notice-pop-red');
+                    return;
+                }
+                this.editor.activeLayer.flipHorizontal();
+            }},
+            { key: 'Flip / Mirror Active Layer Vertical', action: () => {
+                if (!this.editor.activeLayer) {
+                    doNoticePopover('No active layer selected!', 'notice-pop-red');
+                    return;
+                }
+                this.editor.activeLayer.flipVertical();
+            }},
         ];
     }
 

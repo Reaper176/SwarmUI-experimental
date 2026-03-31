@@ -1504,6 +1504,13 @@ function imageEditingGetLayerDeleteButton() {
 }
 
 /**
+ * Gets the Layer Options duplicate button.
+ */
+function imageEditingGetLayerDuplicateButton() {
+    return document.getElementById('imageediting_layer_duplicate_button');
+}
+
+/**
  * Gets the Layer Options convert-to-image button.
  */
 function imageEditingGetLayerConvertToImageButton() {
@@ -1529,6 +1536,20 @@ function imageEditingGetLayerConvertToMaskButton() {
  */
 function imageEditingGetLayerInvertColorsButton() {
     return document.getElementById('imageediting_layer_invert_colors_button');
+}
+
+/**
+ * Gets the Layer Options flip/mirror-horizontal button.
+ */
+function imageEditingGetLayerFlipMirrorHorizontalButton() {
+    return document.getElementById('imageediting_layer_flip_mirror_horizontal_button');
+}
+
+/**
+ * Gets the Layer Options flip/mirror-vertical button.
+ */
+function imageEditingGetLayerFlipMirrorVerticalButton() {
+    return document.getElementById('imageediting_layer_flip_mirror_vertical_button');
 }
 
 /**
@@ -1787,23 +1808,32 @@ function imageEditingBuildOptionButtons() {
  */
 function imageEditingRefreshLayerOptionActionButtons() {
     let deleteButton = imageEditingGetLayerDeleteButton();
+    let duplicateButton = imageEditingGetLayerDuplicateButton();
     let convertToImageButton = imageEditingGetLayerConvertToImageButton();
     let invertMaskButton = imageEditingGetLayerInvertMaskButton();
     let convertToMaskButton = imageEditingGetLayerConvertToMaskButton();
     let invertColorsButton = imageEditingGetLayerInvertColorsButton();
-    if (!deleteButton || !convertToImageButton || !invertMaskButton || !convertToMaskButton || !invertColorsButton) {
+    let flipMirrorHorizontalButton = imageEditingGetLayerFlipMirrorHorizontalButton();
+    let flipMirrorVerticalButton = imageEditingGetLayerFlipMirrorVerticalButton();
+    if (!deleteButton || !duplicateButton || !convertToImageButton || !invertMaskButton || !convertToMaskButton || !invertColorsButton || !flipMirrorHorizontalButton || !flipMirrorVerticalButton) {
         return;
     }
     let activeLayer = imageEditingTabEditor ? imageEditingTabEditor.activeLayer : null;
     if (!activeLayer) {
         deleteButton.disabled = true;
+        duplicateButton.style.display = 'none';
         convertToImageButton.style.display = 'none';
         invertMaskButton.style.display = 'none';
         convertToMaskButton.style.display = 'none';
         invertColorsButton.style.display = 'none';
+        flipMirrorHorizontalButton.style.display = 'none';
+        flipMirrorVerticalButton.style.display = 'none';
         return;
     }
     deleteButton.disabled = false;
+    duplicateButton.style.display = '';
+    flipMirrorHorizontalButton.style.display = '';
+    flipMirrorVerticalButton.style.display = '';
     if (activeLayer.isMask) {
         convertToImageButton.style.display = '';
         invertMaskButton.style.display = '';
@@ -1830,6 +1860,17 @@ function imageEditingDeleteActiveLayer() {
         return;
     }
     imageEditingTabEditor.removeLayer(imageEditingTabEditor.activeLayer);
+    imageEditingRefreshLayerOpacityControl();
+}
+
+/**
+ * Duplicates the currently selected layer in the Image Editing tab.
+ */
+function imageEditingDuplicateActiveLayer() {
+    if (!imageEditingTabEditor || !imageEditingTabEditor.activeLayer) {
+        return;
+    }
+    imageEditingTabEditor.duplicateLayer(imageEditingTabEditor.activeLayer);
     imageEditingRefreshLayerOpacityControl();
 }
 
@@ -1902,6 +1943,30 @@ function imageEditingInvertActiveLayerColors() {
         return;
     }
     layer.invert();
+    imageEditingRefreshLayerOpacityControl();
+}
+
+/**
+ * Flip/mirror the selected layer horizontally.
+ */
+function imageEditingFlipMirrorActiveLayerHorizontal() {
+    if (!imageEditingTabEditor || !imageEditingTabEditor.activeLayer) {
+        return;
+    }
+    let layer = imageEditingTabEditor.activeLayer;
+    layer.flipHorizontal();
+    imageEditingRefreshLayerOpacityControl();
+}
+
+/**
+ * Flip/mirror the selected layer vertically.
+ */
+function imageEditingFlipMirrorActiveLayerVertical() {
+    if (!imageEditingTabEditor || !imageEditingTabEditor.activeLayer) {
+        return;
+    }
+    let layer = imageEditingTabEditor.activeLayer;
+    layer.flipVertical();
     imageEditingRefreshLayerOpacityControl();
 }
 
@@ -2199,11 +2264,14 @@ function imageEditingEnsureLayerOptionsWired() {
     let lightValueSlider = imageEditingGetLayerLightValueSlider();
     let toneBalanceSliders = imageEditingGetToneBalanceSliders();
     let deleteButton = imageEditingGetLayerDeleteButton();
+    let duplicateButton = imageEditingGetLayerDuplicateButton();
     let convertToImageButton = imageEditingGetLayerConvertToImageButton();
     let invertMaskButton = imageEditingGetLayerInvertMaskButton();
     let convertToMaskButton = imageEditingGetLayerConvertToMaskButton();
     let invertColorsButton = imageEditingGetLayerInvertColorsButton();
-    if (!slider || !saturationSlider || !lightValueSlider || !deleteButton || !convertToImageButton || !invertMaskButton || !convertToMaskButton || !invertColorsButton) {
+    let flipMirrorHorizontalButton = imageEditingGetLayerFlipMirrorHorizontalButton();
+    let flipMirrorVerticalButton = imageEditingGetLayerFlipMirrorVerticalButton();
+    if (!slider || !saturationSlider || !lightValueSlider || !deleteButton || !duplicateButton || !convertToImageButton || !invertMaskButton || !convertToMaskButton || !invertColorsButton || !flipMirrorHorizontalButton || !flipMirrorVerticalButton) {
         return;
     }
     slider.addEventListener('input', () => {
@@ -2235,6 +2303,9 @@ function imageEditingEnsureLayerOptionsWired() {
     deleteButton.addEventListener('click', () => {
         imageEditingDeleteActiveLayer();
     });
+    duplicateButton.addEventListener('click', () => {
+        imageEditingDuplicateActiveLayer();
+    });
     convertToImageButton.addEventListener('click', () => {
         imageEditingConvertActiveLayerToImage();
     });
@@ -2246,6 +2317,12 @@ function imageEditingEnsureLayerOptionsWired() {
     });
     invertColorsButton.addEventListener('click', () => {
         imageEditingInvertActiveLayerColors();
+    });
+    flipMirrorHorizontalButton.addEventListener('click', () => {
+        imageEditingFlipMirrorActiveLayerHorizontal();
+    });
+    flipMirrorVerticalButton.addEventListener('click', () => {
+        imageEditingFlipMirrorActiveLayerVertical();
     });
     imageEditingLayerOptionsWired = true;
     imageEditingRefreshLayerOpacityControl();

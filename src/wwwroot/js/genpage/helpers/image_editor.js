@@ -125,6 +125,14 @@ class ImageEditorLayer {
             this.editor.removeLayer(this);
         }, true);
         this.menuPopover.appendChild(buttonDelete);
+        let buttonDuplicate = createDiv(null, 'sui_popover_model_button');
+        buttonDuplicate.innerText = 'Duplicate Layer';
+        buttonDuplicate.addEventListener('click', (e) => {
+            e.preventDefault();
+            hidePopover(popId);
+            this.editor.duplicateLayer(this);
+        }, true);
+        this.menuPopover.appendChild(buttonDuplicate);
         let buttonConvert = createDiv(null, 'sui_popover_model_button');
         buttonConvert.innerText = `Convert To ${(this.isMask ? `Image` : `Mask`)} Layer`;
         buttonConvert.addEventListener('click', (e) => {
@@ -145,6 +153,22 @@ class ImageEditorLayer {
             this.invert();
         }, true);
         this.menuPopover.appendChild(buttonInvert);
+        let buttonFlipMirrorHorizontal = createDiv(null, 'sui_popover_model_button');
+        buttonFlipMirrorHorizontal.innerText = 'Flip / Mirror Horizontal';
+        buttonFlipMirrorHorizontal.addEventListener('click', (e) => {
+            e.preventDefault();
+            hidePopover(popId);
+            this.flipHorizontal();
+        }, true);
+        this.menuPopover.appendChild(buttonFlipMirrorHorizontal);
+        let buttonFlipMirrorVertical = createDiv(null, 'sui_popover_model_button');
+        buttonFlipMirrorVertical.innerText = 'Flip / Mirror Vertical';
+        buttonFlipMirrorVertical.addEventListener('click', (e) => {
+            e.preventDefault();
+            hidePopover(popId);
+            this.flipVertical();
+        }, true);
+        this.menuPopover.appendChild(buttonFlipMirrorVertical);
         let sliderWrapper = createDiv(null, 'auto-slider-range-wrapper');
         let opacitySlider = document.createElement('input');
         opacitySlider.type = 'range';
@@ -202,17 +226,87 @@ class ImageEditorLayer {
     }
 
     invert() {
-        let newCanvas = document.createElement('canvas');
-        newCanvas.width = this.canvas.width;
-        newCanvas.height = this.canvas.height;
-        let newCtx = newCanvas.getContext('2d');
-        newCtx.save();
-        newCtx.filter = 'invert(1)';
-        newCtx.drawImage(this.canvas, 0, 0, newCanvas.width, newCanvas.height);
-        newCtx.restore();
-        this.canvas = newCanvas;
-        this.ctx = newCtx;
+        this.saveBeforeEdit();
+        let oldCanvas = document.createElement('canvas');
+        oldCanvas.width = this.canvas.width;
+        oldCanvas.height = this.canvas.height;
+        let oldCtx = oldCanvas.getContext('2d');
+        oldCtx.drawImage(this.canvas, 0, 0);
+        this.ctx.save();
+        this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
+        this.ctx.filter = 'invert(1)';
+        this.ctx.drawImage(oldCanvas, 0, 0, this.canvas.width, this.canvas.height);
+        this.ctx.restore();
+        this.toneBalanceCacheCanvas = null;
+        this.toneBalanceCacheKey = null;
+        this.editor.markChanged();
         this.editor.redraw();
+    }
+
+    cloneLayerData() {
+        let clone = new ImageEditorLayer(this.editor, this.canvas.width, this.canvas.height);
+        clone.ctx.drawImage(this.canvas, 0, 0);
+        clone.width = this.width;
+        clone.height = this.height;
+        clone.offsetX = this.offsetX;
+        clone.offsetY = this.offsetY;
+        clone.rotation = this.rotation;
+        clone.opacity = this.opacity;
+        clone.saturation = typeof this.saturation == 'number' ? this.saturation : 1;
+        clone.lightValue = typeof this.lightValue == 'number' ? this.lightValue : 1;
+        clone.toneBalance = this.cloneToneBalance(this.toneBalance);
+        clone.globalCompositeOperation = this.globalCompositeOperation;
+        clone.isMask = this.isMask;
+        clone.hasAnyContent = this.hasAnyContent;
+        return clone;
+    }
+
+    flipHorizontal() {
+        this.saveBeforeEdit();
+        let oldCanvas = this.canvas;
+        let oldCopyCanvas = document.createElement('canvas');
+        oldCopyCanvas.width = oldCanvas.width;
+        oldCopyCanvas.height = oldCanvas.height;
+        let oldCopyCtx = oldCopyCanvas.getContext('2d');
+        oldCopyCtx.drawImage(oldCanvas, 0, 0);
+        this.ctx.save();
+        this.ctx.clearRect(0, 0, oldCanvas.width, oldCanvas.height);
+        this.ctx.translate(oldCanvas.width, 0);
+        this.ctx.scale(-1, 1);
+        this.ctx.drawImage(oldCopyCanvas, 0, 0);
+        this.ctx.restore();
+        this.toneBalanceCacheCanvas = null;
+        this.toneBalanceCacheKey = null;
+        this.editor.markChanged();
+        this.editor.redraw();
+    }
+
+    flipVertical() {
+        this.saveBeforeEdit();
+        let oldCanvas = this.canvas;
+        let oldCopyCanvas = document.createElement('canvas');
+        oldCopyCanvas.width = oldCanvas.width;
+        oldCopyCanvas.height = oldCanvas.height;
+        let oldCopyCtx = oldCopyCanvas.getContext('2d');
+        oldCopyCtx.drawImage(oldCanvas, 0, 0);
+        this.ctx.save();
+        this.ctx.clearRect(0, 0, oldCanvas.width, oldCanvas.height);
+        this.ctx.translate(0, oldCanvas.height);
+        this.ctx.scale(1, -1);
+        this.ctx.drawImage(oldCopyCanvas, 0, 0);
+        this.ctx.restore();
+        this.toneBalanceCacheCanvas = null;
+        this.toneBalanceCacheKey = null;
+        this.editor.markChanged();
+        this.editor.redraw();
+    }
+
+    mirrorHorizontal() {
+        this.flipHorizontal();
+    }
+
+    mirrorVertical() {
+        this.flipVertical();
     }
 
     canvasCoordToLayerCoord(x, y) {
@@ -1111,6 +1205,15 @@ class ImageEditor {
         if (!skipHistory) {
             this.addHistoryEntry(new ImageEditorHistoryEntry(this, 'layer_add', { layer: layer }));
         }
+    }
+
+    duplicateLayer(layer) {
+        if (!layer) {
+            return null;
+        }
+        let clone = layer.cloneLayerData();
+        this.addLayer(clone);
+        return clone;
     }
 
     sortLayers() {
