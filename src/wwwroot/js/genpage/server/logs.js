@@ -116,6 +116,9 @@ class ServerLogsHelper {
         if (!this.mayLoop) {
             return;
         }
+        if (document.hidden) {
+            return;
+        }
         if (!this.serverTabBody.classList.contains('active') || !this.tabBody.classList.contains('active')) {
             return;
         }
