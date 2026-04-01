@@ -5,6 +5,11 @@ let imageHistoryRefreshQueued = false;
 const IMAGE_HISTORY_METADATA_CACHE_LIMIT = 1024;
 const imageHistoryMetadataCache = new Map();
 
+function getHistoryImageSrc(fullSrc) {
+    let safePath = fullSrc.split('/').map(part => encodeURIComponent(part)).join('/');
+    return `${getImageOutPrefix()}/${safePath}`;
+}
+
 function requestImageHistoryRefresh() {
     if (!imageHistoryBrowser || imageHistoryRefreshQueued) {
         return;
@@ -309,7 +314,7 @@ async function setSelectedHistoryImagesHidden(targetHidden) {
             skipped++;
             continue;
         }
-        let src = `${getImageOutPrefix()}/${fullsrc}`;
+        let src = getHistoryImageSrc(fullsrc);
         let res = await toggleImageHidden(fullsrc, src, false, () => {});
         if (res.success) {
             updated++;
@@ -349,7 +354,7 @@ async function deleteSelectedHistoryImages() {
     let deleted = 0;
     let failed = 0;
     for (let fullsrc of selected) {
-        let src = `${getImageOutPrefix()}/${fullsrc}`;
+        let src = getHistoryImageSrc(fullsrc);
         let res = await deleteSingleHistoryImage(fullsrc, src, null, () => {});
         if (res.success) {
             deleted++;
@@ -430,7 +435,7 @@ function listOutputHistoryFolderAndFiles(path, isRefresh, callback, depth) {
         data.files = preFiles.concat(postFiles);
         let mapped = data.files.map(f => {
             let fullSrc = `${prefix}${f.src}`;
-            return { 'name': fullSrc, 'data': { 'src': `${getImageOutPrefix()}/${fullSrc}`, 'fullsrc': fullSrc, 'name': f.src, 'metadata': safeInterpretHistoryMetadata(f.metadata, fullSrc) } };
+            return { 'name': fullSrc, 'data': { 'src': getHistoryImageSrc(fullSrc), 'fullsrc': fullSrc, 'name': f.src, 'metadata': safeInterpretHistoryMetadata(f.metadata, fullSrc) } };
         });
         callback(folders, mapped);
         if (fix) {
@@ -608,6 +613,13 @@ imageHistoryBrowser.builtEvent = () => {
     pruneImageHistorySelectionToCurrentFiles();
     updateImageHistoryBulkControls();
 };
+
+getRequiredElementById('imagehistorytabclickable').addEventListener('shown.bs.tab', () => {
+    let historyContent = document.getElementById('imagehistorybrowser-content');
+    if (historyContent) {
+        browserUtil.queueMakeVisible(historyContent);
+    }
+});
 
 function storeImageToHistoryWithCurrentParams(img) {
     let data = getGenInput();
