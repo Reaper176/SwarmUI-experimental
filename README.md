@@ -123,6 +123,14 @@ Fixed my own save image button. It now saves metadata correctly.
 
 <br/>
 
+Fixed issues with large history loads. Now retries once and then gives you a manual option after that. This helps when loading large amounts of image (100k+). Most helpfull when loading off of a spining drive.
+
+<br/> 
+
+Adjusted the drag and drop image functionality. Dropped images now snap to the base image instead of dropping where ever the coursor is. The base image is deffined currently by the image at the bottom of the stack. This allows you to change what is considered the base image. 
+
+When resizing images they will also snap to the edges of the base image following the same logic. 
+
 <br/>
 
 # SwarmUI
