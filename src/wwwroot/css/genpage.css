@@ -1605,10 +1605,33 @@ body {
     display: block;
     width: 100%;
 }
-.image-editor-canvas {
+.image-editor-canvas-holder {
     margin: 0;
     display: inline-block;
     vertical-align: top;
+    position: relative;
+    touch-action: none;
+}
+.image-editor-canvas {
+    margin: 0;
+    display: block;
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
+}
+.image-editor-overlay-canvas {
+    margin: 0;
+    display: block;
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    z-index: 1;
+    touch-action: none;
 }
 .image-editor-tool {
     margin: 6px;

@@ -1891,7 +1891,8 @@ function imageEditingConvertActiveLayerToImage() {
     }
     layer.createButtons();
     imageEditingTabEditor.sortLayers();
-    imageEditingTabEditor.redraw();
+    imageEditingTabEditor.markOutputChanged();
+    imageEditingTabEditor.queueSceneRedraw();
     imageEditingRefreshLayerOpacityControl();
 }
 
@@ -1912,7 +1913,8 @@ function imageEditingConvertActiveLayerToMask() {
     }
     layer.createButtons();
     imageEditingTabEditor.sortLayers();
-    imageEditingTabEditor.redraw();
+    imageEditingTabEditor.markOutputChanged();
+    imageEditingTabEditor.queueSceneRedraw();
     imageEditingRefreshLayerOpacityControl();
 }
 
@@ -1989,7 +1991,8 @@ function imageEditingSetActiveLayerOpacityFromSlider() {
     let layer = imageEditingTabEditor.activeLayer;
     layer.opacity = opacityValue / 100;
     layer.canvas.style.opacity = layer.opacity;
-    imageEditingTabEditor.redraw();
+    imageEditingTabEditor.markOutputChanged();
+    imageEditingTabEditor.queueSceneRedraw();
     imageEditingRefreshLayerOpacityControl();
 }
 
@@ -2011,7 +2014,8 @@ function imageEditingSetActiveLayerSaturationFromSlider() {
     saturationValue = Math.max(0, Math.min(200, saturationValue));
     let layer = imageEditingTabEditor.activeLayer;
     layer.saturation = saturationValue / 100;
-    imageEditingTabEditor.redraw();
+    imageEditingTabEditor.markOutputChanged();
+    imageEditingTabEditor.queueSceneRedraw();
     imageEditingRefreshLayerSaturationControl();
 }
 
@@ -2066,7 +2070,8 @@ function imageEditingSetActiveLayerLightValueFromSlider() {
     lightValue = Math.max(0, Math.min(200, lightValue));
     let layer = imageEditingTabEditor.activeLayer;
     layer.lightValue = lightValue / 100;
-    imageEditingTabEditor.redraw();
+    imageEditingTabEditor.markOutputChanged();
+    imageEditingTabEditor.queueSceneRedraw();
     imageEditingRefreshLayerLightValueControl();
 }
 
@@ -2160,7 +2165,8 @@ function imageEditingSetActiveLayerToneBalanceFromSlider(slider) {
         return;
     }
     layer.toneBalance[range][channel] = sliderValue / 100;
-    imageEditingTabEditor.redraw();
+    imageEditingTabEditor.markOutputChanged();
+    imageEditingTabEditor.queueSceneRedraw();
     imageEditingRefreshToneBalanceControls();
 }
 
@@ -2501,7 +2507,7 @@ function imageEditingSetColor(newColor) {
     }
     if (imageEditingTabEditor && imageEditingTabEditor.activeTool && typeof imageEditingTabEditor.activeTool.setColor == 'function') {
         imageEditingTabEditor.activeTool.setColor(newColor);
-        imageEditingTabEditor.redraw();
+        imageEditingTabEditor.queueOverlayRedraw();
     }
 }
 

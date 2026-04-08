@@ -431,7 +431,9 @@ class ImageEditorToolGeneral extends ImageEditorTool {
             this.editor.ctx.strokeStyle = '#ffffff';
             this.editor.ctx.fillStyle = '#000000';
             if (this.editor.isMouseInCircle(circle.x, circle.y, circle.radius)) {
-                this.editor.canvas.style.cursor = 'grab';
+                if (this.editor.overlayCanvas) {
+                    this.editor.overlayCanvas.style.cursor = 'grab';
+                }
                 this.editor.ctx.strokeStyle = '#000000';
                 this.editor.ctx.fillStyle = '#ffffff';
             }
@@ -484,7 +486,8 @@ class ImageEditorToolGeneral extends ImageEditorTool {
                 if (e.ctrlKey) {
                     target.rotation = Math.round(target.rotation / (Math.PI / 16)) * (Math.PI / 16);
                 }
-                this.editor.markChanged();
+                this.editor.markOutputChanged();
+                this.editor.queueViewRedraw();
             }
             else if (this.currentDragCircle) {
                 let current = this.getControlCircle(this.currentDragCircle);
@@ -562,11 +565,13 @@ class ImageEditorToolGeneral extends ImageEditorTool {
                         this.snapLayerResizeToBaseImage(target, handleDef);
                     }
                 }
-                this.editor.markChanged();
+                this.editor.markOutputChanged();
+                this.editor.queueViewRedraw();
             }
             else {
                 this.editor.offsetX += dx;
                 this.editor.offsetY += dy;
+                this.editor.queueViewRedraw();
             }
             return true;
         }
@@ -618,7 +623,8 @@ class ImageEditorToolMove extends ImageEditorTool {
                 layer.offsetX = Math.round(layer.offsetX / 32) * 32;
                 layer.offsetY = Math.round(layer.offsetY / 32) * 32;
             }
-            this.editor.markChanged();
+            this.editor.markOutputChanged();
+            this.editor.queueViewRedraw();
             return true;
         }
         return false;
@@ -693,7 +699,6 @@ class ImageEditorToolSelect extends ImageEditorTool {
             this.editor.selectWidth = mouseX - this.editor.selectX;
             this.editor.selectHeight = mouseY - this.editor.selectY;
             this.editor.hasSelection = true;
-            this.editor.markChanged();
             return true;
         }
         return false;
@@ -740,7 +745,7 @@ class ImageEditorToolBrush extends ImageEditorToolWithColor {
         this.opacitySelector = this.configDiv.querySelector('.id-opac2');
         this.radiusNumber.addEventListener('change', () => { this.onConfigChange(); });
         this.opacityNumber.addEventListener('change', () => { this.onConfigChange(); });
-        this.lastTouch = null;
+        this.targetLayer = null;
     }
 
     onConfigChange() {
@@ -749,7 +754,7 @@ class ImageEditorToolBrush extends ImageEditorToolWithColor {
         }
         this.radius = parseInt(this.radiusNumber.value);
         this.opacity = parseInt(this.opacityNumber.value) / 100;
-        this.editor.redraw();
+        this.editor.queueOverlayRedraw();
     }
 
     draw() {
@@ -757,22 +762,25 @@ class ImageEditorToolBrush extends ImageEditorToolWithColor {
     }
 
     brush(force = 1) {
-        let [lastX, lastY] = this.editor.activeLayer.canvasCoordToLayerCoord(this.editor.lastMouseX, this.editor.lastMouseY);
-        let [x, y] = this.editor.activeLayer.canvasCoordToLayerCoord(this.editor.mouseX, this.editor.mouseY);
-        this.bufferLayer.drawFilledCircle(lastX, lastY, this.radius * force, this.color);
-        this.bufferLayer.drawFilledCircleStrokeBetween(lastX, lastY, x, y, this.radius * force, this.color);
-        this.bufferLayer.drawFilledCircle(x, y, this.radius * force, this.color);
-        this.editor.markChanged();
+        if (!this.targetLayer || !this.bufferLayer) {
+            return;
+        }
+        let [lastX, lastY] = this.targetLayer.canvasCoordToLayerCoord(this.editor.lastMouseX, this.editor.lastMouseY);
+        let [x, y] = this.targetLayer.canvasCoordToLayerCoord(this.editor.mouseX, this.editor.mouseY);
+        this.bufferLayer.ctx.save();
+        this.bufferLayer.ctx.globalAlpha = this.opacity;
+        this.bufferLayer.ctx.globalCompositeOperation = this.isEraser ? 'destination-out' : 'source-over';
+        let drawColor = this.isEraser ? '#ffffff' : this.color;
+        this.bufferLayer.drawFilledCircle(lastX, lastY, this.radius * force, drawColor);
+        this.bufferLayer.drawFilledCircleStrokeBetween(lastX, lastY, x, y, this.radius * force, drawColor);
+        this.bufferLayer.drawFilledCircle(x, y, this.radius * force, drawColor);
+        this.bufferLayer.ctx.restore();
+        this.bufferLayer.markContentChanged();
     }
 
     getForceFrom(e) {
-        if (e.touches && e.touches.length > 0) {
-            let touch = e.touches.item(0);
-            this.lastTouch = Date.now();
-            if (touch.force <= 0) {
-                return 1;
-            }
-            return touch.force;
+        if (e.pointerType && e.pointerType != 'mouse' && typeof e.pressure == 'number' && e.pressure > 0) {
+            return e.pressure;
         }
         return 1;
     }
@@ -781,32 +789,21 @@ class ImageEditorToolBrush extends ImageEditorToolWithColor {
         if (this.brushing) {
             return;
         }
-        if (e.touches) {
-            this.lastTouch = Date.now();
-        }
-        if (!e.touches && this.lastTouch && Date.now() - this.lastTouch < 1000) {
+        let target = this.editor.activeLayer;
+        if (!target) {
             return;
         }
         this.brushing = true;
-        let target = this.editor.activeLayer;
-        this.bufferLayer = new ImageEditorLayer(this.editor, target.canvas.width, target.canvas.height, target);
-        this.bufferLayer.opacity = this.opacity;
-        if (this.isEraser) {
-            this.bufferLayer.globalCompositeOperation = 'destination-out';
-        }
+        this.targetLayer = target;
+        this.bufferLayer = target.cloneLayerData();
+        this.bufferLayer.ctx.save();
         this.applySelectionClip(this.bufferLayer.ctx, target);
-        target.childLayers.push(this.bufferLayer);
+        this.editor.setPreviewState(target, this.bufferLayer);
         this.brush(this.getForceFrom(e));
     }
 
     onMouseMove(e) {
         if (this.brushing) {
-            if (e.touches) {
-                this.lastTouch = Date.now();
-            }
-            if (!e.touches && this.lastTouch && Date.now() - this.lastTouch < 1000) {
-                return;
-            }
             this.brush(this.getForceFrom(e));
         }
     }
@@ -826,12 +823,15 @@ class ImageEditorToolBrush extends ImageEditorToolWithColor {
 
     onGlobalMouseUp(e) {
         if (this.brushing) {
-            this.editor.activeLayer.childLayers.pop();
-            let offset = this.editor.activeLayer.getOffset();
-            this.editor.activeLayer.saveBeforeEdit();
-            this.bufferLayer.drawToBackDirect(this.editor.activeLayer.ctx, -offset[0], -offset[1], 1);
-            this.editor.activeLayer.hasAnyContent = true;
+            this.targetLayer.saveBeforeEdit();
+            this.targetLayer.ctx.clearRect(0, 0, this.targetLayer.canvas.width, this.targetLayer.canvas.height);
+            this.targetLayer.ctx.drawImage(this.bufferLayer.canvas, 0, 0);
+            this.targetLayer.hasAnyContent = true;
+            this.bufferLayer.ctx.restore();
+            this.editor.markLayerContentChanged(this.targetLayer);
+            this.editor.clearPreviewState();
             this.bufferLayer = null;
+            this.targetLayer = null;
             this.brushing = false;
             return true;
         }
@@ -868,7 +868,7 @@ class ImageEditorToolBucket extends ImageEditorToolWithColor {
     onConfigChange() {
         this.color = this.colorText.value;
         this.threshold = parseInt(this.thresholdNumber.value);
-        this.editor.redraw();
+        this.editor.queueOverlayRedraw();
     }
 
     doBucket(x, y) {
@@ -990,7 +990,9 @@ class ImageEditorToolBucket extends ImageEditorToolWithColor {
             if (canInclude(x, y + 1)) { stack.push([x, y + 1]); }
         }
         ctx.putImageData(imageData, 0, 0);
-        this.editor.markChanged();
+        layer.markContentChanged();
+        this.editor.markOutputChanged();
+        this.editor.queueSceneRedraw();
     }
 
     onMouseDown(e) {
@@ -1047,22 +1049,24 @@ class ImageEditorToolShape extends ImageEditorToolWithColor {
         this.strokeSelector = this.configDiv.querySelector('.id-stroke2');
         this.shapeSelect.addEventListener('change', () => {
             this.shape = this.shapeSelect.value;
-            this.editor.redraw();
+            this.editor.queueOverlayRedraw();
         });
         this.fillCheckbox.addEventListener('change', () => {
             this.fill = this.fillCheckbox.checked;
             this.updateStrokeDisabled();
-            this.editor.redraw();
+            this.editor.queueOverlayRedraw();
         });
         this.strokeBlock = this.configDiv.querySelector('.id-stroke-block');
         enableSliderForBox(this.strokeBlock);
         this.strokeNumber.addEventListener('change', () => { this.onConfigChange(); });
+        this.baseCanvas = null;
+        this.targetLayer = null;
     }
     
     onConfigChange() {
         this.color = this.colorText.value;
         this.strokeWidth = parseInt(this.strokeNumber.value);
-        this.editor.redraw();
+        this.editor.queueOverlayRedraw();
     }
 
     updateStrokeDisabled() {
@@ -1104,52 +1108,6 @@ class ImageEditorToolShape extends ImageEditorToolWithColor {
     }
 
     draw() {
-        if (!this.isDrawing) {
-            return;
-        }
-        let target = this.editor.activeLayer;
-        if (!target) {
-            return;
-        }
-        let imgStartX = Math.min(this.startX, this.currentX);
-        let imgStartY = Math.min(this.startY, this.currentY);
-        let imgEndX = Math.max(this.startX, this.currentX);
-        let imgEndY = Math.max(this.startY, this.currentY);
-        let width = imgEndX - imgStartX;
-        let height = imgEndY - imgStartY;
-        if (width == 0 && height == 0) {
-            return;
-        }
-        let [canvasX1, canvasY1] = this.editor.imageCoordToCanvasCoord(imgStartX, imgStartY);
-        let [canvasX2, canvasY2] = this.editor.imageCoordToCanvasCoord(imgEndX, imgEndY);
-        let canvasWidth = canvasX2 - canvasX1;
-        let canvasHeight = canvasY2 - canvasY1;
-        this.editor.ctx.save();
-        if (this.editor.hasSelection) {
-            let [selX1, selY1] = this.editor.imageCoordToCanvasCoord(this.editor.selectX, this.editor.selectY);
-            let [selX2, selY2] = this.editor.imageCoordToCanvasCoord(this.editor.selectX + this.editor.selectWidth, this.editor.selectY + this.editor.selectHeight);
-            this.editor.ctx.beginPath();
-            this.editor.ctx.rect(selX1, selY1, selX2 - selX1, selY2 - selY1);
-            this.editor.ctx.clip();
-        }
-        this.editor.ctx.imageSmoothingEnabled = false;
-        this.editor.ctx.setLineDash([]);
-        this.editor.ctx.fillStyle = this.color;
-        if (this.shape == 'rectangle') {
-            if (this.fill) {
-                this.editor.ctx.fillRect(Math.round(canvasX1), Math.round(canvasY1), Math.round(canvasWidth), Math.round(canvasHeight));
-            }
-            else {
-                let thickness = Math.max(1, Math.round(this.getEffectiveStrokeWidth() * this.editor.zoomLevel));
-                this.drawRectangleBorder(this.editor.ctx, Math.round(canvasX1), Math.round(canvasY1), Math.round(canvasWidth), Math.round(canvasHeight), thickness);
-            }
-        }
-        else {
-            this.editor.ctx.strokeStyle = this.color;
-            this.editor.ctx.lineWidth = Math.max(1, Math.round(this.getEffectiveStrokeWidth() * this.editor.zoomLevel));
-            this.drawShapeToCanvas(this.editor.ctx, this.shape, canvasX1, canvasY1, canvasWidth, canvasHeight, this.fill);
-        }
-        this.editor.ctx.restore();
     }
     
     onMouseDown(e) {
@@ -1183,46 +1141,48 @@ class ImageEditorToolShape extends ImageEditorToolWithColor {
         this.startLayerY = layerY;
         this.currentLayerX = layerX;
         this.currentLayerY = layerY;
-        this.bufferLayer = new ImageEditorLayer(this.editor, target.canvas.width, target.canvas.height, target);
-        this.bufferLayer.opacity = 1;
-        target.childLayers.push(this.bufferLayer);
+        this.targetLayer = target;
+        this.bufferLayer = target.cloneLayerData();
+        this.baseCanvas = document.createElement('canvas');
+        this.baseCanvas.width = target.canvas.width;
+        this.baseCanvas.height = target.canvas.height;
+        this.baseCanvas.getContext('2d').drawImage(target.canvas, 0, 0);
+        this.editor.setPreviewState(target, this.bufferLayer);
     }
     
     finishDrawing() {
         if (this.isDrawing && this.bufferLayer) {
-            let parent = this.editor.activeLayer;
+            let parent = this.targetLayer;
             if (!parent) {
                 this.bufferLayer = null;
+                this.baseCanvas = null;
+                this.targetLayer = null;
                 this.isDrawing = false;
                 this.hasDrawn = false;
-                this.editor.redraw();
+                this.editor.clearPreviewState();
                 return;
             }
             if (!this.hasDrawn) {
-                let idx = parent.childLayers.indexOf(this.bufferLayer);
-                if (idx != -1) {
-                    parent.childLayers.splice(idx, 1);
-                }
                 this.bufferLayer = null;
+                this.baseCanvas = null;
+                this.targetLayer = null;
                 this.isDrawing = false;
                 this.hasDrawn = false;
-                this.editor.redraw();
+                this.editor.clearPreviewState();
                 return;
             }
             this.drawShape();
-            let idx = parent.childLayers.indexOf(this.bufferLayer);
-            if (idx != -1) {
-                parent.childLayers.splice(idx, 1);
-            }
-            let offset = parent.getOffset();
             parent.saveBeforeEdit();
-            this.bufferLayer.drawToBackDirect(parent.ctx, -offset[0], -offset[1], 1);
+            parent.ctx.clearRect(0, 0, parent.canvas.width, parent.canvas.height);
+            parent.ctx.drawImage(this.bufferLayer.canvas, 0, 0);
             parent.hasAnyContent = true;
             this.bufferLayer = null;
+            this.baseCanvas = null;
+            this.targetLayer = null;
             this.isDrawing = false;
             this.hasDrawn = false;
-            this.editor.markChanged();
-            this.editor.redraw();
+            this.editor.markLayerContentChanged(parent);
+            this.editor.clearPreviewState();
         }
     }
     
@@ -1275,14 +1235,15 @@ class ImageEditorToolShape extends ImageEditorToolWithColor {
     }
 
     drawShape() {
-        if (!this.isDrawing || !this.bufferLayer) {
+        if (!this.isDrawing || !this.bufferLayer || !this.baseCanvas) {
             return;
         }
-        let parent = this.editor.activeLayer;
+        let parent = this.targetLayer;
         if (!parent) {
             return;
         }
         this.bufferLayer.ctx.clearRect(0, 0, this.bufferLayer.canvas.width, this.bufferLayer.canvas.height);
+        this.bufferLayer.ctx.drawImage(this.baseCanvas, 0, 0);
         let startX = Math.round(Math.min(this.startX, this.currentX));
         let startY = Math.round(Math.min(this.startY, this.currentY));
         let endX = Math.round(Math.max(this.startX, this.currentX));
@@ -1292,7 +1253,7 @@ class ImageEditorToolShape extends ImageEditorToolWithColor {
         if (width == 0 && height == 0) {
             this.bufferLayer.hasAnyContent = false;
             this.hasDrawn = false;
-            this.editor.redraw();
+            this.editor.queueOverlayRedraw();
             return;
         }
         this.bufferLayer.ctx.save();
@@ -1334,8 +1295,8 @@ class ImageEditorToolShape extends ImageEditorToolWithColor {
         this.bufferLayer.ctx.restore();
         this.bufferLayer.hasAnyContent = true;
         this.hasDrawn = true;
-        this.editor.markChanged();
-        this.editor.redraw();
+        this.bufferLayer.markContentChanged();
+        this.editor.queueOverlayRedraw();
     }
 }
 
@@ -1362,7 +1323,7 @@ class ImageEditorToolPicker extends ImageEditorTempTool {
             this.color = colorPickerHelper.hexToGrayscale(this.color);
         }
         this.toolFor.setColor(this.color);
-        this.editor.redraw();
+        this.editor.queueOverlayRedraw();
     }
 
     onMouseDown(e) {
@@ -1425,7 +1386,7 @@ class ImageEditorToolSam2Base extends ImageEditorTool {
             return;
         }
         maskLayer.clearToEmpty();
-        this.editor.redraw();
+        this.editor.queueSceneRedraw();
     }
 
     setActive() {
@@ -1441,7 +1402,9 @@ class ImageEditorToolSam2Base extends ImageEditorTool {
     triggerWarmup() {
         this.isWarmingUp = true;
         this.cursor = 'wait';
-        this.editor.canvas.style.cursor = 'wait';
+        if (this.editor.overlayCanvas) {
+            this.editor.overlayCanvas.style.cursor = 'wait';
+        }
         this.configDiv.innerHTML = this.warmupHTML;
         try {
             let img = this.editor.getFinalImageData();
@@ -1469,7 +1432,9 @@ class ImageEditorToolSam2Base extends ImageEditorTool {
         this.modelWarmed = true;
         this.isWarmingUp = false;
         this.cursor = 'crosshair';
-        this.editor.canvas.style.cursor = 'crosshair';
+        if (this.editor.overlayCanvas) {
+            this.editor.overlayCanvas.style.cursor = 'crosshair';
+        }
         this.showControls();
     }
 
@@ -1526,6 +1491,7 @@ class ImageEditorToolSam2Base extends ImageEditorTool {
         }
         this.editor.activeLayer.applyMaskFromImage(fullMask);
         this.clipMaskToSelection();
+        this.editor.queueSceneRedraw();
     }
 
     /** Erases any mask pixels outside the current selection. No-op if no selection is active. */
@@ -1559,6 +1525,7 @@ class ImageEditorToolSam2Base extends ImageEditorTool {
         let selH = Math.round(this.editor.selectHeight);
         maskLayer.ctx.fillRect(selX, selY, selW, selH);
         maskLayer.ctx.restore();
+        maskLayer.markContentChanged();
     }
 }
 
@@ -1592,7 +1559,7 @@ class ImageEditorToolSam2Points extends ImageEditorToolSam2Base {
         this.activeRequestId = ++this.requestSerial;
         this.maskRequestInFlight = false;
         this.pendingMaskUpdate = false;
-        this.editor.redraw();
+        this.editor.queueSceneRedraw();
     }
 
     onClearMask() {
@@ -1695,7 +1662,7 @@ class ImageEditorToolSam2Points extends ImageEditorToolSam2Base {
             points.positive.push(point);
         }
         this.queueMaskUpdate();
-        this.editor.redraw();
+        this.editor.queueOverlayRedraw();
     }
 
     queueMaskUpdate() {
@@ -1750,7 +1717,6 @@ class ImageEditorToolSam2Points extends ImageEditorToolSam2Base {
                     return;
                 }
                 this.applyMaskResult(newImg);
-                this.editor.redraw();
                 this.finishMaskUpdate(requestId);
             };
             newImg.src = data.image;
@@ -1816,7 +1782,7 @@ class ImageEditorToolSam2BBox extends ImageEditorToolSam2Base {
         let [mouseX, mouseY] = this.editor.canvasCoordToImageCoord(this.editor.mouseX, this.editor.mouseY);
         this.bboxEndX = Math.round(mouseX);
         this.bboxEndY = Math.round(mouseY);
-        this.editor.redraw();
+        this.editor.queueOverlayRedraw();
     }
 
     onGlobalMouseUp(e) {
@@ -1872,7 +1838,6 @@ class ImageEditorToolSam2BBox extends ImageEditorToolSam2Base {
                     return;
                 }
                 this.applyMaskResult(newImg);
-                this.editor.redraw();
             };
             newImg.src = data.image;
         });

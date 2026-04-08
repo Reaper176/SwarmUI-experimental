@@ -31,6 +31,7 @@ class ImageEditorLayer {
         this.buffer = null;
         this.isMask = false;
         this.hasAnyContent = false;
+        this.contentVersion = 0;
     }
 
     cloneToneBalance(toneBalance) {
@@ -75,8 +76,7 @@ class ImageEditorLayer {
 
     getToneBalancedSourceCanvas() {
         this.ensureToneBalance();
-        let serial = this.editor ? this.editor.changeCount : 0;
-        let key = `${serial}|${this.canvas.width}x${this.canvas.height}|${this.toneBalance.shadows.r},${this.toneBalance.shadows.g},${this.toneBalance.shadows.b},${this.toneBalance.midtones.r},${this.toneBalance.midtones.g},${this.toneBalance.midtones.b},${this.toneBalance.highlights.r},${this.toneBalance.highlights.g},${this.toneBalance.highlights.b}`;
+        let key = `${this.contentVersion}|${this.canvas.width}x${this.canvas.height}|${this.toneBalance.shadows.r},${this.toneBalance.shadows.g},${this.toneBalance.shadows.b},${this.toneBalance.midtones.r},${this.toneBalance.midtones.g},${this.toneBalance.midtones.b},${this.toneBalance.highlights.r},${this.toneBalance.highlights.g},${this.toneBalance.highlights.b}`;
         if (this.toneBalanceCacheCanvas && this.toneBalanceCacheKey == key) {
             return this.toneBalanceCacheCanvas;
         }
@@ -114,6 +114,16 @@ class ImageEditorLayer {
         return tempCanvas;
     }
 
+    resetToneBalanceCache() {
+        this.toneBalanceCacheCanvas = null;
+        this.toneBalanceCacheKey = null;
+    }
+
+    markContentChanged() {
+        this.contentVersion++;
+        this.resetToneBalanceCache();
+    }
+
     createButtons() {
         let popId = `image_editor_layer_preview_${this.id}`;
         this.menuPopover.innerHTML = '';
@@ -142,6 +152,7 @@ class ImageEditorLayer {
             this.infoSubDiv.innerText = (this.isMask ? `Mask` : `Image`);
             this.createButtons();
             this.editor.sortLayers();
+            this.editor.markOutputChanged();
             this.editor.redraw();
         }, true);
         this.menuPopover.appendChild(buttonConvert);
@@ -182,7 +193,8 @@ class ImageEditorLayer {
         opacitySlider.addEventListener('input', () => {
             this.opacity = parseInt(opacitySlider.value) / 100;
             this.canvas.style.opacity = this.opacity;
-            this.editor.redraw();
+            this.editor.markOutputChanged();
+            this.editor.queueSceneRedraw();
         });
         let opacityLabel = document.createElement('label');
         opacityLabel.innerHTML = 'Opacity&nbsp;';
@@ -223,6 +235,7 @@ class ImageEditorLayer {
         this.ctx = newCtx;
         this.width = width;
         this.height = height;
+        this.markContentChanged();
     }
 
     invert() {
@@ -237,9 +250,8 @@ class ImageEditorLayer {
         this.ctx.filter = 'invert(1)';
         this.ctx.drawImage(oldCanvas, 0, 0, this.canvas.width, this.canvas.height);
         this.ctx.restore();
-        this.toneBalanceCacheCanvas = null;
-        this.toneBalanceCacheKey = null;
-        this.editor.markChanged();
+        this.markContentChanged();
+        this.editor.markOutputChanged();
         this.editor.redraw();
     }
 
@@ -258,6 +270,7 @@ class ImageEditorLayer {
         clone.globalCompositeOperation = this.globalCompositeOperation;
         clone.isMask = this.isMask;
         clone.hasAnyContent = this.hasAnyContent;
+        clone.contentVersion = this.contentVersion;
         return clone;
     }
 
@@ -275,9 +288,8 @@ class ImageEditorLayer {
         this.ctx.scale(-1, 1);
         this.ctx.drawImage(oldCopyCanvas, 0, 0);
         this.ctx.restore();
-        this.toneBalanceCacheCanvas = null;
-        this.toneBalanceCacheKey = null;
-        this.editor.markChanged();
+        this.markContentChanged();
+        this.editor.markOutputChanged();
         this.editor.redraw();
     }
 
@@ -295,9 +307,8 @@ class ImageEditorLayer {
         this.ctx.scale(1, -1);
         this.ctx.drawImage(oldCopyCanvas, 0, 0);
         this.ctx.restore();
-        this.toneBalanceCacheCanvas = null;
-        this.toneBalanceCacheKey = null;
-        this.editor.markChanged();
+        this.markContentChanged();
+        this.editor.markOutputChanged();
         this.editor.redraw();
     }
 
@@ -419,6 +430,8 @@ class ImageEditorLayer {
         this.saveBeforeEdit();
         this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
         this.hasAnyContent = false;
+        this.markContentChanged();
+        this.editor.markOutputChanged();
     }
 
     applyMaskFromImage(img) {
@@ -460,6 +473,8 @@ class ImageEditorLayer {
         }
         this.ctx.putImageData(imageData, 0, 0);
         this.hasAnyContent = true;
+        this.markContentChanged();
+        this.editor.markOutputChanged();
     }
 
     saveBeforeEdit() {
@@ -491,14 +506,22 @@ class ImageEditorHistoryEntry {
     undo() {
         if (this.type == 'layer_canvas_edit') {
             let oldCanvas = this.data.oldCanvas;
-            let ctx = this.data.layer.ctx;
+            let layer = this.data.layer;
+            if (layer.canvas.width != oldCanvas.width || layer.canvas.height != oldCanvas.height) {
+                layer.canvas.width = oldCanvas.width;
+                layer.canvas.height = oldCanvas.height;
+                layer.ctx = layer.canvas.getContext('2d');
+            }
+            let ctx = layer.ctx;
             ctx.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height);
             ctx.drawImage(oldCanvas, 0, 0);
-            this.data.layer.offsetX = this.data.oldOffsetX;
-            this.data.layer.offsetY = this.data.oldOffsetY;
-            this.data.layer.rotation = this.data.oldRotation;
-            this.data.layer.width = this.data.oldWidth;
-            this.data.layer.height = this.data.oldHeight;
+            layer.offsetX = this.data.oldOffsetX;
+            layer.offsetY = this.data.oldOffsetY;
+            layer.rotation = this.data.oldRotation;
+            layer.width = this.data.oldWidth;
+            layer.height = this.data.oldHeight;
+            layer.markContentChanged();
+            this.editor.markOutputChanged();
         }
         else if (this.type == 'layer_reposition') {
             this.data.layer.offsetX = this.data.oldOffsetX;
@@ -506,6 +529,7 @@ class ImageEditorHistoryEntry {
             this.data.layer.rotation = this.data.oldRotation;
             this.data.layer.width = this.data.oldWidth;
             this.data.layer.height = this.data.oldHeight;
+            this.editor.markOutputChanged();
         }
         else if (this.type == 'layer_add' && this.editor.layers.indexOf(this.data.layer) >= 0) {
             this.editor.removeLayer(this.data.layer, true);
@@ -513,6 +537,7 @@ class ImageEditorHistoryEntry {
         else if (this.type == 'layer_remove') {
             // TODO: Reinsert at proper index
             this.editor.addLayer(this.data.layer, true);
+            this.editor.markOutputChanged();
         }
     }
 }
@@ -541,6 +566,16 @@ class ImageEditor {
         this.redrawInterval = null;
         this.redrawFrame = null;
         this.redrawQueued = false;
+        this.sceneDirty = true;
+        this.viewDirty = true;
+        this.overlayDirty = true;
+        this.previewState = null;
+        this.activePointerId = null;
+        this.pointerInsideCanvas = false;
+        this.canvasHolder = null;
+        this.overlayCanvas = null;
+        this.overlayCtx = null;
+        this.sceneCtx = null;
         this.rightResizeBar = null;
         this.inputDiv = div;
         this.inputDiv.tabIndex = -1;
@@ -637,6 +672,8 @@ class ImageEditor {
         this.totalLayersEver = 0;
         this.baseImageLayerId = null;
         this.mouseDown = false;
+        this.activePointerId = null;
+        this.pointerInsideCanvas = false;
         this.zoomLevel = 1;
         this.offsetX = 0;
         this.offsetY = 0;
@@ -691,45 +728,51 @@ class ImageEditor {
         }
         newTool.setActive();
         this.activeTool = newTool;
+        this.queueOverlayRedraw();
     }
 
     createCanvas() {
+        let canvasHolder = createDiv(null, 'image-editor-canvas-holder');
+        this.canvasHolder = canvasHolder;
         let canvas = document.createElement('canvas');
         canvas.className = 'image-editor-canvas';
+        let overlayCanvas = document.createElement('canvas');
+        overlayCanvas.className = 'image-editor-overlay-canvas';
+        canvasHolder.appendChild(canvas);
+        canvasHolder.appendChild(overlayCanvas);
         if (this.rightBar.parentElement == this.inputDiv) {
-            this.inputDiv.insertBefore(canvas, this.rightBar);
+            this.inputDiv.insertBefore(canvasHolder, this.rightBar);
         }
         else {
-            this.inputDiv.appendChild(canvas);
+            this.inputDiv.appendChild(canvasHolder);
         }
         this.canvas = canvas;
-        canvas.addEventListener('wheel', (e) => this.onMouseWheel(e));
-        document.addEventListener('mousedown', (e) => this.onGlobalMouseDown(e));
-        canvas.addEventListener('mousedown', (e) => this.onMouseDown(e));
-        document.addEventListener('mouseup', (e) => this.onGlobalMouseUp(e));
-        canvas.addEventListener('mouseup', (e) => this.onMouseUp(e));
-        document.addEventListener('mousemove', (e) => this.onGlobalMouseMove(e));
-        document.addEventListener('touchstart', (e) => this.onGlobalMouseDown(e));
-        canvas.addEventListener('touchstart', (e) => this.onMouseDown(e));
-        document.addEventListener('touchend', (e) => this.onGlobalMouseUp(e));
-        canvas.addEventListener('touchend', (e) => this.onMouseUp(e));
-        document.addEventListener('touchmove', (e) => this.onGlobalMouseMove(e));
+        this.overlayCanvas = overlayCanvas;
+        overlayCanvas.addEventListener('wheel', (e) => this.onMouseWheel(e));
+        overlayCanvas.addEventListener('pointerdown', (e) => this.onPointerDown(e));
+        overlayCanvas.addEventListener('pointermove', (e) => this.onPointerMove(e));
+        overlayCanvas.addEventListener('pointerup', (e) => this.onPointerUp(e));
+        overlayCanvas.addEventListener('pointercancel', (e) => this.onPointerCancel(e));
+        overlayCanvas.addEventListener('pointerleave', (e) => this.onPointerLeave(e));
         this.inputDiv.addEventListener('keydown', (e) => this.onKeyDown(e));
         this.inputDiv.addEventListener('keyup', (e) => this.onKeyUp(e));
         document.addEventListener('keydown', (e) => this.onGlobalKeyDown(e));
         document.addEventListener('keyup', (e) => this.onGlobalKeyUp(e));
-        canvas.addEventListener('dragover', (e) => {
+        overlayCanvas.addEventListener('dragover', (e) => {
             e.preventDefault();
             e.stopPropagation();
         });
-        canvas.addEventListener('drop', (e) => this.handleCanvasImageDrop(e));
-        canvas.addEventListener('contextmenu', (e) => {
+        overlayCanvas.addEventListener('drop', (e) => this.handleCanvasImageDrop(e));
+        overlayCanvas.addEventListener('contextmenu', (e) => {
             if (this.activeTool && this.activeTool.onContextMenu(e)) {
                 e.preventDefault();
             }
         });
-        this.ctx = canvas.getContext('2d');
+        this.sceneCtx = canvas.getContext('2d');
+        this.ctx = this.sceneCtx;
+        this.overlayCtx = overlayCanvas.getContext('2d');
         canvas.style.cursor = 'none';
+        overlayCanvas.style.cursor = 'none';
         this.maskHelperCanvas = document.createElement('canvas');
         this.maskHelperCtx = this.maskHelperCanvas.getContext('2d');
         this.resize();
@@ -765,7 +808,7 @@ class ImageEditor {
         if (!this.preAltTool) {
             this.preAltTool = this.activeTool;
             this.activateTool('general');
-            this.redraw();
+            this.queueOverlayRedraw();
         }
     }
 
@@ -773,7 +816,7 @@ class ImageEditor {
         if (this.preAltTool) {
             this.activateTool(this.preAltTool.id);
             this.preAltTool = null;
-            this.redraw();
+            this.queueOverlayRedraw();
         }
     }
 
@@ -917,13 +960,6 @@ class ImageEditor {
         }
     }
 
-    onGlobalMouseDown(e) {
-        if (!this.active) {
-            return;
-        }
-        this.updateMousePosFrom(e);
-    }
-
     onMouseWheel(e) {
         this.activeTool.onMouseWheel(e);
         if (!e.defaultPrevented) {
@@ -936,86 +972,132 @@ class ImageEditor {
             let [newX, newY] = this.canvasCoordToImageCoord(mouseX, mouseY);
             this.offsetX += newX - origX;
             this.offsetY += newY - origY;
+            this.queueViewRedraw();
         }
-        this.queueRedraw();
+        else {
+            this.queueOverlayRedraw();
+        }
     }
 
-    onMouseDown(e) {
+    getPointerSampleEvents(e) {
+        if (this.mouseDown && e.getCoalescedEvents) {
+            let samples = e.getCoalescedEvents();
+            if (samples && samples.length > 0) {
+                return samples;
+            }
+        }
+        return [e];
+    }
+
+    onPointerDown(e) {
+        if (!this.active) {
+            return;
+        }
+        if (this.activePointerId != null && this.activePointerId != e.pointerId) {
+            return;
+        }
+        this.inputDiv.focus();
+        this.pointerInsideCanvas = true;
+        this.activePointerId = e.pointerId;
+        this.overlayCanvas.setPointerCapture(e.pointerId);
+        this.updateMousePosFrom(e);
+        this.lastMouseX = this.mouseX;
+        this.lastMouseY = this.mouseY;
         if (this.altDown || e.button == 1) {
             this.handleAltDown();
         }
         this.mouseDown = true;
         this.activeTool.onMouseDown(e);
-        this.queueRedraw();
+        this.queueOverlayRedraw();
     }
 
-    onMouseUp(e) {
+    onPointerMove(e) {
+        if (!this.active) {
+            return;
+        }
+        if (this.mouseDown && this.activePointerId != null && this.activePointerId != e.pointerId) {
+            return;
+        }
+        this.pointerInsideCanvas = true;
+        let draw = false;
+        for (let sample of this.getPointerSampleEvents(e)) {
+            this.updateMousePosFrom(sample);
+            if (this.isMouseInBox(0, 0, this.canvas.width, this.canvas.height)) {
+                this.activeTool.onMouseMove(sample);
+                draw = true;
+            }
+            if (this.activeTool.onGlobalMouseMove(sample)) {
+                draw = true;
+            }
+            this.lastMouseX = this.mouseX;
+            this.lastMouseY = this.mouseY;
+        }
+        if (draw) {
+            this.queueOverlayRedraw();
+        }
+    }
+
+    onPointerUp(e) {
+        if (!this.active) {
+            return;
+        }
+        if (this.activePointerId != null && this.activePointerId != e.pointerId) {
+            return;
+        }
+        this.updateMousePosFrom(e);
         if (e.button == 1) {
             this.handleAltUp();
         }
+        let wasDown = this.mouseDown;
         this.mouseDown = false;
-        this.activeTool.onMouseUp(e);
-        this.queueRedraw();
+        if (wasDown) {
+            this.activeTool.onMouseUp(e);
+        }
+        if (this.activeTool.onGlobalMouseUp(e) || wasDown) {
+            this.queueOverlayRedraw();
+        }
+        if (this.overlayCanvas.hasPointerCapture(e.pointerId)) {
+            this.overlayCanvas.releasePointerCapture(e.pointerId);
+        }
+        this.activePointerId = null;
+        this.lastMouseX = this.mouseX;
+        this.lastMouseY = this.mouseY;
     }
 
-    onGlobalMouseUp(e) {
+    onPointerCancel(e) {
         if (!this.active) {
+            return;
+        }
+        if (this.activePointerId != null && this.activePointerId != e.pointerId) {
             return;
         }
         let wasDown = this.mouseDown;
         this.mouseDown = false;
         if (this.activeTool.onGlobalMouseUp(e) || wasDown) {
-            this.queueRedraw();
+            this.queueOverlayRedraw();
         }
+        if (this.overlayCanvas.hasPointerCapture(e.pointerId)) {
+            this.overlayCanvas.releasePointerCapture(e.pointerId);
+        }
+        this.activePointerId = null;
+    }
+
+    onPointerLeave() {
+        if (this.mouseDown) {
+            return;
+        }
+        this.pointerInsideCanvas = false;
+        this.mouseX = -10000;
+        this.mouseY = -10000;
+        this.queueOverlayRedraw();
     }
 
     updateMousePosFrom(e) {
-        let eX = e.clientX, eY = e.clientY;
-        if (!eX && !eY && e.touches && e.touches.length > 0) {
-            eX = e.touches[0].clientX;
-            eY = e.touches[0].clientY;
-        }
+        let eX = e.clientX;
+        let eY = e.clientY;
         let rect = this.canvas.getBoundingClientRect();
         this.mouseX = eX - rect.left;
         this.mouseY = eY - rect.top;
-    }
-
-    onGlobalMouseMove(e) {
-        if (!this.active) {
-            return;
-        }
-        this.updateMousePosFrom(e);
-        let draw = false;
-        if (this.isMouseInBox(0, 0, this.canvas.width, this.canvas.height)) {
-            this.activeTool.onMouseMove(e);
-            draw = true;
-        }
-        if (this.activeTool.onGlobalMouseMove(e)) {
-            draw = true;
-        }
-        if (draw) {
-            this.queueRedraw();
-        }
-        this.lastMouseX = this.mouseX;
-        this.lastMouseY = this.mouseY;
-    }
-
-    canvasCoordToImageCoord(x, y) {
-        return [x / this.zoomLevel - this.offsetX, y / this.zoomLevel - this.offsetY];
-    }
-
-    imageCoordToCanvasCoord(x, y) {
-        return [(x + this.offsetX) * this.zoomLevel, (y + this.offsetY) * this.zoomLevel];
-    }
-
-    isMouseInBox(x, y, width, height) {
-        return this.mouseX >= x && this.mouseX < x + width && this.mouseY >= y && this.mouseY < y + height;
-    }
-
-    isMouseInCircle(x, y, radius) {
-        let dx = this.mouseX - x;
-        let dy = this.mouseY - y;
-        return dx * dx + dy * dy < radius * radius;
     }
 
     activate() {
@@ -1034,7 +1116,7 @@ class ImageEditor {
             this.resize();
         }
         if (!this.redrawInterval) {
-            this.redrawInterval = setInterval(() => this.queueRedraw(), 250);
+            this.redrawInterval = setInterval(() => this.queueOverlayRedraw(), 250);
         }
     }
 
@@ -1048,6 +1130,7 @@ class ImageEditor {
             this.redrawFrame = null;
             this.redrawQueued = false;
         }
+        this.clearPreviewState(false);
         if (this.onDeactivate) {
             this.onDeactivate();
         }
@@ -1057,15 +1140,34 @@ class ImageEditor {
             }
         }
         this.active = false;
+        this.mouseDown = false;
+        this.activePointerId = null;
         this.inputDiv.style.display = 'none';
         this.unhideParams();
         this.doFit();
+        if (this.overlayCtx && this.overlayCanvas) {
+            this.overlayCtx.clearRect(0, 0, this.overlayCanvas.width, this.overlayCanvas.height);
+        }
     }
 
-    /**
-     * Queues a redraw on the next animation frame to avoid redundant synchronous redraw calls.
-     */
-    queueRedraw() {
+    queueViewRedraw() {
+        this.viewDirty = true;
+        this.overlayDirty = true;
+        this.queueFrameRedraw();
+    }
+
+    queueSceneRedraw() {
+        this.sceneDirty = true;
+        this.overlayDirty = true;
+        this.queueFrameRedraw();
+    }
+
+    queueOverlayRedraw() {
+        this.overlayDirty = true;
+        this.queueFrameRedraw();
+    }
+
+    queueFrameRedraw() {
         if (this.redrawQueued) {
             return;
         }
@@ -1073,15 +1175,106 @@ class ImageEditor {
         this.redrawFrame = requestAnimationFrame(() => {
             this.redrawQueued = false;
             this.redrawFrame = null;
-            if (this.active) {
-                this.redraw();
+            if (!this.active) {
+                return;
             }
+            let needsScene = this.sceneDirty || this.viewDirty;
+            if (needsScene) {
+                this.redrawScene();
+            }
+            if (needsScene || this.overlayDirty) {
+                this.redrawOverlay();
+            }
+            this.sceneDirty = false;
+            this.viewDirty = false;
+            this.overlayDirty = false;
         });
     }
 
+    /**
+     * Queues a full viewport redraw. Kept for compatibility with older editor code paths.
+     */
+    queueRedraw() {
+        this.queueViewRedraw();
+    }
+
+    redraw() {
+        if (!this.canvas) {
+            return;
+        }
+        this.redrawScene();
+        this.redrawOverlay();
+        this.sceneDirty = false;
+        this.viewDirty = false;
+        this.overlayDirty = false;
+    }
+    canvasCoordToImageCoord(x, y) {
+        return [x / this.zoomLevel - this.offsetX, y / this.zoomLevel - this.offsetY];
+    }
+
+    imageCoordToCanvasCoord(x, y) {
+        return [(x + this.offsetX) * this.zoomLevel, (y + this.offsetY) * this.zoomLevel];
+    }
+
+    isMouseInBox(x, y, width, height) {
+        return this.mouseX >= x && this.mouseX < x + width && this.mouseY >= y && this.mouseY < y + height;
+    }
+
+    isMouseInCircle(x, y, radius) {
+        let dx = this.mouseX - x;
+        let dy = this.mouseY - y;
+        return dx * dx + dy * dy < radius * radius;
+    }
+
+    markOutputChanged() {
+        this.changeCount++;
+        if (this.signalChanged) {
+            this.signalChanged();
+        }
+    }
+
+    markLayerContentChanged(layer) {
+        if (layer) {
+            layer.markContentChanged();
+        }
+        this.markOutputChanged();
+    }
+
+    setPreviewState(targetLayer, previewLayer) {
+        this.previewState = { targetLayer: targetLayer, previewLayer: previewLayer };
+        this.queueSceneRedraw();
+    }
+
+    clearPreviewState(queueScene = true) {
+        if (!this.previewState) {
+            return;
+        }
+        this.previewState = null;
+        if (queueScene) {
+            this.queueSceneRedraw();
+        }
+    }
+
+    shouldSkipLayerInScene(layer) {
+        return this.previewState && this.previewState.targetLayer == layer;
+    }
+
+
     setActiveLayer(layer) {
+        if (this.previewState && this.previewState.targetLayer != layer) {
+            this.clearPreviewState(false);
+        }
         if (this.activeLayer && this.activeLayer.div) {
             this.activeLayer.div.classList.remove('image_editor_layer_preview-active');
+        }
+        if (!layer) {
+            let oldLayer = this.activeLayer;
+            this.activeLayer = null;
+            for (let tool of Object.values(this.tools)) {
+                tool.onLayerChanged(oldLayer, null);
+            }
+            this.redraw();
+            return;
         }
         if (this.layers.indexOf(layer) == -1) {
             throw new Error(`layer not found, ${layer}`);
@@ -1098,6 +1291,7 @@ class ImageEditor {
     }
 
     clearLayers() {
+        this.clearPreviewState(false);
         this.layers = [];
         this.activeLayer = null;
         this.baseImageLayerId = null;
@@ -1151,6 +1345,7 @@ class ImageEditor {
                 layer.offsetY = mouseY - layer.height / 2;
             }
             this.activateTool('general');
+            this.markOutputChanged();
             this.redraw();
         };
         img.src = src;
@@ -1165,9 +1360,13 @@ class ImageEditor {
             this.layers.splice(index, 1);
             this.canvasList.removeChild(layer.div);
             this.canvasList.removeChild(layer.menuPopover);
-            if (this.activeLayer == layer) {
-                this.setActiveLayer(this.layers[Math.max(0, index - 1)]);
+            if (this.previewState && this.previewState.targetLayer == layer) {
+                this.clearPreviewState(false);
             }
+            if (this.activeLayer == layer) {
+                this.setActiveLayer(this.layers[Math.max(0, index - 1)] || null);
+            }
+            this.markOutputChanged();
             this.redraw();
         }
     }
@@ -1220,6 +1419,7 @@ class ImageEditor {
         if (!skipHistory) {
             this.addHistoryEntry(new ImageEditorHistoryEntry(this, 'layer_add', { layer: layer }));
         }
+        this.queueSceneRedraw();
     }
 
     duplicateLayer(layer) {
@@ -1269,6 +1469,7 @@ class ImageEditor {
         }
         this.offsetX = 0
         this.offsetY = 0;
+        this.markOutputChanged();
         if (this.active) {
             this.autoZoom();
             this.redraw();
@@ -1372,10 +1573,7 @@ class ImageEditor {
     }
 
     markChanged() {
-        this.changeCount++;
-        if (this.signalChanged) {
-            this.signalChanged();
-        }
+        this.markOutputChanged();
     }
 
     resize() {
@@ -1384,12 +1582,19 @@ class ImageEditor {
             let rightResizeBarWidth = this.rightResizeBar && this.rightResizeBar.parentElement == this.inputDiv ? this.rightResizeBar.clientWidth : 0;
             this.canvas.width = Math.max(100, this.inputDiv.clientWidth - this.leftBar.clientWidth - rightBarWidth - rightResizeBarWidth - 1);
             this.canvas.height = Math.max(100, this.inputDiv.clientHeight - this.bottomBar.clientHeight - 1);
+            if (this.canvasHolder) {
+                this.canvasHolder.style.width = `${this.canvas.width}px`;
+                this.canvasHolder.style.height = `${this.canvas.height}px`;
+            }
+            if (this.overlayCanvas) {
+                this.overlayCanvas.width = this.canvas.width;
+                this.overlayCanvas.height = this.canvas.height;
+            }
             if (this.maskHelperCanvas) {
                 this.maskHelperCanvas.width = this.canvas.width;
                 this.maskHelperCanvas.height = this.canvas.height;
             }
             this.redraw();
-            this.markChanged();
         }
     }
 
@@ -1417,13 +1622,21 @@ class ImageEditor {
         this.ctx.restore();
     }
 
-    redraw() {
-        if (!this.canvas) {
+    refreshFloatingPanels() {
+        for (let tool of Object.values(this.tools)) {
+            if (tool.colorControl) {
+                tool.colorControl.refreshFloatingPanel();
+            }
+        }
+    }
+
+    redrawScene() {
+        if (!this.canvas || !this.sceneCtx) {
             return;
         }
+        let priorCtx = this.ctx;
+        this.ctx = this.sceneCtx;
         this.ctx.save();
-        this.canvas.style.cursor = this.activeTool.cursor;
-        // Background:
         this.ctx.fillStyle = this.backgroundColor;
         this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
         let gridScale = this.gridScale;
@@ -1436,51 +1649,86 @@ class ImageEditor {
             this.renderFullGrid(gridScale / 8, 1, `color-mix(in srgb, ${this.gridColor} ${frac}%, ${this.backgroundColor})`);
         }
         this.renderFullGrid(gridScale, 3, this.gridColor);
-        // Image layers:
         for (let layer of this.layers) {
-            if (!layer.isMask) {
+            if (!layer.isMask && !this.shouldSkipLayerInScene(layer)) {
                 layer.drawToBack(this.ctx, this.offsetX, this.offsetY, this.zoomLevel);
             }
         }
-        // Masks:
         this.maskHelperCtx.clearRect(0, 0, this.maskHelperCanvas.width, this.maskHelperCanvas.height);
         for (let layer of this.layers) {
-            if (layer.isMask) {
+            if (layer.isMask && !this.shouldSkipLayerInScene(layer)) {
                 layer.drawToBack(this.maskHelperCtx, this.offsetX, this.offsetY, this.zoomLevel);
             }
         }
-        if (!this.activeLayer) {
+        if (this.activeLayer && !this.previewState) {
+            this.ctx.save();
+            this.ctx.globalAlpha = this.activeLayer.isMask ? 0.8 : 0.3;
+            this.ctx.globalCompositeOperation = 'luminosity';
+            this.ctx.drawImage(this.maskHelperCanvas, 0, 0);
             this.ctx.restore();
-            for (let tool of Object.values(this.tools)) {
-                if (tool.colorControl) {
-                    tool.colorControl.refreshFloatingPanel();
-                }
-            }
+        }
+        this.ctx.restore();
+        this.ctx = priorCtx;
+    }
+
+    drawPreviewStateToOverlay() {
+        if (!this.previewState || !this.previewState.previewLayer) {
+            return;
+        }
+        let previewLayer = this.previewState.previewLayer;
+        if (previewLayer.isMask) {
+            return;
+        }
+        previewLayer.drawToBack(this.ctx, this.offsetX, this.offsetY, this.zoomLevel);
+    }
+
+    drawCurrentMaskOverlay(maskLayer = null) {
+        if (!this.activeLayer) {
             return;
         }
         this.ctx.save();
         this.ctx.globalAlpha = this.activeLayer.isMask ? 0.8 : 0.3;
         this.ctx.globalCompositeOperation = 'luminosity';
         this.ctx.drawImage(this.maskHelperCanvas, 0, 0);
-        this.ctx.restore();
-        // UI:
-        let [boundaryX, boundaryY] = this.imageCoordToCanvasCoord(this.finalOffsetX, this.finalOffsetY);
-        this.drawSelectionBox(boundaryX, boundaryY, this.realWidth * this.zoomLevel, this.realHeight * this.zoomLevel, this.boundaryColor, 16 * this.zoomLevel, 0);
-        let [offsetX, offsetY] = this.activeLayer.getOffset();
-        [offsetX, offsetY] = this.imageCoordToCanvasCoord(offsetX, offsetY);
-        this.drawSelectionBox(offsetX, offsetY, this.activeLayer.width * this.zoomLevel, this.activeLayer.height * this.zoomLevel, this.uiBorderColor, 8 * this.zoomLevel, this.activeLayer.rotation);
-        if (this.hasSelection) {
-            let [selectX, selectY] = this.imageCoordToCanvasCoord(this.selectX, this.selectY);
-            let offset = (Math.floor(Date.now() / 250) % 4) * 4 * this.zoomLevel;
-            this.drawSelectionBox(selectX, selectY, this.selectWidth * this.zoomLevel, this.selectHeight * this.zoomLevel, 'diff', 8 * this.zoomLevel, 0, offset);
+        if (maskLayer) {
+            maskLayer.drawToBack(this.ctx, this.offsetX, this.offsetY, this.zoomLevel);
         }
-        this.activeTool.draw();
         this.ctx.restore();
-        for (let tool of Object.values(this.tools)) {
-            if (tool.colorControl) {
-                tool.colorControl.refreshFloatingPanel();
+    }
+
+    redrawOverlay() {
+        if (!this.overlayCanvas || !this.overlayCtx) {
+            return;
+        }
+        let priorCtx = this.ctx;
+        this.ctx = this.overlayCtx;
+        this.overlayCanvas.style.cursor = this.activeTool ? this.activeTool.cursor : 'none';
+        this.ctx.clearRect(0, 0, this.overlayCanvas.width, this.overlayCanvas.height);
+        this.ctx.save();
+        this.drawPreviewStateToOverlay();
+        if (this.previewState) {
+            let previewMaskLayer = null;
+            if (this.previewState.previewLayer && this.previewState.previewLayer.isMask) {
+                previewMaskLayer = this.previewState.previewLayer;
             }
+            this.drawCurrentMaskOverlay(previewMaskLayer);
         }
+        if (this.activeLayer) {
+            let [boundaryX, boundaryY] = this.imageCoordToCanvasCoord(this.finalOffsetX, this.finalOffsetY);
+            this.drawSelectionBox(boundaryX, boundaryY, this.realWidth * this.zoomLevel, this.realHeight * this.zoomLevel, this.boundaryColor, 16 * this.zoomLevel, 0);
+            let [offsetX, offsetY] = this.activeLayer.getOffset();
+            [offsetX, offsetY] = this.imageCoordToCanvasCoord(offsetX, offsetY);
+            this.drawSelectionBox(offsetX, offsetY, this.activeLayer.width * this.zoomLevel, this.activeLayer.height * this.zoomLevel, this.uiBorderColor, 8 * this.zoomLevel, this.activeLayer.rotation);
+            if (this.hasSelection) {
+                let [selectX, selectY] = this.imageCoordToCanvasCoord(this.selectX, this.selectY);
+                let offset = (Math.floor(Date.now() / 250) % 4) * 4 * this.zoomLevel;
+                this.drawSelectionBox(selectX, selectY, this.selectWidth * this.zoomLevel, this.selectHeight * this.zoomLevel, 'diff', 8 * this.zoomLevel, 0, offset);
+            }
+            this.activeTool.draw();
+        }
+        this.ctx.restore();
+        this.ctx = priorCtx;
+        this.refreshFloatingPanels();
     }
 
     getImageWithBounds(x, y, width, height, format = 'image/png', layerOnly = null) {
@@ -1614,6 +1862,7 @@ class ImageEditor {
         }
         layer.saveBeforeEdit();
         layer.ctx.clearRect(minX, minY, width, height);
+        this.markLayerContentChanged(layer);
         this.redraw();
     }
 
