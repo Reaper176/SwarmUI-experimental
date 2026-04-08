@@ -2,7 +2,12 @@ let imageHistorySelected = new Set();
 let imageHistoryBulkActionRunning = false;
 let imageHistoryShowHidden = localStorage.getItem('image_history_show_hidden') == 'true';
 let imageHistoryRefreshQueued = false;
+let imageHistoryHasLoadedOnce = false;
+let imageHistoryInitialAutoRetryUsed = false;
+let imageHistoryAutoRetryTimer = null;
+let imageHistoryNextLoadIsRetry = false;
 const IMAGE_HISTORY_METADATA_CACHE_LIMIT = 1024;
+const IMAGE_HISTORY_AUTO_RETRY_DELAY_MS = 1500;
 const imageHistoryMetadataCache = new Map();
 
 function getHistoryImageSrc(fullSrc) {
@@ -27,6 +32,106 @@ function requestImageHistoryRefresh() {
     else {
         setTimeout(run, 0);
     }
+}
+
+function clearImageHistoryAutoRetry() {
+    if (imageHistoryAutoRetryTimer) {
+        clearTimeout(imageHistoryAutoRetryTimer);
+        imageHistoryAutoRetryTimer = null;
+    }
+    imageHistoryNextLoadIsRetry = false;
+}
+
+function retryImageHistoryManually() {
+    clearImageHistoryAutoRetry();
+    if (imageHistoryBrowser) {
+        imageHistoryBrowser.lightRefresh();
+    }
+}
+
+function ensureImageHistoryStatusReady() {
+    let statusElem = document.getElementById('image_history_request_status');
+    if (!statusElem || statusElem.dataset.ready) {
+        return;
+    }
+    statusElem.dataset.ready = 'true';
+    getRequiredElementById('image_history_retry_button').addEventListener('click', () => {
+        retryImageHistoryManually();
+    });
+}
+
+function setImageHistoryRequestStatus(state, message = '') {
+    let statusElem = document.getElementById('image_history_request_status');
+    let textElem = document.getElementById('image_history_request_status_text');
+    let retryButton = document.getElementById('image_history_retry_button');
+    if (!statusElem || !textElem || !retryButton) {
+        return;
+    }
+    statusElem.dataset.state = state;
+    textElem.innerText = message;
+    textElem.title = message;
+    retryButton.style.display = state == 'error' ? '' : 'none';
+}
+
+function ensureImageHistoryBrowserShellReady() {
+    if (!imageHistoryBrowser) {
+        return;
+    }
+    imageHistoryBrowser.ensureBuilt();
+    ensureImageHistoryStatusReady();
+}
+
+function ensureImageHistoryHeaderControlsReady(sortBy, reverse, allowAnims, showHidden) {
+    ensureImageHistoryBrowserShellReady();
+    let sortElem = document.getElementById('image_history_sort_by');
+    let sortReverseElem = document.getElementById('image_history_sort_reverse');
+    let allowAnimsElem = document.getElementById('image_history_allow_anims');
+    let showHiddenElem = document.getElementById('image_history_show_hidden');
+    if (!sortElem || !sortReverseElem || !allowAnimsElem || !showHiddenElem) {
+        return null;
+    }
+    sortElem.value = sortBy;
+    sortReverseElem.checked = reverse;
+    allowAnimsElem.checked = allowAnims;
+    showHiddenElem.checked = showHidden;
+    if (!sortElem.dataset.ready) {
+        sortElem.dataset.ready = 'true';
+        sortElem.addEventListener('change', () => {
+            localStorage.setItem('image_history_sort_by', sortElem.value);
+            requestImageHistoryRefresh();
+        });
+        sortReverseElem.addEventListener('change', () => {
+            localStorage.setItem('image_history_sort_reverse', sortReverseElem.checked);
+            requestImageHistoryRefresh();
+        });
+        allowAnimsElem.addEventListener('change', () => {
+            localStorage.setItem('image_history_allow_anims', allowAnimsElem.checked);
+            requestImageHistoryRefresh();
+        });
+        showHiddenElem.addEventListener('change', () => {
+            imageHistoryShowHidden = showHiddenElem.checked;
+            localStorage.setItem('image_history_show_hidden', showHiddenElem.checked);
+            requestImageHistoryRefresh();
+        });
+    }
+    ensureImageHistoryBulkControlsReady();
+    return { sortElem, sortReverseElem, allowAnimsElem, showHiddenElem };
+}
+
+function scheduleImageHistoryAutoRetry() {
+    if (imageHistoryHasLoadedOnce || imageHistoryInitialAutoRetryUsed || imageHistoryAutoRetryTimer) {
+        return false;
+    }
+    imageHistoryInitialAutoRetryUsed = true;
+    imageHistoryAutoRetryTimer = setTimeout(() => {
+        imageHistoryAutoRetryTimer = null;
+        imageHistoryNextLoadIsRetry = true;
+        setImageHistoryRequestStatus('retrying', 'Retrying history load...');
+        if (imageHistoryBrowser) {
+            imageHistoryBrowser.lightRefresh();
+        }
+    }, IMAGE_HISTORY_AUTO_RETRY_DELAY_MS);
+    return true;
 }
 
 function parseHistoryMetadata(metadata) {
@@ -377,55 +482,27 @@ async function deleteSelectedHistoryImages() {
     }
 }
 
-function listOutputHistoryFolderAndFiles(path, isRefresh, callback, depth) {
+function listOutputHistoryFolderAndFiles(path, isRefresh, callback, depth, onError = null) {
+    ensureImageHistoryBrowserShellReady();
     let sortBy = localStorage.getItem('image_history_sort_by') ?? 'Name';
     let reverse = localStorage.getItem('image_history_sort_reverse') == 'true';
     let allowAnims = localStorage.getItem('image_history_allow_anims') != 'false';
     let showHidden = imageHistoryShowHidden;
-    let sortElem = document.getElementById('image_history_sort_by');
-    let sortReverseElem = document.getElementById('image_history_sort_reverse');
-    let allowAnimsElem = document.getElementById('image_history_allow_anims');
-    let showHiddenElem = document.getElementById('image_history_show_hidden');
-    let fix = null;
-    if (sortElem) {
-        sortBy = sortElem.value;
-        reverse = sortReverseElem.checked;
-        allowAnims = allowAnimsElem.checked;
-        showHidden = showHiddenElem.checked;
+    let controlElems = ensureImageHistoryHeaderControlsReady(sortBy, reverse, allowAnims, showHidden);
+    if (controlElems) {
+        sortBy = controlElems.sortElem.value;
+        reverse = controlElems.sortReverseElem.checked;
+        allowAnims = controlElems.allowAnimsElem.checked;
+        showHidden = controlElems.showHiddenElem.checked;
         imageHistoryShowHidden = showHidden;
-        ensureImageHistoryBulkControlsReady();
-    }
-    else { // first call happens before headers are built atm
-        fix = () => {
-            let sortElem = document.getElementById('image_history_sort_by');
-            let sortReverseElem = document.getElementById('image_history_sort_reverse');
-            let allowAnimsElem = document.getElementById('image_history_allow_anims');
-            let showHiddenElem = document.getElementById('image_history_show_hidden');
-            sortElem.value = sortBy;
-            sortReverseElem.checked = reverse;
-            showHiddenElem.checked = showHidden;
-            sortElem.addEventListener('change', () => {
-                localStorage.setItem('image_history_sort_by', sortElem.value);
-                requestImageHistoryRefresh();
-            });
-            sortReverseElem.addEventListener('change', () => {
-                localStorage.setItem('image_history_sort_reverse', sortReverseElem.checked);
-                requestImageHistoryRefresh();
-            });
-            allowAnimsElem.addEventListener('change', () => {
-                localStorage.setItem('image_history_allow_anims', allowAnimsElem.checked);
-                requestImageHistoryRefresh();
-            });
-            showHiddenElem.addEventListener('change', () => {
-                imageHistoryShowHidden = showHiddenElem.checked;
-                localStorage.setItem('image_history_show_hidden', showHiddenElem.checked);
-                requestImageHistoryRefresh();
-            });
-            ensureImageHistoryBulkControlsReady();
-        }
     }
     let prefix = path == '' ? '' : (path.endsWith('/') ? path : `${path}/`);
+    let isRetryLoad = imageHistoryNextLoadIsRetry;
+    imageHistoryNextLoadIsRetry = false;
+    setImageHistoryRequestStatus(isRetryLoad ? 'retrying' : 'loading', isRetryLoad ? 'Retrying history load...' : 'Loading history...');
     genericRequest('ListImages', {'path': path, 'depth': depth, 'sortBy': sortBy, 'sortReverse': reverse, 'includeHidden': showHidden}, data => {
+        clearImageHistoryAutoRetry();
+        imageHistoryHasLoadedOnce = true;
         let folders = data.folders.sort((a, b) => b.toLowerCase().localeCompare(a.toLowerCase()));
         function isPreSortFile(f) {
             return f.src == 'index.html'; // Grid index files
@@ -438,8 +515,17 @@ function listOutputHistoryFolderAndFiles(path, isRefresh, callback, depth) {
             return { 'name': fullSrc, 'data': { 'src': getHistoryImageSrc(fullSrc), 'fullsrc': fullSrc, 'name': f.src, 'metadata': safeInterpretHistoryMetadata(f.metadata, fullSrc) } };
         });
         callback(folders, mapped);
-        if (fix) {
-            fix();
+        setImageHistoryRequestStatus('idle');
+    }, 0, error => {
+        showError(error);
+        let shouldRetry = !isRetryLoad && scheduleImageHistoryAutoRetry();
+        let errorMessage = `History failed to load: ${error}`;
+        if (shouldRetry) {
+            errorMessage += ' Retrying once...';
+        }
+        setImageHistoryRequestStatus('error', errorMessage);
+        if (onError) {
+            onError(error);
         }
     });
 }
@@ -605,11 +691,12 @@ function selectOutputInHistory(image, div) {
 }
 
 let imageHistoryBrowser = new GenPageBrowserClass('image_history', listOutputHistoryFolderAndFiles, 'imagehistorybrowser', 'Thumbnails', describeOutputFile, selectOutputInHistory,
-    `<label for="image_history_sort_by">Sort:</label> <select id="image_history_sort_by"><option>Name</option><option>Date</option></select> <input type="checkbox" id="image_history_sort_reverse"> <label for="image_history_sort_reverse">Reverse</label> &emsp; <input type="checkbox" id="image_history_allow_anims" checked autocomplete="off"> <label for="image_history_allow_anims">Allow Animation</label> &emsp; <input type="checkbox" id="image_history_show_hidden" autocomplete="off"> <label for="image_history_show_hidden">Show Hidden</label> <span id="image_history_bulk_controls" class="image-history-bulk-controls"><span id="image_history_selected_count" class="image-history-selected-count">0 selected</span> <button id="image_history_select_all" class="refresh-button">Select All</button> <button id="image_history_clear_selection" class="refresh-button">Clear</button> <button id="image_history_hide_selected" class="refresh-button">Hide Selected</button> <button id="image_history_unhide_selected" class="refresh-button">Unhide Selected</button> <button id="image_history_delete_selected" class="interrupt-button">Delete Selected</button></span>`);
+    `<label for="image_history_sort_by">Sort:</label> <select id="image_history_sort_by"><option>Name</option><option>Date</option></select> <input type="checkbox" id="image_history_sort_reverse"> <label for="image_history_sort_reverse">Reverse</label> &emsp; <input type="checkbox" id="image_history_allow_anims" checked autocomplete="off"> <label for="image_history_allow_anims">Allow Animation</label> &emsp; <input type="checkbox" id="image_history_show_hidden" autocomplete="off"> <label for="image_history_show_hidden">Show Hidden</label> <span id="image_history_bulk_controls" class="image-history-bulk-controls"><span id="image_history_selected_count" class="image-history-selected-count">0 selected</span> <button id="image_history_select_all" class="refresh-button">Select All</button> <button id="image_history_clear_selection" class="refresh-button">Clear</button> <button id="image_history_hide_selected" class="refresh-button">Hide Selected</button> <button id="image_history_unhide_selected" class="refresh-button">Unhide Selected</button> <button id="image_history_delete_selected" class="interrupt-button">Delete Selected</button></span> <span id="image_history_request_status" class="image-history-request-status" data-state="idle"><span id="image_history_request_status_text" class="image-history-request-status-text"></span> <button id="image_history_retry_button" class="refresh-button" style="display:none;">Retry</button></span>`);
 imageHistoryBrowser.folderSelectedEvent = () => {
     clearImageHistorySelection();
 };
 imageHistoryBrowser.builtEvent = () => {
+    ensureImageHistoryStatusReady();
     pruneImageHistorySelectionToCurrentFiles();
     updateImageHistoryBulkControls();
 };

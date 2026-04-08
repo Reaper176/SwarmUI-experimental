@@ -907,6 +907,33 @@ body {
     text-align: center;
     font-size: 90%;
 }
+.image-history-request-status {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    margin-left: 0.5rem;
+    max-width: 34rem;
+    vertical-align: middle;
+}
+.image-history-request-status[data-state="idle"] {
+    display: none;
+}
+.image-history-request-status-text {
+    display: inline-block;
+    max-width: 24rem;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 90%;
+    color: var(--text-soft);
+}
+.image-history-request-status[data-state="loading"] .image-history-request-status-text,
+.image-history-request-status[data-state="retrying"] .image-history-request-status-text {
+    color: color-mix(in srgb, var(--text-soft) 65%, var(--yellow));
+}
+.image-history-request-status[data-state="error"] .image-history-request-status-text {
+    color: color-mix(in srgb, var(--text) 55%, var(--red));
+}
 #image_history_delete_selected.interrupt-button {
     min-width: auto;
     margin-left: 0.2rem;

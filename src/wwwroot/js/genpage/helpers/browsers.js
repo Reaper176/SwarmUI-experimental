@@ -131,6 +131,7 @@ class GenPageBrowserClass {
         this.folderSelectedEvent = null;
         this.builtEvent = null;
         this.sizeChangedEvent = null;
+        this.updateFailedEvent = null;
         this.filterUpdateTimeout = null;
         this.filterUpdateDelayMs = 120;
         this.lastFiles = [];
@@ -143,6 +144,7 @@ class GenPageBrowserClass {
         this.lastListCache = null;
         this.runAfterUpdate = [];
         this.refreshHandler = (callback) => callback();
+        this.pendingRefreshPath = null;
         this.checkIsSmall();
     }
 
@@ -166,6 +168,49 @@ class GenPageBrowserClass {
             this.rerenderPlanned = false;
             this.rerender();
         }, timeout);
+    }
+
+    /**
+     * Ensures the browser shell exists even before any data has loaded.
+     */
+    ensureBuilt() {
+        if (!this.hasGenerated) {
+            this.build(this.folder || '', [], []);
+        }
+    }
+
+    /**
+     * Marks the current update as completed successfully.
+     */
+    completeUpdate(callback = null) {
+        this.pendingRefreshPath = null;
+        this.updatePendingSince = null;
+        if (callback) {
+            setTimeout(() => callback(), 100);
+        }
+        if (this.runAfterUpdate.length > 0) {
+            let first = this.runAfterUpdate.shift();
+            first();
+        }
+    }
+
+    /**
+     * Marks the current update as failed and releases any pending retry lockout.
+     */
+    failUpdate(error = null) {
+        if (this.pendingRefreshPath != null) {
+            this.folder = this.pendingRefreshPath;
+            this.pendingRefreshPath = null;
+        }
+        this.noContentUpdates = false;
+        this.updatePendingSince = null;
+        if (this.updateFailedEvent) {
+            this.updateFailedEvent(error);
+        }
+        if (this.runAfterUpdate.length > 0) {
+            let first = this.runAfterUpdate.shift();
+            first();
+        }
     }
 
     /**
@@ -232,6 +277,7 @@ class GenPageBrowserClass {
             this.lastListCache = null;
             this.chunksRendered = 0;
             let path = this.folder;
+            this.pendingRefreshPath = path;
             this.folder = '';
             let depth = this.depth;
             this.noContentUpdates = true;
@@ -266,20 +312,19 @@ class GenPageBrowserClass {
         let parseContent = (folders, files) => {
             this.lastListCache = { folder, folders, files };
             this.build(folder, folders, files);
-            this.updatePendingSince = null;
-            if (callback) {
-                setTimeout(() => callback(), 100);
-            }
-            if (this.runAfterUpdate.length > 0) {
-                let first = this.runAfterUpdate.shift();
-                first();
-            }
+            this.completeUpdate(callback);
         };
         if (!isRefresh && this.lastListCache && this.lastListCache.folder == folder) {
             parseContent(this.lastListCache.folders, this.lastListCache.files);
             return;
         }
-        this.listFoldersAndFiles(folder, isRefresh, parseContent, this.depth);
+        try {
+            this.listFoldersAndFiles(folder, isRefresh, parseContent, this.depth, this.failUpdate.bind(this));
+        }
+        catch (error) {
+            console.error(`Browser '${this.id}' failed to update`, error);
+            this.failUpdate(error);
+        }
     }
 
     /**

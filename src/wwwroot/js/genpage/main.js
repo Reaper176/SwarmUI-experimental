@@ -764,6 +764,7 @@ function genpageLoad() {
     reviseStatusBar();
     loadHashHelper();
     getSession(() => {
+        ensureImageHistoryBrowserShellReady();
         imageHistoryBrowser.navigate('');
         initialModelListLoad();
         genericRequest('ListT2IParams', {}, data => {
