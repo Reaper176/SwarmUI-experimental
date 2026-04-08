@@ -113,29 +113,47 @@ class ImageEditorTool {
 
     /** Returns the current selection rectangle in layer-local pixel coordinates, or null if no selection is active. */
     getSelectionBoundsInLayer(layer) {
-        let quad = this.getSelectionQuadInLayer(layer);
-        if (!quad) {
+        if (!this.editor.hasSelectionMask()) {
             return null;
         }
-        let xs = quad.map(p => p[0]);
-        let ys = quad.map(p => p[1]);
+        let selectionMask = this.editor.getSelectionMaskCanvasForLayer(layer);
+        let imageData = selectionMask.getContext('2d').getImageData(0, 0, selectionMask.width, selectionMask.height).data;
+        let minX = selectionMask.width;
+        let minY = selectionMask.height;
+        let maxX = -1;
+        let maxY = -1;
+        for (let y = 0; y < selectionMask.height; y++) {
+            for (let x = 0; x < selectionMask.width; x++) {
+                if (imageData[(y * selectionMask.width + x) * 4 + 3] <= 0) {
+                    continue;
+                }
+                minX = Math.min(minX, x);
+                minY = Math.min(minY, y);
+                maxX = Math.max(maxX, x);
+                maxY = Math.max(maxY, y);
+            }
+        }
+        if (maxX < minX || maxY < minY) {
+            return null;
+        }
         return {
-            minX: Math.round(Math.min(...xs)),
-            minY: Math.round(Math.min(...ys)),
-            maxX: Math.round(Math.max(...xs)),
-            maxY: Math.round(Math.max(...ys))
+            minX: minX,
+            minY: minY,
+            maxX: maxX + 1,
+            maxY: maxY + 1
         };
     }
 
     /** Returns the current selection quadrilateral in layer-local pixel coordinates, or null if no selection is active. */
     getSelectionQuadInLayer(layer) {
-        if (!this.editor.hasSelection) {
+        let bounds = this.editor.getSelectionBounds();
+        if (!bounds) {
             return null;
         }
-        let x1 = this.editor.selectX;
-        let y1 = this.editor.selectY;
-        let x2 = this.editor.selectX + this.editor.selectWidth;
-        let y2 = this.editor.selectY + this.editor.selectHeight;
+        let x1 = bounds.x;
+        let y1 = bounds.y;
+        let x2 = bounds.x + bounds.width;
+        let y2 = bounds.y + bounds.height;
         let corners = [
             [x1, y1],
             [x2, y1],
@@ -154,17 +172,7 @@ class ImageEditorTool {
 
     /** Applies the current selection as a clip path on the given canvas context, in layer-local coordinates. No-op if no selection. */
     applySelectionClip(ctx, layer) {
-        let quad = this.getSelectionQuadInLayer(layer);
-        if (!quad) {
-            return;
-        }
-        ctx.beginPath();
-        ctx.moveTo(quad[0][0], quad[0][1]);
-        for (let i = 1; i < quad.length; i++) {
-            ctx.lineTo(quad[i][0], quad[i][1]);
-        }
-        ctx.closePath();
-        ctx.clip();
+        return this.editor.applySelectionMaskClip(ctx, layer);
     }
 }
 
@@ -228,7 +236,7 @@ class ImageEditorToolWithColor extends ImageEditorTool {
                 colorPickerHelper.close();
             }
             else {
-                let isMask = this.editor.activeLayer && this.editor.activeLayer.isMask;
+                let isMask = this.editor.isLayerMaskLike(this.editor.activeLayer);
                 colorPickerHelper.open(this.colorBlock, this.color, (newColor) => {
                     this.colorText.value = newColor;
                     this.colorSelector.style.backgroundColor = newColor;
@@ -270,8 +278,8 @@ class ImageEditorToolWithColor extends ImageEditorTool {
         if (!this.colorText) {
             return;
         }
-        let wasMask = oldLayer && oldLayer.isMask;
-        let isMask = newLayer && newLayer.isMask;
+        let wasMask = this.editor.isLayerMaskLike(oldLayer);
+        let isMask = this.editor.isLayerMaskLike(newLayer);
         if (wasMask) {
             this.maskColor = this.color;
         }
@@ -362,6 +370,9 @@ class ImageEditorToolGeneral extends ImageEditorTool {
     }
 
     activeLayerControlCircles() {
+        if (!this.editor.activeLayer || this.editor.activeLayer.isAdjustmentLayer()) {
+            return [];
+        }
         let [offsetX, offsetY] = this.editor.imageCoordToCanvasCoord(this.editor.activeLayer.offsetX, this.editor.activeLayer.offsetY);
         let [width, height] = [this.editor.activeLayer.width * this.editor.zoomLevel, this.editor.activeLayer.height * this.editor.zoomLevel];
         let circles = [];
@@ -431,7 +442,9 @@ class ImageEditorToolGeneral extends ImageEditorTool {
             this.editor.ctx.strokeStyle = '#ffffff';
             this.editor.ctx.fillStyle = '#000000';
             if (this.editor.isMouseInCircle(circle.x, circle.y, circle.radius)) {
-                this.editor.canvas.style.cursor = 'grab';
+                if (this.editor.overlayCanvas) {
+                    this.editor.overlayCanvas.style.cursor = 'grab';
+                }
                 this.editor.ctx.strokeStyle = '#000000';
                 this.editor.ctx.fillStyle = '#ffffff';
             }
@@ -457,6 +470,9 @@ class ImageEditorToolGeneral extends ImageEditorTool {
     onMouseDown(e) {
         this.fixCursor();
         this.currentDragCircle = null;
+        if (!this.editor.activeLayer || this.editor.activeLayer.isAdjustmentLayer()) {
+            return;
+        }
         for (let circle of this.activeLayerControlCircles()) {
             if (this.editor.isMouseInCircle(circle.x, circle.y, circle.radius)) {
                 this.editor.activeLayer.savePositions();
@@ -476,6 +492,9 @@ class ImageEditorToolGeneral extends ImageEditorTool {
             let dx = (this.editor.mouseX - this.editor.lastMouseX) / this.editor.zoomLevel;
             let dy = (this.editor.mouseY - this.editor.lastMouseY) / this.editor.zoomLevel;
             let target = this.editor.activeLayer;
+            if (!target) {
+                return false;
+            }
             let [mouseX, mouseY] = this.editor.canvasCoordToImageCoord(this.editor.mouseX, this.editor.mouseY);
             if (this.currentDragCircle == 'rotator') {
                 let centerX = target.offsetX + target.width / 2;
@@ -484,7 +503,8 @@ class ImageEditorToolGeneral extends ImageEditorTool {
                 if (e.ctrlKey) {
                     target.rotation = Math.round(target.rotation / (Math.PI / 16)) * (Math.PI / 16);
                 }
-                this.editor.markChanged();
+                this.editor.markOutputChanged();
+                this.editor.queueViewRedraw();
             }
             else if (this.currentDragCircle) {
                 let current = this.getControlCircle(this.currentDragCircle);
@@ -562,11 +582,13 @@ class ImageEditorToolGeneral extends ImageEditorTool {
                         this.snapLayerResizeToBaseImage(target, handleDef);
                     }
                 }
-                this.editor.markChanged();
+                this.editor.markOutputChanged();
+                this.editor.queueViewRedraw();
             }
             else {
                 this.editor.offsetX += dx;
                 this.editor.offsetY += dy;
+                this.editor.queueViewRedraw();
             }
             return true;
         }
@@ -585,6 +607,9 @@ class ImageEditorToolMove extends ImageEditorTool {
     }
 
     onMouseDown(e) {
+        if (!this.editor.activeLayer || this.editor.activeLayer.isAdjustmentLayer()) {
+            return;
+        }
         this.startingX = this.editor.activeLayer.offsetX;
         this.startingY = this.editor.activeLayer.offsetY;
         this.moveX = 0;
@@ -618,7 +643,8 @@ class ImageEditorToolMove extends ImageEditorTool {
                 layer.offsetX = Math.round(layer.offsetX / 32) * 32;
                 layer.offsetY = Math.round(layer.offsetY / 32) * 32;
             }
-            this.editor.markChanged();
+            this.editor.markOutputChanged();
+            this.editor.queueViewRedraw();
             return true;
         }
         return false;
@@ -632,12 +658,17 @@ class ImageEditorToolMove extends ImageEditorTool {
 }
 
 /**
- * The selection tool.
+ * Shared base class for marquee-style selection tools.
  */
-class ImageEditorToolSelect extends ImageEditorTool {
-    constructor(editor) {
-        super(editor, 'select', 'select', 'Select', 'Select a region of the image.\nHotKey: S', 's');
+class ImageEditorToolMarqueeBase extends ImageEditorTool {
+    constructor(editor, id, icon, name, description, hotkey = null) {
+        super(editor, id, icon, name, description, hotkey);
         this.copyMode = 'final';
+        this.dragging = false;
+        this.startX = 0;
+        this.startY = 0;
+        this.currentX = 0;
+        this.currentY = 0;
         let copyDropdown = `<div class="image-editor-tool-block">
             <label>Copy:&nbsp;</label>
             <select class="id-copy-mode" style="width:120px;">
@@ -654,46 +685,649 @@ class ImageEditorToolSelect extends ImageEditorTool {
             this.copyMode = this.copyModeSelect.value;
         });
         this.configDiv.querySelector('.id-make-region').addEventListener('click', () => {
-            if (this.editor.hasSelection) {
-                // TODO: This should create a new pseudo-layer that highlights a simple box and render the region text inside of it
+            let bounds = this.editor.getSelectionBounds();
+            if (bounds) {
                 let promptBox = getRequiredElementById('alt_prompt_textbox');
                 function roundClean(v) {
                     return Math.round(v * 1000) / 1000;
                 }
-                let regionText = `\n<region:${roundClean(this.editor.selectX / this.editor.realWidth)},${roundClean(this.editor.selectY / this.editor.realHeight)},${roundClean(this.editor.selectWidth / this.editor.realWidth)},${roundClean(this.editor.selectHeight / this.editor.realHeight)}>`;
+                let regionText = `\n<region:${roundClean(bounds.x / this.editor.realWidth)},${roundClean(bounds.y / this.editor.realHeight)},${roundClean(bounds.width / this.editor.realWidth)},${roundClean(bounds.height / this.editor.realHeight)}>`;
                 promptBox.value += regionText;
                 triggerChangeFor(promptBox);
             }
         });
     }
 
+    createMaskCanvas() {
+        return document.createElement('canvas');
+    }
+
+    buildSelectionMask(maskCtx, minX, minY, width, height) {
+        maskCtx.fillRect(minX, minY, width, height);
+    }
+
+    drawSelectionPreview(minX, minY, width, height) {
+        let [selectX, selectY] = this.editor.imageCoordToCanvasCoord(minX, minY);
+        this.editor.drawSelectionBox(selectX, selectY, width * this.editor.zoomLevel, height * this.editor.zoomLevel, 'diff', 8 * this.editor.zoomLevel, 0, 0);
+    }
+
     onMouseDown(e) {
+        if (e.button != 0) {
+            return;
+        }
         let [mouseX, mouseY] = this.editor.canvasCoordToImageCoord(this.editor.mouseX, this.editor.mouseY);
-        this.editor.selectX = mouseX;
-        this.editor.selectY = mouseY;
-        this.editor.hasSelection = false;
+        this.dragging = true;
+        this.startX = mouseX;
+        this.startY = mouseY;
+        this.currentX = mouseX;
+        this.currentY = mouseY;
+    }
+
+    onMouseMove(e) {
+        if (!this.dragging) {
+            return;
+        }
+        let [mouseX, mouseY] = this.editor.canvasCoordToImageCoord(this.editor.mouseX, this.editor.mouseY);
+        this.currentX = mouseX;
+        this.currentY = mouseY;
+    }
+
+    draw() {
+        if (!this.dragging) {
+            return;
+        }
+        let minX = Math.round(Math.min(this.startX, this.currentX));
+        let minY = Math.round(Math.min(this.startY, this.currentY));
+        let width = Math.max(1, Math.round(Math.abs(this.currentX - this.startX)));
+        let height = Math.max(1, Math.round(Math.abs(this.currentY - this.startY)));
+        this.drawSelectionPreview(minX, minY, width, height);
+    }
+
+    onGlobalMouseMove(e) {
+        if (this.dragging && this.editor.mouseDown) {
+            this.onMouseMove(e);
+            return true;
+        }
+        return false;
+    }
+
+    finishSelection() {
+        if (!this.dragging) {
+            return false;
+        }
+        this.dragging = false;
+        let minX = Math.max(0, Math.min(this.editor.realWidth - 1, Math.round(Math.min(this.startX, this.currentX))));
+        let minY = Math.max(0, Math.min(this.editor.realHeight - 1, Math.round(Math.min(this.startY, this.currentY))));
+        let maxX = Math.max(minX + 1, Math.min(this.editor.realWidth, Math.round(Math.max(this.startX, this.currentX))));
+        let maxY = Math.max(minY + 1, Math.min(this.editor.realHeight, Math.round(Math.max(this.startY, this.currentY))));
+        let maskCanvas = document.createElement('canvas');
+        maskCanvas.width = this.editor.realWidth;
+        maskCanvas.height = this.editor.realHeight;
+        let maskCtx = maskCanvas.getContext('2d');
+        maskCtx.fillStyle = '#ffffff';
+        this.buildSelectionMask(maskCtx, minX, minY, maxX - minX, maxY - minY);
+        this.editor.commitSelectionMask(maskCanvas);
+        return true;
     }
 
     onMouseUp(e) {
-        if (this.editor.hasSelection) {
-            if (this.editor.selectWidth < 0) {
-                this.editor.selectX += this.editor.selectWidth;
-                this.editor.selectWidth = -this.editor.selectWidth;
+        this.finishSelection();
+    }
+
+    onGlobalMouseUp(e) {
+        return this.finishSelection();
+    }
+}
+
+/**
+ * Rectangular marquee selection.
+ */
+class ImageEditorToolSelect extends ImageEditorToolMarqueeBase {
+    constructor(editor) {
+        super(editor, 'select', 'select', 'Rect Select', 'Rectangular marquee selection.\nHotKey: S', 's');
+    }
+}
+
+/**
+ * Ellipse marquee selection.
+ */
+class ImageEditorToolEllipseSelect extends ImageEditorToolMarqueeBase {
+    constructor(editor) {
+        super(editor, 'ellipse-select', 'ellipse_select', 'Ellipse Select', 'Ellipse marquee selection.');
+    }
+
+    buildSelectionMask(maskCtx, minX, minY, width, height) {
+        maskCtx.beginPath();
+        maskCtx.ellipse(minX + width / 2, minY + height / 2, Math.max(1, width / 2), Math.max(1, height / 2), 0, 0, 2 * Math.PI);
+        maskCtx.fill();
+    }
+}
+
+/**
+ * Freehand lasso selection.
+ */
+class ImageEditorToolLassoSelect extends ImageEditorTool {
+    constructor(editor) {
+        super(editor, 'lasso-select', 'lasso', 'Lasso Select', 'Freehand lasso selection.');
+        this.points = [];
+        this.dragging = false;
+    }
+
+    onMouseDown(e) {
+        if (e.button != 0) {
+            return;
+        }
+        let [mouseX, mouseY] = this.editor.canvasCoordToImageCoord(this.editor.mouseX, this.editor.mouseY);
+        this.points = [[mouseX, mouseY]];
+        this.dragging = true;
+    }
+
+    onMouseMove(e) {
+        if (!this.dragging) {
+            return;
+        }
+        let [mouseX, mouseY] = this.editor.canvasCoordToImageCoord(this.editor.mouseX, this.editor.mouseY);
+        this.points.push([mouseX, mouseY]);
+    }
+
+    onGlobalMouseMove(e) {
+        if (this.dragging && this.editor.mouseDown) {
+            this.onMouseMove(e);
+            return true;
+        }
+        return false;
+    }
+
+    draw() {
+        if (!this.dragging || this.points.length < 2) {
+            return;
+        }
+        this.editor.ctx.save();
+        this.editor.ctx.strokeStyle = '#ffffff';
+        this.editor.ctx.globalCompositeOperation = 'difference';
+        this.editor.ctx.lineWidth = 1;
+        this.editor.ctx.beginPath();
+        let [startX, startY] = this.editor.imageCoordToCanvasCoord(this.points[0][0], this.points[0][1]);
+        this.editor.ctx.moveTo(startX, startY);
+        for (let i = 1; i < this.points.length; i++) {
+            let [x, y] = this.editor.imageCoordToCanvasCoord(this.points[i][0], this.points[i][1]);
+            this.editor.ctx.lineTo(x, y);
+        }
+        this.editor.ctx.stroke();
+        this.editor.ctx.restore();
+    }
+
+    finishSelection() {
+        if (!this.dragging) {
+            return false;
+        }
+        this.dragging = false;
+        if (this.points.length < 2) {
+            this.points = [];
+            return false;
+        }
+        let maskCanvas = document.createElement('canvas');
+        maskCanvas.width = this.editor.realWidth;
+        maskCanvas.height = this.editor.realHeight;
+        let maskCtx = maskCanvas.getContext('2d');
+        maskCtx.fillStyle = '#ffffff';
+        maskCtx.beginPath();
+        maskCtx.moveTo(this.points[0][0], this.points[0][1]);
+        for (let i = 1; i < this.points.length; i++) {
+            maskCtx.lineTo(this.points[i][0], this.points[i][1]);
+        }
+        maskCtx.closePath();
+        maskCtx.fill();
+        this.editor.commitSelectionMask(maskCanvas);
+        this.points = [];
+        return true;
+    }
+
+    onMouseUp(e) {
+        this.finishSelection();
+    }
+
+    onGlobalMouseUp(e) {
+        return this.finishSelection();
+    }
+}
+
+/**
+ * Polygon lasso selection.
+ */
+class ImageEditorToolPolygonSelect extends ImageEditorTool {
+    constructor(editor) {
+        super(editor, 'polygon-select', 'polygon_lasso', 'Polygon Select', 'Click to place polygon points. Right click to finish.');
+        this.points = [];
+        this.hoverPoint = null;
+    }
+
+    onMouseDown(e) {
+        if (e.button != 0) {
+            return;
+        }
+        let [mouseX, mouseY] = this.editor.canvasCoordToImageCoord(this.editor.mouseX, this.editor.mouseY);
+        if (this.points.length >= 3) {
+            let [firstX, firstY] = this.points[0];
+            let dx = mouseX - firstX;
+            let dy = mouseY - firstY;
+            if (dx * dx + dy * dy <= 64) {
+                this.finishSelection();
+                return;
             }
-            if (this.editor.selectHeight < 0) {
-                this.editor.selectY += this.editor.selectHeight;
-                this.editor.selectHeight = -this.editor.selectHeight;
+        }
+        this.points.push([mouseX, mouseY]);
+        this.hoverPoint = [mouseX, mouseY];
+        this.editor.queueOverlayRedraw();
+    }
+
+    onMouseMove(e) {
+        if (this.points.length == 0) {
+            return;
+        }
+        let [mouseX, mouseY] = this.editor.canvasCoordToImageCoord(this.editor.mouseX, this.editor.mouseY);
+        this.hoverPoint = [mouseX, mouseY];
+    }
+
+    onContextMenu(e) {
+        if (this.points.length >= 3) {
+            e.preventDefault();
+            this.finishSelection();
+            return true;
+        }
+        return false;
+    }
+
+    draw() {
+        if (this.points.length == 0) {
+            return;
+        }
+        this.editor.ctx.save();
+        this.editor.ctx.strokeStyle = '#ffffff';
+        this.editor.ctx.globalCompositeOperation = 'difference';
+        this.editor.ctx.lineWidth = 1;
+        this.editor.ctx.beginPath();
+        let [startX, startY] = this.editor.imageCoordToCanvasCoord(this.points[0][0], this.points[0][1]);
+        this.editor.ctx.moveTo(startX, startY);
+        for (let i = 1; i < this.points.length; i++) {
+            let [x, y] = this.editor.imageCoordToCanvasCoord(this.points[i][0], this.points[i][1]);
+            this.editor.ctx.lineTo(x, y);
+        }
+        if (this.hoverPoint) {
+            let [hoverX, hoverY] = this.editor.imageCoordToCanvasCoord(this.hoverPoint[0], this.hoverPoint[1]);
+            this.editor.ctx.lineTo(hoverX, hoverY);
+        }
+        this.editor.ctx.stroke();
+        this.editor.ctx.restore();
+    }
+
+    finishSelection() {
+        if (this.points.length < 3) {
+            this.points = [];
+            this.hoverPoint = null;
+            this.editor.queueOverlayRedraw();
+            return false;
+        }
+        let maskCanvas = document.createElement('canvas');
+        maskCanvas.width = this.editor.realWidth;
+        maskCanvas.height = this.editor.realHeight;
+        let maskCtx = maskCanvas.getContext('2d');
+        maskCtx.fillStyle = '#ffffff';
+        maskCtx.beginPath();
+        maskCtx.moveTo(this.points[0][0], this.points[0][1]);
+        for (let i = 1; i < this.points.length; i++) {
+            maskCtx.lineTo(this.points[i][0], this.points[i][1]);
+        }
+        maskCtx.closePath();
+        maskCtx.fill();
+        this.editor.commitSelectionMask(maskCanvas);
+        this.points = [];
+        this.hoverPoint = null;
+        return true;
+    }
+}
+
+/**
+ * Shared color-threshold selection base.
+ */
+class ImageEditorToolColorSelectionBase extends ImageEditorTool {
+    constructor(editor, id, icon, name, description) {
+        super(editor, id, icon, name, description);
+    }
+
+    shouldUseContiguousSelection() {
+        return this.editor.selectionContiguous;
+    }
+
+    sampleTargetColor(imageData, x, y, width) {
+        let index = (y * width + x) * 4;
+        return [imageData[index], imageData[index + 1], imageData[index + 2], imageData[index + 3]];
+    }
+
+    isWithinTolerance(sourceData, x, y, width, targetColor, tolerance) {
+        let index = (y * width + x) * 4;
+        let diff = Math.abs(sourceData[index] - targetColor[0]) + Math.abs(sourceData[index + 1] - targetColor[1]) + Math.abs(sourceData[index + 2] - targetColor[2]) + Math.abs(sourceData[index + 3] - targetColor[3]);
+        return diff <= tolerance * 4;
+    }
+
+    buildSelectionMask(targetX, targetY, useContiguous) {
+        let sourceCanvas = this.editor.getSelectionSourceCanvas();
+        let sourceCtx = sourceCanvas.getContext('2d');
+        let imageData = sourceCtx.getImageData(0, 0, sourceCanvas.width, sourceCanvas.height);
+        let data = imageData.data;
+        let width = sourceCanvas.width;
+        let height = sourceCanvas.height;
+        if (targetX < 0 || targetY < 0 || targetX >= width || targetY >= height) {
+            return null;
+        }
+        let maskCanvas = document.createElement('canvas');
+        maskCanvas.width = width;
+        maskCanvas.height = height;
+        let maskCtx = maskCanvas.getContext('2d');
+        let maskImage = maskCtx.createImageData(width, height);
+        let maskData = maskImage.data;
+        let targetColor = this.sampleTargetColor(data, targetX, targetY, width);
+        let tolerance = Math.max(0, this.editor.selectionTolerance || 0);
+        if (useContiguous) {
+            let visited = new Uint8Array(width * height);
+            let stack = [[targetX, targetY]];
+            while (stack.length > 0) {
+                let [x, y] = stack.pop();
+                if (x < 0 || y < 0 || x >= width || y >= height) {
+                    continue;
+                }
+                let visitIndex = y * width + x;
+                if (visited[visitIndex]) {
+                    continue;
+                }
+                visited[visitIndex] = 1;
+                if (!this.isWithinTolerance(data, x, y, width, targetColor, tolerance)) {
+                    continue;
+                }
+                let outIndex = visitIndex * 4;
+                maskData[outIndex] = 255;
+                maskData[outIndex + 1] = 255;
+                maskData[outIndex + 2] = 255;
+                maskData[outIndex + 3] = 255;
+                stack.push([x - 1, y]);
+                stack.push([x + 1, y]);
+                stack.push([x, y - 1]);
+                stack.push([x, y + 1]);
             }
+        }
+        else {
+            for (let y = 0; y < height; y++) {
+                for (let x = 0; x < width; x++) {
+                    if (!this.isWithinTolerance(data, x, y, width, targetColor, tolerance)) {
+                        continue;
+                    }
+                    let outIndex = (y * width + x) * 4;
+                    maskData[outIndex] = 255;
+                    maskData[outIndex + 1] = 255;
+                    maskData[outIndex + 2] = 255;
+                    maskData[outIndex + 3] = 255;
+                }
+            }
+        }
+        maskCtx.putImageData(maskImage, 0, 0);
+        return maskCanvas;
+    }
+
+    onMouseDown(e) {
+        if (e.button != 0) {
+            return;
+        }
+        let [mouseX, mouseY] = this.editor.canvasCoordToImageCoord(this.editor.mouseX, this.editor.mouseY);
+        let maskCanvas = this.buildSelectionMask(Math.round(mouseX), Math.round(mouseY), this.shouldUseContiguousSelection());
+        if (maskCanvas) {
+            this.editor.commitSelectionMask(maskCanvas);
+        }
+    }
+}
+
+/**
+ * Magic-wand contiguous color selection.
+ */
+class ImageEditorToolMagicWand extends ImageEditorToolColorSelectionBase {
+    constructor(editor) {
+        super(editor, 'magic-wand', 'wand', 'Magic Wand', 'Select neighboring pixels by color.');
+    }
+}
+
+/**
+ * Color-select across the whole source by sampled color.
+ */
+class ImageEditorToolColorSelect extends ImageEditorToolColorSelectionBase {
+    constructor(editor) {
+        super(editor, 'color-select', 'colorselect', 'Color Select', 'Select all matching pixels by color.');
+    }
+
+    shouldUseContiguousSelection() {
+        return false;
+    }
+}
+
+/**
+ * Non-destructive crop tool.
+ */
+class ImageEditorToolCrop extends ImageEditorTool {
+    constructor(editor) {
+        super(editor, 'crop', 'crop', 'Crop', 'Non-destructive crop for the active image or mask layer.');
+        this.cursor = 'crosshair';
+        this.dragMode = null;
+        this.startX = 0;
+        this.startY = 0;
+        this.startCrop = null;
+    }
+
+    setActive() {
+        super.setActive();
+        if (this.editor.activeLayer && !this.editor.activeLayer.isAdjustmentLayer()) {
+            this.editor.beginCropSession(this.editor.activeLayer);
+        }
+    }
+
+    setInactive() {
+        if (this.editor.cropSession) {
+            this.editor.cancelCropSession();
+        }
+        super.setInactive();
+    }
+
+    onLayerChanged(oldLayer, newLayer) {
+        super.onLayerChanged(oldLayer, newLayer);
+        if (!this.active) {
+            return;
+        }
+        if (!newLayer || newLayer.isAdjustmentLayer()) {
+            this.editor.cancelCropSession();
+            return;
+        }
+        this.editor.beginCropSession(newLayer);
+    }
+
+    getPreviewLayer() {
+        if (this.editor.previewState && this.editor.previewState.targetLayer == this.editor.activeLayer) {
+            return this.editor.previewState.previewLayer;
+        }
+        return this.editor.activeLayer;
+    }
+
+    getCropControlCircles() {
+        let previewLayer = this.getPreviewLayer();
+        if (!previewLayer) {
+            return [];
+        }
+        let [offsetX, offsetY] = previewLayer.getOffset();
+        let [canvasX, canvasY] = this.editor.imageCoordToCanvasCoord(offsetX, offsetY);
+        let width = previewLayer.width * this.editor.zoomLevel;
+        let height = previewLayer.height * this.editor.zoomLevel;
+        let radius = 5;
+        let circles = [];
+        circles.push({ name: 'top-left', radius: radius, x: canvasX - radius / 2, y: canvasY - radius / 2 });
+        circles.push({ name: 'top-right', radius: radius, x: canvasX + width + radius / 2, y: canvasY - radius / 2 });
+        circles.push({ name: 'bottom-left', radius: radius, x: canvasX - radius / 2, y: canvasY + height + radius / 2 });
+        circles.push({ name: 'bottom-right', radius: radius, x: canvasX + width + radius / 2, y: canvasY + height + radius / 2 });
+        circles.push({ name: 'top', radius: radius, x: canvasX + width / 2, y: canvasY - radius / 2 });
+        circles.push({ name: 'bottom', radius: radius, x: canvasX + width / 2, y: canvasY + height + radius / 2 });
+        circles.push({ name: 'left', radius: radius, x: canvasX - radius / 2, y: canvasY + height / 2 });
+        circles.push({ name: 'right', radius: radius, x: canvasX + width + radius / 2, y: canvasY + height / 2 });
+        let angle = previewLayer.rotation;
+        if (angle != 0) {
+            let centerX = canvasX + width / 2;
+            let centerY = canvasY + height / 2;
+            for (let circle of circles) {
+                let relativeX = circle.x - centerX;
+                let relativeY = circle.y - centerY;
+                circle.x = relativeX * Math.cos(angle) - relativeY * Math.sin(angle) + centerX;
+                circle.y = relativeX * Math.sin(angle) + relativeY * Math.cos(angle) + centerY;
+            }
+        }
+        return circles;
+    }
+
+    getHoveredCropControlCircle() {
+        for (let circle of this.getCropControlCircles()) {
+            if (this.editor.isMouseInCircle(circle.x, circle.y, circle.radius * 1.5)) {
+                return circle;
+            }
+        }
+        return null;
+    }
+
+    draw() {
+        let previewLayer = this.getPreviewLayer();
+        if (!previewLayer) {
+            return;
+        }
+        let [offsetX, offsetY] = previewLayer.getOffset();
+        let [canvasX, canvasY] = this.editor.imageCoordToCanvasCoord(offsetX, offsetY);
+        this.editor.drawSelectionBox(canvasX, canvasY, previewLayer.width * this.editor.zoomLevel, previewLayer.height * this.editor.zoomLevel, 'diff', 8 * this.editor.zoomLevel, previewLayer.rotation);
+        let hoveredCircle = this.getHoveredCropControlCircle();
+        if (this.editor.overlayCanvas) {
+            this.editor.overlayCanvas.style.cursor = hoveredCircle ? 'grab' : this.cursor;
+        }
+        for (let circle of this.getCropControlCircles()) {
+            this.editor.ctx.strokeStyle = '#ffffff';
+            this.editor.ctx.fillStyle = '#000000';
+            if (hoveredCircle && hoveredCircle.name == circle.name) {
+                this.editor.ctx.strokeStyle = '#000000';
+                this.editor.ctx.fillStyle = '#ffffff';
+            }
+            this.editor.ctx.lineWidth = 1;
+            this.editor.ctx.beginPath();
+            this.editor.ctx.arc(circle.x, circle.y, circle.radius, 0, 2 * Math.PI);
+            this.editor.ctx.fill();
+            this.editor.ctx.stroke();
+        }
+    }
+
+    hitTest() {
+        let hoveredCircle = this.getHoveredCropControlCircle();
+        if (hoveredCircle) {
+            return hoveredCircle.name;
+        }
+        return 'new';
+    }
+
+    clampDraft(session) {
+        let layer = this.editor.getCropSessionLayer();
+        if (!layer) {
+            return;
+        }
+        session.draftCropX = Math.max(0, Math.min(layer.canvas.width - 1, Math.round(session.draftCropX)));
+        session.draftCropY = Math.max(0, Math.min(layer.canvas.height - 1, Math.round(session.draftCropY)));
+        session.draftCropWidth = Math.max(1, Math.min(layer.canvas.width - session.draftCropX, Math.round(session.draftCropWidth)));
+        session.draftCropHeight = Math.max(1, Math.min(layer.canvas.height - session.draftCropY, Math.round(session.draftCropHeight)));
+    }
+
+    onMouseDown(e) {
+        if (e.button != 0 || !this.editor.activeLayer || this.editor.activeLayer.isAdjustmentLayer()) {
+            return;
+        }
+        if (!this.editor.cropSession || this.editor.cropSession.layerId != this.editor.activeLayer.id) {
+            this.editor.beginCropSession(this.editor.activeLayer);
+        }
+        let session = this.editor.cropSession;
+        let layer = this.editor.activeLayer;
+        let [layerX, layerY] = layer.canvasCoordToLayerCoord(this.editor.mouseX, this.editor.mouseY);
+        this.dragMode = this.hitTest();
+        this.startX = layerX;
+        this.startY = layerY;
+        this.startCrop = {
+            cropX: session.draftCropX,
+            cropY: session.draftCropY,
+            cropWidth: session.draftCropWidth,
+            cropHeight: session.draftCropHeight
+        };
+        if (this.dragMode == 'new') {
+            session.draftCropX = Math.round(layerX);
+            session.draftCropY = Math.round(layerY);
+            session.draftCropWidth = 1;
+            session.draftCropHeight = 1;
+            this.clampDraft(session);
+            this.startCrop = {
+                cropX: session.draftCropX,
+                cropY: session.draftCropY,
+                cropWidth: 1,
+                cropHeight: 1
+            };
+            this.editor.updateCropSessionPreview();
         }
     }
 
     onGlobalMouseMove(e) {
-        if (this.editor.mouseDown) {
-            let [mouseX, mouseY] = this.editor.canvasCoordToImageCoord(this.editor.mouseX, this.editor.mouseY);
-            this.editor.selectWidth = mouseX - this.editor.selectX;
-            this.editor.selectHeight = mouseY - this.editor.selectY;
-            this.editor.hasSelection = true;
-            this.editor.markChanged();
+        if (!this.dragMode || !this.editor.mouseDown || !this.editor.cropSession) {
+            return false;
+        }
+        let layer = this.editor.getCropSessionLayer();
+        if (!layer) {
+            return false;
+        }
+        let session = this.editor.cropSession;
+        let [layerX, layerY] = layer.canvasCoordToLayerCoord(this.editor.mouseX, this.editor.mouseY);
+        let dx = layerX - this.startX;
+        let dy = layerY - this.startY;
+        session.draftCropX = this.startCrop.cropX;
+        session.draftCropY = this.startCrop.cropY;
+        session.draftCropWidth = this.startCrop.cropWidth;
+        session.draftCropHeight = this.startCrop.cropHeight;
+        if (this.dragMode == 'move') {
+            session.draftCropX += dx;
+            session.draftCropY += dy;
+        }
+        else if (this.dragMode == 'left' || this.dragMode == 'top-left' || this.dragMode == 'bottom-left') {
+            session.draftCropX += dx;
+            session.draftCropWidth -= dx;
+        }
+        else if (this.dragMode == 'right' || this.dragMode == 'top-right' || this.dragMode == 'bottom-right') {
+            session.draftCropWidth += dx;
+        }
+        if (this.dragMode == 'top' || this.dragMode == 'top-left' || this.dragMode == 'top-right') {
+            session.draftCropY += dy;
+            session.draftCropHeight -= dy;
+        }
+        else if (this.dragMode == 'bottom' || this.dragMode == 'bottom-left' || this.dragMode == 'bottom-right') {
+            session.draftCropHeight += dy;
+        }
+        if (this.dragMode == 'new') {
+            session.draftCropX = Math.min(this.startCrop.cropX, Math.round(layerX));
+            session.draftCropY = Math.min(this.startCrop.cropY, Math.round(layerY));
+            session.draftCropWidth = Math.abs(Math.round(layerX) - this.startCrop.cropX);
+            session.draftCropHeight = Math.abs(Math.round(layerY) - this.startCrop.cropY);
+        }
+        this.clampDraft(session);
+        this.editor.updateCropSessionPreview();
+        return true;
+    }
+
+    onMouseUp(e) {
+        this.dragMode = null;
+    }
+
+    onGlobalMouseUp(e) {
+        if (this.dragMode) {
+            this.dragMode = null;
             return true;
         }
         return false;
@@ -740,7 +1374,7 @@ class ImageEditorToolBrush extends ImageEditorToolWithColor {
         this.opacitySelector = this.configDiv.querySelector('.id-opac2');
         this.radiusNumber.addEventListener('change', () => { this.onConfigChange(); });
         this.opacityNumber.addEventListener('change', () => { this.onConfigChange(); });
-        this.lastTouch = null;
+        this.targetLayer = null;
     }
 
     onConfigChange() {
@@ -749,7 +1383,7 @@ class ImageEditorToolBrush extends ImageEditorToolWithColor {
         }
         this.radius = parseInt(this.radiusNumber.value);
         this.opacity = parseInt(this.opacityNumber.value) / 100;
-        this.editor.redraw();
+        this.editor.queueOverlayRedraw();
     }
 
     draw() {
@@ -757,22 +1391,28 @@ class ImageEditorToolBrush extends ImageEditorToolWithColor {
     }
 
     brush(force = 1) {
-        let [lastX, lastY] = this.editor.activeLayer.canvasCoordToLayerCoord(this.editor.lastMouseX, this.editor.lastMouseY);
-        let [x, y] = this.editor.activeLayer.canvasCoordToLayerCoord(this.editor.mouseX, this.editor.mouseY);
-        this.bufferLayer.drawFilledCircle(lastX, lastY, this.radius * force, this.color);
-        this.bufferLayer.drawFilledCircleStrokeBetween(lastX, lastY, x, y, this.radius * force, this.color);
-        this.bufferLayer.drawFilledCircle(x, y, this.radius * force, this.color);
-        this.editor.markChanged();
+        if (!this.targetLayer || !this.bufferLayer || !this.strokeLayer) {
+            return;
+        }
+        let [lastX, lastY] = this.targetLayer.canvasCoordToLayerCoord(this.editor.lastMouseX, this.editor.lastMouseY);
+        let [x, y] = this.targetLayer.canvasCoordToLayerCoord(this.editor.mouseX, this.editor.mouseY);
+        this.strokeLayer.ctx.clearRect(0, 0, this.strokeLayer.canvas.width, this.strokeLayer.canvas.height);
+        let drawColor = this.isEraser ? '#ffffff' : this.color;
+        this.strokeLayer.drawFilledCircle(lastX, lastY, this.radius * force, drawColor);
+        this.strokeLayer.drawFilledCircleStrokeBetween(lastX, lastY, x, y, this.radius * force, drawColor);
+        this.strokeLayer.drawFilledCircle(x, y, this.radius * force, drawColor);
+        this.applySelectionClip(this.strokeLayer.ctx, this.targetLayer);
+        this.bufferLayer.ctx.save();
+        this.bufferLayer.ctx.globalAlpha = this.opacity;
+        this.bufferLayer.ctx.globalCompositeOperation = this.isEraser ? 'destination-out' : 'source-over';
+        this.bufferLayer.ctx.drawImage(this.strokeLayer.canvas, 0, 0);
+        this.bufferLayer.ctx.restore();
+        this.bufferLayer.markContentChanged();
     }
 
     getForceFrom(e) {
-        if (e.touches && e.touches.length > 0) {
-            let touch = e.touches.item(0);
-            this.lastTouch = Date.now();
-            if (touch.force <= 0) {
-                return 1;
-            }
-            return touch.force;
+        if (e.pointerType && e.pointerType != 'mouse' && typeof e.pressure == 'number' && e.pressure > 0) {
+            return e.pressure;
         }
         return 1;
     }
@@ -781,32 +1421,20 @@ class ImageEditorToolBrush extends ImageEditorToolWithColor {
         if (this.brushing) {
             return;
         }
-        if (e.touches) {
-            this.lastTouch = Date.now();
-        }
-        if (!e.touches && this.lastTouch && Date.now() - this.lastTouch < 1000) {
+        let target = this.editor.activeLayer;
+        if (!target) {
             return;
         }
         this.brushing = true;
-        let target = this.editor.activeLayer;
-        this.bufferLayer = new ImageEditorLayer(this.editor, target.canvas.width, target.canvas.height, target);
-        this.bufferLayer.opacity = this.opacity;
-        if (this.isEraser) {
-            this.bufferLayer.globalCompositeOperation = 'destination-out';
-        }
-        this.applySelectionClip(this.bufferLayer.ctx, target);
-        target.childLayers.push(this.bufferLayer);
+        this.targetLayer = target;
+        this.bufferLayer = target.cloneLayerData();
+        this.strokeLayer = new ImageEditorLayer(this.editor, target.canvas.width, target.canvas.height);
+        this.editor.setPreviewState(target, this.bufferLayer, { syncVisualStateFromTarget: true });
         this.brush(this.getForceFrom(e));
     }
 
     onMouseMove(e) {
         if (this.brushing) {
-            if (e.touches) {
-                this.lastTouch = Date.now();
-            }
-            if (!e.touches && this.lastTouch && Date.now() - this.lastTouch < 1000) {
-                return;
-            }
             this.brush(this.getForceFrom(e));
         }
     }
@@ -826,12 +1454,15 @@ class ImageEditorToolBrush extends ImageEditorToolWithColor {
 
     onGlobalMouseUp(e) {
         if (this.brushing) {
-            this.editor.activeLayer.childLayers.pop();
-            let offset = this.editor.activeLayer.getOffset();
-            this.editor.activeLayer.saveBeforeEdit();
-            this.bufferLayer.drawToBackDirect(this.editor.activeLayer.ctx, -offset[0], -offset[1], 1);
-            this.editor.activeLayer.hasAnyContent = true;
+            this.targetLayer.saveBeforeEdit();
+            this.targetLayer.ctx.clearRect(0, 0, this.targetLayer.canvas.width, this.targetLayer.canvas.height);
+            this.targetLayer.ctx.drawImage(this.bufferLayer.canvas, 0, 0);
+            this.targetLayer.hasAnyContent = true;
+            this.editor.markLayerContentChanged(this.targetLayer);
+            this.editor.clearPreviewState();
             this.bufferLayer = null;
+            this.strokeLayer = null;
+            this.targetLayer = null;
             this.brushing = false;
             return true;
         }
@@ -868,7 +1499,7 @@ class ImageEditorToolBucket extends ImageEditorToolWithColor {
     onConfigChange() {
         this.color = this.colorText.value;
         this.threshold = parseInt(this.thresholdNumber.value);
-        this.editor.redraw();
+        this.editor.queueOverlayRedraw();
     }
 
     doBucket(x, y) {
@@ -876,7 +1507,7 @@ class ImageEditorToolBucket extends ImageEditorToolWithColor {
         let [targetX, targetY] = layer.canvasCoordToLayerCoord(x, y);
         targetX = Math.round(targetX);
         targetY = Math.round(targetY);
-        if (targetX < 0 || targetY < 0 || targetX >= layer.width || targetY >= layer.height) {
+        if (targetX < 0 || targetY < 0 || targetX >= layer.canvas.width || targetY >= layer.canvas.height) {
             return;
         }
         let selBounds = this.getSelectionBoundsInLayer(layer);
@@ -927,14 +1558,10 @@ class ImageEditorToolBucket extends ImageEditorToolWithColor {
         let boundsMinY = selBounds ? selBounds.minY : 0;
         let boundsMaxX = selBounds ? Math.min(selBounds.maxX, width) : width;
         let boundsMaxY = selBounds ? Math.min(selBounds.maxY, height) : height;
-        let hasSelection = this.editor.hasSelection;
-        let selectX = this.editor.selectX;
-        let selectY = this.editor.selectY;
-        let selectW = this.editor.selectWidth;
-        let selectH = this.editor.selectHeight;
         let selCX = layer.width / 2;
         let selCY = layer.height / 2;
         let selAngle = layer.rotation;
+        let editor = this.editor;
         function layerPixelToImageCoord(x, y) {
             let x2 = x * relWidth;
             let y2 = y * relHeight;
@@ -962,16 +1589,18 @@ class ImageEditorToolBucket extends ImageEditorToolWithColor {
             rawData[index] = newColor[0];
             rawData[index + 1] = newColor[1];
             rawData[index + 2] = newColor[2];
-            rawData[index + 3] = 255;
+            let imageCoords = layerPixelToImageCoord(x, y);
+            let selectionAlpha = editor.sampleSelectionAtImageCoord(imageCoords[0], imageCoords[1], 1);
+            rawData[index + 3] = Math.max(1, Math.round(255 * selectionAlpha));
             hits++;
         }
         function canInclude(x, y) {
             if (x < boundsMinX || y < boundsMinY || x >= boundsMaxX || y >= boundsMaxY || maskData[y * width + x] != 0) {
                 return false;
             }
-            if (hasSelection) {
+            if (editor.hasSelectionMask()) {
                 let imgPos = layerPixelToImageCoord(x, y);
-                if (imgPos[0] < selectX || imgPos[1] < selectY || imgPos[0] >= selectX + selectW || imgPos[1] >= selectY + selectH) {
+                if (editor.sampleSelectionAtImageCoord(imgPos[0], imgPos[1], 0) <= 0) {
                     return false;
                 }
             }
@@ -990,7 +1619,9 @@ class ImageEditorToolBucket extends ImageEditorToolWithColor {
             if (canInclude(x, y + 1)) { stack.push([x, y + 1]); }
         }
         ctx.putImageData(imageData, 0, 0);
-        this.editor.markChanged();
+        layer.markContentChanged();
+        this.editor.markOutputChanged();
+        this.editor.queueSceneRedraw();
     }
 
     onMouseDown(e) {
@@ -1047,22 +1678,25 @@ class ImageEditorToolShape extends ImageEditorToolWithColor {
         this.strokeSelector = this.configDiv.querySelector('.id-stroke2');
         this.shapeSelect.addEventListener('change', () => {
             this.shape = this.shapeSelect.value;
-            this.editor.redraw();
+            this.editor.queueOverlayRedraw();
         });
         this.fillCheckbox.addEventListener('change', () => {
             this.fill = this.fillCheckbox.checked;
             this.updateStrokeDisabled();
-            this.editor.redraw();
+            this.editor.queueOverlayRedraw();
         });
         this.strokeBlock = this.configDiv.querySelector('.id-stroke-block');
         enableSliderForBox(this.strokeBlock);
         this.strokeNumber.addEventListener('change', () => { this.onConfigChange(); });
+        this.baseCanvas = null;
+        this.targetLayer = null;
+        this.stampLayer = null;
     }
     
     onConfigChange() {
         this.color = this.colorText.value;
         this.strokeWidth = parseInt(this.strokeNumber.value);
-        this.editor.redraw();
+        this.editor.queueOverlayRedraw();
     }
 
     updateStrokeDisabled() {
@@ -1104,52 +1738,6 @@ class ImageEditorToolShape extends ImageEditorToolWithColor {
     }
 
     draw() {
-        if (!this.isDrawing) {
-            return;
-        }
-        let target = this.editor.activeLayer;
-        if (!target) {
-            return;
-        }
-        let imgStartX = Math.min(this.startX, this.currentX);
-        let imgStartY = Math.min(this.startY, this.currentY);
-        let imgEndX = Math.max(this.startX, this.currentX);
-        let imgEndY = Math.max(this.startY, this.currentY);
-        let width = imgEndX - imgStartX;
-        let height = imgEndY - imgStartY;
-        if (width == 0 && height == 0) {
-            return;
-        }
-        let [canvasX1, canvasY1] = this.editor.imageCoordToCanvasCoord(imgStartX, imgStartY);
-        let [canvasX2, canvasY2] = this.editor.imageCoordToCanvasCoord(imgEndX, imgEndY);
-        let canvasWidth = canvasX2 - canvasX1;
-        let canvasHeight = canvasY2 - canvasY1;
-        this.editor.ctx.save();
-        if (this.editor.hasSelection) {
-            let [selX1, selY1] = this.editor.imageCoordToCanvasCoord(this.editor.selectX, this.editor.selectY);
-            let [selX2, selY2] = this.editor.imageCoordToCanvasCoord(this.editor.selectX + this.editor.selectWidth, this.editor.selectY + this.editor.selectHeight);
-            this.editor.ctx.beginPath();
-            this.editor.ctx.rect(selX1, selY1, selX2 - selX1, selY2 - selY1);
-            this.editor.ctx.clip();
-        }
-        this.editor.ctx.imageSmoothingEnabled = false;
-        this.editor.ctx.setLineDash([]);
-        this.editor.ctx.fillStyle = this.color;
-        if (this.shape == 'rectangle') {
-            if (this.fill) {
-                this.editor.ctx.fillRect(Math.round(canvasX1), Math.round(canvasY1), Math.round(canvasWidth), Math.round(canvasHeight));
-            }
-            else {
-                let thickness = Math.max(1, Math.round(this.getEffectiveStrokeWidth() * this.editor.zoomLevel));
-                this.drawRectangleBorder(this.editor.ctx, Math.round(canvasX1), Math.round(canvasY1), Math.round(canvasWidth), Math.round(canvasHeight), thickness);
-            }
-        }
-        else {
-            this.editor.ctx.strokeStyle = this.color;
-            this.editor.ctx.lineWidth = Math.max(1, Math.round(this.getEffectiveStrokeWidth() * this.editor.zoomLevel));
-            this.drawShapeToCanvas(this.editor.ctx, this.shape, canvasX1, canvasY1, canvasWidth, canvasHeight, this.fill);
-        }
-        this.editor.ctx.restore();
     }
     
     onMouseDown(e) {
@@ -1183,46 +1771,52 @@ class ImageEditorToolShape extends ImageEditorToolWithColor {
         this.startLayerY = layerY;
         this.currentLayerX = layerX;
         this.currentLayerY = layerY;
-        this.bufferLayer = new ImageEditorLayer(this.editor, target.canvas.width, target.canvas.height, target);
-        this.bufferLayer.opacity = 1;
-        target.childLayers.push(this.bufferLayer);
+        this.targetLayer = target;
+        this.bufferLayer = target.cloneLayerData();
+        this.stampLayer = new ImageEditorLayer(this.editor, target.canvas.width, target.canvas.height);
+        this.baseCanvas = document.createElement('canvas');
+        this.baseCanvas.width = target.canvas.width;
+        this.baseCanvas.height = target.canvas.height;
+        this.baseCanvas.getContext('2d').drawImage(target.canvas, 0, 0);
+        this.editor.setPreviewState(target, this.bufferLayer, { syncVisualStateFromTarget: true });
     }
     
     finishDrawing() {
         if (this.isDrawing && this.bufferLayer) {
-            let parent = this.editor.activeLayer;
+            let parent = this.targetLayer;
             if (!parent) {
                 this.bufferLayer = null;
+                this.baseCanvas = null;
+                this.stampLayer = null;
+                this.targetLayer = null;
                 this.isDrawing = false;
                 this.hasDrawn = false;
-                this.editor.redraw();
+                this.editor.clearPreviewState();
                 return;
             }
             if (!this.hasDrawn) {
-                let idx = parent.childLayers.indexOf(this.bufferLayer);
-                if (idx != -1) {
-                    parent.childLayers.splice(idx, 1);
-                }
                 this.bufferLayer = null;
+                this.baseCanvas = null;
+                this.stampLayer = null;
+                this.targetLayer = null;
                 this.isDrawing = false;
                 this.hasDrawn = false;
-                this.editor.redraw();
+                this.editor.clearPreviewState();
                 return;
             }
             this.drawShape();
-            let idx = parent.childLayers.indexOf(this.bufferLayer);
-            if (idx != -1) {
-                parent.childLayers.splice(idx, 1);
-            }
-            let offset = parent.getOffset();
             parent.saveBeforeEdit();
-            this.bufferLayer.drawToBackDirect(parent.ctx, -offset[0], -offset[1], 1);
+            parent.ctx.clearRect(0, 0, parent.canvas.width, parent.canvas.height);
+            parent.ctx.drawImage(this.bufferLayer.canvas, 0, 0);
             parent.hasAnyContent = true;
             this.bufferLayer = null;
+            this.baseCanvas = null;
+            this.stampLayer = null;
+            this.targetLayer = null;
             this.isDrawing = false;
             this.hasDrawn = false;
-            this.editor.markChanged();
-            this.editor.redraw();
+            this.editor.markLayerContentChanged(parent);
+            this.editor.clearPreviewState();
         }
     }
     
@@ -1275,14 +1869,16 @@ class ImageEditorToolShape extends ImageEditorToolWithColor {
     }
 
     drawShape() {
-        if (!this.isDrawing || !this.bufferLayer) {
+        if (!this.isDrawing || !this.bufferLayer || !this.baseCanvas || !this.stampLayer) {
             return;
         }
-        let parent = this.editor.activeLayer;
+        let parent = this.targetLayer;
         if (!parent) {
             return;
         }
         this.bufferLayer.ctx.clearRect(0, 0, this.bufferLayer.canvas.width, this.bufferLayer.canvas.height);
+        this.bufferLayer.ctx.drawImage(this.baseCanvas, 0, 0);
+        this.stampLayer.ctx.clearRect(0, 0, this.stampLayer.canvas.width, this.stampLayer.canvas.height);
         let startX = Math.round(Math.min(this.startX, this.currentX));
         let startY = Math.round(Math.min(this.startY, this.currentY));
         let endX = Math.round(Math.max(this.startX, this.currentX));
@@ -1292,50 +1888,36 @@ class ImageEditorToolShape extends ImageEditorToolWithColor {
         if (width == 0 && height == 0) {
             this.bufferLayer.hasAnyContent = false;
             this.hasDrawn = false;
-            this.editor.redraw();
+            this.editor.queueOverlayRedraw();
             return;
         }
-        this.bufferLayer.ctx.save();
+        this.stampLayer.ctx.save();
         let [offsetX, offsetY] = parent.getOffset();
-        let relWidth = parent.width / parent.canvas.width;
-        let relHeight = parent.height / parent.canvas.height;
-        let cx = parent.width / 2;
-        let cy = parent.height / 2;
-        let cosR = Math.cos(-parent.rotation);
-        let sinR = Math.sin(-parent.rotation);
-        this.bufferLayer.ctx.setTransform(
-            cosR / relWidth, sinR / relHeight,
-            -sinR / relWidth, cosR / relHeight,
-            (-cosR * (offsetX + cx) + sinR * (offsetY + cy) + cx) / relWidth,
-            (-sinR * (offsetX + cx) - cosR * (offsetY + cy) + cy) / relHeight
-        );
-        if (this.editor.hasSelection) {
-            this.bufferLayer.ctx.beginPath();
-            this.bufferLayer.ctx.rect(this.editor.selectX, this.editor.selectY, this.editor.selectWidth, this.editor.selectHeight);
-            this.bufferLayer.ctx.clip();
-        }
-        this.bufferLayer.ctx.imageSmoothingEnabled = false;
-        this.bufferLayer.ctx.setLineDash([]);
-        this.bufferLayer.ctx.fillStyle = this.color;
+        this.stampLayer.ctx.imageSmoothingEnabled = false;
+        this.stampLayer.ctx.setLineDash([]);
+        this.stampLayer.ctx.fillStyle = this.color;
+        parent.configureImageToLayerTransform(this.stampLayer.ctx);
         if (this.shape == 'rectangle') {
             if (this.fill) {
-                this.bufferLayer.ctx.fillRect(startX, startY, width, height);
+                this.stampLayer.ctx.fillRect(startX, startY, width, height);
             }
             else {
                 let thickness = Math.max(1, Math.round(this.getEffectiveStrokeWidth()));
-                this.drawRectangleBorder(this.bufferLayer.ctx, startX, startY, width, height, thickness);
+                this.drawRectangleBorder(this.stampLayer.ctx, startX, startY, width, height, thickness);
             }
         }
         else {
-            this.bufferLayer.ctx.strokeStyle = this.color;
-            this.bufferLayer.ctx.lineWidth = Math.max(1, Math.round(this.getEffectiveStrokeWidth()));
-            this.drawShapeToCanvas(this.bufferLayer.ctx, this.shape, startX, startY, width, height, this.fill);
+            this.stampLayer.ctx.strokeStyle = this.color;
+            this.stampLayer.ctx.lineWidth = Math.max(1, Math.round(this.getEffectiveStrokeWidth()));
+            this.drawShapeToCanvas(this.stampLayer.ctx, this.shape, startX, startY, width, height, this.fill);
         }
-        this.bufferLayer.ctx.restore();
+        this.stampLayer.ctx.restore();
+        this.applySelectionClip(this.stampLayer.ctx, parent);
+        this.bufferLayer.ctx.drawImage(this.stampLayer.canvas, 0, 0);
         this.bufferLayer.hasAnyContent = true;
         this.hasDrawn = true;
-        this.editor.markChanged();
-        this.editor.redraw();
+        this.bufferLayer.markContentChanged();
+        this.editor.queueOverlayRedraw();
     }
 }
 
@@ -1358,11 +1940,11 @@ class ImageEditorToolPicker extends ImageEditorTempTool {
     pickNow() {
         let imageData = this.editor.ctx.getImageData(this.editor.mouseX, this.editor.mouseY, 1, 1).data;
         this.color = `#${imageData[0].toString(16).padStart(2, '0')}${imageData[1].toString(16).padStart(2, '0')}${imageData[2].toString(16).padStart(2, '0')}`;
-        if (this.editor.activeLayer && this.editor.activeLayer.isMask) {
+        if (this.editor.isLayerMaskLike(this.editor.activeLayer)) {
             this.color = colorPickerHelper.hexToGrayscale(this.color);
         }
         this.toolFor.setColor(this.color);
-        this.editor.redraw();
+        this.editor.queueOverlayRedraw();
     }
 
     onMouseDown(e) {
@@ -1425,7 +2007,7 @@ class ImageEditorToolSam2Base extends ImageEditorTool {
             return;
         }
         maskLayer.clearToEmpty();
-        this.editor.redraw();
+        this.editor.queueSceneRedraw();
     }
 
     setActive() {
@@ -1441,7 +2023,9 @@ class ImageEditorToolSam2Base extends ImageEditorTool {
     triggerWarmup() {
         this.isWarmingUp = true;
         this.cursor = 'wait';
-        this.editor.canvas.style.cursor = 'wait';
+        if (this.editor.overlayCanvas) {
+            this.editor.overlayCanvas.style.cursor = 'wait';
+        }
         this.configDiv.innerHTML = this.warmupHTML;
         try {
             let img = this.editor.getFinalImageData();
@@ -1469,22 +2053,25 @@ class ImageEditorToolSam2Base extends ImageEditorTool {
         this.modelWarmed = true;
         this.isWarmingUp = false;
         this.cursor = 'crosshair';
-        this.editor.canvas.style.cursor = 'crosshair';
+        if (this.editor.overlayCanvas) {
+            this.editor.overlayCanvas.style.cursor = 'crosshair';
+        }
         this.showControls();
     }
 
     /** Returns the image data and coordinate offset for SAM2 requests, cropped to the selection if active. */
     getImageForSam() {
+        let bounds = this.editor.getSelectionBounds();
         let width, height;
-        if (!this.editor.hasSelection) {
+        if (!bounds) {
             width = Math.round(this.editor.realWidth);
             height = Math.round(this.editor.realHeight);
             return { image: this.editor.getFinalImageData(), offsetX: 0, offsetY: 0, width, height };
         }
-        width = Math.round(this.editor.selectWidth);
-        height = Math.round(this.editor.selectHeight);
-        let image = this.editor.getImageWithBounds(this.editor.selectX, this.editor.selectY, width, height);
-        return { image: image, offsetX: this.editor.selectX, offsetY: this.editor.selectY, width: width, height: height };
+        width = Math.round(bounds.width);
+        height = Math.round(bounds.height);
+        let image = this.editor.getSelectionImageData('image/png');
+        return { image: image, offsetX: bounds.x, offsetY: bounds.y, width: width, height: height };
     }
 
     /** Returns the general mask request inputs for SAM2 requests, cropped to the selection if active. */
@@ -1512,12 +2099,9 @@ class ImageEditorToolSam2Base extends ImageEditorTool {
         fullMask.width = this.editor.realWidth;
         fullMask.height = this.editor.realHeight;
         let fullCtx = fullMask.getContext('2d');
-        if (this.editor.hasSelection) {
-            let selX = Math.round(this.editor.selectX);
-            let selY = Math.round(this.editor.selectY);
-            let selW = Math.round(this.editor.selectWidth);
-            let selH = Math.round(this.editor.selectHeight);
-            fullCtx.drawImage(maskImg, 0, 0, maskImg.width || selW, maskImg.height || selH, selX, selY, selW, selH);
+        let bounds = this.editor.getSelectionBounds();
+        if (bounds) {
+            fullCtx.drawImage(maskImg, 0, 0, maskImg.width || bounds.width, maskImg.height || bounds.height, bounds.x, bounds.y, bounds.width, bounds.height);
         }
         else {
             let imgW = maskImg.width || this.editor.realWidth;
@@ -1526,6 +2110,7 @@ class ImageEditorToolSam2Base extends ImageEditorTool {
         }
         this.editor.activeLayer.applyMaskFromImage(fullMask);
         this.clipMaskToSelection();
+        this.editor.queueSceneRedraw();
     }
 
     /** Erases any mask pixels outside the current selection. No-op if no selection is active. */
@@ -1534,31 +2119,11 @@ class ImageEditorToolSam2Base extends ImageEditorTool {
         if (!maskLayer || !maskLayer.isMask) {
             return;
         }
-        if (!this.editor.hasSelection) {
+        if (!this.editor.hasSelectionMask()) {
             return;
         }
-        maskLayer.ctx.save();
-        let [offsetX, offsetY] = maskLayer.getOffset();
-        let relWidth = maskLayer.width / maskLayer.canvas.width;
-        let relHeight = maskLayer.height / maskLayer.canvas.height;
-        let cx = maskLayer.width / 2;
-        let cy = maskLayer.height / 2;
-        let cosR = Math.cos(-maskLayer.rotation);
-        let sinR = Math.sin(-maskLayer.rotation);
-        maskLayer.ctx.setTransform(
-            cosR / relWidth, sinR / relHeight,
-            -sinR / relWidth, cosR / relHeight,
-            (-cosR * (offsetX + cx) + sinR * (offsetY + cy) + cx) / relWidth,
-            (-sinR * (offsetX + cx) - cosR * (offsetY + cy) + cy) / relHeight
-        );
-        maskLayer.ctx.globalCompositeOperation = 'destination-in';
-        maskLayer.ctx.fillStyle = '#ffffff';
-        let selX = Math.round(this.editor.selectX);
-        let selY = Math.round(this.editor.selectY);
-        let selW = Math.round(this.editor.selectWidth);
-        let selH = Math.round(this.editor.selectHeight);
-        maskLayer.ctx.fillRect(selX, selY, selW, selH);
-        maskLayer.ctx.restore();
+        this.editor.applySelectionMaskClip(maskLayer.ctx, maskLayer);
+        maskLayer.markContentChanged();
     }
 }
 
@@ -1592,7 +2157,7 @@ class ImageEditorToolSam2Points extends ImageEditorToolSam2Base {
         this.activeRequestId = ++this.requestSerial;
         this.maskRequestInFlight = false;
         this.pendingMaskUpdate = false;
-        this.editor.redraw();
+        this.editor.queueSceneRedraw();
     }
 
     onClearMask() {
@@ -1660,12 +2225,8 @@ class ImageEditorToolSam2Points extends ImageEditorToolSam2Base {
         if (mouseX < 0 || mouseY < 0 || mouseX >= this.editor.realWidth || mouseY >= this.editor.realHeight) {
             return;
         }
-        if (this.editor.hasSelection) {
-            if (mouseX < this.editor.selectX || mouseY < this.editor.selectY
-                || mouseX >= this.editor.selectX + this.editor.selectWidth
-                || mouseY >= this.editor.selectY + this.editor.selectHeight) {
-                return;
-            }
+        if (this.editor.hasSelectionMask() && this.editor.sampleSelectionAtImageCoord(mouseX, mouseY, 0) <= 0) {
+            return;
         }
         let points = this.getActivePoints();
         let oppositeList = e.button == 2 ? points.positive : points.negative;
@@ -1695,7 +2256,7 @@ class ImageEditorToolSam2Points extends ImageEditorToolSam2Base {
             points.positive.push(point);
         }
         this.queueMaskUpdate();
-        this.editor.redraw();
+        this.editor.queueOverlayRedraw();
     }
 
     queueMaskUpdate() {
@@ -1750,7 +2311,6 @@ class ImageEditorToolSam2Points extends ImageEditorToolSam2Base {
                     return;
                 }
                 this.applyMaskResult(newImg);
-                this.editor.redraw();
                 this.finishMaskUpdate(requestId);
             };
             newImg.src = data.image;
@@ -1816,7 +2376,7 @@ class ImageEditorToolSam2BBox extends ImageEditorToolSam2Base {
         let [mouseX, mouseY] = this.editor.canvasCoordToImageCoord(this.editor.mouseX, this.editor.mouseY);
         this.bboxEndX = Math.round(mouseX);
         this.bboxEndY = Math.round(mouseY);
-        this.editor.redraw();
+        this.editor.queueOverlayRedraw();
     }
 
     onGlobalMouseUp(e) {
@@ -1843,11 +2403,12 @@ class ImageEditorToolSam2BBox extends ImageEditorToolSam2Base {
         let minY = Math.max(0, Math.min(this.bboxStartY, this.bboxEndY));
         let maxX = Math.min(this.editor.realWidth - 1, Math.max(this.bboxStartX, this.bboxEndX));
         let maxY = Math.min(this.editor.realHeight - 1, Math.max(this.bboxStartY, this.bboxEndY));
-        if (this.editor.hasSelection) {
-            minX = Math.max(minX, this.editor.selectX);
-            minY = Math.max(minY, this.editor.selectY);
-            maxX = Math.min(maxX, this.editor.selectX + this.editor.selectWidth);
-            maxY = Math.min(maxY, this.editor.selectY + this.editor.selectHeight);
+        let selectionBounds = this.editor.getSelectionBounds();
+        if (selectionBounds) {
+            minX = Math.max(minX, selectionBounds.x);
+            minY = Math.max(minY, selectionBounds.y);
+            maxX = Math.min(maxX, selectionBounds.x + selectionBounds.width);
+            maxY = Math.min(maxY, selectionBounds.y + selectionBounds.height);
         }
         if (maxX <= minX || maxY <= minY) {
             return;
@@ -1872,7 +2433,6 @@ class ImageEditorToolSam2BBox extends ImageEditorToolSam2Base {
                     return;
                 }
                 this.applyMaskResult(newImg);
-                this.editor.redraw();
             };
             newImg.src = data.image;
         });

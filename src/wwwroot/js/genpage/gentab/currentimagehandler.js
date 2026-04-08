@@ -1275,6 +1275,7 @@ let imageEditingColor = '#ffffff';
 let imageEditingInlineColorPicker = null;
 let imageEditingTabEditor = null;
 let imageEditingToolButtons = {};
+let imageEditingSelectionToolButtons = {};
 let imageEditingSplittersWired = false;
 let imageEditingLeftSidebarDrag = false;
 let imageEditingRightSidebarDrag = false;
@@ -1285,9 +1286,33 @@ let imageEditingToolsCollapsed = localStorage.getItem('imageediting_toolsCollaps
 let imageEditingActionsCollapsed = localStorage.getItem('imageediting_actionsCollapsed') == 'true';
 let imageEditingLayerOptionsCollapsed = localStorage.getItem('imageediting_layerOptionsCollapsed') == 'true';
 let imageEditingImageOptionsCollapsed = localStorage.getItem('imageediting_imageOptionsCollapsed') == 'true';
+let imageEditingSelectionCropCollapsed = localStorage.getItem('imageediting_selectionCropCollapsed') == 'true';
+let imageEditingEffectsPresetsCollapsed = localStorage.getItem('imageediting_effectsPresetsCollapsed') == 'true';
 let imageEditingLayerOptionsWired = false;
+let imageEditingSelectionEffectsWired = false;
 let imageEditingToneBalanceRanges = ['shadows', 'midtones', 'highlights'];
 let imageEditingToneBalanceChannels = ['r', 'g', 'b'];
+let imageEditingSelectionToolIds = ['select', 'ellipse-select', 'lasso-select', 'polygon-select', 'magic-wand', 'color-select', 'crop'];
+let imageEditingLayerAdjustmentDefinitions = [
+    { key: 'saturation', property: 'saturation', defaultValue: 1, sliderMin: 0, sliderMax: 200, sliderDefault: 100, sliderToProperty: value => value / 100, propertyToSlider: value => Math.round(value * 100), format: value => `${value}%`, contextId: 'imageediting_layer_saturation_context' },
+    { key: 'light_value', property: 'lightValue', defaultValue: 1, sliderMin: 0, sliderMax: 200, sliderDefault: 100, sliderToProperty: value => value / 100, propertyToSlider: value => Math.round(value * 100), format: value => `${value}%`, contextId: 'imageediting_layer_light_value_context' },
+    { key: 'contrast', property: 'contrast', defaultValue: 1, sliderMin: 0, sliderMax: 200, sliderDefault: 100, sliderToProperty: value => value / 100, propertyToSlider: value => Math.round(value * 100), format: value => `${value}%` },
+    { key: 'hue_shift', property: 'hueShift', defaultValue: 0, sliderMin: -180, sliderMax: 180, sliderDefault: 0, sliderToProperty: value => value, propertyToSlider: value => Math.round(value), format: value => `${value}\u00B0` },
+    { key: 'gamma', property: 'gamma', defaultValue: 1, sliderMin: 10, sliderMax: 300, sliderDefault: 100, sliderToProperty: value => value / 100, propertyToSlider: value => Math.round(value * 100), format: value => `${(value / 100).toFixed(2)}` },
+    { key: 'temperature', property: 'temperature', defaultValue: 0, sliderMin: -100, sliderMax: 100, sliderDefault: 0, sliderToProperty: value => value / 100, propertyToSlider: value => Math.round(value * 100), format: value => imageEditingFormatSignedPercent(value) },
+    { key: 'tint', property: 'tint', defaultValue: 0, sliderMin: -100, sliderMax: 100, sliderDefault: 0, sliderToProperty: value => value / 100, propertyToSlider: value => Math.round(value * 100), format: value => imageEditingFormatSignedPercent(value) },
+    { key: 'shadows', property: 'shadows', defaultValue: 0, sliderMin: -100, sliderMax: 100, sliderDefault: 0, sliderToProperty: value => value / 100, propertyToSlider: value => Math.round(value * 100), format: value => imageEditingFormatSignedPercent(value) },
+    { key: 'highlights', property: 'highlights', defaultValue: 0, sliderMin: -100, sliderMax: 100, sliderDefault: 0, sliderToProperty: value => value / 100, propertyToSlider: value => Math.round(value * 100), format: value => imageEditingFormatSignedPercent(value) },
+    { key: 'whites', property: 'whites', defaultValue: 0, sliderMin: -100, sliderMax: 100, sliderDefault: 0, sliderToProperty: value => value / 100, propertyToSlider: value => Math.round(value * 100), format: value => imageEditingFormatSignedPercent(value) },
+    { key: 'blacks', property: 'blacks', defaultValue: 0, sliderMin: -100, sliderMax: 100, sliderDefault: 0, sliderToProperty: value => value / 100, propertyToSlider: value => Math.round(value * 100), format: value => imageEditingFormatSignedPercent(value) }
+];
+let imageEditingEffectDefinitions = [
+    { key: 'blur', labelKey: 'imageediting_effect_blur_value', sliderId: 'imageediting_effect_blur_slider', defaultValue: 0, sliderToProperty: value => value / 4, propertyToSlider: value => Math.round(value * 4), format: value => `${value}` },
+    { key: 'sharpen', labelKey: 'imageediting_effect_sharpen_value', sliderId: 'imageediting_effect_sharpen_slider', defaultValue: 0, sliderToProperty: value => value / 4, propertyToSlider: value => Math.round(value * 4), format: value => `${value}` },
+    { key: 'noiseReduction', labelKey: 'imageediting_effect_noise_reduction_value', sliderId: 'imageediting_effect_noise_reduction_slider', defaultValue: 0, sliderToProperty: value => value / 4, propertyToSlider: value => Math.round(value * 4), format: value => `${value}` },
+    { key: 'vignette', labelKey: 'imageediting_effect_vignette_value', sliderId: 'imageediting_effect_vignette_slider', defaultValue: 0, sliderToProperty: value => value / 100, propertyToSlider: value => Math.round(value * 100), format: value => `${value}%` },
+    { key: 'glow', labelKey: 'imageediting_effect_glow_value', sliderId: 'imageediting_effect_glow_slider', defaultValue: 0, sliderToProperty: value => value / 100, propertyToSlider: value => Math.round(value * 100), format: value => `${value}%` }
+];
 
 /**
  * Gets the Image Editing editor area.
@@ -1366,6 +1391,14 @@ function imageEditingGetImageOptionsHeader() {
     return document.getElementById('imageediting_image_options_header');
 }
 
+function imageEditingGetSelectionCropHeader() {
+    return document.getElementById('imageediting_selection_crop_header');
+}
+
+function imageEditingGetEffectsPresetsHeader() {
+    return document.getElementById('imageediting_effects_presets_header');
+}
+
 /**
  * Gets the Image Editing tools section toggle marker.
  */
@@ -1394,6 +1427,14 @@ function imageEditingGetImageOptionsToggleState() {
     return document.getElementById('imageediting_image_options_toggle_state');
 }
 
+function imageEditingGetSelectionCropToggleState() {
+    return document.getElementById('imageediting_selection_crop_toggle_state');
+}
+
+function imageEditingGetEffectsPresetsToggleState() {
+    return document.getElementById('imageediting_effects_presets_toggle_state');
+}
+
 /**
  * Gets the Image Editing layer options section body.
  */
@@ -1406,6 +1447,14 @@ function imageEditingGetLayerOptionsBody() {
  */
 function imageEditingGetImageOptionsBody() {
     return document.getElementById('imageediting_image_options_body');
+}
+
+function imageEditingGetSelectionCropBody() {
+    return document.getElementById('imageediting_selection_crop_body');
+}
+
+function imageEditingGetEffectsPresetsBody() {
+    return document.getElementById('imageediting_effects_presets_body');
 }
 
 /**
@@ -1469,6 +1518,34 @@ function imageEditingGetLayerLightValueValue() {
  */
 function imageEditingGetLayerLightValueContext() {
     return document.getElementById('imageediting_layer_light_value_context');
+}
+
+/**
+ * Gets the Image Editing layer blend-mode select.
+ */
+function imageEditingGetLayerBlendModeSelect() {
+    return document.getElementById('imageediting_layer_blend_mode_select');
+}
+
+/**
+ * Gets the Image Editing layer blend-mode context text.
+ */
+function imageEditingGetLayerBlendModeContext() {
+    return document.getElementById('imageediting_layer_blend_mode_context');
+}
+
+/**
+ * Gets an Image Editing image-adjustment slider by key.
+ */
+function imageEditingGetLayerAdjustmentSlider(key) {
+    return document.getElementById(`imageediting_layer_${key}_slider`);
+}
+
+/**
+ * Gets an Image Editing image-adjustment label by key.
+ */
+function imageEditingGetLayerAdjustmentValueLabel(key) {
+    return document.getElementById(`imageediting_layer_${key}_value`);
 }
 
 /**
@@ -1734,6 +1811,11 @@ function imageEditingRefreshToolButtons() {
         }
         button.classList.toggle('imageediting_tool_button_active', imageEditingTabEditor.activeTool && imageEditingTabEditor.activeTool.id == toolId);
     }
+    for (let [toolId, button] of Object.entries(imageEditingSelectionToolButtons)) {
+        let tool = imageEditingTabEditor.tools[toolId];
+        button.style.display = tool ? '' : 'none';
+        button.classList.toggle('imageediting_tool_button_active', imageEditingTabEditor.activeTool && imageEditingTabEditor.activeTool.id == toolId);
+    }
     if (imageEditingTabEditor.activeTool && typeof imageEditingTabEditor.activeTool.color == 'string' && imageEditingTabEditor.activeTool.color != imageEditingColor) {
         imageEditingSetColor(imageEditingTabEditor.activeTool.color);
     }
@@ -1772,6 +1854,36 @@ function imageEditingBuildToolButtons() {
         });
         toolsArea.appendChild(button);
         imageEditingToolButtons[tool.id] = button;
+    }
+    imageEditingRefreshToolButtons();
+}
+
+function imageEditingBuildSelectionToolButtons() {
+    if (!imageEditingTabEditor) {
+        return;
+    }
+    let toolsArea = document.getElementById('imageediting_selection_tool_buttons');
+    if (!toolsArea) {
+        return;
+    }
+    toolsArea.innerHTML = '';
+    imageEditingSelectionToolButtons = {};
+    for (let toolId of imageEditingSelectionToolIds) {
+        let tool = imageEditingTabEditor.tools[toolId];
+        if (!tool) {
+            continue;
+        }
+        let button = document.createElement('button');
+        button.className = 'basic-button imageediting_tool_button translate';
+        button.type = 'button';
+        button.innerText = tool.name;
+        button.title = tool.description;
+        button.addEventListener('click', () => {
+            imageEditingTabEditor.activateTool(tool.id);
+            imageEditingRefreshToolButtons();
+        });
+        toolsArea.appendChild(button);
+        imageEditingSelectionToolButtons[tool.id] = button;
     }
     imageEditingRefreshToolButtons();
 }
@@ -1832,15 +1944,25 @@ function imageEditingRefreshLayerOptionActionButtons() {
     }
     deleteButton.disabled = false;
     duplicateButton.style.display = '';
-    flipMirrorHorizontalButton.style.display = '';
-    flipMirrorVerticalButton.style.display = '';
-    if (activeLayer.isMask) {
+    if (activeLayer.layerType == 'adjustment') {
+        flipMirrorHorizontalButton.style.display = 'none';
+        flipMirrorVerticalButton.style.display = 'none';
+        convertToImageButton.style.display = 'none';
+        invertMaskButton.style.display = 'none';
+        convertToMaskButton.style.display = 'none';
+        invertColorsButton.style.display = 'none';
+    }
+    else if (activeLayer.isMask) {
+        flipMirrorHorizontalButton.style.display = '';
+        flipMirrorVerticalButton.style.display = '';
         convertToImageButton.style.display = '';
         invertMaskButton.style.display = '';
         convertToMaskButton.style.display = 'none';
         invertColorsButton.style.display = 'none';
     }
     else {
+        flipMirrorHorizontalButton.style.display = '';
+        flipMirrorVerticalButton.style.display = '';
         convertToImageButton.style.display = 'none';
         invertMaskButton.style.display = 'none';
         convertToMaskButton.style.display = '';
@@ -1882,16 +2004,17 @@ function imageEditingConvertActiveLayerToImage() {
         return;
     }
     let layer = imageEditingTabEditor.activeLayer;
-    if (!layer.isMask) {
+    if (!layer.isMask || layer.layerType == 'adjustment') {
         return;
     }
-    layer.isMask = false;
+    layer.layerType = 'image';
     if (layer.infoSubDiv) {
         layer.infoSubDiv.innerText = 'Image';
     }
     layer.createButtons();
     imageEditingTabEditor.sortLayers();
-    imageEditingTabEditor.redraw();
+    imageEditingTabEditor.markOutputChanged();
+    imageEditingTabEditor.queueSceneRedraw();
     imageEditingRefreshLayerOpacityControl();
 }
 
@@ -1903,16 +2026,17 @@ function imageEditingConvertActiveLayerToMask() {
         return;
     }
     let layer = imageEditingTabEditor.activeLayer;
-    if (layer.isMask) {
+    if (layer.isMask || layer.layerType == 'adjustment') {
         return;
     }
-    layer.isMask = true;
+    layer.layerType = 'mask';
     if (layer.infoSubDiv) {
         layer.infoSubDiv.innerText = 'Mask';
     }
     layer.createButtons();
     imageEditingTabEditor.sortLayers();
-    imageEditingTabEditor.redraw();
+    imageEditingTabEditor.markOutputChanged();
+    imageEditingTabEditor.queueSceneRedraw();
     imageEditingRefreshLayerOpacityControl();
 }
 
@@ -1989,118 +2113,128 @@ function imageEditingSetActiveLayerOpacityFromSlider() {
     let layer = imageEditingTabEditor.activeLayer;
     layer.opacity = opacityValue / 100;
     layer.canvas.style.opacity = layer.opacity;
-    imageEditingTabEditor.redraw();
+    imageEditingTabEditor.markOutputChanged();
+    imageEditingTabEditor.queueSceneRedraw();
     imageEditingRefreshLayerOpacityControl();
+}
+
+function imageEditingGetLayerAdjustmentDefinition(key) {
+    return imageEditingLayerAdjustmentDefinitions.find(def => def.key == key) || null;
+}
+
+function imageEditingGetLayerContextText(activeLayer) {
+    if (!activeLayer) {
+        return 'No active layer selected';
+    }
+    if (typeof activeLayer.getTypeLabel == 'function') {
+        return `Active Layer: ${activeLayer.getTypeLabel()}`;
+    }
+    if (activeLayer.layerType == 'adjustment') {
+        return 'Active Layer: Adjustment';
+    }
+    return `Active Layer: ${activeLayer.isMask ? 'Mask' : 'Image'}`;
+}
+
+function imageEditingEnsureLayerAdjustmentDefaults(layer) {
+    if (!layer) {
+        return;
+    }
+    for (let def of imageEditingLayerAdjustmentDefinitions) {
+        let value = parseFloat(layer[def.property]);
+        if (isNaN(value)) {
+            value = def.defaultValue;
+        }
+        let min = Math.min(def.sliderToProperty(def.sliderMin), def.sliderToProperty(def.sliderMax));
+        let max = Math.max(def.sliderToProperty(def.sliderMin), def.sliderToProperty(def.sliderMax));
+        layer[def.property] = Math.max(min, Math.min(max, value));
+    }
+}
+
+function imageEditingSetActiveLayerAdjustmentFromSliderKey(key) {
+    if (!imageEditingTabEditor || !imageEditingTabEditor.activeLayer) {
+        return;
+    }
+    let def = imageEditingGetLayerAdjustmentDefinition(key);
+    let slider = imageEditingGetLayerAdjustmentSlider(key);
+    if (!def || !slider) {
+        return;
+    }
+    let sliderValue = parseInt(slider.value);
+    if (isNaN(sliderValue)) {
+        return;
+    }
+    sliderValue = Math.max(def.sliderMin, Math.min(def.sliderMax, sliderValue));
+    let layer = imageEditingTabEditor.activeLayer;
+    layer[def.property] = def.sliderToProperty(sliderValue);
+    imageEditingTabEditor.markOutputChanged();
+    imageEditingTabEditor.queueSceneRedraw();
+    imageEditingRefreshLayerAdjustmentControls();
+}
+
+function imageEditingRefreshLayerAdjustmentControl(key) {
+    let def = imageEditingGetLayerAdjustmentDefinition(key);
+    let slider = imageEditingGetLayerAdjustmentSlider(key);
+    let valueLabel = imageEditingGetLayerAdjustmentValueLabel(key);
+    if (!def || !slider || !valueLabel) {
+        return;
+    }
+    let contextLabel = def.contextId ? document.getElementById(def.contextId) : null;
+    let activeLayer = imageEditingTabEditor ? imageEditingTabEditor.activeLayer : null;
+    if (!activeLayer) {
+        slider.disabled = true;
+        slider.value = `${def.sliderDefault}`;
+        valueLabel.innerText = 'N/A';
+        if (contextLabel) {
+            contextLabel.innerText = 'No active layer selected';
+        }
+        updateRangeStyle(slider);
+        return;
+    }
+    imageEditingEnsureLayerAdjustmentDefaults(activeLayer);
+    let sliderValue = def.propertyToSlider(activeLayer[def.property]);
+    sliderValue = Math.max(def.sliderMin, Math.min(def.sliderMax, sliderValue));
+    slider.disabled = false;
+    slider.value = `${sliderValue}`;
+    valueLabel.innerText = def.format(sliderValue);
+    if (contextLabel) {
+        contextLabel.innerText = imageEditingGetLayerContextText(activeLayer);
+    }
+    updateRangeStyle(slider);
+}
+
+function imageEditingRefreshLayerAdjustmentControls() {
+    for (let def of imageEditingLayerAdjustmentDefinitions) {
+        imageEditingRefreshLayerAdjustmentControl(def.key);
+    }
+    imageEditingRefreshToneBalanceControls();
 }
 
 /**
  * Applies the current layer's saturation from the Image Options slider.
  */
 function imageEditingSetActiveLayerSaturationFromSlider() {
-    if (!imageEditingTabEditor || !imageEditingTabEditor.activeLayer) {
-        return;
-    }
-    let slider = imageEditingGetLayerSaturationSlider();
-    if (!slider) {
-        return;
-    }
-    let saturationValue = parseInt(slider.value);
-    if (isNaN(saturationValue)) {
-        return;
-    }
-    saturationValue = Math.max(0, Math.min(200, saturationValue));
-    let layer = imageEditingTabEditor.activeLayer;
-    layer.saturation = saturationValue / 100;
-    imageEditingTabEditor.redraw();
-    imageEditingRefreshLayerSaturationControl();
+    imageEditingSetActiveLayerAdjustmentFromSliderKey('saturation');
 }
 
 /**
  * Refreshes Image Options controls for the currently selected layer.
  */
 function imageEditingRefreshLayerSaturationControl() {
-    let slider = imageEditingGetLayerSaturationSlider();
-    let valueLabel = imageEditingGetLayerSaturationValue();
-    let contextLabel = imageEditingGetLayerSaturationContext();
-    if (!slider || !valueLabel || !contextLabel) {
-        return;
-    }
-    let activeLayer = imageEditingTabEditor ? imageEditingTabEditor.activeLayer : null;
-    if (!activeLayer) {
-        slider.disabled = true;
-        slider.value = '100';
-        valueLabel.innerText = 'N/A';
-        contextLabel.innerText = 'No active layer selected';
-        updateRangeStyle(slider);
-        imageEditingRefreshLayerLightValueControl();
-        return;
-    }
-    if (typeof activeLayer.saturation != 'number') {
-        activeLayer.saturation = 1;
-    }
-    let saturation = Math.max(0, Math.min(2, activeLayer.saturation));
-    let percentSaturation = Math.round(saturation * 100);
-    slider.disabled = false;
-    slider.value = `${percentSaturation}`;
-    valueLabel.innerText = `${percentSaturation}%`;
-    contextLabel.innerText = `Active Layer: ${activeLayer.isMask ? 'Mask' : 'Image'}`;
-    updateRangeStyle(slider);
-    imageEditingRefreshLayerLightValueControl();
+    imageEditingRefreshLayerAdjustmentControl('saturation');
 }
 
 /**
  * Applies the current layer's light value from the Image Options slider.
  */
 function imageEditingSetActiveLayerLightValueFromSlider() {
-    if (!imageEditingTabEditor || !imageEditingTabEditor.activeLayer) {
-        return;
-    }
-    let slider = imageEditingGetLayerLightValueSlider();
-    if (!slider) {
-        return;
-    }
-    let lightValue = parseInt(slider.value);
-    if (isNaN(lightValue)) {
-        return;
-    }
-    lightValue = Math.max(0, Math.min(200, lightValue));
-    let layer = imageEditingTabEditor.activeLayer;
-    layer.lightValue = lightValue / 100;
-    imageEditingTabEditor.redraw();
-    imageEditingRefreshLayerLightValueControl();
+    imageEditingSetActiveLayerAdjustmentFromSliderKey('light_value');
 }
 
 /**
  * Refreshes Image Options light-value control for the currently selected layer.
  */
 function imageEditingRefreshLayerLightValueControl() {
-    let slider = imageEditingGetLayerLightValueSlider();
-    let valueLabel = imageEditingGetLayerLightValueValue();
-    let contextLabel = imageEditingGetLayerLightValueContext();
-    if (!slider || !valueLabel || !contextLabel) {
-        return;
-    }
-    let activeLayer = imageEditingTabEditor ? imageEditingTabEditor.activeLayer : null;
-    if (!activeLayer) {
-        slider.disabled = true;
-        slider.value = '100';
-        valueLabel.innerText = 'N/A';
-        contextLabel.innerText = 'No active layer selected';
-        updateRangeStyle(slider);
-        imageEditingRefreshToneBalanceControls();
-        return;
-    }
-    if (typeof activeLayer.lightValue != 'number') {
-        activeLayer.lightValue = 1;
-    }
-    let lightValue = Math.max(0, Math.min(2, activeLayer.lightValue));
-    let percentLightValue = Math.round(lightValue * 100);
-    slider.disabled = false;
-    slider.value = `${percentLightValue}`;
-    valueLabel.innerText = `${percentLightValue}%`;
-    contextLabel.innerText = `Active Layer: ${activeLayer.isMask ? 'Mask' : 'Image'}`;
-    updateRangeStyle(slider);
-    imageEditingRefreshToneBalanceControls();
+    imageEditingRefreshLayerAdjustmentControl('light_value');
 }
 
 /**
@@ -2160,7 +2294,8 @@ function imageEditingSetActiveLayerToneBalanceFromSlider(slider) {
         return;
     }
     layer.toneBalance[range][channel] = sliderValue / 100;
-    imageEditingTabEditor.redraw();
+    imageEditingTabEditor.markOutputChanged();
+    imageEditingTabEditor.queueSceneRedraw();
     imageEditingRefreshToneBalanceControls();
 }
 
@@ -2212,8 +2347,50 @@ function imageEditingRefreshToneBalanceControls() {
         updateRangeStyle(slider);
     }
     if (contextLabel) {
-        contextLabel.innerText = `Active Layer: ${activeLayer.isMask ? 'Mask' : 'Image'}`;
+        contextLabel.innerText = imageEditingGetLayerContextText(activeLayer);
     }
+}
+
+/**
+ * Applies the current layer's blend mode from the Layer Options select.
+ */
+function imageEditingSetActiveLayerBlendModeFromSelect() {
+    if (!imageEditingTabEditor || !imageEditingTabEditor.activeLayer) {
+        return;
+    }
+    let select = imageEditingGetLayerBlendModeSelect();
+    if (!select) {
+        return;
+    }
+    let layer = imageEditingTabEditor.activeLayer;
+    layer.globalCompositeOperation = select.value || 'source-over';
+    imageEditingTabEditor.markOutputChanged();
+    imageEditingTabEditor.queueSceneRedraw();
+    imageEditingRefreshLayerBlendModeControl();
+}
+
+/**
+ * Refreshes the current layer blend-mode control.
+ */
+function imageEditingRefreshLayerBlendModeControl() {
+    let select = imageEditingGetLayerBlendModeSelect();
+    let contextLabel = imageEditingGetLayerBlendModeContext();
+    if (!select || !contextLabel) {
+        return;
+    }
+    let activeLayer = imageEditingTabEditor ? imageEditingTabEditor.activeLayer : null;
+    if (!activeLayer) {
+        select.disabled = true;
+        select.value = 'source-over';
+        contextLabel.innerText = 'No active layer selected';
+        return;
+    }
+    if (!activeLayer.globalCompositeOperation) {
+        activeLayer.globalCompositeOperation = 'source-over';
+    }
+    select.disabled = false;
+    select.value = activeLayer.globalCompositeOperation;
+    contextLabel.innerText = imageEditingGetLayerContextText(activeLayer);
 }
 
 /**
@@ -2234,7 +2411,10 @@ function imageEditingRefreshLayerOpacityControl() {
         contextLabel.innerText = 'No active layer selected';
         updateRangeStyle(slider);
         imageEditingRefreshLayerOptionActionButtons();
-        imageEditingRefreshLayerSaturationControl();
+        imageEditingRefreshLayerBlendModeControl();
+        imageEditingRefreshLayerAdjustmentControls();
+        imageEditingRefreshCropControls();
+        imageEditingRefreshEffectControls();
         return;
     }
     let opacity = 1;
@@ -2246,10 +2426,13 @@ function imageEditingRefreshLayerOpacityControl() {
     slider.disabled = false;
     slider.value = `${percentOpacity}`;
     valueLabel.innerText = `${percentOpacity}%`;
-    contextLabel.innerText = `Active Layer: ${activeLayer.isMask ? 'Mask' : 'Image'}`;
+    contextLabel.innerText = imageEditingGetLayerContextText(activeLayer);
     updateRangeStyle(slider);
     imageEditingRefreshLayerOptionActionButtons();
-    imageEditingRefreshLayerSaturationControl();
+    imageEditingRefreshLayerBlendModeControl();
+    imageEditingRefreshLayerAdjustmentControls();
+    imageEditingRefreshCropControls();
+    imageEditingRefreshEffectControls();
 }
 
 /**
@@ -2260,8 +2443,7 @@ function imageEditingEnsureLayerOptionsWired() {
         return;
     }
     let slider = imageEditingGetLayerOpacitySlider();
-    let saturationSlider = imageEditingGetLayerSaturationSlider();
-    let lightValueSlider = imageEditingGetLayerLightValueSlider();
+    let blendModeSelect = imageEditingGetLayerBlendModeSelect();
     let toneBalanceSliders = imageEditingGetToneBalanceSliders();
     let deleteButton = imageEditingGetLayerDeleteButton();
     let duplicateButton = imageEditingGetLayerDuplicateButton();
@@ -2271,8 +2453,13 @@ function imageEditingEnsureLayerOptionsWired() {
     let invertColorsButton = imageEditingGetLayerInvertColorsButton();
     let flipMirrorHorizontalButton = imageEditingGetLayerFlipMirrorHorizontalButton();
     let flipMirrorVerticalButton = imageEditingGetLayerFlipMirrorVerticalButton();
-    if (!slider || !saturationSlider || !lightValueSlider || !deleteButton || !duplicateButton || !convertToImageButton || !invertMaskButton || !convertToMaskButton || !invertColorsButton || !flipMirrorHorizontalButton || !flipMirrorVerticalButton) {
+    if (!slider || !blendModeSelect || !deleteButton || !duplicateButton || !convertToImageButton || !invertMaskButton || !convertToMaskButton || !invertColorsButton || !flipMirrorHorizontalButton || !flipMirrorVerticalButton) {
         return;
+    }
+    for (let def of imageEditingLayerAdjustmentDefinitions) {
+        if (!imageEditingGetLayerAdjustmentSlider(def.key) || !imageEditingGetLayerAdjustmentValueLabel(def.key)) {
+            return;
+        }
     }
     slider.addEventListener('input', () => {
         imageEditingSetActiveLayerOpacityFromSlider();
@@ -2280,18 +2467,18 @@ function imageEditingEnsureLayerOptionsWired() {
     slider.addEventListener('change', () => {
         imageEditingSetActiveLayerOpacityFromSlider();
     });
-    saturationSlider.addEventListener('input', () => {
-        imageEditingSetActiveLayerSaturationFromSlider();
+    blendModeSelect.addEventListener('change', () => {
+        imageEditingSetActiveLayerBlendModeFromSelect();
     });
-    saturationSlider.addEventListener('change', () => {
-        imageEditingSetActiveLayerSaturationFromSlider();
-    });
-    lightValueSlider.addEventListener('input', () => {
-        imageEditingSetActiveLayerLightValueFromSlider();
-    });
-    lightValueSlider.addEventListener('change', () => {
-        imageEditingSetActiveLayerLightValueFromSlider();
-    });
+    for (let def of imageEditingLayerAdjustmentDefinitions) {
+        let adjustmentSlider = imageEditingGetLayerAdjustmentSlider(def.key);
+        adjustmentSlider.addEventListener('input', () => {
+            imageEditingSetActiveLayerAdjustmentFromSliderKey(def.key);
+        });
+        adjustmentSlider.addEventListener('change', () => {
+            imageEditingSetActiveLayerAdjustmentFromSliderKey(def.key);
+        });
+    }
     for (let toneSlider of toneBalanceSliders) {
         toneSlider.addEventListener('input', () => {
             imageEditingSetActiveLayerToneBalanceFromSlider(toneSlider);
@@ -2326,9 +2513,351 @@ function imageEditingEnsureLayerOptionsWired() {
     });
     imageEditingLayerOptionsWired = true;
     imageEditingRefreshLayerOpacityControl();
-    imageEditingRefreshLayerSaturationControl();
-    imageEditingRefreshLayerLightValueControl();
-    imageEditingRefreshToneBalanceControls();
+}
+
+function imageEditingEnsureLayerEffectsDefaults(layer) {
+    if (!layer) {
+        return;
+    }
+    if (typeof ImageEditorLayer != 'undefined' && typeof ImageEditorLayer.cloneEffects == 'function') {
+        layer.effects = ImageEditorLayer.cloneEffects(layer.effects);
+    }
+    else if (!layer.effects || typeof layer.effects != 'object') {
+        layer.effects = { blur: 0, sharpen: 0, noiseReduction: 0, artisticFilter: 'none', vignette: 0, glow: 0 };
+    }
+    if (!layer.effectPresetId) {
+        layer.effectPresetId = 'neutral';
+    }
+}
+
+function imageEditingRefreshSelectionControls() {
+    if (!imageEditingTabEditor) {
+        return;
+    }
+    let selectionMode = document.getElementById('imageediting_selection_mode_select');
+    let toleranceSlider = document.getElementById('imageediting_selection_tolerance_slider');
+    let toleranceValue = document.getElementById('imageediting_selection_tolerance_value');
+    let sampleSource = document.getElementById('imageediting_selection_sample_source_select');
+    let contiguousToggle = document.getElementById('imageediting_selection_contiguous_toggle');
+    let featherSlider = document.getElementById('imageediting_selection_feather_slider');
+    let featherValue = document.getElementById('imageediting_selection_feather_value');
+    let expandSlider = document.getElementById('imageediting_selection_expand_slider');
+    let expandValue = document.getElementById('imageediting_selection_expand_value');
+    let smoothSlider = document.getElementById('imageediting_selection_smooth_slider');
+    let smoothValue = document.getElementById('imageediting_selection_smooth_value');
+    let clearSelectionButton = document.getElementById('imageediting_clear_selection_button');
+    if (!selectionMode || !toleranceSlider || !sampleSource || !contiguousToggle || !featherSlider || !expandSlider || !smoothSlider || !clearSelectionButton) {
+        return;
+    }
+    selectionMode.value = imageEditingTabEditor.selectionMode || 'replace';
+    toleranceSlider.value = `${Math.round(imageEditingTabEditor.selectionTolerance || 0)}`;
+    toleranceValue.innerText = toleranceSlider.value;
+    sampleSource.value = imageEditingTabEditor.selectionSampleSource || 'composite';
+    contiguousToggle.checked = !!imageEditingTabEditor.selectionContiguous;
+    featherSlider.value = `${Math.round(imageEditingTabEditor.selectionFeatherPx || 0)}`;
+    featherValue.innerText = `${featherSlider.value}px`;
+    expandSlider.value = `${Math.round(imageEditingTabEditor.selectionExpandPx || 0)}`;
+    expandValue.innerText = `${expandSlider.value}px`;
+    smoothSlider.value = `${Math.round(imageEditingTabEditor.selectionSmoothPasses || 0)}`;
+    smoothValue.innerText = smoothSlider.value;
+    updateRangeStyle(toleranceSlider);
+    updateRangeStyle(featherSlider);
+    updateRangeStyle(expandSlider);
+    updateRangeStyle(smoothSlider);
+    clearSelectionButton.disabled = !imageEditingTabEditor.hasSelectionMask();
+}
+
+function imageEditingReapplyCurrentSelectionMask() {
+    if (!imageEditingTabEditor || !imageEditingTabEditor.hasSelectionMask()) {
+        return;
+    }
+    if (typeof imageEditingTabEditor.rebuildSelectionMaskFromSource == 'function') {
+        imageEditingTabEditor.rebuildSelectionMaskFromSource(true);
+    }
+}
+
+function imageEditingRefreshCropControls() {
+    let widthInput = document.getElementById('imageediting_crop_display_width');
+    let heightInput = document.getElementById('imageediting_crop_display_height');
+    let commitButton = document.getElementById('imageediting_crop_commit_button');
+    let cancelButton = document.getElementById('imageediting_crop_cancel_button');
+    let resetButton = document.getElementById('imageediting_crop_reset_button');
+    if (!widthInput || !heightInput || !commitButton || !cancelButton || !resetButton) {
+        return;
+    }
+    let activeLayer = imageEditingTabEditor ? imageEditingTabEditor.activeLayer : null;
+    let disable = !activeLayer || activeLayer.layerType == 'adjustment';
+    widthInput.disabled = disable;
+    heightInput.disabled = disable;
+    commitButton.disabled = disable;
+    cancelButton.disabled = disable;
+    resetButton.disabled = disable;
+    if (disable) {
+        widthInput.value = '0';
+        heightInput.value = '0';
+        return;
+    }
+    let previewLayer = activeLayer;
+    if (imageEditingTabEditor.previewState && imageEditingTabEditor.previewState.targetLayer == activeLayer) {
+        previewLayer = imageEditingTabEditor.previewState.previewLayer;
+    }
+    widthInput.value = `${Math.round(previewLayer.width)}`;
+    heightInput.value = `${Math.round(previewLayer.height)}`;
+}
+
+function imageEditingApplyActiveLayerEffectValue(key) {
+    if (!imageEditingTabEditor || !imageEditingTabEditor.activeLayer || imageEditingTabEditor.activeLayer.isMask) {
+        return;
+    }
+    let def = imageEditingEffectDefinitions.find(effect => effect.key == key);
+    if (!def) {
+        return;
+    }
+    imageEditingEnsureLayerEffectsDefaults(imageEditingTabEditor.activeLayer);
+    let slider = document.getElementById(def.sliderId);
+    if (!slider) {
+        return;
+    }
+    let sliderValue = parseInt(slider.value);
+    if (isNaN(sliderValue)) {
+        return;
+    }
+    imageEditingTabEditor.activeLayer.effects[key] = def.sliderToProperty(sliderValue);
+    imageEditingTabEditor.activeLayer.markVisualChanged();
+    imageEditingTabEditor.markOutputChanged();
+    imageEditingTabEditor.queueSceneRedraw();
+    imageEditingRefreshEffectControls();
+}
+
+function imageEditingRefreshEffectControls() {
+    let presetSelect = document.getElementById('imageediting_effect_preset_select');
+    let artisticSelect = document.getElementById('imageediting_artistic_filter_select');
+    let newAdjustmentButton = document.getElementById('imageediting_new_adjustment_layer_button');
+    let editMaskButton = document.getElementById('imageediting_edit_adjustment_mask_button');
+    let toggleMaskButton = document.getElementById('imageediting_toggle_adjustment_mask_button');
+    if (!presetSelect || !artisticSelect || !newAdjustmentButton || !editMaskButton || !toggleMaskButton) {
+        return;
+    }
+    let activeLayer = imageEditingTabEditor ? imageEditingTabEditor.activeLayer : null;
+    let canEditEffects = !!(activeLayer && !activeLayer.isMask);
+    newAdjustmentButton.disabled = !imageEditingTabEditor;
+    editMaskButton.disabled = !(activeLayer && activeLayer.layerType == 'adjustment');
+    toggleMaskButton.disabled = !(activeLayer && activeLayer.layerType == 'adjustment');
+    presetSelect.disabled = !canEditEffects;
+    artisticSelect.disabled = !canEditEffects;
+    if (toggleMaskButton.disabled) {
+        toggleMaskButton.innerText = 'Hide Adjustment Mask';
+    }
+    else {
+        toggleMaskButton.innerText = imageEditingTabEditor.showAdjustmentMaskOverlay ? 'Hide Adjustment Mask' : 'Show Adjustment Mask';
+    }
+    if (!canEditEffects) {
+        presetSelect.value = 'neutral';
+        artisticSelect.value = 'none';
+    }
+    else {
+        imageEditingEnsureLayerEffectsDefaults(activeLayer);
+        presetSelect.value = activeLayer.effectPresetId || 'neutral';
+        artisticSelect.value = activeLayer.effects.artisticFilter || 'none';
+    }
+    for (let def of imageEditingEffectDefinitions) {
+        let slider = document.getElementById(def.sliderId);
+        let label = document.getElementById(def.labelKey);
+        if (!slider || !label) {
+            continue;
+        }
+        slider.disabled = !canEditEffects;
+        if (!canEditEffects) {
+            slider.value = `${def.propertyToSlider(def.defaultValue)}`;
+            label.innerText = def.format(parseInt(slider.value));
+            updateRangeStyle(slider);
+            continue;
+        }
+        let rawValue = activeLayer.effects[def.key];
+        if (typeof rawValue != 'number') {
+            rawValue = def.defaultValue;
+        }
+        slider.value = `${def.propertyToSlider(rawValue)}`;
+        label.innerText = def.format(parseInt(slider.value));
+        updateRangeStyle(slider);
+    }
+}
+
+function imageEditingEnsureSelectionEffectsControlsWired() {
+    if (imageEditingSelectionEffectsWired) {
+        return;
+    }
+    let selectionMode = document.getElementById('imageediting_selection_mode_select');
+    let toleranceSlider = document.getElementById('imageediting_selection_tolerance_slider');
+    let sampleSource = document.getElementById('imageediting_selection_sample_source_select');
+    let contiguousToggle = document.getElementById('imageediting_selection_contiguous_toggle');
+    let featherSlider = document.getElementById('imageediting_selection_feather_slider');
+    let expandSlider = document.getElementById('imageediting_selection_expand_slider');
+    let smoothSlider = document.getElementById('imageediting_selection_smooth_slider');
+    let widthInput = document.getElementById('imageediting_crop_display_width');
+    let heightInput = document.getElementById('imageediting_crop_display_height');
+    let commitButton = document.getElementById('imageediting_crop_commit_button');
+    let cancelButton = document.getElementById('imageediting_crop_cancel_button');
+    let resetButton = document.getElementById('imageediting_crop_reset_button');
+    let presetSelect = document.getElementById('imageediting_effect_preset_select');
+    let artisticSelect = document.getElementById('imageediting_artistic_filter_select');
+    let newAdjustmentButton = document.getElementById('imageediting_new_adjustment_layer_button');
+    let editMaskButton = document.getElementById('imageediting_edit_adjustment_mask_button');
+    let clearSelectionButton = document.getElementById('imageediting_clear_selection_button');
+    let toggleMaskButton = document.getElementById('imageediting_toggle_adjustment_mask_button');
+    if (!selectionMode || !toleranceSlider || !sampleSource || !contiguousToggle || !featherSlider || !expandSlider || !smoothSlider || !widthInput || !heightInput || !commitButton || !cancelButton || !resetButton || !presetSelect || !artisticSelect || !newAdjustmentButton || !editMaskButton || !clearSelectionButton || !toggleMaskButton) {
+        return;
+    }
+    selectionMode.addEventListener('change', () => {
+        imageEditingTabEditor.selectionMode = selectionMode.value;
+        imageEditingRefreshSelectionControls();
+    });
+    toleranceSlider.addEventListener('input', () => {
+        imageEditingTabEditor.selectionTolerance = parseInt(toleranceSlider.value) || 0;
+        imageEditingRefreshSelectionControls();
+    });
+    toleranceSlider.addEventListener('change', () => {
+        imageEditingTabEditor.selectionTolerance = parseInt(toleranceSlider.value) || 0;
+        imageEditingRefreshSelectionControls();
+    });
+    sampleSource.addEventListener('change', () => {
+        imageEditingTabEditor.selectionSampleSource = sampleSource.value;
+        imageEditingRefreshSelectionControls();
+    });
+    contiguousToggle.addEventListener('change', () => {
+        imageEditingTabEditor.selectionContiguous = contiguousToggle.checked;
+        imageEditingRefreshSelectionControls();
+    });
+    featherSlider.addEventListener('input', () => {
+        imageEditingTabEditor.selectionFeatherPx = parseInt(featherSlider.value) || 0;
+        imageEditingRefreshSelectionControls();
+    });
+    featherSlider.addEventListener('change', () => {
+        imageEditingTabEditor.selectionFeatherPx = parseInt(featherSlider.value) || 0;
+        imageEditingReapplyCurrentSelectionMask();
+        imageEditingRefreshSelectionControls();
+    });
+    expandSlider.addEventListener('input', () => {
+        imageEditingTabEditor.selectionExpandPx = parseInt(expandSlider.value) || 0;
+        imageEditingRefreshSelectionControls();
+    });
+    expandSlider.addEventListener('change', () => {
+        imageEditingTabEditor.selectionExpandPx = parseInt(expandSlider.value) || 0;
+        imageEditingReapplyCurrentSelectionMask();
+        imageEditingRefreshSelectionControls();
+    });
+    smoothSlider.addEventListener('input', () => {
+        imageEditingTabEditor.selectionSmoothPasses = parseInt(smoothSlider.value) || 0;
+        imageEditingRefreshSelectionControls();
+    });
+    smoothSlider.addEventListener('change', () => {
+        imageEditingTabEditor.selectionSmoothPasses = parseInt(smoothSlider.value) || 0;
+        imageEditingReapplyCurrentSelectionMask();
+        imageEditingRefreshSelectionControls();
+    });
+    clearSelectionButton.addEventListener('click', () => {
+        if (!imageEditingTabEditor) {
+            return;
+        }
+        imageEditingTabEditor.clearSelectionMask(true);
+        imageEditingRefreshSelectionControls();
+    });
+    widthInput.addEventListener('change', () => {
+        if (!imageEditingTabEditor || !imageEditingTabEditor.activeLayer) {
+            return;
+        }
+        imageEditingTabEditor.setLayerDisplaySize(imageEditingTabEditor.activeLayer, parseInt(widthInput.value) || imageEditingTabEditor.activeLayer.width, parseInt(heightInput.value) || imageEditingTabEditor.activeLayer.height);
+        imageEditingRefreshCropControls();
+    });
+    heightInput.addEventListener('change', () => {
+        if (!imageEditingTabEditor || !imageEditingTabEditor.activeLayer) {
+            return;
+        }
+        imageEditingTabEditor.setLayerDisplaySize(imageEditingTabEditor.activeLayer, parseInt(widthInput.value) || imageEditingTabEditor.activeLayer.width, parseInt(heightInput.value) || imageEditingTabEditor.activeLayer.height);
+        imageEditingRefreshCropControls();
+    });
+    commitButton.addEventListener('click', () => {
+        if (!imageEditingTabEditor) {
+            return;
+        }
+        imageEditingTabEditor.commitCropSession();
+        imageEditingRefreshCropControls();
+    });
+    cancelButton.addEventListener('click', () => {
+        if (!imageEditingTabEditor) {
+            return;
+        }
+        imageEditingTabEditor.cancelCropSession();
+        imageEditingRefreshCropControls();
+    });
+    resetButton.addEventListener('click', () => {
+        if (!imageEditingTabEditor || !imageEditingTabEditor.activeLayer) {
+            return;
+        }
+        imageEditingTabEditor.resetCropForLayer(imageEditingTabEditor.activeLayer);
+        imageEditingRefreshCropControls();
+    });
+    presetSelect.addEventListener('change', () => {
+        if (!imageEditingTabEditor || !imageEditingTabEditor.activeLayer || imageEditingTabEditor.activeLayer.isMask) {
+            return;
+        }
+        imageEditingEnsureLayerEffectsDefaults(imageEditingTabEditor.activeLayer);
+        imageEditingTabEditor.activeLayer.effectPresetId = presetSelect.value;
+        imageEditingTabEditor.activeLayer.markVisualChanged();
+        imageEditingTabEditor.markOutputChanged();
+        imageEditingTabEditor.queueSceneRedraw();
+        imageEditingRefreshEffectControls();
+    });
+    artisticSelect.addEventListener('change', () => {
+        if (!imageEditingTabEditor || !imageEditingTabEditor.activeLayer || imageEditingTabEditor.activeLayer.isMask) {
+            return;
+        }
+        imageEditingEnsureLayerEffectsDefaults(imageEditingTabEditor.activeLayer);
+        imageEditingTabEditor.activeLayer.effects.artisticFilter = artisticSelect.value;
+        imageEditingTabEditor.activeLayer.markVisualChanged();
+        imageEditingTabEditor.markOutputChanged();
+        imageEditingTabEditor.queueSceneRedraw();
+        imageEditingRefreshEffectControls();
+    });
+    for (let def of imageEditingEffectDefinitions) {
+        let slider = document.getElementById(def.sliderId);
+        if (!slider) {
+            continue;
+        }
+        slider.addEventListener('input', () => {
+            imageEditingApplyActiveLayerEffectValue(def.key);
+        });
+        slider.addEventListener('change', () => {
+            imageEditingApplyActiveLayerEffectValue(def.key);
+        });
+    }
+    newAdjustmentButton.addEventListener('click', () => {
+        if (!imageEditingTabEditor) {
+            return;
+        }
+        imageEditingTabEditor.addEmptyAdjustmentLayer();
+        imageEditingRefreshLayerOpacityControl();
+        imageEditingRefreshEffectControls();
+    });
+    editMaskButton.addEventListener('click', () => {
+        if (!imageEditingTabEditor || !imageEditingTabEditor.activeLayer || imageEditingTabEditor.activeLayer.layerType != 'adjustment') {
+            return;
+        }
+        imageEditingTabEditor.activateTool('brush');
+        imageEditingRefreshToolButtons();
+    });
+    toggleMaskButton.addEventListener('click', () => {
+        if (!imageEditingTabEditor || !imageEditingTabEditor.activeLayer || imageEditingTabEditor.activeLayer.layerType != 'adjustment') {
+            return;
+        }
+        imageEditingTabEditor.showAdjustmentMaskOverlay = !imageEditingTabEditor.showAdjustmentMaskOverlay;
+        imageEditingTabEditor.queueSceneRedraw();
+        imageEditingRefreshEffectControls();
+    });
+    imageEditingSelectionEffectsWired = true;
+    imageEditingRefreshSelectionControls();
+    imageEditingRefreshCropControls();
+    imageEditingRefreshEffectControls();
 }
 
 /**
@@ -2367,6 +2896,20 @@ function imageEditingSetInputSectionCollapsed(section, collapsed, save = true) {
         header = imageEditingGetImageOptionsHeader();
         marker = imageEditingGetImageOptionsToggleState();
     }
+    else if (section == 'selection_crop') {
+        imageEditingSelectionCropCollapsed = collapsed;
+        key = 'imageediting_selectionCropCollapsed';
+        body = imageEditingGetSelectionCropBody();
+        header = imageEditingGetSelectionCropHeader();
+        marker = imageEditingGetSelectionCropToggleState();
+    }
+    else if (section == 'effects_presets') {
+        imageEditingEffectsPresetsCollapsed = collapsed;
+        key = 'imageediting_effectsPresetsCollapsed';
+        body = imageEditingGetEffectsPresetsBody();
+        header = imageEditingGetEffectsPresetsHeader();
+        marker = imageEditingGetEffectsPresetsToggleState();
+    }
     else {
         return;
     }
@@ -2392,6 +2935,8 @@ function imageEditingApplyInputSectionState() {
     imageEditingSetInputSectionCollapsed('actions', imageEditingActionsCollapsed, false);
     imageEditingSetInputSectionCollapsed('layer_options', imageEditingLayerOptionsCollapsed, false);
     imageEditingSetInputSectionCollapsed('image_options', imageEditingImageOptionsCollapsed, false);
+    imageEditingSetInputSectionCollapsed('selection_crop', imageEditingSelectionCropCollapsed, false);
+    imageEditingSetInputSectionCollapsed('effects_presets', imageEditingEffectsPresetsCollapsed, false);
 }
 
 /**
@@ -2409,6 +2954,12 @@ function imageEditingToggleInputSection(section) {
     }
     else if (section == 'image_options') {
         imageEditingSetInputSectionCollapsed(section, !imageEditingImageOptionsCollapsed);
+    }
+    else if (section == 'selection_crop') {
+        imageEditingSetInputSectionCollapsed(section, !imageEditingSelectionCropCollapsed);
+    }
+    else if (section == 'effects_presets') {
+        imageEditingSetInputSectionCollapsed(section, !imageEditingEffectsPresetsCollapsed);
     }
 }
 
@@ -2501,7 +3052,7 @@ function imageEditingSetColor(newColor) {
     }
     if (imageEditingTabEditor && imageEditingTabEditor.activeTool && typeof imageEditingTabEditor.activeTool.setColor == 'function') {
         imageEditingTabEditor.activeTool.setColor(newColor);
-        imageEditingTabEditor.redraw();
+        imageEditingTabEditor.queueOverlayRedraw();
     }
 }
 
@@ -2589,14 +3140,36 @@ function imageEditingEnsureEditorReady() {
     imageEditingTabEditor.activateTool = (toolId) => {
         rawActivateTool(toolId);
         imageEditingRefreshToolButtons();
+        imageEditingRefreshCropControls();
     };
     let rawSetActiveLayer = imageEditingTabEditor.setActiveLayer.bind(imageEditingTabEditor);
     imageEditingTabEditor.setActiveLayer = (layer) => {
         rawSetActiveLayer(layer);
         imageEditingRefreshToolButtons();
         imageEditingRefreshLayerOpacityControl();
+        imageEditingRefreshSelectionControls();
+        imageEditingRefreshCropControls();
+        imageEditingRefreshEffectControls();
     };
+    let rawCommitSelectionMask = imageEditingTabEditor.commitSelectionMask.bind(imageEditingTabEditor);
+    imageEditingTabEditor.commitSelectionMask = (maskCanvas, combineMode = null) => {
+        rawCommitSelectionMask(maskCanvas, combineMode);
+        imageEditingRefreshSelectionControls();
+    };
+    let rawClearSelectionMask = imageEditingTabEditor.clearSelectionMask.bind(imageEditingTabEditor);
+    imageEditingTabEditor.clearSelectionMask = (queueOverlay = true) => {
+        rawClearSelectionMask(queueOverlay);
+        imageEditingRefreshSelectionControls();
+    };
+    if (typeof imageEditingTabEditor.rebuildSelectionMaskFromSource == 'function') {
+        let rawRebuildSelectionMaskFromSource = imageEditingTabEditor.rebuildSelectionMaskFromSource.bind(imageEditingTabEditor);
+        imageEditingTabEditor.rebuildSelectionMaskFromSource = (queueOverlay = true) => {
+            rawRebuildSelectionMaskFromSource(queueOverlay);
+            imageEditingRefreshSelectionControls();
+        };
+    }
     imageEditingBuildToolButtons();
+    imageEditingBuildSelectionToolButtons();
     imageEditingBuildOptionButtons();
     imageEditingRefreshLayerOpacityControl();
     imageEditingApplyRightSidebarWidth();
@@ -2627,11 +3200,15 @@ function imageEditingEnsureUiReady() {
     imageEditingEnsureColorSelectorWired();
     imageEditingEnsureEditorReady();
     imageEditingEnsureLayerOptionsWired();
+    imageEditingEnsureSelectionEffectsControlsWired();
     imageEditingEnsureSplittersWired();
     imageEditingApplyLeftSidebarWidth();
     imageEditingApplyRightSidebarWidth();
     imageEditingApplyInputSectionState();
     imageEditingRefreshLayerOpacityControl();
+    imageEditingRefreshSelectionControls();
+    imageEditingRefreshCropControls();
+    imageEditingRefreshEffectControls();
     imageEditingApplyZoom();
 }
 
@@ -2759,9 +3336,24 @@ function openGenerateTabEditorForEditorData(sourceEditor, actionLabel = 'Send La
         copiedLayer.opacity = sourceLayer.opacity;
         copiedLayer.saturation = typeof sourceLayer.saturation == 'number' ? sourceLayer.saturation : 1;
         copiedLayer.lightValue = typeof sourceLayer.lightValue == 'number' ? sourceLayer.lightValue : 1;
+        copiedLayer.contrast = typeof sourceLayer.contrast == 'number' ? sourceLayer.contrast : 1;
+        copiedLayer.hueShift = typeof sourceLayer.hueShift == 'number' ? sourceLayer.hueShift : 0;
+        copiedLayer.gamma = typeof sourceLayer.gamma == 'number' ? sourceLayer.gamma : 1;
+        copiedLayer.temperature = typeof sourceLayer.temperature == 'number' ? sourceLayer.temperature : 0;
+        copiedLayer.tint = typeof sourceLayer.tint == 'number' ? sourceLayer.tint : 0;
+        copiedLayer.shadows = typeof sourceLayer.shadows == 'number' ? sourceLayer.shadows : 0;
+        copiedLayer.highlights = typeof sourceLayer.highlights == 'number' ? sourceLayer.highlights : 0;
+        copiedLayer.whites = typeof sourceLayer.whites == 'number' ? sourceLayer.whites : 0;
+        copiedLayer.blacks = typeof sourceLayer.blacks == 'number' ? sourceLayer.blacks : 0;
         copiedLayer.toneBalance = imageEditingCloneToneBalance(sourceLayer.toneBalance);
         copiedLayer.globalCompositeOperation = sourceLayer.globalCompositeOperation;
-        copiedLayer.isMask = sourceLayer.isMask;
+        copiedLayer.layerType = sourceLayer.layerType || (sourceLayer.isMask ? 'mask' : 'image');
+        copiedLayer.cropX = sourceLayer.cropX || 0;
+        copiedLayer.cropY = sourceLayer.cropY || 0;
+        copiedLayer.cropWidth = sourceLayer.cropWidth || sourceLayer.canvas.width;
+        copiedLayer.cropHeight = sourceLayer.cropHeight || sourceLayer.canvas.height;
+        copiedLayer.effects = typeof ImageEditorLayer != 'undefined' && typeof ImageEditorLayer.cloneEffects == 'function' ? ImageEditorLayer.cloneEffects(sourceLayer.effects) : (sourceLayer.effects || {});
+        copiedLayer.effectPresetId = sourceLayer.effectPresetId || 'neutral';
         copiedLayer.hasAnyContent = sourceLayer.hasAnyContent;
         imageEditor.addLayer(copiedLayer, true);
         if (sourceEditor.baseImageLayerId == sourceLayer.id) {
