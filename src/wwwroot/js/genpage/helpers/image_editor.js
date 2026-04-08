@@ -635,6 +635,7 @@ class ImageEditor {
 
     clearVars() {
         this.totalLayersEver = 0;
+        this.baseImageLayerId = null;
         this.mouseDown = false;
         this.zoomLevel = 1;
         this.offsetX = 0;
@@ -1099,6 +1100,7 @@ class ImageEditor {
     clearLayers() {
         this.layers = [];
         this.activeLayer = null;
+        this.baseImageLayerId = null;
         this.realWidth = 512;
         this.realHeight = 512;
         this.finalOffsetX = 0;
@@ -1125,6 +1127,11 @@ class ImageEditor {
         return layer;
     }
 
+    /** Gets the bottom-most image layer in the current stack. */
+    getBaseImageLayer() {
+        return this.layers.find(layer => !layer.isMask) || null;
+    }
+
     /**
      * Loads an image from a URL (data URL or object URL) and adds it as a new layer.
      */
@@ -1132,9 +1139,17 @@ class ImageEditor {
         let img = new Image();
         img.onload = () => {
             let layer = this.addImageLayer(img);
-            let [mouseX, mouseY] = this.canvasCoordToImageCoord(this.mouseX, this.mouseY);
-            layer.offsetX = mouseX - layer.width / 2;
-            layer.offsetY = mouseY - layer.height / 2;
+            let baseLayer = this.getBaseImageLayer();
+            if (baseLayer && baseLayer != layer) {
+                layer.offsetX = baseLayer.offsetX;
+                layer.offsetY = baseLayer.offsetY;
+                layer.rotation = baseLayer.rotation;
+            }
+            else {
+                let [mouseX, mouseY] = this.canvasCoordToImageCoord(this.mouseX, this.mouseY);
+                layer.offsetX = mouseX - layer.width / 2;
+                layer.offsetY = mouseY - layer.height / 2;
+            }
             this.activateTool('general');
             this.redraw();
         };
@@ -1235,6 +1250,7 @@ class ImageEditor {
         layer.ctx.drawImage(img, 0, 0);
         layer.hasAnyContent = true;
         this.addLayer(layer, true);
+        this.baseImageLayerId = layer.id;
         let layer2 = new ImageEditorLayer(this, img.naturalWidth, img.naturalHeight);
         this.addLayer(layer2, true);
         let maskLayer = new ImageEditorLayer(this, img.naturalWidth, img.naturalHeight);

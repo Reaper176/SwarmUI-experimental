@@ -2764,6 +2764,9 @@ function openGenerateTabEditorForEditorData(sourceEditor, actionLabel = 'Send La
         copiedLayer.isMask = sourceLayer.isMask;
         copiedLayer.hasAnyContent = sourceLayer.hasAnyContent;
         imageEditor.addLayer(copiedLayer, true);
+        if (sourceEditor.baseImageLayerId == sourceLayer.id) {
+            imageEditor.baseImageLayerId = copiedLayer.id;
+        }
     }
     if (activeLayerIndex >= 0 && activeLayerIndex < imageEditor.layers.length) {
         imageEditor.setActiveLayer(imageEditor.layers[activeLayerIndex]);

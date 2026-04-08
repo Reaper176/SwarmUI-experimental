@@ -349,7 +349,7 @@ class ImageEditorToolOptions extends ImageEditorTool {
  */
 class ImageEditorToolGeneral extends ImageEditorTool {
     constructor(editor) {
-        super(editor, 'general', 'mouse', 'General', 'General tool. Lets you move around the canvas, or adjust size of current layer.\nWhile resizing an object, hold CTRL to snap-to-grid, or hold SHIFT to disable aspect preservation.\nThe general tool can be activated at any time with the Alt key.\nHotKey: G', 'g');
+        super(editor, 'general', 'mouse', 'General', 'General tool. Lets you move around the canvas, or adjust size of current layer.\nWhile resizing an object, hold CTRL to snap-to-grid, or hold SHIFT to disable aspect preservation.\nResize edges also snap near the base image edges.\nThe general tool can be activated at any time with the Alt key.\nHotKey: G', 'g');
         this.currentDragCircle = null;
         this.rotateIcon = new Image();
         this.rotateIcon.src = 'imgs/canvas_rotate.png';
@@ -392,6 +392,37 @@ class ImageEditorToolGeneral extends ImageEditorTool {
 
     getControlCircle(name) {
         return this.activeLayerControlCircles().find(c => c.name == name);
+    }
+
+    getResizeSnapThreshold() {
+        return 12 / this.editor.zoomLevel;
+    }
+
+    snapLayerResizeToBaseImage(target, handleDef) {
+        let baseLayer = this.editor.getBaseImageLayer();
+        if (!baseLayer || baseLayer == target || Math.abs(baseLayer.rotation - target.rotation) > 0.0001) {
+            return;
+        }
+        let [moveLeft, moveRight, moveTop, moveBottom] = handleDef;
+        let threshold = this.getResizeSnapThreshold();
+        let targetRight = target.offsetX + target.width;
+        let targetBottom = target.offsetY + target.height;
+        let baseRight = baseLayer.offsetX + baseLayer.width;
+        let baseBottom = baseLayer.offsetY + baseLayer.height;
+        if (moveLeft && Math.abs(target.offsetX - baseLayer.offsetX) <= threshold) {
+            target.offsetX = baseLayer.offsetX;
+            target.width = Math.max(1, targetRight - target.offsetX);
+        }
+        if (moveRight && Math.abs(targetRight - baseRight) <= threshold) {
+            target.width = Math.max(1, baseRight - target.offsetX);
+        }
+        if (moveTop && Math.abs(target.offsetY - baseLayer.offsetY) <= threshold) {
+            target.offsetY = baseLayer.offsetY;
+            target.height = Math.max(1, targetBottom - target.offsetY);
+        }
+        if (moveBottom && Math.abs(targetBottom - baseBottom) <= threshold) {
+            target.height = Math.max(1, baseBottom - target.offsetY);
+        }
     }
 
     draw() {
@@ -528,6 +559,7 @@ class ImageEditorToolGeneral extends ImageEditorTool {
                         let [newAnchorX, newAnchorY] = applyRotate(target.offsetX + anchorXFrac * target.width, target.offsetY + anchorYFrac * target.height);
                         target.offsetX += origAnchorX - newAnchorX;
                         target.offsetY += origAnchorY - newAnchorY;
+                        this.snapLayerResizeToBaseImage(target, handleDef);
                     }
                 }
                 this.editor.markChanged();
