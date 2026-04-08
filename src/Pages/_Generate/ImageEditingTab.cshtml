@@ -39,6 +39,26 @@
                                 <input type="range" class="auto-slider-range" id="imageediting_layer_opacity_slider" min="0" max="100" step="1" value="100" oninput="updateRangeStyle(this)" onchange="updateRangeStyle(this)">
                             </div>
                             <div class="imageediting_layer_option_context" id="imageediting_layer_opacity_context">Active Layer: Image</div>
+                            <div class="imageediting_layer_option_row imageediting_layer_option_row_spaced">
+                                <label class="translate" for="imageediting_layer_blend_mode_select">Blend Mode</label>
+                            </div>
+                            <select class="auto-dropdown" id="imageediting_layer_blend_mode_select" style="width:100%;">
+                                <option value="source-over">Normal</option>
+                                <option value="multiply">Multiply</option>
+                                <option value="screen">Screen</option>
+                                <option value="overlay">Overlay</option>
+                                <option value="darken">Darken</option>
+                                <option value="lighten">Lighten</option>
+                                <option value="color-dodge">Color Dodge</option>
+                                <option value="color-burn">Color Burn</option>
+                                <option value="soft-light">Soft Light</option>
+                                <option value="hard-light">Hard Light</option>
+                                <option value="hue">Hue</option>
+                                <option value="saturation">Saturation</option>
+                                <option value="color">Color</option>
+                                <option value="luminosity">Luminosity</option>
+                            </select>
+                            <div class="imageediting_layer_option_context" id="imageediting_layer_blend_mode_context">Active Layer: Image</div>
                             <div class="imageediting_buttons_grid imageediting_layer_option_buttons" id="imageediting_layer_option_buttons">
                                 <button type="button" class="basic-button imageediting_option_button translate" id="imageediting_layer_delete_button">Delete Layer</button>
                                 <button type="button" class="basic-button imageediting_option_button translate" id="imageediting_layer_duplicate_button">Duplicate Layer</button>
@@ -66,13 +86,76 @@
                             </div>
                             <div class="imageediting_layer_option_context" id="imageediting_layer_saturation_context">Active Layer: Image</div>
                             <div class="imageediting_layer_option_row imageediting_layer_option_row_spaced">
-                                <label class="translate" for="imageediting_layer_light_value_slider">Light Value</label>
+                                <label class="translate" for="imageediting_layer_light_value_slider">Brightness / Exposure</label>
                                 <span id="imageediting_layer_light_value_value">100%</span>
                             </div>
                             <div class="auto-slider-range-wrapper">
                                 <input type="range" class="auto-slider-range" id="imageediting_layer_light_value_slider" min="0" max="200" step="1" value="100" oninput="updateRangeStyle(this)" onchange="updateRangeStyle(this)">
                             </div>
                             <div class="imageediting_layer_option_context" id="imageediting_layer_light_value_context">Active Layer: Image</div>
+                            <div class="imageediting_layer_option_row imageediting_layer_option_row_spaced">
+                                <label class="translate" for="imageediting_layer_contrast_slider">Contrast</label>
+                                <span id="imageediting_layer_contrast_value">100%</span>
+                            </div>
+                            <div class="auto-slider-range-wrapper">
+                                <input type="range" class="auto-slider-range" id="imageediting_layer_contrast_slider" min="0" max="200" step="1" value="100" oninput="updateRangeStyle(this)" onchange="updateRangeStyle(this)">
+                            </div>
+                            <div class="imageediting_layer_option_row imageediting_layer_option_row_spaced">
+                                <label class="translate" for="imageediting_layer_hue_shift_slider">Hue Shift</label>
+                                <span id="imageediting_layer_hue_shift_value">0&deg;</span>
+                            </div>
+                            <div class="auto-slider-range-wrapper">
+                                <input type="range" class="auto-slider-range" id="imageediting_layer_hue_shift_slider" min="-180" max="180" step="1" value="0" oninput="updateRangeStyle(this)" onchange="updateRangeStyle(this)">
+                            </div>
+                            <div class="imageediting_layer_option_row imageediting_layer_option_row_spaced">
+                                <label class="translate" for="imageediting_layer_gamma_slider">Gamma</label>
+                                <span id="imageediting_layer_gamma_value">1.00</span>
+                            </div>
+                            <div class="auto-slider-range-wrapper">
+                                <input type="range" class="auto-slider-range" id="imageediting_layer_gamma_slider" min="10" max="300" step="1" value="100" oninput="updateRangeStyle(this)" onchange="updateRangeStyle(this)">
+                            </div>
+                            <div class="imageediting_layer_option_row imageediting_layer_option_row_spaced">
+                                <label class="translate" for="imageediting_layer_temperature_slider">Temperature</label>
+                                <span id="imageediting_layer_temperature_value">0%</span>
+                            </div>
+                            <div class="auto-slider-range-wrapper">
+                                <input type="range" class="auto-slider-range" id="imageediting_layer_temperature_slider" min="-100" max="100" step="1" value="0" oninput="updateRangeStyle(this)" onchange="updateRangeStyle(this)">
+                            </div>
+                            <div class="imageediting_layer_option_row imageediting_layer_option_row_spaced">
+                                <label class="translate" for="imageediting_layer_tint_slider">Tint</label>
+                                <span id="imageediting_layer_tint_value">0%</span>
+                            </div>
+                            <div class="auto-slider-range-wrapper">
+                                <input type="range" class="auto-slider-range" id="imageediting_layer_tint_slider" min="-100" max="100" step="1" value="0" oninput="updateRangeStyle(this)" onchange="updateRangeStyle(this)">
+                            </div>
+                            <div class="imageediting_layer_option_row imageediting_layer_option_row_spaced">
+                                <label class="translate" for="imageediting_layer_shadows_slider">Shadows</label>
+                                <span id="imageediting_layer_shadows_value">0%</span>
+                            </div>
+                            <div class="auto-slider-range-wrapper">
+                                <input type="range" class="auto-slider-range" id="imageediting_layer_shadows_slider" min="-100" max="100" step="1" value="0" oninput="updateRangeStyle(this)" onchange="updateRangeStyle(this)">
+                            </div>
+                            <div class="imageediting_layer_option_row imageediting_layer_option_row_spaced">
+                                <label class="translate" for="imageediting_layer_highlights_slider">Highlights</label>
+                                <span id="imageediting_layer_highlights_value">0%</span>
+                            </div>
+                            <div class="auto-slider-range-wrapper">
+                                <input type="range" class="auto-slider-range" id="imageediting_layer_highlights_slider" min="-100" max="100" step="1" value="0" oninput="updateRangeStyle(this)" onchange="updateRangeStyle(this)">
+                            </div>
+                            <div class="imageediting_layer_option_row imageediting_layer_option_row_spaced">
+                                <label class="translate" for="imageediting_layer_whites_slider">Whites</label>
+                                <span id="imageediting_layer_whites_value">0%</span>
+                            </div>
+                            <div class="auto-slider-range-wrapper">
+                                <input type="range" class="auto-slider-range" id="imageediting_layer_whites_slider" min="-100" max="100" step="1" value="0" oninput="updateRangeStyle(this)" onchange="updateRangeStyle(this)">
+                            </div>
+                            <div class="imageediting_layer_option_row imageediting_layer_option_row_spaced">
+                                <label class="translate" for="imageediting_layer_blacks_slider">Blacks</label>
+                                <span id="imageediting_layer_blacks_value">0%</span>
+                            </div>
+                            <div class="auto-slider-range-wrapper">
+                                <input type="range" class="auto-slider-range" id="imageediting_layer_blacks_slider" min="-100" max="100" step="1" value="0" oninput="updateRangeStyle(this)" onchange="updateRangeStyle(this)">
+                            </div>
                             <div class="imageediting_tone_balance_group">
                                 <div class="imageediting_tone_balance_title translate"><b>Color Balance (RGB)</b></div>
                                 <div class="imageediting_tone_balance_section">

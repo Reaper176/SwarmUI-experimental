@@ -1288,6 +1288,19 @@ let imageEditingImageOptionsCollapsed = localStorage.getItem('imageediting_image
 let imageEditingLayerOptionsWired = false;
 let imageEditingToneBalanceRanges = ['shadows', 'midtones', 'highlights'];
 let imageEditingToneBalanceChannels = ['r', 'g', 'b'];
+let imageEditingLayerAdjustmentDefinitions = [
+    { key: 'saturation', property: 'saturation', defaultValue: 1, sliderMin: 0, sliderMax: 200, sliderDefault: 100, sliderToProperty: value => value / 100, propertyToSlider: value => Math.round(value * 100), format: value => `${value}%`, contextId: 'imageediting_layer_saturation_context' },
+    { key: 'light_value', property: 'lightValue', defaultValue: 1, sliderMin: 0, sliderMax: 200, sliderDefault: 100, sliderToProperty: value => value / 100, propertyToSlider: value => Math.round(value * 100), format: value => `${value}%`, contextId: 'imageediting_layer_light_value_context' },
+    { key: 'contrast', property: 'contrast', defaultValue: 1, sliderMin: 0, sliderMax: 200, sliderDefault: 100, sliderToProperty: value => value / 100, propertyToSlider: value => Math.round(value * 100), format: value => `${value}%` },
+    { key: 'hue_shift', property: 'hueShift', defaultValue: 0, sliderMin: -180, sliderMax: 180, sliderDefault: 0, sliderToProperty: value => value, propertyToSlider: value => Math.round(value), format: value => `${value}\u00B0` },
+    { key: 'gamma', property: 'gamma', defaultValue: 1, sliderMin: 10, sliderMax: 300, sliderDefault: 100, sliderToProperty: value => value / 100, propertyToSlider: value => Math.round(value * 100), format: value => `${(value / 100).toFixed(2)}` },
+    { key: 'temperature', property: 'temperature', defaultValue: 0, sliderMin: -100, sliderMax: 100, sliderDefault: 0, sliderToProperty: value => value / 100, propertyToSlider: value => Math.round(value * 100), format: value => imageEditingFormatSignedPercent(value) },
+    { key: 'tint', property: 'tint', defaultValue: 0, sliderMin: -100, sliderMax: 100, sliderDefault: 0, sliderToProperty: value => value / 100, propertyToSlider: value => Math.round(value * 100), format: value => imageEditingFormatSignedPercent(value) },
+    { key: 'shadows', property: 'shadows', defaultValue: 0, sliderMin: -100, sliderMax: 100, sliderDefault: 0, sliderToProperty: value => value / 100, propertyToSlider: value => Math.round(value * 100), format: value => imageEditingFormatSignedPercent(value) },
+    { key: 'highlights', property: 'highlights', defaultValue: 0, sliderMin: -100, sliderMax: 100, sliderDefault: 0, sliderToProperty: value => value / 100, propertyToSlider: value => Math.round(value * 100), format: value => imageEditingFormatSignedPercent(value) },
+    { key: 'whites', property: 'whites', defaultValue: 0, sliderMin: -100, sliderMax: 100, sliderDefault: 0, sliderToProperty: value => value / 100, propertyToSlider: value => Math.round(value * 100), format: value => imageEditingFormatSignedPercent(value) },
+    { key: 'blacks', property: 'blacks', defaultValue: 0, sliderMin: -100, sliderMax: 100, sliderDefault: 0, sliderToProperty: value => value / 100, propertyToSlider: value => Math.round(value * 100), format: value => imageEditingFormatSignedPercent(value) }
+];
 
 /**
  * Gets the Image Editing editor area.
@@ -1469,6 +1482,34 @@ function imageEditingGetLayerLightValueValue() {
  */
 function imageEditingGetLayerLightValueContext() {
     return document.getElementById('imageediting_layer_light_value_context');
+}
+
+/**
+ * Gets the Image Editing layer blend-mode select.
+ */
+function imageEditingGetLayerBlendModeSelect() {
+    return document.getElementById('imageediting_layer_blend_mode_select');
+}
+
+/**
+ * Gets the Image Editing layer blend-mode context text.
+ */
+function imageEditingGetLayerBlendModeContext() {
+    return document.getElementById('imageediting_layer_blend_mode_context');
+}
+
+/**
+ * Gets an Image Editing image-adjustment slider by key.
+ */
+function imageEditingGetLayerAdjustmentSlider(key) {
+    return document.getElementById(`imageediting_layer_${key}_slider`);
+}
+
+/**
+ * Gets an Image Editing image-adjustment label by key.
+ */
+function imageEditingGetLayerAdjustmentValueLabel(key) {
+    return document.getElementById(`imageediting_layer_${key}_value`);
 }
 
 /**
@@ -1996,116 +2037,117 @@ function imageEditingSetActiveLayerOpacityFromSlider() {
     imageEditingRefreshLayerOpacityControl();
 }
 
+function imageEditingGetLayerAdjustmentDefinition(key) {
+    return imageEditingLayerAdjustmentDefinitions.find(def => def.key == key) || null;
+}
+
+function imageEditingGetLayerContextText(activeLayer) {
+    if (!activeLayer) {
+        return 'No active layer selected';
+    }
+    return `Active Layer: ${activeLayer.isMask ? 'Mask' : 'Image'}`;
+}
+
+function imageEditingEnsureLayerAdjustmentDefaults(layer) {
+    if (!layer) {
+        return;
+    }
+    for (let def of imageEditingLayerAdjustmentDefinitions) {
+        let value = parseFloat(layer[def.property]);
+        if (isNaN(value)) {
+            value = def.defaultValue;
+        }
+        let min = Math.min(def.sliderToProperty(def.sliderMin), def.sliderToProperty(def.sliderMax));
+        let max = Math.max(def.sliderToProperty(def.sliderMin), def.sliderToProperty(def.sliderMax));
+        layer[def.property] = Math.max(min, Math.min(max, value));
+    }
+}
+
+function imageEditingSetActiveLayerAdjustmentFromSliderKey(key) {
+    if (!imageEditingTabEditor || !imageEditingTabEditor.activeLayer) {
+        return;
+    }
+    let def = imageEditingGetLayerAdjustmentDefinition(key);
+    let slider = imageEditingGetLayerAdjustmentSlider(key);
+    if (!def || !slider) {
+        return;
+    }
+    let sliderValue = parseInt(slider.value);
+    if (isNaN(sliderValue)) {
+        return;
+    }
+    sliderValue = Math.max(def.sliderMin, Math.min(def.sliderMax, sliderValue));
+    let layer = imageEditingTabEditor.activeLayer;
+    layer[def.property] = def.sliderToProperty(sliderValue);
+    imageEditingTabEditor.markOutputChanged();
+    imageEditingTabEditor.queueSceneRedraw();
+    imageEditingRefreshLayerAdjustmentControls();
+}
+
+function imageEditingRefreshLayerAdjustmentControl(key) {
+    let def = imageEditingGetLayerAdjustmentDefinition(key);
+    let slider = imageEditingGetLayerAdjustmentSlider(key);
+    let valueLabel = imageEditingGetLayerAdjustmentValueLabel(key);
+    if (!def || !slider || !valueLabel) {
+        return;
+    }
+    let contextLabel = def.contextId ? document.getElementById(def.contextId) : null;
+    let activeLayer = imageEditingTabEditor ? imageEditingTabEditor.activeLayer : null;
+    if (!activeLayer) {
+        slider.disabled = true;
+        slider.value = `${def.sliderDefault}`;
+        valueLabel.innerText = 'N/A';
+        if (contextLabel) {
+            contextLabel.innerText = 'No active layer selected';
+        }
+        updateRangeStyle(slider);
+        return;
+    }
+    imageEditingEnsureLayerAdjustmentDefaults(activeLayer);
+    let sliderValue = def.propertyToSlider(activeLayer[def.property]);
+    sliderValue = Math.max(def.sliderMin, Math.min(def.sliderMax, sliderValue));
+    slider.disabled = false;
+    slider.value = `${sliderValue}`;
+    valueLabel.innerText = def.format(sliderValue);
+    if (contextLabel) {
+        contextLabel.innerText = imageEditingGetLayerContextText(activeLayer);
+    }
+    updateRangeStyle(slider);
+}
+
+function imageEditingRefreshLayerAdjustmentControls() {
+    for (let def of imageEditingLayerAdjustmentDefinitions) {
+        imageEditingRefreshLayerAdjustmentControl(def.key);
+    }
+    imageEditingRefreshToneBalanceControls();
+}
+
 /**
  * Applies the current layer's saturation from the Image Options slider.
  */
 function imageEditingSetActiveLayerSaturationFromSlider() {
-    if (!imageEditingTabEditor || !imageEditingTabEditor.activeLayer) {
-        return;
-    }
-    let slider = imageEditingGetLayerSaturationSlider();
-    if (!slider) {
-        return;
-    }
-    let saturationValue = parseInt(slider.value);
-    if (isNaN(saturationValue)) {
-        return;
-    }
-    saturationValue = Math.max(0, Math.min(200, saturationValue));
-    let layer = imageEditingTabEditor.activeLayer;
-    layer.saturation = saturationValue / 100;
-    imageEditingTabEditor.markOutputChanged();
-    imageEditingTabEditor.queueSceneRedraw();
-    imageEditingRefreshLayerSaturationControl();
+    imageEditingSetActiveLayerAdjustmentFromSliderKey('saturation');
 }
 
 /**
  * Refreshes Image Options controls for the currently selected layer.
  */
 function imageEditingRefreshLayerSaturationControl() {
-    let slider = imageEditingGetLayerSaturationSlider();
-    let valueLabel = imageEditingGetLayerSaturationValue();
-    let contextLabel = imageEditingGetLayerSaturationContext();
-    if (!slider || !valueLabel || !contextLabel) {
-        return;
-    }
-    let activeLayer = imageEditingTabEditor ? imageEditingTabEditor.activeLayer : null;
-    if (!activeLayer) {
-        slider.disabled = true;
-        slider.value = '100';
-        valueLabel.innerText = 'N/A';
-        contextLabel.innerText = 'No active layer selected';
-        updateRangeStyle(slider);
-        imageEditingRefreshLayerLightValueControl();
-        return;
-    }
-    if (typeof activeLayer.saturation != 'number') {
-        activeLayer.saturation = 1;
-    }
-    let saturation = Math.max(0, Math.min(2, activeLayer.saturation));
-    let percentSaturation = Math.round(saturation * 100);
-    slider.disabled = false;
-    slider.value = `${percentSaturation}`;
-    valueLabel.innerText = `${percentSaturation}%`;
-    contextLabel.innerText = `Active Layer: ${activeLayer.isMask ? 'Mask' : 'Image'}`;
-    updateRangeStyle(slider);
-    imageEditingRefreshLayerLightValueControl();
+    imageEditingRefreshLayerAdjustmentControl('saturation');
 }
 
 /**
  * Applies the current layer's light value from the Image Options slider.
  */
 function imageEditingSetActiveLayerLightValueFromSlider() {
-    if (!imageEditingTabEditor || !imageEditingTabEditor.activeLayer) {
-        return;
-    }
-    let slider = imageEditingGetLayerLightValueSlider();
-    if (!slider) {
-        return;
-    }
-    let lightValue = parseInt(slider.value);
-    if (isNaN(lightValue)) {
-        return;
-    }
-    lightValue = Math.max(0, Math.min(200, lightValue));
-    let layer = imageEditingTabEditor.activeLayer;
-    layer.lightValue = lightValue / 100;
-    imageEditingTabEditor.markOutputChanged();
-    imageEditingTabEditor.queueSceneRedraw();
-    imageEditingRefreshLayerLightValueControl();
+    imageEditingSetActiveLayerAdjustmentFromSliderKey('light_value');
 }
 
 /**
  * Refreshes Image Options light-value control for the currently selected layer.
  */
 function imageEditingRefreshLayerLightValueControl() {
-    let slider = imageEditingGetLayerLightValueSlider();
-    let valueLabel = imageEditingGetLayerLightValueValue();
-    let contextLabel = imageEditingGetLayerLightValueContext();
-    if (!slider || !valueLabel || !contextLabel) {
-        return;
-    }
-    let activeLayer = imageEditingTabEditor ? imageEditingTabEditor.activeLayer : null;
-    if (!activeLayer) {
-        slider.disabled = true;
-        slider.value = '100';
-        valueLabel.innerText = 'N/A';
-        contextLabel.innerText = 'No active layer selected';
-        updateRangeStyle(slider);
-        imageEditingRefreshToneBalanceControls();
-        return;
-    }
-    if (typeof activeLayer.lightValue != 'number') {
-        activeLayer.lightValue = 1;
-    }
-    let lightValue = Math.max(0, Math.min(2, activeLayer.lightValue));
-    let percentLightValue = Math.round(lightValue * 100);
-    slider.disabled = false;
-    slider.value = `${percentLightValue}`;
-    valueLabel.innerText = `${percentLightValue}%`;
-    contextLabel.innerText = `Active Layer: ${activeLayer.isMask ? 'Mask' : 'Image'}`;
-    updateRangeStyle(slider);
-    imageEditingRefreshToneBalanceControls();
+    imageEditingRefreshLayerAdjustmentControl('light_value');
 }
 
 /**
@@ -2218,8 +2260,50 @@ function imageEditingRefreshToneBalanceControls() {
         updateRangeStyle(slider);
     }
     if (contextLabel) {
-        contextLabel.innerText = `Active Layer: ${activeLayer.isMask ? 'Mask' : 'Image'}`;
+        contextLabel.innerText = imageEditingGetLayerContextText(activeLayer);
     }
+}
+
+/**
+ * Applies the current layer's blend mode from the Layer Options select.
+ */
+function imageEditingSetActiveLayerBlendModeFromSelect() {
+    if (!imageEditingTabEditor || !imageEditingTabEditor.activeLayer) {
+        return;
+    }
+    let select = imageEditingGetLayerBlendModeSelect();
+    if (!select) {
+        return;
+    }
+    let layer = imageEditingTabEditor.activeLayer;
+    layer.globalCompositeOperation = select.value || 'source-over';
+    imageEditingTabEditor.markOutputChanged();
+    imageEditingTabEditor.queueSceneRedraw();
+    imageEditingRefreshLayerBlendModeControl();
+}
+
+/**
+ * Refreshes the current layer blend-mode control.
+ */
+function imageEditingRefreshLayerBlendModeControl() {
+    let select = imageEditingGetLayerBlendModeSelect();
+    let contextLabel = imageEditingGetLayerBlendModeContext();
+    if (!select || !contextLabel) {
+        return;
+    }
+    let activeLayer = imageEditingTabEditor ? imageEditingTabEditor.activeLayer : null;
+    if (!activeLayer) {
+        select.disabled = true;
+        select.value = 'source-over';
+        contextLabel.innerText = 'No active layer selected';
+        return;
+    }
+    if (!activeLayer.globalCompositeOperation) {
+        activeLayer.globalCompositeOperation = 'source-over';
+    }
+    select.disabled = false;
+    select.value = activeLayer.globalCompositeOperation;
+    contextLabel.innerText = imageEditingGetLayerContextText(activeLayer);
 }
 
 /**
@@ -2240,7 +2324,8 @@ function imageEditingRefreshLayerOpacityControl() {
         contextLabel.innerText = 'No active layer selected';
         updateRangeStyle(slider);
         imageEditingRefreshLayerOptionActionButtons();
-        imageEditingRefreshLayerSaturationControl();
+        imageEditingRefreshLayerBlendModeControl();
+        imageEditingRefreshLayerAdjustmentControls();
         return;
     }
     let opacity = 1;
@@ -2252,10 +2337,11 @@ function imageEditingRefreshLayerOpacityControl() {
     slider.disabled = false;
     slider.value = `${percentOpacity}`;
     valueLabel.innerText = `${percentOpacity}%`;
-    contextLabel.innerText = `Active Layer: ${activeLayer.isMask ? 'Mask' : 'Image'}`;
+    contextLabel.innerText = imageEditingGetLayerContextText(activeLayer);
     updateRangeStyle(slider);
     imageEditingRefreshLayerOptionActionButtons();
-    imageEditingRefreshLayerSaturationControl();
+    imageEditingRefreshLayerBlendModeControl();
+    imageEditingRefreshLayerAdjustmentControls();
 }
 
 /**
@@ -2266,8 +2352,7 @@ function imageEditingEnsureLayerOptionsWired() {
         return;
     }
     let slider = imageEditingGetLayerOpacitySlider();
-    let saturationSlider = imageEditingGetLayerSaturationSlider();
-    let lightValueSlider = imageEditingGetLayerLightValueSlider();
+    let blendModeSelect = imageEditingGetLayerBlendModeSelect();
     let toneBalanceSliders = imageEditingGetToneBalanceSliders();
     let deleteButton = imageEditingGetLayerDeleteButton();
     let duplicateButton = imageEditingGetLayerDuplicateButton();
@@ -2277,8 +2362,13 @@ function imageEditingEnsureLayerOptionsWired() {
     let invertColorsButton = imageEditingGetLayerInvertColorsButton();
     let flipMirrorHorizontalButton = imageEditingGetLayerFlipMirrorHorizontalButton();
     let flipMirrorVerticalButton = imageEditingGetLayerFlipMirrorVerticalButton();
-    if (!slider || !saturationSlider || !lightValueSlider || !deleteButton || !duplicateButton || !convertToImageButton || !invertMaskButton || !convertToMaskButton || !invertColorsButton || !flipMirrorHorizontalButton || !flipMirrorVerticalButton) {
+    if (!slider || !blendModeSelect || !deleteButton || !duplicateButton || !convertToImageButton || !invertMaskButton || !convertToMaskButton || !invertColorsButton || !flipMirrorHorizontalButton || !flipMirrorVerticalButton) {
         return;
+    }
+    for (let def of imageEditingLayerAdjustmentDefinitions) {
+        if (!imageEditingGetLayerAdjustmentSlider(def.key) || !imageEditingGetLayerAdjustmentValueLabel(def.key)) {
+            return;
+        }
     }
     slider.addEventListener('input', () => {
         imageEditingSetActiveLayerOpacityFromSlider();
@@ -2286,18 +2376,18 @@ function imageEditingEnsureLayerOptionsWired() {
     slider.addEventListener('change', () => {
         imageEditingSetActiveLayerOpacityFromSlider();
     });
-    saturationSlider.addEventListener('input', () => {
-        imageEditingSetActiveLayerSaturationFromSlider();
+    blendModeSelect.addEventListener('change', () => {
+        imageEditingSetActiveLayerBlendModeFromSelect();
     });
-    saturationSlider.addEventListener('change', () => {
-        imageEditingSetActiveLayerSaturationFromSlider();
-    });
-    lightValueSlider.addEventListener('input', () => {
-        imageEditingSetActiveLayerLightValueFromSlider();
-    });
-    lightValueSlider.addEventListener('change', () => {
-        imageEditingSetActiveLayerLightValueFromSlider();
-    });
+    for (let def of imageEditingLayerAdjustmentDefinitions) {
+        let adjustmentSlider = imageEditingGetLayerAdjustmentSlider(def.key);
+        adjustmentSlider.addEventListener('input', () => {
+            imageEditingSetActiveLayerAdjustmentFromSliderKey(def.key);
+        });
+        adjustmentSlider.addEventListener('change', () => {
+            imageEditingSetActiveLayerAdjustmentFromSliderKey(def.key);
+        });
+    }
     for (let toneSlider of toneBalanceSliders) {
         toneSlider.addEventListener('input', () => {
             imageEditingSetActiveLayerToneBalanceFromSlider(toneSlider);
@@ -2332,9 +2422,6 @@ function imageEditingEnsureLayerOptionsWired() {
     });
     imageEditingLayerOptionsWired = true;
     imageEditingRefreshLayerOpacityControl();
-    imageEditingRefreshLayerSaturationControl();
-    imageEditingRefreshLayerLightValueControl();
-    imageEditingRefreshToneBalanceControls();
 }
 
 /**
@@ -2765,6 +2852,15 @@ function openGenerateTabEditorForEditorData(sourceEditor, actionLabel = 'Send La
         copiedLayer.opacity = sourceLayer.opacity;
         copiedLayer.saturation = typeof sourceLayer.saturation == 'number' ? sourceLayer.saturation : 1;
         copiedLayer.lightValue = typeof sourceLayer.lightValue == 'number' ? sourceLayer.lightValue : 1;
+        copiedLayer.contrast = typeof sourceLayer.contrast == 'number' ? sourceLayer.contrast : 1;
+        copiedLayer.hueShift = typeof sourceLayer.hueShift == 'number' ? sourceLayer.hueShift : 0;
+        copiedLayer.gamma = typeof sourceLayer.gamma == 'number' ? sourceLayer.gamma : 1;
+        copiedLayer.temperature = typeof sourceLayer.temperature == 'number' ? sourceLayer.temperature : 0;
+        copiedLayer.tint = typeof sourceLayer.tint == 'number' ? sourceLayer.tint : 0;
+        copiedLayer.shadows = typeof sourceLayer.shadows == 'number' ? sourceLayer.shadows : 0;
+        copiedLayer.highlights = typeof sourceLayer.highlights == 'number' ? sourceLayer.highlights : 0;
+        copiedLayer.whites = typeof sourceLayer.whites == 'number' ? sourceLayer.whites : 0;
+        copiedLayer.blacks = typeof sourceLayer.blacks == 'number' ? sourceLayer.blacks : 0;
         copiedLayer.toneBalance = imageEditingCloneToneBalance(sourceLayer.toneBalance);
         copiedLayer.globalCompositeOperation = sourceLayer.globalCompositeOperation;
         copiedLayer.isMask = sourceLayer.isMask;

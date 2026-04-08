@@ -19,6 +19,15 @@ class ImageEditorLayer {
         this.opacity = 1;
         this.saturation = 1;
         this.lightValue = 1;
+        this.contrast = 1;
+        this.hueShift = 0;
+        this.gamma = 1;
+        this.temperature = 0;
+        this.tint = 0;
+        this.shadows = 0;
+        this.highlights = 0;
+        this.whites = 0;
+        this.blacks = 0;
         this.toneBalance = {
             shadows: { r: 0, g: 0, b: 0 },
             midtones: { r: 0, g: 0, b: 0 },
@@ -62,6 +71,14 @@ class ImageEditorLayer {
         this.toneBalance = this.cloneToneBalance(this.toneBalance);
     }
 
+    getNumericAdjustmentValue(prop, defaultValue = 0) {
+        let value = parseFloat(this[prop]);
+        if (isNaN(value)) {
+            return defaultValue;
+        }
+        return value;
+    }
+
     hasToneBalanceAdjustments() {
         this.ensureToneBalance();
         for (let range of ['shadows', 'midtones', 'highlights']) {
@@ -71,12 +88,28 @@ class ImageEditorLayer {
                 }
             }
         }
+        if (Math.abs(this.getNumericAdjustmentValue('gamma', 1) - 1) > 0.0001
+            || Math.abs(this.getNumericAdjustmentValue('temperature', 0)) > 0.0001
+            || Math.abs(this.getNumericAdjustmentValue('tint', 0)) > 0.0001
+            || Math.abs(this.getNumericAdjustmentValue('shadows', 0)) > 0.0001
+            || Math.abs(this.getNumericAdjustmentValue('highlights', 0)) > 0.0001
+            || Math.abs(this.getNumericAdjustmentValue('whites', 0)) > 0.0001
+            || Math.abs(this.getNumericAdjustmentValue('blacks', 0)) > 0.0001) {
+            return true;
+        }
         return false;
     }
 
     getToneBalancedSourceCanvas() {
         this.ensureToneBalance();
-        let key = `${this.contentVersion}|${this.canvas.width}x${this.canvas.height}|${this.toneBalance.shadows.r},${this.toneBalance.shadows.g},${this.toneBalance.shadows.b},${this.toneBalance.midtones.r},${this.toneBalance.midtones.g},${this.toneBalance.midtones.b},${this.toneBalance.highlights.r},${this.toneBalance.highlights.g},${this.toneBalance.highlights.b}`;
+        let gamma = Math.max(0.01, this.getNumericAdjustmentValue('gamma', 1));
+        let temperature = this.getNumericAdjustmentValue('temperature', 0);
+        let tint = this.getNumericAdjustmentValue('tint', 0);
+        let shadowsValue = this.getNumericAdjustmentValue('shadows', 0);
+        let highlightsValue = this.getNumericAdjustmentValue('highlights', 0);
+        let whitesValue = this.getNumericAdjustmentValue('whites', 0);
+        let blacksValue = this.getNumericAdjustmentValue('blacks', 0);
+        let key = `${this.contentVersion}|${this.canvas.width}x${this.canvas.height}|${gamma}|${temperature}|${tint}|${shadowsValue}|${highlightsValue}|${whitesValue}|${blacksValue}|${this.toneBalance.shadows.r},${this.toneBalance.shadows.g},${this.toneBalance.shadows.b},${this.toneBalance.midtones.r},${this.toneBalance.midtones.g},${this.toneBalance.midtones.b},${this.toneBalance.highlights.r},${this.toneBalance.highlights.g},${this.toneBalance.highlights.b}`;
         if (this.toneBalanceCacheCanvas && this.toneBalanceCacheKey == key) {
             return this.toneBalanceCacheCanvas;
         }
@@ -101,12 +134,27 @@ class ImageEditorLayer {
             let shadowWeight = Math.max(0, 1 - (luminance / 0.5));
             let highlightWeight = Math.max(0, (luminance - 0.5) / 0.5);
             let midtoneWeight = Math.max(0, 1 - Math.abs(luminance - 0.5) / 0.5);
+            let blackWeight = Math.max(0, 1 - luminance / 0.25);
+            let whiteWeight = Math.max(0, (luminance - 0.75) / 0.25);
+            blackWeight *= blackWeight;
+            whiteWeight *= whiteWeight;
+            let tonalLift = 255 * (shadowsValue * shadowWeight * 0.35 + highlightsValue * highlightWeight * 0.35 + whitesValue * whiteWeight * 0.45 + blacksValue * blackWeight * 0.45);
             let adjustR = 255 * (shadows.r * shadowWeight + midtones.r * midtoneWeight + highlights.r * highlightWeight);
             let adjustG = 255 * (shadows.g * shadowWeight + midtones.g * midtoneWeight + highlights.g * highlightWeight);
             let adjustB = 255 * (shadows.b * shadowWeight + midtones.b * midtoneWeight + highlights.b * highlightWeight);
-            data[i] = Math.max(0, Math.min(255, Math.round(r + adjustR)));
-            data[i + 1] = Math.max(0, Math.min(255, Math.round(g + adjustG)));
-            data[i + 2] = Math.max(0, Math.min(255, Math.round(b + adjustB)));
+            let temperatureAdjust = temperature * 32;
+            let tintAdjust = tint * 24;
+            let newR = r + tonalLift + adjustR + temperatureAdjust + tintAdjust * 0.35;
+            let newG = g + tonalLift + adjustG - tintAdjust * 0.7;
+            let newB = b + tonalLift + adjustB - temperatureAdjust + tintAdjust * 0.35;
+            if (Math.abs(gamma - 1) > 0.0001) {
+                newR = 255 * Math.pow(Math.max(0, Math.min(1, newR / 255)), 1 / gamma);
+                newG = 255 * Math.pow(Math.max(0, Math.min(1, newG / 255)), 1 / gamma);
+                newB = 255 * Math.pow(Math.max(0, Math.min(1, newB / 255)), 1 / gamma);
+            }
+            data[i] = Math.max(0, Math.min(255, Math.round(newR)));
+            data[i + 1] = Math.max(0, Math.min(255, Math.round(newG)));
+            data[i + 2] = Math.max(0, Math.min(255, Math.round(newB)));
         }
         tempCtx.putImageData(imageData, 0, 0);
         this.toneBalanceCacheCanvas = tempCanvas;
@@ -266,6 +314,15 @@ class ImageEditorLayer {
         clone.opacity = this.opacity;
         clone.saturation = typeof this.saturation == 'number' ? this.saturation : 1;
         clone.lightValue = typeof this.lightValue == 'number' ? this.lightValue : 1;
+        clone.contrast = typeof this.contrast == 'number' ? this.contrast : 1;
+        clone.hueShift = typeof this.hueShift == 'number' ? this.hueShift : 0;
+        clone.gamma = typeof this.gamma == 'number' ? this.gamma : 1;
+        clone.temperature = typeof this.temperature == 'number' ? this.temperature : 0;
+        clone.tint = typeof this.tint == 'number' ? this.tint : 0;
+        clone.shadows = typeof this.shadows == 'number' ? this.shadows : 0;
+        clone.highlights = typeof this.highlights == 'number' ? this.highlights : 0;
+        clone.whites = typeof this.whites == 'number' ? this.whites : 0;
+        clone.blacks = typeof this.blacks == 'number' ? this.blacks : 0;
         clone.toneBalance = this.cloneToneBalance(this.toneBalance);
         clone.globalCompositeOperation = this.globalCompositeOperation;
         clone.isMask = this.isMask;
@@ -382,7 +439,9 @@ class ImageEditorLayer {
         ctx.globalAlpha = this.opacity;
         let saturation = typeof this.saturation == 'number' ? this.saturation : 1;
         let lightValue = typeof this.lightValue == 'number' ? this.lightValue : 1;
-        ctx.filter = `saturate(${Math.max(0, saturation)}) brightness(${Math.max(0, lightValue)})`;
+        let contrast = typeof this.contrast == 'number' ? this.contrast : 1;
+        let hueShift = typeof this.hueShift == 'number' ? this.hueShift : 0;
+        ctx.filter = `saturate(${Math.max(0, saturation)}) brightness(${Math.max(0, lightValue)}) contrast(${Math.max(0, contrast)}) hue-rotate(${hueShift}deg)`;
         ctx.globalCompositeOperation = this.globalCompositeOperation;
         let [cx, cy] = [this.width / 2, this.height / 2];
         ctx.translate((x + cx) * zoom, (y + cy) * zoom);
@@ -408,6 +467,15 @@ class ImageEditorLayer {
             this.buffer.opacity = this.opacity;
             this.buffer.saturation = typeof this.saturation == 'number' ? this.saturation : 1;
             this.buffer.lightValue = typeof this.lightValue == 'number' ? this.lightValue : 1;
+            this.buffer.contrast = typeof this.contrast == 'number' ? this.contrast : 1;
+            this.buffer.hueShift = typeof this.hueShift == 'number' ? this.hueShift : 0;
+            this.buffer.gamma = typeof this.gamma == 'number' ? this.gamma : 1;
+            this.buffer.temperature = typeof this.temperature == 'number' ? this.temperature : 0;
+            this.buffer.tint = typeof this.tint == 'number' ? this.tint : 0;
+            this.buffer.shadows = typeof this.shadows == 'number' ? this.shadows : 0;
+            this.buffer.highlights = typeof this.highlights == 'number' ? this.highlights : 0;
+            this.buffer.whites = typeof this.whites == 'number' ? this.whites : 0;
+            this.buffer.blacks = typeof this.blacks == 'number' ? this.blacks : 0;
             this.buffer.toneBalance = this.cloneToneBalance(this.toneBalance);
             this.buffer.globalCompositeOperation = this.globalCompositeOperation;
             this.buffer.ctx.globalAlpha = 1;
