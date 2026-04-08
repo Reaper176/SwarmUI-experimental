@@ -35,12 +35,76 @@ class ImageEditorLayer {
         };
         this.toneBalanceCacheCanvas = null;
         this.toneBalanceCacheKey = null;
+        this.effectCacheCanvas = null;
+        this.effectCacheKey = null;
+        this.adjustmentCacheCanvas = null;
+        this.adjustmentCacheKey = null;
         this.globalCompositeOperation = 'source-over';
         this.childLayers = [];
         this.buffer = null;
-        this.isMask = false;
+        this.layerType = 'image';
+        Object.defineProperty(this, 'isMask', {
+            get: () => this.layerType == 'mask',
+            set: (value) => {
+                this.layerType = value ? 'mask' : 'image';
+            }
+        });
+        this.maskCanvas = this.canvas;
+        this.maskCtx = this.ctx;
+        this.cropX = 0;
+        this.cropY = 0;
+        this.cropWidth = width;
+        this.cropHeight = height;
+        this.effects = ImageEditorLayer.createDefaultEffects();
+        this.effectPresetId = 'neutral';
         this.hasAnyContent = false;
         this.contentVersion = 0;
+    }
+
+    static createDefaultEffects() {
+        return {
+            blur: 0,
+            sharpen: 0,
+            noiseReduction: 0,
+            artisticFilter: 'none',
+            vignette: 0,
+            glow: 0
+        };
+    }
+
+    static cloneEffects(effects) {
+        let cloned = ImageEditorLayer.createDefaultEffects();
+        if (!effects || typeof effects != 'object') {
+            return cloned;
+        }
+        for (let key of Object.keys(cloned)) {
+            if (key == 'artisticFilter') {
+                if (typeof effects[key] == 'string' && effects[key]) {
+                    cloned[key] = effects[key];
+                }
+            }
+            else {
+                let value = parseFloat(effects[key]);
+                if (!isNaN(value)) {
+                    cloned[key] = value;
+                }
+            }
+        }
+        return cloned;
+    }
+
+    getTypeLabel() {
+        if (this.layerType == 'mask') {
+            return 'Mask';
+        }
+        if (this.layerType == 'adjustment') {
+            return 'Adjustment';
+        }
+        return 'Image';
+    }
+
+    isAdjustmentLayer() {
+        return this.layerType == 'adjustment';
     }
 
     cloneToneBalance(toneBalance) {
@@ -167,9 +231,207 @@ class ImageEditorLayer {
         this.toneBalanceCacheKey = null;
     }
 
+    resetEffectCache() {
+        this.effectCacheCanvas = null;
+        this.effectCacheKey = null;
+        this.adjustmentCacheCanvas = null;
+        this.adjustmentCacheKey = null;
+    }
+
     markContentChanged() {
         this.contentVersion++;
         this.resetToneBalanceCache();
+        this.resetEffectCache();
+    }
+
+    markVisualChanged() {
+        this.resetEffectCache();
+        this.resetToneBalanceCache();
+    }
+
+    ensureEffects() {
+        this.effects = ImageEditorLayer.cloneEffects(this.effects);
+        if (!this.effectPresetId) {
+            this.effectPresetId = 'neutral';
+        }
+    }
+
+    getCropData() {
+        let sourceWidth = this.canvas.width;
+        let sourceHeight = this.canvas.height;
+        let cropX = Math.round(parseFloat(this.cropX));
+        let cropY = Math.round(parseFloat(this.cropY));
+        let cropWidth = Math.round(parseFloat(this.cropWidth));
+        let cropHeight = Math.round(parseFloat(this.cropHeight));
+        if (isNaN(cropX)) {
+            cropX = 0;
+        }
+        if (isNaN(cropY)) {
+            cropY = 0;
+        }
+        if (isNaN(cropWidth) || cropWidth <= 0) {
+            cropWidth = sourceWidth;
+        }
+        if (isNaN(cropHeight) || cropHeight <= 0) {
+            cropHeight = sourceHeight;
+        }
+        cropX = Math.max(0, Math.min(sourceWidth - 1, cropX));
+        cropY = Math.max(0, Math.min(sourceHeight - 1, cropY));
+        cropWidth = Math.max(1, Math.min(sourceWidth - cropX, cropWidth));
+        cropHeight = Math.max(1, Math.min(sourceHeight - cropY, cropHeight));
+        this.cropX = cropX;
+        this.cropY = cropY;
+        this.cropWidth = cropWidth;
+        this.cropHeight = cropHeight;
+        return { cropX, cropY, cropWidth, cropHeight };
+    }
+
+    resetCrop() {
+        this.cropX = 0;
+        this.cropY = 0;
+        this.cropWidth = this.canvas.width;
+        this.cropHeight = this.canvas.height;
+        this.markVisualChanged();
+    }
+
+    copyVisualStateFrom(otherLayer, includeTransform = true) {
+        if (!otherLayer) {
+            return;
+        }
+        if (includeTransform) {
+            this.width = otherLayer.width;
+            this.height = otherLayer.height;
+            this.offsetX = otherLayer.offsetX;
+            this.offsetY = otherLayer.offsetY;
+            this.rotation = otherLayer.rotation;
+            let crop = otherLayer.getCropData();
+            this.cropX = crop.cropX;
+            this.cropY = crop.cropY;
+            this.cropWidth = crop.cropWidth;
+            this.cropHeight = crop.cropHeight;
+        }
+        this.opacity = typeof otherLayer.opacity == 'number' ? otherLayer.opacity : 1;
+        this.saturation = typeof otherLayer.saturation == 'number' ? otherLayer.saturation : 1;
+        this.lightValue = typeof otherLayer.lightValue == 'number' ? otherLayer.lightValue : 1;
+        this.contrast = typeof otherLayer.contrast == 'number' ? otherLayer.contrast : 1;
+        this.hueShift = typeof otherLayer.hueShift == 'number' ? otherLayer.hueShift : 0;
+        this.gamma = typeof otherLayer.gamma == 'number' ? otherLayer.gamma : 1;
+        this.temperature = typeof otherLayer.temperature == 'number' ? otherLayer.temperature : 0;
+        this.tint = typeof otherLayer.tint == 'number' ? otherLayer.tint : 0;
+        this.shadows = typeof otherLayer.shadows == 'number' ? otherLayer.shadows : 0;
+        this.highlights = typeof otherLayer.highlights == 'number' ? otherLayer.highlights : 0;
+        this.whites = typeof otherLayer.whites == 'number' ? otherLayer.whites : 0;
+        this.blacks = typeof otherLayer.blacks == 'number' ? otherLayer.blacks : 0;
+        this.toneBalance = this.cloneToneBalance(otherLayer.toneBalance);
+        this.globalCompositeOperation = otherLayer.globalCompositeOperation || 'source-over';
+        this.layerType = otherLayer.layerType || 'image';
+        this.effects = ImageEditorLayer.cloneEffects(otherLayer.effects);
+        this.effectPresetId = otherLayer.effectPresetId || 'neutral';
+    }
+
+    getDisplayScaleX() {
+        let crop = this.getCropData();
+        return this.width / crop.cropWidth;
+    }
+
+    getDisplayScaleY() {
+        let crop = this.getCropData();
+        return this.height / crop.cropHeight;
+    }
+
+    configureImageToLayerTransform(ctx) {
+        let crop = this.getCropData();
+        let [offsetX, offsetY] = this.getOffset();
+        let relWidth = this.width / crop.cropWidth;
+        let relHeight = this.height / crop.cropHeight;
+        let cx = this.width / 2;
+        let cy = this.height / 2;
+        let cosR = Math.cos(-this.rotation);
+        let sinR = Math.sin(-this.rotation);
+        ctx.setTransform(
+            cosR / relWidth, sinR / relHeight,
+            -sinR / relWidth, cosR / relHeight,
+            (-cosR * (offsetX + cx) + sinR * (offsetY + cy) + cx) / relWidth + crop.cropX,
+            (-sinR * (offsetX + cx) - cosR * (offsetY + cy) + cy) / relHeight + crop.cropY
+        );
+    }
+
+    getVisualSignature(extraKey = '') {
+        this.ensureEffects();
+        let crop = this.getCropData();
+        return [
+            extraKey,
+            this.layerType,
+            this.contentVersion,
+            this.canvas.width,
+            this.canvas.height,
+            crop.cropX,
+            crop.cropY,
+            crop.cropWidth,
+            crop.cropHeight,
+            this.saturation,
+            this.lightValue,
+            this.contrast,
+            this.hueShift,
+            this.gamma,
+            this.temperature,
+            this.tint,
+            this.shadows,
+            this.highlights,
+            this.whites,
+            this.blacks,
+            this.effectPresetId,
+            this.effects.blur,
+            this.effects.sharpen,
+            this.effects.noiseReduction,
+            this.effects.artisticFilter,
+            this.effects.vignette,
+            this.effects.glow,
+            `${this.toneBalance?.shadows?.r || 0},${this.toneBalance?.shadows?.g || 0},${this.toneBalance?.shadows?.b || 0},${this.toneBalance?.midtones?.r || 0},${this.toneBalance?.midtones?.g || 0},${this.toneBalance?.midtones?.b || 0},${this.toneBalance?.highlights?.r || 0},${this.toneBalance?.highlights?.g || 0},${this.toneBalance?.highlights?.b || 0}`
+        ].join('|');
+    }
+
+    getRenderedSourceCanvas(sourceCanvas = null, extraKey = '') {
+        this.ensureEffects();
+        let useAdjustmentCache = sourceCanvas != null;
+        let cacheCanvasKey = useAdjustmentCache ? 'adjustmentCacheCanvas' : 'effectCacheCanvas';
+        let cacheKeyKey = useAdjustmentCache ? 'adjustmentCacheKey' : 'effectCacheKey';
+        let crop = this.getCropData();
+        let key = this.getVisualSignature(`${extraKey}|${useAdjustmentCache ? 'adjustment' : 'layer'}`);
+        if (sourceCanvas) {
+            key += `|${sourceCanvas.width}x${sourceCanvas.height}`;
+        }
+        if (this[cacheCanvasKey] && this[cacheKeyKey] == key) {
+            return this[cacheCanvasKey];
+        }
+        let inputCanvas = sourceCanvas || this.canvas;
+        let workingCanvas = document.createElement('canvas');
+        if (sourceCanvas) {
+            workingCanvas.width = inputCanvas.width;
+            workingCanvas.height = inputCanvas.height;
+            let workingCtx = workingCanvas.getContext('2d');
+            workingCtx.drawImage(inputCanvas, 0, 0);
+            if (this.hasToneBalanceAdjustments()) {
+                workingCanvas = imageEditorApplyAdvancedAdjustmentsToCanvas(workingCanvas, this);
+            }
+        }
+        else {
+            let source = this.hasToneBalanceAdjustments() ? this.getToneBalancedSourceCanvas() : this.canvas;
+            workingCanvas.width = crop.cropWidth;
+            workingCanvas.height = crop.cropHeight;
+            let workingCtx = workingCanvas.getContext('2d');
+            workingCtx.drawImage(source, crop.cropX, crop.cropY, crop.cropWidth, crop.cropHeight, 0, 0, crop.cropWidth, crop.cropHeight);
+        }
+        workingCanvas = imageEditorApplyBasicAdjustmentsToCanvas(workingCanvas, this);
+        workingCanvas = imageEditorApplyPresetToCanvas(workingCanvas, this.effectPresetId || 'neutral');
+        workingCanvas = imageEditorApplyLayerEffectsToCanvas(workingCanvas, this.effects);
+        this[cacheCanvasKey] = workingCanvas;
+        this[cacheKeyKey] = key;
+        return workingCanvas;
+    }
+
+    getAdjustmentOutputCanvas(sourceCanvas, lowerStackKey = '') {
+        return this.getRenderedSourceCanvas(sourceCanvas, lowerStackKey);
     }
 
     createButtons() {
@@ -192,12 +454,17 @@ class ImageEditorLayer {
         }, true);
         this.menuPopover.appendChild(buttonDuplicate);
         let buttonConvert = createDiv(null, 'sui_popover_model_button');
-        buttonConvert.innerText = `Convert To ${(this.isMask ? `Image` : `Mask`)} Layer`;
+        buttonConvert.innerText = this.isAdjustmentLayer() ? 'Convert To Image Layer' : `Convert To ${(this.isMask ? `Image` : `Mask`)} Layer`;
         buttonConvert.addEventListener('click', (e) => {
             e.preventDefault();
             hidePopover(popId);
-            this.isMask = !this.isMask;
-            this.infoSubDiv.innerText = (this.isMask ? `Mask` : `Image`);
+            if (this.isAdjustmentLayer()) {
+                this.layerType = 'image';
+            }
+            else {
+                this.isMask = !this.isMask;
+            }
+            this.infoSubDiv.innerText = this.getTypeLabel();
             this.createButtons();
             this.editor.sortLayers();
             this.editor.markOutputChanged();
@@ -205,7 +472,7 @@ class ImageEditorLayer {
         }, true);
         this.menuPopover.appendChild(buttonConvert);
         let buttonInvert = createDiv(null, 'sui_popover_model_button');
-        buttonInvert.innerText = `Invert ${(this.isMask ? `Mask` : `Colors`)}`;
+        buttonInvert.innerText = `Invert ${(this.isMask || this.isAdjustmentLayer() ? `Mask` : `Colors`)}`;
         buttonInvert.addEventListener('click', (e) => {
             e.preventDefault();
             hidePopover(popId);
@@ -274,6 +541,8 @@ class ImageEditorLayer {
     resize(width, height) {
         width = Math.round(width);
         height = Math.round(height);
+        let oldWidth = this.canvas.width;
+        let oldHeight = this.canvas.height;
         let newCanvas = document.createElement('canvas');
         newCanvas.width = width;
         newCanvas.height = height;
@@ -281,8 +550,17 @@ class ImageEditorLayer {
         newCtx.drawImage(this.canvas, 0, 0, width, height);
         this.canvas = newCanvas;
         this.ctx = newCtx;
+        this.maskCanvas = this.canvas;
+        this.maskCtx = this.ctx;
         this.width = width;
         this.height = height;
+        if (this.cropX == 0 && this.cropY == 0 && this.cropWidth == oldWidth && this.cropHeight == oldHeight) {
+            this.cropWidth = width;
+            this.cropHeight = height;
+        }
+        else {
+            this.getCropData();
+        }
         this.markContentChanged();
     }
 
@@ -306,26 +584,7 @@ class ImageEditorLayer {
     cloneLayerData() {
         let clone = new ImageEditorLayer(this.editor, this.canvas.width, this.canvas.height);
         clone.ctx.drawImage(this.canvas, 0, 0);
-        clone.width = this.width;
-        clone.height = this.height;
-        clone.offsetX = this.offsetX;
-        clone.offsetY = this.offsetY;
-        clone.rotation = this.rotation;
-        clone.opacity = this.opacity;
-        clone.saturation = typeof this.saturation == 'number' ? this.saturation : 1;
-        clone.lightValue = typeof this.lightValue == 'number' ? this.lightValue : 1;
-        clone.contrast = typeof this.contrast == 'number' ? this.contrast : 1;
-        clone.hueShift = typeof this.hueShift == 'number' ? this.hueShift : 0;
-        clone.gamma = typeof this.gamma == 'number' ? this.gamma : 1;
-        clone.temperature = typeof this.temperature == 'number' ? this.temperature : 0;
-        clone.tint = typeof this.tint == 'number' ? this.tint : 0;
-        clone.shadows = typeof this.shadows == 'number' ? this.shadows : 0;
-        clone.highlights = typeof this.highlights == 'number' ? this.highlights : 0;
-        clone.whites = typeof this.whites == 'number' ? this.whites : 0;
-        clone.blacks = typeof this.blacks == 'number' ? this.blacks : 0;
-        clone.toneBalance = this.cloneToneBalance(this.toneBalance);
-        clone.globalCompositeOperation = this.globalCompositeOperation;
-        clone.isMask = this.isMask;
+        clone.copyVisualStateFrom(this);
         clone.hasAnyContent = this.hasAnyContent;
         clone.contentVersion = this.contentVersion;
         return clone;
@@ -380,23 +639,25 @@ class ImageEditorLayer {
     canvasCoordToLayerCoord(x, y) {
         let [x2, y2] = this.editor.canvasCoordToImageCoord(x, y);
         let [offsetX, offsetY] = this.getOffset();
-        let relWidth = this.width / this.canvas.width;
-        let relHeight = this.height / this.canvas.height;
+        let crop = this.getCropData();
+        let relWidth = this.width / crop.cropWidth;
+        let relHeight = this.height / crop.cropHeight;
         [x2, y2] = [x2 - offsetX, y2 - offsetY];
         let angle = -this.rotation;
         let [cx, cy] = [this.width / 2, this.height / 2];
         let [x3, y3] = [x2 - cx, y2 - cy];
         [x3, y3] = [x3 * Math.cos(angle) - y3 * Math.sin(angle), x3 * Math.sin(angle) + y3 * Math.cos(angle)];
         [x2, y2] = [x3 + cx, y3 + cy];
-        [x2, y2] = [x2 / relWidth, y2 / relHeight];
+        [x2, y2] = [crop.cropX + (x2 / relWidth), crop.cropY + (y2 / relHeight)];
         return [x2, y2];
     }
 
     layerCoordToCanvasCoord(x, y) {
         let [offsetX, offsetY] = this.getOffset();
-        let relWidth = this.width / this.canvas.width;
-        let relHeight = this.height / this.canvas.height;
-        let [x2, y2] = [x * relWidth, y * relHeight];
+        let crop = this.getCropData();
+        let relWidth = this.width / crop.cropWidth;
+        let relHeight = this.height / crop.cropHeight;
+        let [x2, y2] = [(x - crop.cropX) * relWidth, (y - crop.cropY) * relHeight];
         let angle = this.rotation;
         let [cx, cy] = [this.width / 2, this.height / 2];
         let [x3, y3] = [x2 - cx, y2 - cy];
@@ -428,20 +689,16 @@ class ImageEditorLayer {
     }
 
     drawToBackDirect(ctx, offsetX, offsetY, zoom) {
+        if (this.isAdjustmentLayer()) {
+            return;
+        }
         ctx.save();
         let [thisOffsetX, thisOffsetY] = this.getOffset();
         let x = offsetX + thisOffsetX;
         let y = offsetY + thisOffsetY;
-        let sourceCanvas = this.canvas;
-        if (this.hasToneBalanceAdjustments()) {
-            sourceCanvas = this.getToneBalancedSourceCanvas();
-        }
+        let sourceCanvas = this.getRenderedSourceCanvas();
         ctx.globalAlpha = this.opacity;
-        let saturation = typeof this.saturation == 'number' ? this.saturation : 1;
-        let lightValue = typeof this.lightValue == 'number' ? this.lightValue : 1;
-        let contrast = typeof this.contrast == 'number' ? this.contrast : 1;
-        let hueShift = typeof this.hueShift == 'number' ? this.hueShift : 0;
-        ctx.filter = `saturate(${Math.max(0, saturation)}) brightness(${Math.max(0, lightValue)}) contrast(${Math.max(0, contrast)}) hue-rotate(${hueShift}deg)`;
+        ctx.filter = 'none';
         ctx.globalCompositeOperation = this.globalCompositeOperation;
         let [cx, cy] = [this.width / 2, this.height / 2];
         ctx.translate((x + cx) * zoom, (y + cy) * zoom);
@@ -449,7 +706,7 @@ class ImageEditorLayer {
         if (zoom > 5) {
             ctx.imageSmoothingEnabled = false;
         }
-        ctx.drawImage(sourceCanvas, -cx * zoom, -cy * zoom, this.width * zoom, this.height * zoom);
+        ctx.drawImage(sourceCanvas, 0, 0, sourceCanvas.width, sourceCanvas.height, -cx * zoom, -cy * zoom, this.width * zoom, this.height * zoom);
         ctx.restore();
     }
 
@@ -655,6 +912,7 @@ class ImageEditor {
         if (allowMasks) {
             this.rightBar.innerHTML += `<div class="image_editor_newlayer_button basic-button new-mask-layer-button" title="New Mask Layer">+Mask</div>`;
         }
+        this.rightBar.innerHTML += `<div class="image_editor_newlayer_button basic-button new-adjustment-layer-button" title="New Adjustment Layer">+Adjust</div>`;
         this.inputDiv.appendChild(this.rightBar);
         this.rightBar.querySelector('.image-editor-close-button').addEventListener('click', () => {
             this.deactivate();
@@ -667,6 +925,9 @@ class ImageEditor {
                 this.addEmptyMaskLayer();
             });
         }
+        this.rightBar.querySelector('.new-adjustment-layer-button').addEventListener('click', () => {
+            this.addEmptyAdjustmentLayer();
+        });
         this.canvasList = createDiv(null, 'image_editor_canvaslist');
         // canvas entries can be dragged
         this.canvasList.addEventListener('dragover', (e) => {
@@ -717,6 +978,12 @@ class ImageEditor {
         this.addTool(new ImageEditorToolGeneral(this));
         this.addTool(new ImageEditorToolMove(this));
         this.addTool(new ImageEditorToolSelect(this));
+        this.addTool(new ImageEditorToolEllipseSelect(this));
+        this.addTool(new ImageEditorToolLassoSelect(this));
+        this.addTool(new ImageEditorToolPolygonSelect(this));
+        this.addTool(new ImageEditorToolMagicWand(this));
+        this.addTool(new ImageEditorToolColorSelect(this));
+        this.addTool(new ImageEditorToolCrop(this));
         this.addTool(new ImageEditorToolBrush(this, 'brush', 'paintbrush', 'Paintbrush', 'Draw on the image.\nHotKey: B', false, 'b'));
         this.addTool(new ImageEditorToolBrush(this, 'eraser', 'eraser', 'Eraser', 'Erase parts of the image.\nHotKey: E', true, 'e'));
         this.addTool(new ImageEditorToolBucket(this));
@@ -758,6 +1025,22 @@ class ImageEditor {
         this.selectWidth = 0;
         this.selectHeight = 0;
         this.hasSelection = false;
+        this.selectionMode = 'replace';
+        this.selectionFeatherPx = 0;
+        this.selectionExpandPx = 0;
+        this.selectionSmoothPasses = 0;
+        this.selectionTolerance = 32;
+        this.selectionContiguous = true;
+        this.selectionSampleSource = 'composite';
+        this.selectionMaskCanvas = null;
+        this.selectionMaskCtx = null;
+        this.selectionSourceMaskCanvas = null;
+        this.selectionSourceMaskCtx = null;
+        this.selectionMaskImageData = null;
+        this.selectionCacheVersion = 0;
+        this.cropSession = null;
+        this.adjustmentMaskEditingLayerId = null;
+        this.showAdjustmentMaskOverlay = true;
         this.editHistory = [];
     }
 
@@ -843,6 +1126,7 @@ class ImageEditor {
         overlayCanvas.style.cursor = 'none';
         this.maskHelperCanvas = document.createElement('canvas');
         this.maskHelperCtx = this.maskHelperCanvas.getContext('2d');
+        this.ensureSelectionMaskCanvas();
         this.resize();
         this.autoZoom();
     }
@@ -894,12 +1178,13 @@ class ImageEditor {
      * Returns true if the copy was initiated, false otherwise.
      */
     copySelectionToClipboard(currentLayerOnly = false) {
-        if (!this.hasSelection || this.selectWidth <= 0 || this.selectHeight <= 0 || (currentLayerOnly && !this.activeLayer)) {
+        let bounds = this.getSelectionBounds();
+        if (!bounds || bounds.width <= 0 || bounds.height <= 0 || (currentLayerOnly && !this.activeLayer)) {
             doNoticePopover('No selection to copy!', 'notice-pop-red');
             return false;
         }
         let layerOnly = currentLayerOnly ? this.activeLayer : null;
-        copyImageToClipboard(this.getImageWithBounds(this.selectX, this.selectY, this.selectWidth, this.selectHeight, 'image/png', layerOnly));
+        copyImageToClipboard(this.getSelectionImageData('image/png', layerOnly));
         doNoticePopover('Copied!', 'notice-pop-green');
         return true;
     }
@@ -1308,8 +1593,499 @@ class ImageEditor {
         this.markOutputChanged();
     }
 
-    setPreviewState(targetLayer, previewLayer) {
-        this.previewState = { targetLayer: targetLayer, previewLayer: previewLayer };
+    ensureSelectionMaskCanvas(clearCanvas = false) {
+        if (!this.selectionMaskCanvas || this.selectionMaskCanvas.width != this.realWidth || this.selectionMaskCanvas.height != this.realHeight) {
+            this.selectionMaskCanvas = document.createElement('canvas');
+            this.selectionMaskCanvas.width = this.realWidth;
+            this.selectionMaskCanvas.height = this.realHeight;
+            this.selectionMaskCtx = this.selectionMaskCanvas.getContext('2d');
+            clearCanvas = true;
+        }
+        if (!this.selectionSourceMaskCanvas || this.selectionSourceMaskCanvas.width != this.realWidth || this.selectionSourceMaskCanvas.height != this.realHeight) {
+            this.selectionSourceMaskCanvas = document.createElement('canvas');
+            this.selectionSourceMaskCanvas.width = this.realWidth;
+            this.selectionSourceMaskCanvas.height = this.realHeight;
+            this.selectionSourceMaskCtx = this.selectionSourceMaskCanvas.getContext('2d');
+            clearCanvas = true;
+        }
+        if (clearCanvas && this.selectionMaskCtx) {
+            this.selectionMaskCtx.clearRect(0, 0, this.selectionMaskCanvas.width, this.selectionMaskCanvas.height);
+        }
+        if (clearCanvas && this.selectionSourceMaskCtx) {
+            this.selectionSourceMaskCtx.clearRect(0, 0, this.selectionSourceMaskCanvas.width, this.selectionSourceMaskCanvas.height);
+        }
+        this.selectionMaskImageData = null;
+        return this.selectionMaskCanvas;
+    }
+
+    clearSelectionMask(queueOverlay = true) {
+        this.ensureSelectionMaskCanvas(true);
+        this.selectX = 0;
+        this.selectY = 0;
+        this.selectWidth = 0;
+        this.selectHeight = 0;
+        this.hasSelection = false;
+        this.selectionCacheVersion++;
+        if (queueOverlay) {
+            this.queueOverlayRedraw();
+        }
+    }
+
+    hasSelectionMask() {
+        return !!(this.hasSelection && this.selectionMaskCanvas && this.selectWidth > 0 && this.selectHeight > 0);
+    }
+
+    getSelectionMaskData() {
+        if (!this.hasSelectionMask()) {
+            return null;
+        }
+        if (!this.selectionMaskImageData) {
+            this.selectionMaskImageData = this.selectionMaskCtx.getImageData(0, 0, this.selectionMaskCanvas.width, this.selectionMaskCanvas.height);
+        }
+        return this.selectionMaskImageData;
+    }
+
+    updateSelectionBoundsFromMask() {
+        this.ensureSelectionMaskCanvas();
+        let imageData = this.selectionMaskCtx.getImageData(0, 0, this.selectionMaskCanvas.width, this.selectionMaskCanvas.height);
+        this.selectionMaskImageData = imageData;
+        let data = imageData.data;
+        let minX = this.selectionMaskCanvas.width;
+        let minY = this.selectionMaskCanvas.height;
+        let maxX = -1;
+        let maxY = -1;
+        for (let y = 0; y < this.selectionMaskCanvas.height; y++) {
+            let rowIndex = y * this.selectionMaskCanvas.width * 4;
+            for (let x = 0; x < this.selectionMaskCanvas.width; x++) {
+                if (data[rowIndex + x * 4 + 3] <= 0) {
+                    continue;
+                }
+                if (x < minX) {
+                    minX = x;
+                }
+                if (y < minY) {
+                    minY = y;
+                }
+                if (x > maxX) {
+                    maxX = x;
+                }
+                if (y > maxY) {
+                    maxY = y;
+                }
+            }
+        }
+        if (maxX < minX || maxY < minY) {
+            this.selectX = 0;
+            this.selectY = 0;
+            this.selectWidth = 0;
+            this.selectHeight = 0;
+            this.hasSelection = false;
+        }
+        else {
+            this.selectX = minX;
+            this.selectY = minY;
+            this.selectWidth = maxX - minX + 1;
+            this.selectHeight = maxY - minY + 1;
+            this.hasSelection = true;
+        }
+        this.selectionCacheVersion++;
+        return this.getSelectionBounds();
+    }
+
+    getSelectionBounds() {
+        if (!this.hasSelectionMask()) {
+            return null;
+        }
+        return {
+            x: this.selectX,
+            y: this.selectY,
+            width: this.selectWidth,
+            height: this.selectHeight
+        };
+    }
+
+    rebuildSelectionMaskFromSource(queueOverlay = true) {
+        this.ensureSelectionMaskCanvas();
+        let sourceCanvas = this.selectionSourceMaskCanvas;
+        let refinedCanvas = imageEditorRefineSelectionMaskCanvas(sourceCanvas, this.selectionExpandPx, this.selectionSmoothPasses, this.selectionFeatherPx);
+        this.selectionMaskCtx.clearRect(0, 0, this.selectionMaskCanvas.width, this.selectionMaskCanvas.height);
+        this.selectionMaskCtx.drawImage(refinedCanvas, 0, 0);
+        this.selectionMaskImageData = null;
+        this.updateSelectionBoundsFromMask();
+        if (queueOverlay) {
+            this.queueOverlayRedraw();
+        }
+    }
+
+    commitSelectionMask(maskCanvas, combineMode = null) {
+        this.ensureSelectionMaskCanvas();
+        let mode = combineMode || this.selectionMode || 'replace';
+        let combinedCanvas = document.createElement('canvas');
+        combinedCanvas.width = this.realWidth;
+        combinedCanvas.height = this.realHeight;
+        let combinedCtx = combinedCanvas.getContext('2d');
+        if (mode != 'replace') {
+            combinedCtx.drawImage(this.selectionSourceMaskCanvas, 0, 0);
+        }
+        if (maskCanvas) {
+            if (mode == 'replace' || mode == 'add') {
+                combinedCtx.globalCompositeOperation = 'source-over';
+                combinedCtx.drawImage(maskCanvas, 0, 0, this.realWidth, this.realHeight);
+            }
+            else if (mode == 'subtract') {
+                combinedCtx.globalCompositeOperation = 'destination-out';
+                combinedCtx.drawImage(maskCanvas, 0, 0, this.realWidth, this.realHeight);
+            }
+            else if (mode == 'intersect') {
+                combinedCtx.globalCompositeOperation = 'destination-in';
+                combinedCtx.drawImage(maskCanvas, 0, 0, this.realWidth, this.realHeight);
+            }
+        }
+        this.selectionSourceMaskCtx.clearRect(0, 0, this.selectionSourceMaskCanvas.width, this.selectionSourceMaskCanvas.height);
+        this.selectionSourceMaskCtx.drawImage(combinedCanvas, 0, 0);
+        this.rebuildSelectionMaskFromSource(true);
+    }
+
+    sampleSelectionAtImageCoord(x, y, defaultValue = 1) {
+        if (!this.hasSelectionMask()) {
+            return defaultValue;
+        }
+        x = Math.floor(x);
+        y = Math.floor(y);
+        if (x < 0 || y < 0 || x >= this.realWidth || y >= this.realHeight) {
+            return 0;
+        }
+        let imageData = this.getSelectionMaskData();
+        if (!imageData) {
+            return 0;
+        }
+        let index = (y * this.realWidth + x) * 4 + 3;
+        return imageData.data[index] / 255;
+    }
+
+    getSelectionMaskCanvasForLayer(layer) {
+        let maskCanvas = document.createElement('canvas');
+        maskCanvas.width = layer.canvas.width;
+        maskCanvas.height = layer.canvas.height;
+        if (!this.hasSelectionMask()) {
+            return maskCanvas;
+        }
+        let maskCtx = maskCanvas.getContext('2d');
+        maskCtx.save();
+        layer.configureImageToLayerTransform(maskCtx);
+        maskCtx.drawImage(this.selectionMaskCanvas, 0, 0);
+        maskCtx.restore();
+        return maskCanvas;
+    }
+
+    applySelectionMaskClip(ctx, layer) {
+        if (!this.hasSelectionMask()) {
+            return false;
+        }
+        let localMask = this.getSelectionMaskCanvasForLayer(layer);
+        ctx.save();
+        ctx.globalCompositeOperation = 'destination-in';
+        ctx.drawImage(localMask, 0, 0);
+        ctx.restore();
+        return true;
+    }
+
+    getSelectionImageData(format = 'image/png', layerOnly = null) {
+        let bounds = this.getSelectionBounds();
+        if (!bounds) {
+            return null;
+        }
+        let canvas = document.createElement('canvas');
+        canvas.width = bounds.width;
+        canvas.height = bounds.height;
+        let ctx = canvas.getContext('2d');
+        if (layerOnly && !layerOnly.isAdjustmentLayer()) {
+            layerOnly.drawToBack(ctx, this.finalOffsetX - bounds.x, this.finalOffsetY - bounds.y, 1);
+        }
+        else {
+            this.renderImageLayerStackToContext(ctx, this.finalOffsetX - bounds.x, this.finalOffsetY - bounds.y, 1, false);
+        }
+        let maskCanvas = document.createElement('canvas');
+        maskCanvas.width = bounds.width;
+        maskCanvas.height = bounds.height;
+        let maskCtx = maskCanvas.getContext('2d');
+        maskCtx.drawImage(this.selectionMaskCanvas, bounds.x, bounds.y, bounds.width, bounds.height, 0, 0, bounds.width, bounds.height);
+        ctx.save();
+        ctx.globalCompositeOperation = 'destination-in';
+        ctx.drawImage(maskCanvas, 0, 0);
+        ctx.restore();
+        return canvas.toDataURL(format);
+    }
+
+    getLayerDocumentCanvas(layer) {
+        let canvas = imageEditorCreateCanvas(this.realWidth, this.realHeight);
+        let ctx = canvas.getContext('2d');
+        if (!layer) {
+            return canvas;
+        }
+        if (layer.isAdjustmentLayer()) {
+            this.renderImageLayerStackToContext(ctx, this.finalOffsetX, this.finalOffsetY, 1, false);
+        }
+        else {
+            layer.drawToBack(ctx, this.finalOffsetX, this.finalOffsetY, 1);
+        }
+        return canvas;
+    }
+
+    getSelectionSourceCanvas(sampleSource = null) {
+        let mode = sampleSource || this.selectionSampleSource || 'composite';
+        if (mode == 'layer') {
+            return this.getLayerDocumentCanvas(this.activeLayer);
+        }
+        let canvas = imageEditorCreateCanvas(this.realWidth, this.realHeight);
+        let ctx = canvas.getContext('2d');
+        this.renderImageLayerStackToContext(ctx, this.finalOffsetX, this.finalOffsetY, 1, false);
+        return canvas;
+    }
+
+    drawLayerMaskToContext(ctx, layer, offsetX, offsetY, zoom) {
+        if (!layer) {
+            return;
+        }
+        if (layer.isAdjustmentLayer()) {
+            let x = (offsetX + layer.offsetX) * zoom;
+            let y = (offsetY + layer.offsetY) * zoom;
+            ctx.drawImage(layer.canvas, 0, 0, layer.canvas.width, layer.canvas.height, x, y, layer.width * zoom, layer.height * zoom);
+            return;
+        }
+        layer.drawToBack(ctx, offsetX, offsetY, zoom);
+    }
+
+    renderImageLayerStackToContext(ctx, offsetX, offsetY, zoom, skipPreviewTarget = true) {
+        let stackParts = [];
+        for (let layer of this.layers) {
+            if (skipPreviewTarget && this.shouldSkipLayerInScene(layer)) {
+                continue;
+            }
+            if (layer.isMask) {
+                continue;
+            }
+            if (layer.isAdjustmentLayer()) {
+                let snapshotCanvas = document.createElement('canvas');
+                snapshotCanvas.width = ctx.canvas.width;
+                snapshotCanvas.height = ctx.canvas.height;
+                let snapshotCtx = snapshotCanvas.getContext('2d');
+                snapshotCtx.drawImage(ctx.canvas, 0, 0);
+                let processed = layer.getAdjustmentOutputCanvas(snapshotCanvas, stackParts.join(';'));
+                let maskedCanvas = document.createElement('canvas');
+                maskedCanvas.width = ctx.canvas.width;
+                maskedCanvas.height = ctx.canvas.height;
+                let maskedCtx = maskedCanvas.getContext('2d');
+                maskedCtx.drawImage(processed, 0, 0);
+                maskedCtx.globalCompositeOperation = 'destination-in';
+                this.drawLayerMaskToContext(maskedCtx, layer, offsetX, offsetY, zoom);
+                ctx.save();
+                ctx.globalAlpha = layer.opacity;
+                ctx.globalCompositeOperation = layer.globalCompositeOperation || 'source-over';
+                ctx.drawImage(maskedCanvas, 0, 0);
+                ctx.restore();
+            }
+            else {
+                layer.drawToBack(ctx, offsetX, offsetY, zoom);
+            }
+            stackParts.push(layer.getVisualSignature(`${layer.id}`));
+        }
+        return stackParts.join(';');
+    }
+
+    renderMaskLayerStackToContext(ctx, offsetX, offsetY, zoom, skipPreviewTarget = true) {
+        for (let layer of this.layers) {
+            if (skipPreviewTarget && this.shouldSkipLayerInScene(layer)) {
+                continue;
+            }
+            if (!layer.isMask) {
+                continue;
+            }
+            layer.drawToBack(ctx, offsetX, offsetY, zoom);
+        }
+    }
+
+    renderSelectionMaskToOverlay() {
+        if (!this.hasSelectionMask()) {
+            return;
+        }
+        let bounds = this.getSelectionBounds();
+        if (!bounds) {
+            return;
+        }
+        let offset = Math.floor(Date.now() / 250) % 8;
+        let edgeCanvas = document.createElement('canvas');
+        edgeCanvas.width = bounds.width;
+        edgeCanvas.height = bounds.height;
+        let edgeCtx = edgeCanvas.getContext('2d');
+        let edgeImage = edgeCtx.createImageData(bounds.width, bounds.height);
+        let edgeData = edgeImage.data;
+        let selectionData = this.getSelectionMaskData();
+        if (!selectionData) {
+            return;
+        }
+        for (let y = 0; y < bounds.height; y++) {
+            let imageY = bounds.y + y;
+            for (let x = 0; x < bounds.width; x++) {
+                let imageX = bounds.x + x;
+                let alpha = this.sampleSelectionAtImageCoord(imageX, imageY, 0);
+                if (alpha <= 0) {
+                    continue;
+                }
+                let isEdge = this.sampleSelectionAtImageCoord(imageX - 1, imageY, 0) <= 0
+                    || this.sampleSelectionAtImageCoord(imageX + 1, imageY, 0) <= 0
+                    || this.sampleSelectionAtImageCoord(imageX, imageY - 1, 0) <= 0
+                    || this.sampleSelectionAtImageCoord(imageX, imageY + 1, 0) <= 0;
+                if (!isEdge) {
+                    continue;
+                }
+                let index = (y * bounds.width + x) * 4;
+                let useLight = ((imageX + imageY + offset) % 8) < 4;
+                edgeData[index] = useLight ? 255 : 0;
+                edgeData[index + 1] = useLight ? 255 : 0;
+                edgeData[index + 2] = useLight ? 255 : 0;
+                edgeData[index + 3] = 255;
+            }
+        }
+        edgeCtx.putImageData(edgeImage, 0, 0);
+        let [canvasX, canvasY] = this.imageCoordToCanvasCoord(bounds.x, bounds.y);
+        this.ctx.save();
+        this.ctx.imageSmoothingEnabled = false;
+        this.ctx.globalAlpha = 0.2;
+        this.ctx.drawImage(this.selectionMaskCanvas, 0, 0, this.realWidth, this.realHeight, this.offsetX * this.zoomLevel, this.offsetY * this.zoomLevel, this.realWidth * this.zoomLevel, this.realHeight * this.zoomLevel);
+        this.ctx.globalAlpha = 1;
+        this.ctx.drawImage(edgeCanvas, 0, 0, bounds.width, bounds.height, canvasX, canvasY, bounds.width * this.zoomLevel, bounds.height * this.zoomLevel);
+        this.ctx.restore();
+    }
+
+    isLayerMaskLike(layer) {
+        return !!(layer && (layer.isMask || layer.isAdjustmentLayer()));
+    }
+
+    beginCropSession(layer) {
+        if (!layer || layer.isAdjustmentLayer()) {
+            this.cropSession = null;
+            return;
+        }
+        let crop = layer.getCropData();
+        this.cropSession = {
+            layerId: layer.id,
+            originalCropX: crop.cropX,
+            originalCropY: crop.cropY,
+            originalCropWidth: crop.cropWidth,
+            originalCropHeight: crop.cropHeight,
+            originalOffsetX: layer.offsetX,
+            originalOffsetY: layer.offsetY,
+            originalWidth: layer.width,
+            originalHeight: layer.height,
+            draftCropX: crop.cropX,
+            draftCropY: crop.cropY,
+            draftCropWidth: crop.cropWidth,
+            draftCropHeight: crop.cropHeight,
+            dragMode: null
+        };
+        this.updateCropSessionPreview();
+    }
+
+    getCropSessionLayer() {
+        if (!this.cropSession) {
+            return null;
+        }
+        return this.layers.find(layer => layer.id == this.cropSession.layerId) || null;
+    }
+
+    applyCropDraftToLayerState(layer, cropData, sessionData = null) {
+        let base = sessionData || this.cropSession;
+        if (!layer || !cropData || !base) {
+            return;
+        }
+        let scaleX = base.originalWidth / Math.max(1, base.originalCropWidth);
+        let scaleY = base.originalHeight / Math.max(1, base.originalCropHeight);
+        let shiftDisplayX = (cropData.cropX - base.originalCropX) * scaleX;
+        let shiftDisplayY = (cropData.cropY - base.originalCropY) * scaleY;
+        let rotatedShiftX = shiftDisplayX * Math.cos(layer.rotation) - shiftDisplayY * Math.sin(layer.rotation);
+        let rotatedShiftY = shiftDisplayX * Math.sin(layer.rotation) + shiftDisplayY * Math.cos(layer.rotation);
+        layer.cropX = cropData.cropX;
+        layer.cropY = cropData.cropY;
+        layer.cropWidth = cropData.cropWidth;
+        layer.cropHeight = cropData.cropHeight;
+        layer.width = Math.max(1, cropData.cropWidth * scaleX);
+        layer.height = Math.max(1, cropData.cropHeight * scaleY);
+        layer.offsetX = base.originalOffsetX + rotatedShiftX;
+        layer.offsetY = base.originalOffsetY + rotatedShiftY;
+    }
+
+    updateCropSessionPreview() {
+        let layer = this.getCropSessionLayer();
+        if (!layer || !this.cropSession) {
+            this.clearPreviewState(false);
+            return;
+        }
+        let previewLayer = layer.cloneLayerData();
+        this.applyCropDraftToLayerState(previewLayer, {
+            cropX: this.cropSession.draftCropX,
+            cropY: this.cropSession.draftCropY,
+            cropWidth: this.cropSession.draftCropWidth,
+            cropHeight: this.cropSession.draftCropHeight
+        }, this.cropSession);
+        this.setPreviewState(layer, previewLayer);
+    }
+
+    cancelCropSession() {
+        this.cropSession = null;
+        this.clearPreviewState(true);
+    }
+
+    commitCropSession() {
+        let layer = this.getCropSessionLayer();
+        if (!layer || !this.cropSession) {
+            this.cancelCropSession();
+            return;
+        }
+        this.applyCropDraftToLayerState(layer, {
+            cropX: this.cropSession.draftCropX,
+            cropY: this.cropSession.draftCropY,
+            cropWidth: this.cropSession.draftCropWidth,
+            cropHeight: this.cropSession.draftCropHeight
+        }, this.cropSession);
+        layer.markVisualChanged();
+        this.cropSession = null;
+        this.clearPreviewState(false);
+        this.markOutputChanged();
+        this.queueSceneRedraw();
+    }
+
+    resetCropForLayer(layer) {
+        if (!layer || layer.isAdjustmentLayer()) {
+            return;
+        }
+        this.beginCropSession(layer);
+        this.cropSession.draftCropX = 0;
+        this.cropSession.draftCropY = 0;
+        this.cropSession.draftCropWidth = layer.canvas.width;
+        this.cropSession.draftCropHeight = layer.canvas.height;
+        this.commitCropSession();
+    }
+
+    setLayerDisplaySize(layer, width, height) {
+        if (!layer || layer.isAdjustmentLayer()) {
+            return;
+        }
+        width = Math.max(1, Math.round(width));
+        height = Math.max(1, Math.round(height));
+        layer.width = width;
+        layer.height = height;
+        layer.markVisualChanged();
+        this.markOutputChanged();
+        this.queueViewRedraw();
+    }
+
+    setPreviewState(targetLayer, previewLayer, options = null) {
+        this.previewState = {
+            targetLayer: targetLayer,
+            previewLayer: previewLayer,
+            syncVisualStateFromTarget: options?.syncVisualStateFromTarget === true
+        };
         this.queueSceneRedraw();
     }
 
@@ -1331,6 +2107,9 @@ class ImageEditor {
     setActiveLayer(layer) {
         if (this.previewState && this.previewState.targetLayer != layer) {
             this.clearPreviewState(false);
+        }
+        if (this.cropSession && (!layer || this.cropSession.layerId != layer.id)) {
+            this.cropSession = null;
         }
         if (this.activeLayer && this.activeLayer.div) {
             this.activeLayer.div.classList.remove('image_editor_layer_preview-active');
@@ -1368,12 +2147,29 @@ class ImageEditor {
         this.finalOffsetX = 0;
         this.finalOffsetY = 0;
         this.canvasList.innerHTML = '';
+        this.clearSelectionMask(false);
     }
 
     addEmptyMaskLayer() {
         let layer = new ImageEditorLayer(this, this.realWidth, this.realHeight);
         layer.isMask = true;
         this.addLayer(layer);
+    }
+
+    addEmptyAdjustmentLayer() {
+        let layer = new ImageEditorLayer(this, this.realWidth, this.realHeight);
+        layer.layerType = 'adjustment';
+        layer.width = this.realWidth;
+        layer.height = this.realHeight;
+        layer.offsetX = this.finalOffsetX;
+        layer.offsetY = this.finalOffsetY;
+        layer.rotation = 0;
+        layer.ctx.fillStyle = '#ffffff';
+        layer.ctx.fillRect(0, 0, layer.canvas.width, layer.canvas.height);
+        layer.hasAnyContent = true;
+        layer.markContentChanged();
+        this.addLayer(layer);
+        return layer;
     }
 
     addEmptyLayer() {
@@ -1391,7 +2187,7 @@ class ImageEditor {
 
     /** Gets the bottom-most image layer in the current stack. */
     getBaseImageLayer() {
-        return this.layers.find(layer => !layer.isMask) || null;
+        return this.layers.find(layer => layer.layerType == 'image') || null;
     }
 
     /**
@@ -1431,6 +2227,9 @@ class ImageEditor {
             if (this.previewState && this.previewState.targetLayer == layer) {
                 this.clearPreviewState(false);
             }
+            if (this.cropSession && this.cropSession.layerId == layer.id) {
+                this.cropSession = null;
+            }
             if (this.activeLayer == layer) {
                 this.setActiveLayer(this.layers[Math.max(0, index - 1)] || null);
             }
@@ -1446,7 +2245,7 @@ class ImageEditor {
         layer.div.appendChild(layer.canvas);
         let infoDiv = createDiv(null, 'image_editor_layer_info');
         let infoSubDiv = createDiv(null, 'image_editor_layer_info_sub');
-        infoSubDiv.innerText = (layer.isMask ? `Mask` : `Image`);
+        infoSubDiv.innerText = layer.getTypeLabel();
         infoDiv.appendChild(infoSubDiv);
         layer.infoSubDiv = infoSubDiv;
         layer.div.appendChild(infoDiv);
@@ -1501,8 +2300,8 @@ class ImageEditor {
 
     sortLayers() {
         let maskLayers = this.layers.filter(layer => layer.isMask);
-        let imageLayers = this.layers.filter(layer => !layer.isMask);
-        let newLayerList = imageLayers.concat(maskLayers);
+        let otherLayers = this.layers.filter(layer => !layer.isMask);
+        let newLayerList = otherLayers.concat(maskLayers);
         if (newLayerList.map(layer => layer.id).join(',') == this.layers.map(layer => layer.id).join(',')) {
             return;
         }
@@ -1537,6 +2336,8 @@ class ImageEditor {
         }
         this.offsetX = 0
         this.offsetY = 0;
+        this.clearSelectionMask(false);
+        this.ensureSelectionMaskCanvas();
         this.markOutputChanged();
         if (this.active) {
             this.autoZoom();
@@ -1717,22 +2518,22 @@ class ImageEditor {
             this.renderFullGrid(gridScale / 8, 1, `color-mix(in srgb, ${this.gridColor} ${frac}%, ${this.backgroundColor})`);
         }
         this.renderFullGrid(gridScale, 3, this.gridColor);
-        for (let layer of this.layers) {
-            if (!layer.isMask && !this.shouldSkipLayerInScene(layer)) {
-                layer.drawToBack(this.ctx, this.offsetX, this.offsetY, this.zoomLevel);
-            }
-        }
+        let contentCanvas = document.createElement('canvas');
+        contentCanvas.width = this.canvas.width;
+        contentCanvas.height = this.canvas.height;
+        let contentCtx = contentCanvas.getContext('2d');
+        this.renderImageLayerStackToContext(contentCtx, this.offsetX, this.offsetY, this.zoomLevel, true);
+        this.ctx.drawImage(contentCanvas, 0, 0);
         this.maskHelperCtx.clearRect(0, 0, this.maskHelperCanvas.width, this.maskHelperCanvas.height);
-        for (let layer of this.layers) {
-            if (layer.isMask && !this.shouldSkipLayerInScene(layer)) {
-                layer.drawToBack(this.maskHelperCtx, this.offsetX, this.offsetY, this.zoomLevel);
-            }
-        }
+        this.renderMaskLayerStackToContext(this.maskHelperCtx, this.offsetX, this.offsetY, this.zoomLevel, true);
         if (this.activeLayer && !this.previewState) {
             this.ctx.save();
-            this.ctx.globalAlpha = this.activeLayer.isMask ? 0.8 : 0.3;
+            this.ctx.globalAlpha = this.activeLayer.isMask || this.activeLayer.isAdjustmentLayer() ? 0.8 : 0.3;
             this.ctx.globalCompositeOperation = 'luminosity';
             this.ctx.drawImage(this.maskHelperCanvas, 0, 0);
+            if (this.activeLayer.isAdjustmentLayer() && this.showAdjustmentMaskOverlay) {
+                this.drawLayerMaskToContext(this.ctx, this.activeLayer, this.offsetX, this.offsetY, this.zoomLevel);
+            }
             this.ctx.restore();
         }
         this.ctx.restore();
@@ -1744,7 +2545,10 @@ class ImageEditor {
             return;
         }
         let previewLayer = this.previewState.previewLayer;
-        if (previewLayer.isMask) {
+        if (this.previewState.syncVisualStateFromTarget && this.previewState.targetLayer) {
+            previewLayer.copyVisualStateFrom(this.previewState.targetLayer);
+        }
+        if (previewLayer.isMask || previewLayer.isAdjustmentLayer()) {
             return;
         }
         previewLayer.drawToBack(this.ctx, this.offsetX, this.offsetY, this.zoomLevel);
@@ -1755,11 +2559,14 @@ class ImageEditor {
             return;
         }
         this.ctx.save();
-        this.ctx.globalAlpha = this.activeLayer.isMask ? 0.8 : 0.3;
+        this.ctx.globalAlpha = this.activeLayer.isMask || this.activeLayer.isAdjustmentLayer() ? 0.8 : 0.3;
         this.ctx.globalCompositeOperation = 'luminosity';
         this.ctx.drawImage(this.maskHelperCanvas, 0, 0);
-        if (maskLayer) {
-            maskLayer.drawToBack(this.ctx, this.offsetX, this.offsetY, this.zoomLevel);
+        if (maskLayer && (!maskLayer.isAdjustmentLayer() || this.showAdjustmentMaskOverlay)) {
+            this.drawLayerMaskToContext(this.ctx, maskLayer, this.offsetX, this.offsetY, this.zoomLevel);
+        }
+        else if (this.activeLayer.isAdjustmentLayer() && this.showAdjustmentMaskOverlay) {
+            this.drawLayerMaskToContext(this.ctx, this.activeLayer, this.offsetX, this.offsetY, this.zoomLevel);
         }
         this.ctx.restore();
     }
@@ -1776,7 +2583,7 @@ class ImageEditor {
         this.drawPreviewStateToOverlay();
         if (this.previewState) {
             let previewMaskLayer = null;
-            if (this.previewState.previewLayer && this.previewState.previewLayer.isMask) {
+            if (this.previewState.previewLayer && (this.previewState.previewLayer.isMask || this.previewState.previewLayer.isAdjustmentLayer())) {
                 previewMaskLayer = this.previewState.previewLayer;
             }
             this.drawCurrentMaskOverlay(previewMaskLayer);
@@ -1784,14 +2591,12 @@ class ImageEditor {
         if (this.activeLayer) {
             let [boundaryX, boundaryY] = this.imageCoordToCanvasCoord(this.finalOffsetX, this.finalOffsetY);
             this.drawSelectionBox(boundaryX, boundaryY, this.realWidth * this.zoomLevel, this.realHeight * this.zoomLevel, this.boundaryColor, 16 * this.zoomLevel, 0);
-            let [offsetX, offsetY] = this.activeLayer.getOffset();
-            [offsetX, offsetY] = this.imageCoordToCanvasCoord(offsetX, offsetY);
-            this.drawSelectionBox(offsetX, offsetY, this.activeLayer.width * this.zoomLevel, this.activeLayer.height * this.zoomLevel, this.uiBorderColor, 8 * this.zoomLevel, this.activeLayer.rotation);
-            if (this.hasSelection) {
-                let [selectX, selectY] = this.imageCoordToCanvasCoord(this.selectX, this.selectY);
-                let offset = (Math.floor(Date.now() / 250) % 4) * 4 * this.zoomLevel;
-                this.drawSelectionBox(selectX, selectY, this.selectWidth * this.zoomLevel, this.selectHeight * this.zoomLevel, 'diff', 8 * this.zoomLevel, 0, offset);
+            if (!this.activeLayer.isAdjustmentLayer()) {
+                let [offsetX, offsetY] = this.activeLayer.getOffset();
+                [offsetX, offsetY] = this.imageCoordToCanvasCoord(offsetX, offsetY);
+                this.drawSelectionBox(offsetX, offsetY, this.activeLayer.width * this.zoomLevel, this.activeLayer.height * this.zoomLevel, this.uiBorderColor, 8 * this.zoomLevel, this.activeLayer.rotation);
             }
+            this.renderSelectionMaskToOverlay();
             this.activeTool.draw();
         }
         this.ctx.restore();
@@ -1808,15 +2613,11 @@ class ImageEditor {
         canvas.width = width;
         canvas.height = height;
         let ctx = canvas.getContext('2d');
-        if (layerOnly != null) {
+        if (layerOnly != null && !layerOnly.isAdjustmentLayer()) {
             layerOnly.drawToBack(ctx, this.finalOffsetX - x, this.finalOffsetY - y, 1);
         }
         else {
-            for (let layer of this.layers) {
-                if (!layer.isMask) {
-                    layer.drawToBack(ctx, this.finalOffsetX - x, this.finalOffsetY - y, 1);
-                }
-            }
+            this.renderImageLayerStackToContext(ctx, this.finalOffsetX - x, this.finalOffsetY - y, 1, false);
         }
         return canvas.toDataURL(format);
     }
@@ -1826,11 +2627,7 @@ class ImageEditor {
         canvas.width = this.realWidth;
         canvas.height = this.realHeight;
         let ctx = canvas.getContext('2d');
-        for (let layer of this.layers) {
-            if (!layer.isMask) {
-                layer.drawToBack(ctx, this.finalOffsetX, this.finalOffsetY, 1);
-            }
-        }
+        this.renderImageLayerStackToContext(ctx, this.finalOffsetX, this.finalOffsetY, 1, false);
         return canvas.toDataURL(format);
     }
 
@@ -1839,7 +2636,7 @@ class ImageEditor {
         let maxX = this.realWidth, maxY = this.realHeight;
         let minX = 0, minY = 0;
         for (let layer of this.layers) {
-            if (!layer.isMask) {
+            if (layer.layerType == 'image') {
                 let [x, y] = layer.getOffset();
                 let [w, h] = [layer.width, layer.height];
                 minX = Math.min(minX, x);
@@ -1851,11 +2648,7 @@ class ImageEditor {
         canvas.width = maxX - minX;
         canvas.height = maxY - minY;
         let ctx = canvas.getContext('2d');
-        for (let layer of this.layers) {
-            if (!layer.isMask) {
-                layer.drawToBack(ctx, -minX, -minY, 1);
-            }
-        }
+        this.renderImageLayerStackToContext(ctx, -minX, -minY, 1, false);
         return canvas.toDataURL(format);
     }
 
@@ -1874,7 +2667,7 @@ class ImageEditor {
             let imgctx = imgCanvas.getContext('2d');
             imgctx.clearRect(0, 0, imgCanvas.width, imgCanvas.height);
             for (let layer of this.layers) {
-                if (!layer.isMask) {
+                if (layer.layerType == 'image') {
                     layer.drawToBack(imgctx, this.finalOffsetX, this.finalOffsetY, 1.0 / 4);
                 }
             }
@@ -1908,28 +2701,15 @@ class ImageEditor {
     }
 
     clearSelectionOnLayer(layer) {
-        if (!this.hasSelection || this.selectWidth == 0 || this.selectHeight == 0) {
-            return;
-        }
-        let [cx1, cy1] = this.imageCoordToCanvasCoord(this.selectX, this.selectY);
-        let [lx1, ly1] = layer.canvasCoordToLayerCoord(cx1, cy1);
-        let [cx2, cy2] = this.imageCoordToCanvasCoord(this.selectX + this.selectWidth, this.selectY + this.selectHeight);
-        let [lx2, ly2] = layer.canvasCoordToLayerCoord(cx2, cy2);
-        let minX = Math.round(Math.min(lx1, lx2));
-        let minY = Math.round(Math.min(ly1, ly2));
-        let maxX = Math.round(Math.max(lx1, lx2));
-        let maxY = Math.round(Math.max(ly1, ly2));
-        minX = Math.max(0, Math.min(minX, layer.canvas.width));
-        minY = Math.max(0, Math.min(minY, layer.canvas.height));
-        maxX = Math.max(0, Math.min(maxX, layer.canvas.width));
-        maxY = Math.max(0, Math.min(maxY, layer.canvas.height));
-        let width = maxX - minX;
-        let height = maxY - minY;
-        if (width <= 0 || height <= 0) {
+        if (!this.hasSelectionMask()) {
             return;
         }
         layer.saveBeforeEdit();
-        layer.ctx.clearRect(minX, minY, width, height);
+        let selectionMask = this.getSelectionMaskCanvasForLayer(layer);
+        layer.ctx.save();
+        layer.ctx.globalCompositeOperation = 'destination-out';
+        layer.ctx.drawImage(selectionMask, 0, 0);
+        layer.ctx.restore();
         this.markLayerContentChanged(layer);
         this.redraw();
     }
@@ -1965,4 +2745,365 @@ class ImageEditor {
         container.innerHTML = '';
         $('#image_editor_debug_modal').modal('hide');
     }
+}
+
+function imageEditorCreateCanvas(width, height) {
+    let canvas = document.createElement('canvas');
+    canvas.width = Math.max(1, Math.round(width));
+    canvas.height = Math.max(1, Math.round(height));
+    return canvas;
+}
+
+function imageEditorCloneCanvas(sourceCanvas) {
+    let canvas = imageEditorCreateCanvas(sourceCanvas.width, sourceCanvas.height);
+    let ctx = canvas.getContext('2d');
+    ctx.drawImage(sourceCanvas, 0, 0);
+    return canvas;
+}
+
+function imageEditorApplyBasicAdjustmentsToCanvas(sourceCanvas, layer) {
+    let saturation = typeof layer.saturation == 'number' ? layer.saturation : 1;
+    let lightValue = typeof layer.lightValue == 'number' ? layer.lightValue : 1;
+    let contrast = typeof layer.contrast == 'number' ? layer.contrast : 1;
+    let hueShift = typeof layer.hueShift == 'number' ? layer.hueShift : 0;
+    if (Math.abs(saturation - 1) <= 0.0001 && Math.abs(lightValue - 1) <= 0.0001 && Math.abs(contrast - 1) <= 0.0001 && Math.abs(hueShift) <= 0.0001) {
+        return sourceCanvas;
+    }
+    let canvas = imageEditorCreateCanvas(sourceCanvas.width, sourceCanvas.height);
+    let ctx = canvas.getContext('2d');
+    ctx.filter = `saturate(${Math.max(0, saturation)}) brightness(${Math.max(0, lightValue)}) contrast(${Math.max(0, contrast)}) hue-rotate(${hueShift}deg)`;
+    ctx.drawImage(sourceCanvas, 0, 0);
+    return canvas;
+}
+
+function imageEditorApplyAdvancedAdjustmentsToCanvas(sourceCanvas, layer) {
+    layer.ensureToneBalance();
+    let gamma = Math.max(0.01, layer.getNumericAdjustmentValue('gamma', 1));
+    let temperature = layer.getNumericAdjustmentValue('temperature', 0);
+    let tint = layer.getNumericAdjustmentValue('tint', 0);
+    let shadowsValue = layer.getNumericAdjustmentValue('shadows', 0);
+    let highlightsValue = layer.getNumericAdjustmentValue('highlights', 0);
+    let whitesValue = layer.getNumericAdjustmentValue('whites', 0);
+    let blacksValue = layer.getNumericAdjustmentValue('blacks', 0);
+    let hasAdjustments = layer.hasToneBalanceAdjustments();
+    if (!hasAdjustments) {
+        return sourceCanvas;
+    }
+    let tempCanvas = imageEditorCloneCanvas(sourceCanvas);
+    let tempCtx = tempCanvas.getContext('2d');
+    let imageData = tempCtx.getImageData(0, 0, tempCanvas.width, tempCanvas.height);
+    let data = imageData.data;
+    let shadows = layer.toneBalance.shadows;
+    let midtones = layer.toneBalance.midtones;
+    let highlights = layer.toneBalance.highlights;
+    for (let i = 0; i < data.length; i += 4) {
+        if (data[i + 3] == 0) {
+            continue;
+        }
+        let r = data[i];
+        let g = data[i + 1];
+        let b = data[i + 2];
+        let luminance = (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255;
+        let shadowWeight = Math.max(0, 1 - (luminance / 0.5));
+        let highlightWeight = Math.max(0, (luminance - 0.5) / 0.5);
+        let midtoneWeight = Math.max(0, 1 - Math.abs(luminance - 0.5) / 0.5);
+        let blackWeight = Math.max(0, 1 - luminance / 0.25);
+        let whiteWeight = Math.max(0, (luminance - 0.75) / 0.25);
+        blackWeight *= blackWeight;
+        whiteWeight *= whiteWeight;
+        let tonalLift = 255 * (shadowsValue * shadowWeight * 0.35 + highlightsValue * highlightWeight * 0.35 + whitesValue * whiteWeight * 0.45 + blacksValue * blackWeight * 0.45);
+        let adjustR = 255 * (shadows.r * shadowWeight + midtones.r * midtoneWeight + highlights.r * highlightWeight);
+        let adjustG = 255 * (shadows.g * shadowWeight + midtones.g * midtoneWeight + highlights.g * highlightWeight);
+        let adjustB = 255 * (shadows.b * shadowWeight + midtones.b * midtoneWeight + highlights.b * highlightWeight);
+        let temperatureAdjust = temperature * 32;
+        let tintAdjust = tint * 24;
+        let newR = r + tonalLift + adjustR + temperatureAdjust + tintAdjust * 0.35;
+        let newG = g + tonalLift + adjustG - tintAdjust * 0.7;
+        let newB = b + tonalLift + adjustB - temperatureAdjust + tintAdjust * 0.35;
+        if (Math.abs(gamma - 1) > 0.0001) {
+            newR = 255 * Math.pow(Math.max(0, Math.min(1, newR / 255)), 1 / gamma);
+            newG = 255 * Math.pow(Math.max(0, Math.min(1, newG / 255)), 1 / gamma);
+            newB = 255 * Math.pow(Math.max(0, Math.min(1, newB / 255)), 1 / gamma);
+        }
+        data[i] = Math.max(0, Math.min(255, Math.round(newR)));
+        data[i + 1] = Math.max(0, Math.min(255, Math.round(newG)));
+        data[i + 2] = Math.max(0, Math.min(255, Math.round(newB)));
+    }
+    tempCtx.putImageData(imageData, 0, 0);
+    return tempCanvas;
+}
+
+function imageEditorApplyPresetToCanvas(sourceCanvas, presetId) {
+    presetId = (presetId || 'neutral').toLowerCase();
+    if (presetId == 'neutral') {
+        return sourceCanvas;
+    }
+    let canvas = imageEditorCloneCanvas(sourceCanvas);
+    let ctx = canvas.getContext('2d');
+    let imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+    let data = imageData.data;
+    for (let i = 0; i < data.length; i += 4) {
+        if (data[i + 3] == 0) {
+            continue;
+        }
+        let r = data[i];
+        let g = data[i + 1];
+        let b = data[i + 2];
+        let luminance = (r + g + b) / 3;
+        if (presetId == 'cinematic-warm') {
+            r = r * 1.08 + 10;
+            g = g * 1.02 + 4;
+            b = b * 0.92 - 8;
+        }
+        else if (presetId == 'teal-orange') {
+            if (luminance < 128) {
+                r -= 8;
+                g += 6;
+                b += 12;
+            }
+            else {
+                r += 14;
+                g += 6;
+                b -= 10;
+            }
+        }
+        else if (presetId == 'cool-fade') {
+            r = r * 0.94 + 6;
+            g = g * 0.98 + 8;
+            b = b * 1.08 + 16;
+        }
+        else if (presetId == 'noir') {
+            r = luminance;
+            g = luminance;
+            b = luminance;
+            let contrast = 1.15;
+            r = ((r - 128) * contrast) + 128;
+            g = ((g - 128) * contrast) + 128;
+            b = ((b - 128) * contrast) + 128;
+        }
+        else if (presetId == 'vintage-fade') {
+            r = r * 1.04 + 14;
+            g = g * 0.98 + 8;
+            b = b * 0.9 + 2;
+            let fade = 12;
+            r = (r * 0.92) + fade;
+            g = (g * 0.92) + fade;
+            b = (b * 0.92) + fade;
+        }
+        data[i] = Math.max(0, Math.min(255, Math.round(r)));
+        data[i + 1] = Math.max(0, Math.min(255, Math.round(g)));
+        data[i + 2] = Math.max(0, Math.min(255, Math.round(b)));
+    }
+    ctx.putImageData(imageData, 0, 0);
+    return canvas;
+}
+
+function imageEditorApplyLayerEffectsToCanvas(sourceCanvas, effects) {
+    let safeEffects = ImageEditorLayer.cloneEffects(effects);
+    let canvas = sourceCanvas;
+    if (safeEffects.blur > 0.01) {
+        let blurCanvas = imageEditorCreateCanvas(canvas.width, canvas.height);
+        let blurCtx = blurCanvas.getContext('2d');
+        blurCtx.filter = `blur(${Math.max(0.25, safeEffects.blur * 2)}px)`;
+        blurCtx.drawImage(canvas, 0, 0);
+        canvas = blurCanvas;
+    }
+    if (safeEffects.noiseReduction > 0.01) {
+        let nrCanvas = imageEditorCreateCanvas(canvas.width, canvas.height);
+        let nrCtx = nrCanvas.getContext('2d');
+        nrCtx.globalAlpha = 1;
+        nrCtx.drawImage(canvas, 0, 0);
+        nrCtx.globalAlpha = Math.max(0, Math.min(1, safeEffects.noiseReduction * 0.55));
+        nrCtx.filter = `blur(${Math.max(0.5, safeEffects.noiseReduction * 1.5)}px)`;
+        nrCtx.drawImage(canvas, 0, 0);
+        canvas = nrCanvas;
+    }
+    if (safeEffects.sharpen > 0.01) {
+        canvas = imageEditorApplyKernelToCanvas(canvas, [0, -1, 0, -1, 5 + safeEffects.sharpen * 2, -1, 0, -1, 0], 1, 0);
+    }
+    if (safeEffects.artisticFilter && safeEffects.artisticFilter != 'none') {
+        let mode = safeEffects.artisticFilter.toLowerCase();
+        if (mode == 'posterize') {
+            canvas = imageEditorPosterizeCanvas(canvas, 5);
+        }
+        else if (mode == 'sketch') {
+            canvas = imageEditorSketchCanvas(canvas);
+        }
+        else if (mode == 'emboss') {
+            canvas = imageEditorApplyKernelToCanvas(canvas, [-2, -1, 0, -1, 1, 1, 0, 1, 2], 1, 128);
+        }
+        else if (mode == 'oil paint lite' || mode == 'oil-paint-lite') {
+            canvas = imageEditorOilPaintLiteCanvas(canvas, 4);
+        }
+    }
+    if (safeEffects.glow > 0.01) {
+        let glowCanvas = imageEditorCreateCanvas(canvas.width, canvas.height);
+        let glowCtx = glowCanvas.getContext('2d');
+        glowCtx.drawImage(canvas, 0, 0);
+        glowCtx.globalCompositeOperation = 'screen';
+        glowCtx.globalAlpha = Math.max(0, Math.min(1, safeEffects.glow * 0.55));
+        glowCtx.filter = `blur(${Math.max(1, safeEffects.glow * 4)}px)`;
+        glowCtx.drawImage(canvas, 0, 0);
+        canvas = glowCanvas;
+    }
+    if (safeEffects.vignette > 0.01) {
+        let vignetteCanvas = imageEditorCloneCanvas(canvas);
+        let vignetteCtx = vignetteCanvas.getContext('2d');
+        let gradient = vignetteCtx.createRadialGradient(vignetteCanvas.width / 2, vignetteCanvas.height / 2, Math.min(vignetteCanvas.width, vignetteCanvas.height) * 0.15, vignetteCanvas.width / 2, vignetteCanvas.height / 2, Math.max(vignetteCanvas.width, vignetteCanvas.height) * 0.75);
+        let opacity = Math.max(0, Math.min(0.85, safeEffects.vignette * 0.8));
+        gradient.addColorStop(0, 'rgba(0, 0, 0, 0)');
+        gradient.addColorStop(1, `rgba(0, 0, 0, ${opacity})`);
+        vignetteCtx.fillStyle = gradient;
+        vignetteCtx.fillRect(0, 0, vignetteCanvas.width, vignetteCanvas.height);
+        canvas = vignetteCanvas;
+    }
+    return canvas;
+}
+
+function imageEditorApplyKernelToCanvas(sourceCanvas, kernel, divisor = 1, bias = 0) {
+    let srcCtx = sourceCanvas.getContext('2d');
+    let srcImage = srcCtx.getImageData(0, 0, sourceCanvas.width, sourceCanvas.height);
+    let srcData = srcImage.data;
+    let destCanvas = imageEditorCreateCanvas(sourceCanvas.width, sourceCanvas.height);
+    let destCtx = destCanvas.getContext('2d');
+    let destImage = destCtx.createImageData(sourceCanvas.width, sourceCanvas.height);
+    let destData = destImage.data;
+    for (let y = 0; y < sourceCanvas.height; y++) {
+        for (let x = 0; x < sourceCanvas.width; x++) {
+            let r = 0;
+            let g = 0;
+            let b = 0;
+            let a = 0;
+            let kernelIndex = 0;
+            for (let ky = -1; ky <= 1; ky++) {
+                for (let kx = -1; kx <= 1; kx++) {
+                    let sx = Math.max(0, Math.min(sourceCanvas.width - 1, x + kx));
+                    let sy = Math.max(0, Math.min(sourceCanvas.height - 1, y + ky));
+                    let sampleIndex = (sy * sourceCanvas.width + sx) * 4;
+                    let weight = kernel[kernelIndex++];
+                    r += srcData[sampleIndex] * weight;
+                    g += srcData[sampleIndex + 1] * weight;
+                    b += srcData[sampleIndex + 2] * weight;
+                    a = Math.max(a, srcData[sampleIndex + 3]);
+                }
+            }
+            let outIndex = (y * sourceCanvas.width + x) * 4;
+            destData[outIndex] = Math.max(0, Math.min(255, Math.round(r / divisor + bias)));
+            destData[outIndex + 1] = Math.max(0, Math.min(255, Math.round(g / divisor + bias)));
+            destData[outIndex + 2] = Math.max(0, Math.min(255, Math.round(b / divisor + bias)));
+            destData[outIndex + 3] = a;
+        }
+    }
+    destCtx.putImageData(destImage, 0, 0);
+    return destCanvas;
+}
+
+function imageEditorPosterizeCanvas(sourceCanvas, levels) {
+    let canvas = imageEditorCloneCanvas(sourceCanvas);
+    let ctx = canvas.getContext('2d');
+    let imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+    let data = imageData.data;
+    let step = 255 / Math.max(2, levels - 1);
+    for (let i = 0; i < data.length; i += 4) {
+        data[i] = Math.round(Math.round(data[i] / step) * step);
+        data[i + 1] = Math.round(Math.round(data[i + 1] / step) * step);
+        data[i + 2] = Math.round(Math.round(data[i + 2] / step) * step);
+    }
+    ctx.putImageData(imageData, 0, 0);
+    return canvas;
+}
+
+function imageEditorSketchCanvas(sourceCanvas) {
+    let edgeCanvas = imageEditorApplyKernelToCanvas(sourceCanvas, [-1, -1, -1, -1, 8, -1, -1, -1, -1], 1, 0);
+    let canvas = imageEditorCloneCanvas(edgeCanvas);
+    let ctx = canvas.getContext('2d');
+    let imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+    let data = imageData.data;
+    for (let i = 0; i < data.length; i += 4) {
+        let value = 255 - Math.max(data[i], data[i + 1], data[i + 2]);
+        data[i] = value;
+        data[i + 1] = value;
+        data[i + 2] = value;
+    }
+    ctx.putImageData(imageData, 0, 0);
+    return canvas;
+}
+
+function imageEditorOilPaintLiteCanvas(sourceCanvas, blockSize) {
+    let canvas = imageEditorCreateCanvas(sourceCanvas.width, sourceCanvas.height);
+    let ctx = canvas.getContext('2d');
+    let srcCtx = sourceCanvas.getContext('2d');
+    let srcData = srcCtx.getImageData(0, 0, sourceCanvas.width, sourceCanvas.height).data;
+    for (let y = 0; y < sourceCanvas.height; y += blockSize) {
+        for (let x = 0; x < sourceCanvas.width; x += blockSize) {
+            let totalR = 0;
+            let totalG = 0;
+            let totalB = 0;
+            let totalA = 0;
+            let count = 0;
+            for (let by = 0; by < blockSize; by++) {
+                for (let bx = 0; bx < blockSize; bx++) {
+                    let sx = x + bx;
+                    let sy = y + by;
+                    if (sx >= sourceCanvas.width || sy >= sourceCanvas.height) {
+                        continue;
+                    }
+                    let index = (sy * sourceCanvas.width + sx) * 4;
+                    totalR += srcData[index];
+                    totalG += srcData[index + 1];
+                    totalB += srcData[index + 2];
+                    totalA += srcData[index + 3];
+                    count++;
+                }
+            }
+            if (count == 0) {
+                continue;
+            }
+            ctx.fillStyle = `rgba(${Math.round(totalR / count)}, ${Math.round(totalG / count)}, ${Math.round(totalB / count)}, ${(totalA / count) / 255})`;
+            ctx.fillRect(x, y, blockSize, blockSize);
+        }
+    }
+    return canvas;
+}
+
+function imageEditorRefineSelectionMaskCanvas(sourceCanvas, expandPx, smoothPasses, featherPx) {
+    let canvas = imageEditorCloneCanvas(sourceCanvas);
+    if (expandPx > 0) {
+        let expanded = imageEditorCreateCanvas(canvas.width, canvas.height);
+        let expandedCtx = expanded.getContext('2d');
+        for (let y = -expandPx; y <= expandPx; y++) {
+            for (let x = -expandPx; x <= expandPx; x++) {
+                if (x * x + y * y > expandPx * expandPx) {
+                    continue;
+                }
+                expandedCtx.drawImage(canvas, x, y);
+            }
+        }
+        canvas = expanded;
+    }
+    for (let i = 0; i < smoothPasses; i++) {
+        let smooth = imageEditorCreateCanvas(canvas.width, canvas.height);
+        let smoothCtx = smooth.getContext('2d');
+        smoothCtx.filter = 'blur(1px)';
+        smoothCtx.drawImage(canvas, 0, 0);
+        let imageData = smoothCtx.getImageData(0, 0, smooth.width, smooth.height);
+        let data = imageData.data;
+        for (let p = 0; p < data.length; p += 4) {
+            let alpha = data[p + 3] >= 96 ? 255 : 0;
+            data[p] = 255;
+            data[p + 1] = 255;
+            data[p + 2] = 255;
+            data[p + 3] = alpha;
+        }
+        smoothCtx.putImageData(imageData, 0, 0);
+        canvas = smooth;
+    }
+    if (featherPx > 0) {
+        let feathered = imageEditorCreateCanvas(canvas.width, canvas.height);
+        let featherCtx = feathered.getContext('2d');
+        featherCtx.filter = `blur(${Math.max(0.5, featherPx)}px)`;
+        featherCtx.drawImage(canvas, 0, 0);
+        canvas = feathered;
+    }
+    return canvas;
 }

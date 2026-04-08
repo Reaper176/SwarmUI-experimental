@@ -299,6 +299,15 @@ body {
 #ImageEditing #imageediting_image_options_header:hover {
     background-color: color-mix(in srgb, var(--button-background-hover) 72%, var(--green)) !important;
 }
+#ImageEditing #imageediting_selection_crop_header,
+#ImageEditing #imageediting_effects_presets_header {
+    background-color: color-mix(in srgb, var(--button-background) 72%, var(--green)) !important;
+    border-color: color-mix(in srgb, var(--light-border) 55%, var(--green)) !important;
+}
+#ImageEditing #imageediting_selection_crop_header:hover,
+#ImageEditing #imageediting_effects_presets_header:hover {
+    background-color: color-mix(in srgb, var(--button-background-hover) 72%, var(--green)) !important;
+}
 #ImageEditing .imageediting_section_header_title {
     font-weight: 600;
 }
@@ -359,6 +368,11 @@ body {
 #ImageEditing .imageediting_layer_option_buttons {
     margin-top: 0.5rem;
 }
+#ImageEditing .imageediting_crop_size_inputs {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0.35rem;
+}
 #ImageEditing #imageediting_layer_opacity_slider:disabled {
     opacity: 0.5;
     cursor: not-allowed;
@@ -368,6 +382,18 @@ body {
     cursor: not-allowed;
 }
 #ImageEditing #imageediting_layer_light_value_slider:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+#ImageEditing #imageediting_selection_tolerance_slider:disabled,
+#ImageEditing #imageediting_selection_feather_slider:disabled,
+#ImageEditing #imageediting_selection_expand_slider:disabled,
+#ImageEditing #imageediting_selection_smooth_slider:disabled,
+#ImageEditing #imageediting_effect_blur_slider:disabled,
+#ImageEditing #imageediting_effect_sharpen_slider:disabled,
+#ImageEditing #imageediting_effect_noise_reduction_slider:disabled,
+#ImageEditing #imageediting_effect_vignette_slider:disabled,
+#ImageEditing #imageediting_effect_glow_slider:disabled {
     opacity: 0.5;
     cursor: not-allowed;
 }
