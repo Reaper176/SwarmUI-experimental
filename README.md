@@ -1,6 +1,22 @@
 I have made this fork to add some basic functionality to the ui.
 # Added Functionality
 
+## Added search options to models tabs.
+
+<br/>
+
+Just a couple of small changes to search functionality. You can now pick what field you would like to search. Also relevance is now a thing so when you type a word that thing will be sorted to the top of the list. Some highlighting should also happen when all "everything" mode.
+
+<br/>
+
+<img width="265" height="153" alt="image" src="https://github.com/user-attachments/assets/b60698a6-78fc-4001-80c0-dcac5a7825b2" />
+
+<br/>
+
+<img width="342" height="148" alt="image" src="https://github.com/user-attachments/assets/82fa2e31-527c-44b5-b6aa-2aeadf906026" />
+
+<br/>
+
 ## Added Inpainting and Image editing tab.
 
 <br/>
