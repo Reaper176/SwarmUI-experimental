@@ -3523,9 +3523,8 @@ function setCurrentImage(src, metadata = '', batchId = '', previewGrow = false, 
         forceShowWelcomeMessage();
         return;
     }
-    let isVideo = isVideoExt(src);
-    let isAudio = isAudioExt(src);
-    if ((smoothAdd || !metadata) && canReparse && !isVideo && !isAudio) {
+    let mediaType = getMediaType(src);
+    if ((smoothAdd || !metadata) && canReparse && mediaType == 'image') {
         let image = new Image();
         image.onload = () => {
             if (!metadata) {
@@ -3551,7 +3550,7 @@ function setCurrentImage(src, metadata = '', batchId = '', previewGrow = false, 
     let img;
     let isReuse = false;
     let srcTarget;
-    if (isVideo) {
+    if (mediaType == 'video') {
         container = createDiv(null, 'video-container current-image-img');
         curImg.innerHTML = '';
         img = document.createElement('video');
@@ -3560,11 +3559,11 @@ function setCurrentImage(src, metadata = '', batchId = '', previewGrow = false, 
         img.autoplay = true;
         let sourceObj = document.createElement('source');
         srcTarget = sourceObj;
-        sourceObj.type = isVideo;
+        sourceObj.type = isVideoExt(src);
         img.appendChild(sourceObj);
         container.appendChild(img);
     }
-    else if (isAudio) {
+    else if (mediaType == 'audio') {
         curImg.innerHTML = '';
         container = createDiv(null, 'audio-container current-image-img');
         img = document.createElement('audio');
@@ -3588,10 +3587,10 @@ function setCurrentImage(src, metadata = '', batchId = '', previewGrow = false, 
         container = img;
     }
     function naturalDim() {
-        if (isVideo) {
+        if (mediaType == 'video') {
             return [img.videoWidth, img.videoHeight];
         }
-        else if (isAudio) {
+        else if (mediaType == 'audio') {
             return [320, 140];
         }
         else {
@@ -3607,7 +3606,7 @@ function setCurrentImage(src, metadata = '', batchId = '', previewGrow = false, 
         }
         alignImageDataFormat();
     }
-    if (isVideo || isAudio) {
+    if (mediaType == 'video' || mediaType == 'audio') {
         img.addEventListener('loadeddata', function() {
             if (img) {
                 img.onload();
@@ -3626,7 +3625,8 @@ function setCurrentImage(src, metadata = '', batchId = '', previewGrow = false, 
     let buttons = createDiv(null, 'current-image-buttons');
     let imagePathClean = getImageFullSrc(src);
     let buttonsChoice = getUserSetting('ButtonsUnderMainImages', '');
-    if (buttonsChoice == '') {
+    let isUsingDefaults = buttonsChoice == '';
+    if (isUsingDefaults) {
         buttonsChoice = defaultButtonChoices;
     }
     let buttonDefs = {};
@@ -3639,17 +3639,20 @@ function setCurrentImage(src, metadata = '', batchId = '', previewGrow = false, 
         }
         return normalized;
     }
-    function includeButton(name, action, extraClass = '', title = '') {
-        buttonDefs[normalizeButtonKey(name)] = { name, action, extraClass, title };
+    function includeButton(name, action, extraClass = '', title = '', mediaTypes = null) {
+        buttonDefs[normalizeButtonKey(name)] = { name, action, extraClass, title, mediaTypes };
     }
-    function includeLinkButton(name, href, isDownload = false, title = '') {
-        buttonDefs[normalizeButtonKey(name)] = { name, href, is_download: isDownload, title: title };
+    function includeLinkButton(name, href, isDownload = false, title = '', mediaTypes = null) {
+        buttonDefs[normalizeButtonKey(name)] = { name, href, is_download: isDownload, title, mediaTypes };
     }
     function renderButtonsFromDefs() {
         for (let key of buttonsChoiceOrdered) {
             let def = buttonDefs[key];
             if (def) {
                 delete buttonDefs[key];
+                if (def.mediaTypes && !def.mediaTypes.includes(mediaType)) {
+                    continue;
+                }
                 if (def.href) {
                     let link = document.createElement('a');
                     link.className = `basic-button${def.extraClass || ''}`;
@@ -3667,6 +3670,9 @@ function setCurrentImage(src, metadata = '', batchId = '', previewGrow = false, 
             }
         }
         for (let def of Object.values(buttonDefs)) {
+            if (def.mediaTypes && !def.mediaTypes.includes(mediaType)) {
+                continue;
+            }
             if (def.href) {
                 subButtons.push({ key: def.name, href: def.href, is_download: def.is_download, title: def.title });
             }
@@ -3680,6 +3686,16 @@ function setCurrentImage(src, metadata = '', batchId = '', previewGrow = false, 
         let key = normalizeButtonKey(name);
         if (key) {
             buttonsChoiceOrdered.push(key);
+        }
+    }
+    if (isUsingDefaults) {
+        for (let reg of registeredMediaButtons) {
+            if (reg.isDefault) {
+                let key = normalizeButtonKey(reg.name);
+                if (key && !buttonsChoiceOrdered.includes(key)) {
+                    buttonsChoiceOrdered.push(key);
+                }
+            }
         }
     }
     let isDataImage = src.startsWith('data:');
@@ -3719,7 +3735,7 @@ function setCurrentImage(src, metadata = '', batchId = '', previewGrow = false, 
                 tmpImg.src = img.src;
             }
         }
-    }, '', 'Sets this image as the Init Image parameter input');
+    }, '', 'Sets this image as the Init Image parameter input', ['image', 'video']);
     includeButton('Use As Image Prompt', () => {
         let altPromptRegion = document.getElementById('alt_prompt_region');
         if (!altPromptRegion) {
@@ -3740,10 +3756,10 @@ function setCurrentImage(src, metadata = '', batchId = '', previewGrow = false, 
             });
         };
         tmpImg.src = img.src;
-    }, '', 'Uses this image as an Image Prompt input');
+    }, '', 'Uses this image as an Image Prompt input', ['image']);
     includeButton('Edit Image', () => {
         openGenerateTabEditorForImage(img, 'Edit Image');
-    }, '', 'Opens an Image Editor for this image');
+    }, '', 'Opens an Image Editor for this image', ['image']);
     if (!isVideo && !isAudio) {
         includeButton('Send To Image Edit Tab', () => {
             sendToImageEditingTabPreview(img.src, img.dataset.metadata);
@@ -3761,7 +3777,7 @@ function setCurrentImage(src, metadata = '', batchId = '', previewGrow = false, 
             };
             mainGenHandler.doGenerate(input_overrides, { 'initimagecreativity': 0.4 });
         }));
-    }, '', 'Runs an instant generation with this image as the input and scale doubled');
+    }, '', 'Runs an instant generation with this image as the input and scale doubled', ['image', 'video']);
     includeButton('Refine Image', () => {
         toDataURL(img.src, (url => {
             let input_overrides = {
@@ -3832,6 +3848,9 @@ function setCurrentImage(src, metadata = '', batchId = '', previewGrow = false, 
             includeButton(added.label, added.onclick, '', added.title);
         }
     }
+    for (let reg of registeredMediaButtons) {
+        includeButton(reg.name, () => reg.action(src), '', reg.title, reg.mediaTypes);
+    }
     renderButtonsFromDefs();
     quickAppendButton(buttons, 'More &#x2B9F;', (e, button) => {
         let rect = button.getBoundingClientRect();
@@ -3844,10 +3863,10 @@ function setCurrentImage(src, metadata = '', batchId = '', previewGrow = false, 
     if (!isReuse) {
         curImg.appendChild(container);
         curImg.appendChild(extrasWrapper);
-        if (isVideo) {
+        if (mediaType == 'video') {
             new VideoControls(img);
         }
-        else if (isAudio) {
+        else if (mediaType == 'audio') {
             new AudioControls(img);
         }
     }

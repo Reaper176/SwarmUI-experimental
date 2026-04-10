@@ -83,6 +83,12 @@ function ensureImageHistoryBrowserShellReady() {
 
 function ensureImageHistoryHeaderControlsReady(sortBy, reverse, allowAnims, showHidden) {
     ensureImageHistoryBrowserShellReady();
+let registeredMediaButtons = [];
+
+/** Registers a media button for extensions. 'mediaTypes' filters by type eg ['audio'], null means all. 'isDefault' promotes to visible (vs More dropdown). 'showInHistory' controls whether button appears in the History panel. */
+function registerMediaButton(name, action, title = '', mediaTypes = null, isDefault = false, showInHistory = true, href = null, is_download = false) {
+    registeredMediaButtons.push({ name, action, title, mediaTypes, isDefault, showInHistory, href, is_download });
+}
     let sortElem = document.getElementById('image_history_sort_by');
     let sortReverseElem = document.getElementById('image_history_sort_reverse');
     let allowAnimsElem = document.getElementById('image_history_allow_anims');
@@ -533,6 +539,7 @@ function listOutputHistoryFolderAndFiles(path, isRefresh, callback, depth, onErr
 function buttonsForImage(fullsrc, src, metadata, parsedMetadata = null) {
     let isDataImage = src.startsWith('data:');
     parsedMetadata = parsedMetadata || parseHistoryMetadata(metadata);
+    let mediaType = getMediaType(src);
     let buttons = [];
     if (permissions.hasPermission('user_star_images') && !isDataImage) {
         buttons.push({
@@ -604,6 +611,17 @@ function buttonsForImage(fullsrc, src, metadata, parsedMetadata = null) {
                 deleteSingleHistoryImage(fullsrc, src, e);
             }
         });
+    }
+    for (let reg of registeredMediaButtons) {
+        if (reg.showInHistory && (!reg.mediaTypes || reg.mediaTypes.includes(mediaType))) {
+            buttons.push({
+                label: reg.name,
+                title: reg.title,
+                href: reg.href,
+                is_download: reg.is_download,
+                onclick: () => reg.action(src)
+            });
+        }
     }
     return buttons;
 }
