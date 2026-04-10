@@ -132,6 +132,8 @@ class GenPageBrowserClass {
         this.builtEvent = null;
         this.sizeChangedEvent = null;
         this.updateFailedEvent = null;
+        this.filterMatcher = null;
+        this.filterSorter = null;
         this.filterUpdateTimeout = null;
         this.filterUpdateDelayMs = 120;
         this.lastFiles = [];
@@ -472,9 +474,65 @@ class GenPageBrowserClass {
     }
 
     /**
+     * Returns the lowercase searchable text for a browser entry.
+     */
+    getSearchableText(desc) {
+        let searchable = desc.searchable;
+        if (searchable == null) {
+            return '';
+        }
+        if (typeof searchable == 'string') {
+            return searchable.toLowerCase();
+        }
+        if (typeof searchable == 'object') {
+            if (typeof searchable.allFields == 'string') {
+                return searchable.allFields.toLowerCase();
+            }
+            if (typeof searchable.all_fields == 'string') {
+                return searchable.all_fields.toLowerCase();
+            }
+            return Object.values(searchable).join(' ').toLowerCase();
+        }
+        return `${searchable}`.toLowerCase();
+    }
+
+    /**
+     * Checks whether the current filter matches a browser entry.
+     */
+    filterMatchesEntry(desc) {
+        if (!this.filter) {
+            return true;
+        }
+        if (this.filterMatcher) {
+            return this.filterMatcher(desc, this.filter);
+        }
+        return this.getSearchableText(desc).includes(this.filter);
+    }
+
+    /**
      * Fills the container with the content list.
      */
     buildContentList(container, files, before = null, startId = 0) {
+        let entries = [];
+        for (let i = 0; i < files.length; i++) {
+            let file = files[i];
+            if (file?.file != null && file?.desc != null) {
+                if (file.browserSortIndex == null) {
+                    file.browserSortIndex = i;
+                }
+                entries.push(file);
+            }
+            else {
+                entries.push({ file, desc: this.describe(file), browserSortIndex: i });
+            }
+        }
+        entries = entries.filter(entry => this.filterMatchesEntry(entry.desc));
+        if (this.filter && this.filterSorter) {
+            let sortedEntries = this.filterSorter(entries, this.filter);
+            if (sortedEntries) {
+                entries = sortedEntries;
+            }
+        }
         let id = startId;
         let maxBuildNow = this.maxPreBuild;
         if (startId == 0) {
@@ -484,18 +542,16 @@ class GenPageBrowserClass {
         else {
             this.chunksRendered++;
         }
-        for (let i = 0; i < files.length; i++) {
-            let file = files[i];
+        for (let i = 0; i < entries.length; i++) {
+            let entry = entries[i];
+            let file = entry.file;
+            let desc = entry.desc;
             id++;
-            let desc = this.describe(file);
-            if (this.filter && !desc.searchable.toLowerCase().includes(this.filter)) {
-                continue;
-            }
             if (i > maxBuildNow) {
-                let remainingFiles = files.slice(i);
-                while (remainingFiles.length > 0) {
-                    let chunkSize = Math.min(this.maxPreBuild / 2, remainingFiles.length, 100);
-                    let chunk = remainingFiles.splice(0, chunkSize);
+                let remainingEntries = entries.slice(i);
+                while (remainingEntries.length > 0) {
+                    let chunkSize = Math.min(this.maxPreBuild / 2, remainingEntries.length, 100);
+                    let chunk = remainingEntries.splice(0, chunkSize);
                     let sectionDiv = createDiv(null, 'lazyload browser-section-loader');
                     sectionDiv.onclick = () => {
                         this.buildContentList(container, chunk, sectionDiv, id);

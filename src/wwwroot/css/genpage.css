@@ -905,6 +905,39 @@ body {
     font-size: 80%;
     color: var(--text-soft);
 }
+.model-search-match-info {
+    display: block;
+    margin: 0.15rem 0 0.35rem 0;
+    font-size: 85%;
+    color: var(--text-soft);
+}
+.model-search-match-label {
+    font-weight: 600;
+}
+.model-search-match-field {
+    color: var(--text);
+    font-weight: 600;
+}
+.model-search-match-kind {
+    display: inline-block;
+    margin-left: 0.25rem;
+    padding: 0 0.3rem;
+    border-radius: 999px;
+    border: 1px solid var(--light-border);
+    font-size: 85%;
+}
+.model-search-match-snippet {
+    display: block;
+    margin-bottom: 0.35rem;
+    font-size: 85%;
+    color: var(--text-soft);
+}
+mark.model-search-highlight {
+    padding: 0 0.12rem;
+    border-radius: 0.2rem;
+    background-color: color-mix(in srgb, var(--emphasis) 25%, transparent);
+    color: inherit;
+}
 .refresh-button {
     margin: 0.5rem;
     background-color: var(--button-background);
@@ -2387,6 +2420,9 @@ body {
 }
 .input_filter_container.bottom_filter input {
     padding-right: 20px;
+}
+.browser-search-field-selector {
+    max-width: 10rem;
 }
 .clear_input_icon {
     position: absolute;

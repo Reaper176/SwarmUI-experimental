@@ -487,15 +487,329 @@ class ModelBrowserWrapper {
         this.subType = subType;
         this.subIds = subIds;
         this.selectOne = selectOne;
+        this.searchField = subType == 'Wildcards' ? null : this.getStoredSearchField();
         let format = subType == 'Wildcards' ? 'Small Cards' : 'Cards';
+        if (subType != 'Wildcards') {
+            extraHeader += this.getSearchFieldSelectorHtml();
+        }
         extraHeader += `<label for="models_${subType}_sort_by">Sort:</label> <select id="models_${subType}_sort_by"><option>Name</option><option>Title</option><option>DateCreated</option><option>DateModified</option></select> <input type="checkbox" id="models_${subType}_sort_reverse"> <label for="models_${subType}_sort_reverse">Reverse</label>`;
         this.browser = new GenPageBrowserClass(container, this.listModelFolderAndFiles.bind(this), id, format, this.describeModel.bind(this), this.selectModel.bind(this), extraHeader);
+        if (subType != 'Wildcards') {
+            this.browser.filterMatcher = this.browserFilterMatches.bind(this);
+            this.browser.filterSorter = this.browserFilterSorter.bind(this);
+        }
         this.promptBox = getRequiredElementById('alt_prompt_textbox');
         this.models = {};
         this.browser.refreshHandler = (callback) => {
             refreshParameterValues(true, subType == 'Wildcards' ? 'wildcards' : null, callback);
         };
         this.modelDescribeCallbacks = [];
+    }
+
+    getSearchFieldStorageKey() {
+        return `models_${this.subType}_search_field`;
+    }
+
+    normalizeSearchField(searchField) {
+        if (['all_fields', 'file_name', 'title', 'author', 'trigger_phrase'].includes(searchField)) {
+            return searchField;
+        }
+        return 'title';
+    }
+
+    getStoredSearchField() {
+        return this.normalizeSearchField(localStorage.getItem(this.getSearchFieldStorageKey()) || 'title');
+    }
+
+    getSearchFieldSelectorHtml() {
+        let options = [
+            { value: 'all_fields', label: 'All Fields' },
+            { value: 'file_name', label: 'File name' },
+            { value: 'title', label: 'Title' },
+            { value: 'author', label: 'Author' },
+            { value: 'trigger_phrase', label: 'Trigger Phrase' }
+        ];
+        let optionHtml = options.map(option => `<option value="${option.value}"${option.value == this.searchField ? ' selected' : ''}>${option.label}</option>`).join('');
+        return `<label for="models_${this.subType}_search_field">Search:</label> <select id="models_${this.subType}_search_field" class="browser-search-field-selector">${optionHtml}</select> `;
+    }
+
+    configureSearchFieldSelector() {
+        let searchFieldElem = document.getElementById(`models_${this.subType}_search_field`);
+        if (!searchFieldElem) {
+            return;
+        }
+        searchFieldElem.value = this.searchField;
+        searchFieldElem.addEventListener('change', () => {
+            this.searchField = this.normalizeSearchField(searchFieldElem.value);
+            localStorage.setItem(this.getSearchFieldStorageKey(), this.searchField);
+            this.browser.lightRefresh();
+        });
+    }
+
+    normalizeSearchText(text) {
+        return `${text ?? ''}`.toLowerCase().replaceAll(/[^\p{L}\p{N}]+/gu, ' ').replaceAll(/\s+/g, ' ').trim();
+    }
+
+    getCurrentSearchFieldKey() {
+        switch (this.searchField) {
+            case 'file_name':
+                return 'fileName';
+            case 'title':
+                return 'title';
+            case 'author':
+                return 'author';
+            case 'trigger_phrase':
+                return 'triggerPhrase';
+            default:
+                return 'allFields';
+        }
+    }
+
+    getTriggerPhraseSearchTokens(val) {
+        let tokens = [];
+        let dedup = new Set();
+        let phrases = `${val ?? ''}`.split(';').map(phrase => phrase.trim()).filter(phrase => phrase.length > 0);
+        for (let phrase of phrases) {
+            let split = phrase.split(',').map(token => token.trim()).filter(token => token.length > 0);
+            if (split.length == 0 && phrase.length > 0) {
+                split = [phrase];
+            }
+            for (let token of split) {
+                let lowered = token.toLowerCase();
+                if (!dedup.has(lowered)) {
+                    dedup.add(lowered);
+                    tokens.push(token);
+                }
+            }
+        }
+        return tokens;
+    }
+
+    getFieldSearchValues(values) {
+        let result = [];
+        let dedup = new Set();
+        for (let value of values) {
+            let cleaned = stripHtmlToText(`${value ?? ''}`).trim();
+            if (cleaned.length == 0) {
+                continue;
+            }
+            let lowered = cleaned.toLowerCase();
+            if (!dedup.has(lowered)) {
+                dedup.add(lowered);
+                result.push(cleaned);
+            }
+        }
+        return result;
+    }
+
+    getCompactTextMap(text) {
+        let compactChars = [];
+        let rawIndices = [];
+        let rawText = `${text ?? ''}`;
+        for (let i = 0; i < rawText.length; i++) {
+            let char = rawText[i].toLowerCase();
+            if (char.match(/[\p{L}\p{N}]/u)) {
+                compactChars.push(char);
+                rawIndices.push(i);
+            }
+        }
+        return { compact: compactChars.join(''), rawIndices };
+    }
+
+    getFuzzyMatchData(normalizedFilter, text) {
+        let compactNeedle = normalizedFilter.replaceAll(' ', '');
+        if (compactNeedle.length < 3) {
+            return null;
+        }
+        let compactText = this.getCompactTextMap(text);
+        if (compactNeedle.length > compactText.compact.length) {
+            return null;
+        }
+        let rawIndices = [];
+        let compactIndices = [];
+        let needleIndex = 0;
+        for (let i = 0; i < compactText.compact.length && needleIndex < compactNeedle.length; i++) {
+            if (compactText.compact[i] == compactNeedle[needleIndex]) {
+                rawIndices.push(compactText.rawIndices[i]);
+                compactIndices.push(i);
+                needleIndex++;
+            }
+        }
+        if (needleIndex != compactNeedle.length) {
+            return null;
+        }
+        let gapPenalty = 0;
+        for (let i = 1; i < compactIndices.length; i++) {
+            gapPenalty += compactIndices[i] - compactIndices[i - 1] - 1;
+        }
+        return { rawIndices, gapPenalty };
+    }
+
+    scoreSearchTextMatch(normalizedFilter, text, fieldPriority) {
+        let rawText = `${text ?? ''}`;
+        let normalizedText = this.normalizeSearchText(rawText);
+        if (!normalizedFilter || !normalizedText) {
+            return null;
+        }
+        if (normalizedText == normalizedFilter) {
+            return { score: 4000 + fieldPriority - normalizedText.length / 100, matchType: 'exact', value: rawText };
+        }
+        if (normalizedText.startsWith(normalizedFilter)) {
+            return { score: 3000 + fieldPriority - normalizedText.length / 100, matchType: 'prefix', value: rawText };
+        }
+        let containsIndex = normalizedText.indexOf(normalizedFilter);
+        if (containsIndex != -1) {
+            let isWordBoundary = containsIndex == 0 || normalizedText[containsIndex - 1] == ' ';
+            return { score: (isWordBoundary ? 2600 : 2200) + fieldPriority - containsIndex * 3 - normalizedText.length / 100, matchType: isWordBoundary ? 'word' : 'contains', value: rawText };
+        }
+        let fuzzyMatch = this.getFuzzyMatchData(normalizedFilter, rawText);
+        if (fuzzyMatch) {
+            return { score: 1200 + fieldPriority - fuzzyMatch.gapPenalty * 5 - normalizedText.length / 100, matchType: 'fuzzy', value: rawText, fuzzyIndices: fuzzyMatch.rawIndices };
+        }
+        return null;
+    }
+
+    resolveSearchMatch(searchFields) {
+        let normalizedFilter = this.normalizeSearchText(this.browser.filter);
+        if (!normalizedFilter) {
+            return null;
+        }
+        let activeFieldKey = this.getCurrentSearchFieldKey();
+        let bestMatch = null;
+        for (let field of searchFields) {
+            if (activeFieldKey != 'allFields' && field.key != activeFieldKey) {
+                continue;
+            }
+            for (let value of field.values) {
+                let match = this.scoreSearchTextMatch(normalizedFilter, value, field.priority);
+                if (match && (!bestMatch || match.score > bestMatch.score)) {
+                    bestMatch = {
+                        score: match.score,
+                        matchType: match.matchType,
+                        value: match.value,
+                        fuzzyIndices: match.fuzzyIndices || null,
+                        fieldKey: field.key,
+                        fieldLabel: field.label,
+                        fieldVisible: field.visible
+                    };
+                }
+            }
+        }
+        return bestMatch;
+    }
+
+    mergeHighlightRanges(ranges) {
+        if (ranges.length == 0) {
+            return [];
+        }
+        ranges.sort((a, b) => a[0] - b[0] || a[1] - b[1]);
+        let merged = [ranges[0]];
+        for (let i = 1; i < ranges.length; i++) {
+            let latest = merged[merged.length - 1];
+            let current = ranges[i];
+            if (current[0] <= latest[1]) {
+                latest[1] = Math.max(latest[1], current[1]);
+            }
+            else {
+                merged.push(current);
+            }
+        }
+        return merged;
+    }
+
+    renderHighlightRanges(text, ranges) {
+        let mergedRanges = this.mergeHighlightRanges(ranges);
+        if (mergedRanges.length == 0) {
+            return escapeHtml(text);
+        }
+        let html = '';
+        let lastEnd = 0;
+        for (let range of mergedRanges) {
+            if (range[0] > lastEnd) {
+                html += escapeHtml(text.substring(lastEnd, range[0]));
+            }
+            html += `<mark class="model-search-highlight">${escapeHtml(text.substring(range[0], range[1]))}</mark>`;
+            lastEnd = range[1];
+        }
+        if (lastEnd < text.length) {
+            html += escapeHtml(text.substring(lastEnd));
+        }
+        return html;
+    }
+
+    renderHighlightedText(text, matchInfo = null) {
+        let rawText = `${text ?? ''}`;
+        if (!this.browser.filter) {
+            return escapeHtml(rawText);
+        }
+        if (matchInfo?.matchType == 'fuzzy' && matchInfo.value == rawText && matchInfo.fuzzyIndices) {
+            let ranges = matchInfo.fuzzyIndices.map(index => [index, index + 1]);
+            return this.renderHighlightRanges(rawText, ranges);
+        }
+        let ranges = [];
+        let normalizedTokens = this.normalizeSearchText(this.browser.filter).split(' ').filter(token => token.length > 0);
+        let loweredText = rawText.toLowerCase();
+        for (let token of normalizedTokens) {
+            let start = 0;
+            while (true) {
+                let index = loweredText.indexOf(token, start);
+                if (index == -1) {
+                    break;
+                }
+                ranges.push([index, index + token.length]);
+                start = index + token.length;
+            }
+        }
+        return this.renderHighlightRanges(rawText, ranges);
+    }
+
+    textHasHighlight(text, matchInfo = null) {
+        let rawText = `${text ?? ''}`;
+        return this.renderHighlightedText(rawText, matchInfo) != escapeHtml(rawText);
+    }
+
+    buildMatchInfoHtml(searchMatch, display) {
+        if (!searchMatch) {
+            return '';
+        }
+        let needsSnippet = !searchMatch.fieldVisible;
+        if (searchMatch.fieldKey == 'fileName' && !this.textHasHighlight(display, searchMatch)) {
+            needsSnippet = true;
+        }
+        if (this.searchField != 'all_fields') {
+            if (needsSnippet && searchMatch.value) {
+                return `<div class="model-search-match-snippet"><span class="model-search-match-label">Path:</span> ${this.renderHighlightedText(searchMatch.value, searchMatch)}</div>`;
+            }
+            return '';
+        }
+        let fuzzyLabel = searchMatch.matchType == 'fuzzy' ? ` <span class="model-search-match-kind">Fuzzy</span>` : '';
+        let html = `<div class="model-search-match-info"><span class="model-search-match-label">Matched:</span> <span class="model-search-match-field">${escapeHtml(searchMatch.fieldLabel)}</span>${fuzzyLabel}</div>`;
+        if (needsSnippet && searchMatch.value) {
+            html += `<div class="model-search-match-snippet">${this.renderHighlightedText(searchMatch.value, searchMatch)}</div>`;
+        }
+        return html;
+    }
+
+    browserFilterMatches(desc, filter) {
+        if (!filter) {
+            return true;
+        }
+        return !!desc.searchMatch;
+    }
+
+    browserFilterSorter(entries, filter) {
+        if (!filter) {
+            return entries;
+        }
+        let sorted = [...entries];
+        sorted.sort((a, b) => {
+            let diff = (b.desc.searchMatch?.score || 0) - (a.desc.searchMatch?.score || 0);
+            if (diff != 0) {
+                return diff;
+            }
+            return (a.browserSortIndex || 0) - (b.browserSortIndex || 0);
+        });
+        return sorted;
     }
 
     sortModelLocal(a, b, files) {
@@ -547,10 +861,14 @@ class ModelBrowserWrapper {
         let reverse = localStorage.getItem(`models_${this.subType}_sort_reverse`) == 'true';
         let sortElem = document.getElementById(`models_${this.subType}_sort_by`);
         let sortReverseElem = document.getElementById(`models_${this.subType}_sort_reverse`);
+        let searchFieldElem = document.getElementById(`models_${this.subType}_search_field`);
         let fix = null;
         if (sortElem) {
             sortBy = sortElem.value;
             reverse = sortReverseElem.checked;
+            if (searchFieldElem) {
+                this.searchField = this.normalizeSearchField(searchFieldElem.value);
+            }
         }
         else { // first call happens before headers are added built atm
             fix = () => {
@@ -566,6 +884,9 @@ class ModelBrowserWrapper {
                     localStorage.setItem(`models_${this.subType}_sort_reverse`, sortReverseElem.checked);
                     this.browser.lightRefresh();
                 });
+                if (this.subType != 'Wildcards') {
+                    this.configureSearchFieldSelector();
+                }
             }
         }
         let prefix = path == '' ? '' : (path.endsWith('/') ? path : `${path}/`);
@@ -645,26 +966,35 @@ class ModelBrowserWrapper {
         this.browser.update();
     }
 
-    createTriggerPhraseTag(tag) {
+    createTriggerPhraseTag(tag, highlightHtml = null) {
         let encodedTag = encodeURIComponent(tag);
-        return `<span class="trigger-phrase-tag" data-phrase-tag="${encodedTag}" onclick="toggleTriggerPhraseTag(this)" title="Click to select this tag for copying">${escapeHtml(tag)}</span>`;
+        return `<span class="trigger-phrase-tag" data-phrase-tag="${encodedTag}" onclick="toggleTriggerPhraseTag(this)" title="Click to select this tag for copying">${highlightHtml || escapeHtml(tag)}</span>`;
     }
 
-    createCopyableTriggerPhrase(phrase) {
+    createCopyableTriggerPhrase(phrase, searchMatch = null) {
         let tags = phrase.split(',').map(tag => tag.trim()).filter(tag => tag.length > 0);
         if (tags.length == 0) {
             tags = [phrase.trim()].filter(tag => tag.length > 0);
         }
-        let renderedTags = tags.map(tag => this.createTriggerPhraseTag(tag)).join('<span class="trigger-phrase-separator">, </span>');
+        let renderedTags = tags.map(tag => {
+            let highlightHtml = null;
+            if (searchMatch?.fieldKey == 'triggerPhrase') {
+                let highlighted = this.renderHighlightedText(tag, searchMatch);
+                if (highlighted != escapeHtml(tag)) {
+                    highlightHtml = highlighted;
+                }
+            }
+            return this.createTriggerPhraseTag(tag, highlightHtml);
+        }).join('<span class="trigger-phrase-separator">, </span>');
         return `<span class="trigger-phrase-entry">${renderedTags}<button title="Copy selected tags (or all if none selected)" class="basic-button trigger-phrase-copy-button" onclick="copyTriggerPhraseSelection(this)">&#x29C9;</button></span>`;
     }
 
-    formatTriggerPhrases(val) {
+    formatTriggerPhrases(val, searchMatch = null) {
         let phrases = val.split(';').map(phrase => phrase.trim()).filter(phrase => phrase.length > 0);
         if (phrases.length > 128) {
             phrases = phrases.slice(0, 128);
         }
-        return phrases.map(phrase => this.createCopyableTriggerPhrase(phrase)).join('<br>');
+        return phrases.map(phrase => this.createCopyableTriggerPhrase(phrase, searchMatch)).join('<br>');
     }
 
     describeModel(model) {
@@ -784,33 +1114,92 @@ class ModelBrowserWrapper {
         if (!isCorrect && this.subType != 'Stable-Diffusion') {
             interject = `<b>(Incompatible with current model!)</b><br>`;
         }
+        let cleanSearchValue = (val) => val == null ? '' : `${val}`;
+        let tags = [];
+        if (Array.isArray(model.data.tags)) {
+            tags = model.data.tags.map(tag => `${tag ?? ''}`);
+        }
+        else if (model.data.tags) {
+            tags = `${model.data.tags}`.split(',').map(tag => tag.trim()).filter(tag => tag.length > 0);
+        }
+        let linkedPresets = [];
+        let resolutionText = '';
+        let searchFields = [
+            { key: 'fileName', label: 'File name', values: this.getFieldSearchValues([model.data.name, name, display]), priority: 38, visible: true },
+            { key: 'title', label: 'Title', values: this.getFieldSearchValues([model.data.title]), priority: 40, visible: true },
+            { key: 'author', label: 'Author', values: this.getFieldSearchValues([model.data.author]), priority: 34, visible: true },
+            { key: 'type', label: 'Type', values: this.getFieldSearchValues([model.data.class]), priority: 28, visible: true },
+            { key: 'triggerPhrase', label: 'Trigger Phrase', values: this.getFieldSearchValues(this.getTriggerPhraseSearchTokens(model.data.trigger_phrase)), priority: 36, visible: true },
+            { key: 'usageHint', label: 'Usage Hint', values: this.getFieldSearchValues([model.data.usage_hint]), priority: 22, visible: true },
+            { key: 'description', label: 'Description', values: this.getFieldSearchValues([model.data.description]), priority: 18, visible: true },
+            { key: 'license', label: 'License', values: this.getFieldSearchValues([model.data.license]), priority: 10, visible: false },
+            { key: 'architecture', label: 'Architecture', values: this.getFieldSearchValues([model.data.architecture || 'no-arch']), priority: 10, visible: false },
+            { key: 'mergedFrom', label: 'Merged From', values: this.getFieldSearchValues([model.data.merged_from]), priority: 10, visible: false },
+            { key: 'tags', label: 'Tags', values: this.getFieldSearchValues(tags), priority: 12, visible: false },
+            { key: 'starStatus', label: 'Star status', values: [isStarred ? 'starred' : 'unstarred'], priority: 8, visible: false }
+        ].filter(field => field.values.length > 0);
+        let searchData = {
+            allFields: '',
+            fileName: `${model.data.name}, ${name}, ${display}`,
+            title: cleanSearchValue(model.data.title),
+            author: cleanSearchValue(model.data.author),
+            triggerPhrase: cleanSearchValue(model.data.trigger_phrase)
+        };
         let searchableAdded = '';
+        let searchMatch = null;
         if (model.data.is_supported_model_format) {
-            let getLine = (label, val) => {
-                let content = val == null ? '(Unset)' : (label == 'Trigger Phrase' ? this.formatTriggerPhrases(val) : safeHtmlOnly(val));
-                return `<b>${label}:</b> <span>${content}</span><br>`;
-            };
-            let getOptLine = (label, val) => val ? getLine(label, val) : '';
             let helperData = modelsHelpers.getDataFor(this.subType, model.data.name);
             if (this.subType == 'LoRA' || this.subType == 'Stable-Diffusion') {
                 if (!helperData?.modelClass?.compatClass?.isAudioModel) {
-                    interject += `${getLine("Resolution", `${model.data.standard_width}x${model.data.standard_height}`)}`;
+                    resolutionText = `${model.data.standard_width}x${model.data.standard_height}`;
                 }
             }
             if (!model.data.local) {
                 interject += `<b>(This model is only available on some backends.)</b><br>`;
             }
             searchableAdded = `${display}, ${isStarred ? 'starred' : 'unstarred'}, Title: ${model.data.title}, Resolution: ${model.data.standard_width}x${model.data.standard_height}, Author: ${model.data.author}, Type: ${model.data.class}, Usage Hint: ${model.data.usage_hint}, Trigger Phrase: ${model.data.trigger_phrase}, Description: ${model.data.description}`;
+            if (resolutionText) {
+                searchFields.push({ key: 'resolution', label: 'Resolution', values: this.getFieldSearchValues([resolutionText]), priority: 14, visible: true });
+            }
             if (this.subType == 'LoRA') {
                 let confinementName = model.data.lora_default_confinement == '' ? '' : loraHelper.confinementNames[model.data.lora_default_confinement];
-                interject += `${getOptLine("Default LoRA Weight", model.data.lora_default_weight)}${getOptLine("Default LoRA Confinement", confinementName)}`;
                 searchableAdded += `, Default LoRA Weight: ${model.data.lora_default_weight}, Default LoRA Confinement: ${confinementName}`;
+                searchFields.push({ key: 'defaultLoraWeight', label: 'Default LoRA Weight', values: this.getFieldSearchValues([model.data.lora_default_weight]), priority: 14, visible: true });
+                searchFields.push({ key: 'defaultLoraConfinement', label: 'Default LoRA Confinement', values: this.getFieldSearchValues([confinementName]), priority: 14, visible: true });
             }
-            let linkedPresets = modelPresetLinkManager.getLinks(this.subType, model.data.name);
+            linkedPresets = modelPresetLinkManager.getLinks(this.subType, model.data.name);
             if (linkedPresets.length > 0) {
                 searchableAdded += `, Linked Presets: ${linkedPresets.join(', ')}`;
+                searchFields.push({ key: 'linkedPresets', label: 'Linked Presets', values: this.getFieldSearchValues(linkedPresets), priority: 18, visible: true });
             }
-            description = `<span class="model_filename">${isStarred ? 'Starred: ' : ''}${escapeHtml(display)}</span><br>${getLine("Title", model.data.title)}${getOptLine("Author", model.data.author)}${getLine("Type", model.data.class)}${interject}${getOptLine('Trigger Phrase', model.data.trigger_phrase)}${getOptLine("Linked Presets", linkedPresets.join(', '))}${getOptLine('Usage Hint', model.data.usage_hint)}${getLine("Description", model.data.description)}<br>`;
+            searchMatch = this.resolveSearchMatch(searchFields);
+            let getLine = (label, val, fieldKey = null) => {
+                let content = '(Unset)';
+                if (val != null) {
+                    if (fieldKey == 'triggerPhrase') {
+                        content = this.formatTriggerPhrases(val, searchMatch?.fieldKey == 'triggerPhrase' ? searchMatch : null);
+                    }
+                    else if (fieldKey && searchMatch?.fieldKey == fieldKey) {
+                        content = this.renderHighlightedText(stripHtmlToText(`${val}`), searchMatch);
+                    }
+                    else {
+                        content = safeHtmlOnly(val);
+                    }
+                }
+                return `<b>${label}:</b> <span>${content}</span><br>`;
+            };
+            let getOptLine = (label, val, fieldKey = null) => val ? getLine(label, val, fieldKey) : '';
+            if (resolutionText) {
+                interject = `${interject}${getLine("Resolution", resolutionText, 'resolution')}`;
+            }
+            if (this.subType == 'LoRA') {
+                let confinementName = model.data.lora_default_confinement == '' ? '' : loraHelper.confinementNames[model.data.lora_default_confinement];
+                interject = `${interject}${getOptLine("Default LoRA Weight", model.data.lora_default_weight, 'defaultLoraWeight')}${getOptLine("Default LoRA Confinement", confinementName, 'defaultLoraConfinement')}`;
+            }
+            let fileNameText = `${isStarred ? 'Starred: ' : ''}${display}`;
+            let fileNameHtml = searchMatch?.fieldKey == 'fileName' ? this.renderHighlightedText(fileNameText, searchMatch) : escapeHtml(fileNameText);
+            let matchInfoHtml = this.buildMatchInfoHtml(searchMatch, fileNameText);
+            description = `<span class="model_filename">${fileNameHtml}</span><br>${matchInfoHtml}${getLine("Title", model.data.title, 'title')}${getOptLine("Author", model.data.author, 'author')}${getLine("Type", model.data.class, 'type')}${interject}${getOptLine('Trigger Phrase', model.data.trigger_phrase, 'triggerPhrase')}${getOptLine("Linked Presets", linkedPresets.join(', '), 'linkedPresets')}${getOptLine('Usage Hint', model.data.usage_hint, 'usageHint')}${getLine("Description", model.data.description, 'description')}<br>`;
             let cleanForDetails = (val) => val == null ? '(Unset)' : safeHtmlOnly(val).replaceAll('<br>', '&emsp;');
             detail_list.push(cleanForDetails(model.data.title), cleanForDetails(model.data.class), cleanForDetails(model.data.usage_hint ?? model.data.trigger_phrase), cleanForDetails(model.data.description));
             if (model.data.local && permissions.hasPermission('edit_model_metadata')) {
@@ -828,12 +1217,16 @@ class ModelBrowserWrapper {
             }
         }
         else {
-            description = `${escapeHtml(name)}<br>(Metadata only available for 'safetensors' models.)<br><b>WARNING:</b> 'ckpt' pickle files can contain malicious code! Use with caution.<br>`;
+            searchMatch = this.resolveSearchMatch(searchFields);
+            let fileNameHtml = searchMatch?.fieldKey == 'fileName' ? this.renderHighlightedText(name, searchMatch) : escapeHtml(name);
+            let matchInfoHtml = this.buildMatchInfoHtml(searchMatch, name);
+            description = `<span class="model_filename">${fileNameHtml}</span><br>${matchInfoHtml}(Metadata only available for 'safetensors' models.)<br><b>WARNING:</b> 'ckpt' pickle files can contain malicious code! Use with caution.<br>`;
             detail_list.push(`(Metadata only available for 'safetensors' models.)`, `<b>WARNING:</b> 'ckpt' pickle files can contain malicious code! Use with caution.`);
         }
         let className = this.getClassFor(model, isCorrect);
         let searchable = `${model.data.name}, ${searchableAdded}, ${model.data.license}, ${model.data.architecture||'no-arch'}, ${model.data.usage_hint}, ${model.data.trigger_phrase}, ${model.data.merged_from}, ${model.data.tags}`;
-        let result = { name, description, buttons, 'image': model.data.preview_image, className, searchable, display, detail_list };
+        searchData.allFields = searchable;
+        let result = { name, description, buttons, 'image': model.data.preview_image, className, searchable, searchData, searchMatch, display, detail_list };
         for (let callback of this.modelDescribeCallbacks) {
             callback(result, model);
         }
