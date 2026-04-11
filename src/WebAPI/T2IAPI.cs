@@ -543,11 +543,11 @@ public static class T2IAPI
         }
     }
 
-    private static JObject GetListAPIInternal(Session session, string rawPath, string root, HashSet<string> extensions, Func<string, bool> isAllowed, int depth, ImageHistorySortMode sortBy, bool sortReverse, bool includeHidden)
+    private static JObject GetListAPIInternal(Session session, string rawPath, string root, HashSet<string> extensions, Func<string, bool> isAllowed, int depth, ImageHistorySortMode sortBy, bool sortReverse, bool includeHidden, bool fastFirst = false, int fastFirstLimit = 128)
     {
         int maxInHistory = session.User.Settings.MaxImagesInHistory;
         int maxScanned = session.User.Settings.MaxImagesScannedInHistory;
-        Logs.Verbose($"User {session.User.UserID} wants to list images in '{rawPath}', maxDepth={depth}, sortBy={sortBy}, reverse={sortReverse}, includeHidden={includeHidden}, maxInHistory={maxInHistory}, maxScanned={maxScanned}");
+        Logs.Verbose($"User {session.User.UserID} wants to list images in '{rawPath}', maxDepth={depth}, sortBy={sortBy}, reverse={sortReverse}, includeHidden={includeHidden}, fastFirst={fastFirst}, fastFirstLimit={fastFirstLimit}, maxInHistory={maxInHistory}, maxScanned={maxScanned}");
         long timeStart = Environment.TickCount64;
         int limit = sortBy == ImageHistorySortMode.Name ? maxInHistory : Math.Max(maxInHistory, maxScanned);
         (string path, string consoleError, string userError) = WebServer.CheckFilePath(root, rawPath);
@@ -619,15 +619,13 @@ public static class T2IAPI
             {
                 Task.WaitAll([.. tasks.Values]);
             }
-            List<string> dirs = [.. dirsConc.Keys.OrderDescending()];
+            List<string> fastFirstDirs = [.. dirsConc.Keys.OrderDescending()];
+            List<string> dirs = [.. fastFirstDirs];
             if (sortReverse)
             {
                 dirs.Reverse();
             }
-            ConcurrentDictionary<int, List<ImageHistoryHelper>> filesConc = [];
             bool starNoFolders = session.User.Settings.StarNoFolders;
-            int id = 0;
-            int remaining = limit;
             void sortList(List<ImageHistoryHelper> list)
             {
                 if (sortBy == ImageHistorySortMode.Name)
@@ -643,33 +641,75 @@ public static class T2IAPI
                     list.Reverse();
                 }
             }
-            Parallel.ForEach(dirs.Append(""), new ParallelOptions() { MaxDegreeOfParallelism = 5, CancellationToken = Program.GlobalProgramCancel }, folder =>
+            List<ImageHistoryHelper> files;
+            if (fastFirst)
             {
-                int localId = Interlocked.Increment(ref id);
-                int localLimit = Interlocked.CompareExchange(ref remaining, 0, 0);
-                if (localLimit <= 0)
+                int startupLimit = Math.Max(1, Math.Min(fastFirstLimit, maxInHistory));
+                List<ImageHistoryHelper> collectFastFirstFiles(List<string> knownDirs, bool starNoFoldersLocal)
                 {
-                    return;
+                    List<ImageHistoryHelper> fastFiles = [];
+                    foreach (string folder in knownDirs.Append(""))
+                    {
+                        int localLimit = startupLimit - fastFiles.Count;
+                        if (localLimit <= 0)
+                        {
+                            break;
+                        }
+                        string prefix = folder == "" ? "" : folder + "/";
+                        string actualPath = $"{path}/{prefix}";
+                        actualPath = UserImageHistoryHelper.GetRealPathFor(session.User, actualPath, root: root);
+                        if (!Directory.Exists(actualPath))
+                        {
+                            continue;
+                        }
+                        IEnumerable<string> orderedFiles = Directory.EnumerateFiles(actualPath)
+                            .Select(f => f.Replace('\\', '/'))
+                            .Where(isAllowed)
+                            .Where(f => !f.AfterLast('/').StartsWithFast('.') && extensions.Contains(f.AfterLast('.')) && !f.EndsWith(".swarmpreview.jpg") && !f.EndsWith(".swarmpreview.webp"))
+                            .OrderDescending()
+                            .Take(localLimit);
+                        fastFiles.AddRange(orderedFiles
+                            .Select(f => new ImageHistoryHelper(prefix + f.AfterLast('/'), OutputMetadataTracker.GetMetadataFor(f, root, starNoFoldersLocal)))
+                            .Where(f => f.Metadata is not null)
+                            .Where(f => includeHidden || !MetadataIsHidden(f.Metadata)));
+                    }
+                    return fastFiles;
                 }
-                string prefix = folder == "" ? "" : folder + "/";
-                string actualPath = $"{path}/{prefix}";
-                actualPath = UserImageHistoryHelper.GetRealPathFor(session.User, actualPath, root: root);
-                if (!Directory.Exists(actualPath))
+                files = collectFastFirstFiles(fastFirstDirs, session.User.Settings.StarNoFolders);
+            }
+            else
+            {
+                ConcurrentDictionary<int, List<ImageHistoryHelper>> filesConc = [];
+                int id = 0;
+                int remaining = limit;
+                Parallel.ForEach(dirs.Append(""), new ParallelOptions() { MaxDegreeOfParallelism = 5, CancellationToken = Program.GlobalProgramCancel }, folder =>
                 {
-                    return;
-                }
-                List<string> subFiles = [.. Directory.EnumerateFiles(actualPath).Take(localLimit)];
-                IEnumerable<string> newFileNames = subFiles.Select(f => f.Replace('\\', '/')).Where(isAllowed).Where(f => !f.AfterLast('/').StartsWithFast('.') && extensions.Contains(f.AfterLast('.')) && !f.EndsWith(".swarmpreview.jpg") && !f.EndsWith(".swarmpreview.webp"));
-                List<ImageHistoryHelper> localFiles = [.. newFileNames.Select(f => new ImageHistoryHelper(prefix + f.AfterLast('/'), OutputMetadataTracker.GetMetadataFor(f, root, starNoFolders))).Where(f => f.Metadata is not null).Where(f => includeHidden || !MetadataIsHidden(f.Metadata))];
-                int leftOver = Interlocked.Add(ref remaining, -localFiles.Count);
-                sortList(localFiles);
-                filesConc.TryAdd(localId, localFiles);
-                if (leftOver <= 0)
-                {
-                    return;
-                }
-            });
-            List<ImageHistoryHelper> files = [.. filesConc.Values.SelectMany(f => f).Take(limit)];
+                    int localId = Interlocked.Increment(ref id);
+                    int localLimit = Interlocked.CompareExchange(ref remaining, 0, 0);
+                    if (localLimit <= 0)
+                    {
+                        return;
+                    }
+                    string prefix = folder == "" ? "" : folder + "/";
+                    string actualPath = $"{path}/{prefix}";
+                    actualPath = UserImageHistoryHelper.GetRealPathFor(session.User, actualPath, root: root);
+                    if (!Directory.Exists(actualPath))
+                    {
+                        return;
+                    }
+                    List<string> subFiles = [.. Directory.EnumerateFiles(actualPath).Take(localLimit)];
+                    IEnumerable<string> newFileNames = subFiles.Select(f => f.Replace('\\', '/')).Where(isAllowed).Where(f => !f.AfterLast('/').StartsWithFast('.') && extensions.Contains(f.AfterLast('.')) && !f.EndsWith(".swarmpreview.jpg") && !f.EndsWith(".swarmpreview.webp"));
+                    List<ImageHistoryHelper> localFiles = [.. newFileNames.Select(f => new ImageHistoryHelper(prefix + f.AfterLast('/'), OutputMetadataTracker.GetMetadataFor(f, root, starNoFolders))).Where(f => f.Metadata is not null).Where(f => includeHidden || !MetadataIsHidden(f.Metadata))];
+                    int leftOver = Interlocked.Add(ref remaining, -localFiles.Count);
+                    sortList(localFiles);
+                    filesConc.TryAdd(localId, localFiles);
+                    if (leftOver <= 0)
+                    {
+                        return;
+                    }
+                });
+                files = [.. filesConc.Values.SelectMany(f => f).Take(limit)];
+            }
             HashSet<string> included = [.. files.Select(f => f.Name)];
             for (int i = 0; i < files.Count; i++)
             {
@@ -724,14 +764,16 @@ public static class T2IAPI
         [API.APIParameter("Maximum depth (number of recursive folders) to search.")] int depth,
         [API.APIParameter("What to sort the list by - `Name` or `Date`.")] string sortBy = "Name",
         [API.APIParameter("If true, the sorting should be done in reverse.")] bool sortReverse = false,
-        [API.APIParameter("If true, include images marked as hidden.")] bool includeHidden = false)
+        [API.APIParameter("If true, include images marked as hidden.")] bool includeHidden = false,
+        [API.APIParameter("If true, return only a bounded startup slice biased toward newest work.")] bool fastFirst = false,
+        [API.APIParameter("Maximum number of files to return when fastFirst is enabled.")] int fastFirstLimit = 128)
     {
         if (!Enum.TryParse(sortBy, true, out ImageHistorySortMode sortMode))
         {
             return new JObject() { ["error"] = $"Invalid sort mode '{sortBy}'." };
         }
         string root = Utilities.CombinePathWithAbsolute(Environment.CurrentDirectory, session.User.OutputDirectory);
-        return GetListAPIInternal(session, path, root, HistoryExtensions, f => true, depth, sortMode, sortReverse, includeHidden);
+        return GetListAPIInternal(session, path, root, HistoryExtensions, f => true, depth, sortMode, sortReverse, includeHidden, fastFirst, fastFirstLimit);
     }
 
     [API.APIDescription("Open an image folder in the file explorer. Used for local users directly.", "\"success\": true")]
