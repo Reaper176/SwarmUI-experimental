@@ -3760,7 +3760,7 @@ function setCurrentImage(src, metadata = '', batchId = '', previewGrow = false, 
     includeButton('Edit Image', () => {
         openGenerateTabEditorForImage(img, 'Edit Image');
     }, '', 'Opens an Image Editor for this image', ['image']);
-    if (!isVideo && !isAudio) {
+    if (mediaType == 'image') {
         includeButton('Send To Image Edit Tab', () => {
             sendToImageEditingTabPreview(img.src, img.dataset.metadata);
         }, '', 'Sends this image to the Image Editing tab preview area');
@@ -3823,7 +3823,7 @@ function setCurrentImage(src, metadata = '', batchId = '', previewGrow = false, 
         }, (metaParsed.is_starred ? ' star-button button-starred-image' : ' star-button'), 'Toggles this image as starred - starred images get moved to a separate folder and highlighted');
     }
     includeButton('Reuse Parameters', copy_current_image_params, '', 'Copies the parameters used to generate this image to the current generation settings');
-    if (isDataImage && !isVideo && !isAudio) {
+    if (isDataImage && mediaType == 'image') {
         includeButton('Save Image', button => saveCurrentImageToHistory(img, button), '', 'Saves this image and metadata into history. Useful when Do Not Save is enabled.');
     }
     if (!isDataImage) {
