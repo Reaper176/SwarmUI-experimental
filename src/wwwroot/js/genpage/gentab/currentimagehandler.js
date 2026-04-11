@@ -3117,9 +3117,15 @@ function imageEditingEnsureEditorReady() {
         rightSidebarContent.innerHTML = '';
         rightSidebarContent.appendChild(imageEditingTabEditor.rightBar);
     }
-    let closeButton = editorArea.querySelector('.image-editor-close-button');
+    let closeButton = imageEditingTabEditor.rightBar.querySelector('.image-editor-close-button');
     if (closeButton) {
-        closeButton.style.display = 'none';
+        closeButton.classList.remove('interrupt-button');
+        closeButton.innerText = 'Send To Generate Tab';
+        closeButton.title = 'Sends the current Image Editing layers to the Generate tab editor';
+        closeButton.onclick = null;
+        closeButton.addEventListener('click', () => {
+            sendImageEditingLayersToGenerateEditor();
+        });
     }
     let optionButtons = imageEditingTabEditor.tools['options'].optionButtons;
     imageEditingTabEditor.tools['options'].optionButtons = [
