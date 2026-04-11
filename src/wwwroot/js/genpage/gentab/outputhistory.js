@@ -6,8 +6,11 @@ let imageHistoryHasLoadedOnce = false;
 let imageHistoryInitialAutoRetryUsed = false;
 let imageHistoryAutoRetryTimer = null;
 let imageHistoryNextLoadIsRetry = false;
+let imageHistoryStartupStage = 'pending';
+let imageHistoryLoadToken = 0;
 const IMAGE_HISTORY_METADATA_CACHE_LIMIT = 1024;
 const IMAGE_HISTORY_AUTO_RETRY_DELAY_MS = 1500;
+const IMAGE_HISTORY_FAST_FIRST_LIMIT = 128;
 const imageHistoryMetadataCache = new Map();
 
 function getHistoryImageSrc(fullSrc) {
@@ -180,6 +183,30 @@ function safeInterpretHistoryMetadata(metadata, fullsrc = '') {
         console.log(`Failed to interpret history metadata${fullsrc ? ` for '${fullsrc}'` : ''}: ${e}`);
         return metadata;
     }
+}
+
+function orderHistoryFilesForDisplay(files) {
+    function isPreSortFile(file) {
+        return file.src == 'index.html';
+    }
+    let preFiles = files.filter(file => isPreSortFile(file));
+    let postFiles = files.filter(file => !isPreSortFile(file));
+    return preFiles.concat(postFiles);
+}
+
+function mapHistoryFiles(prefix, files) {
+    return files.map(file => {
+        let fullSrc = `${prefix}${file.src}`;
+        return { 'name': fullSrc, 'data': { 'src': getHistoryImageSrc(fullSrc), 'fullsrc': fullSrc, 'name': file.src, 'metadata': safeInterpretHistoryMetadata(file.metadata, fullSrc) } };
+    });
+}
+
+function replaceHistoryBrowserContents(path, folders, mapped) {
+    if (!imageHistoryBrowser) {
+        return;
+    }
+    imageHistoryBrowser.lastListCache = { folder: path, folders, files: mapped };
+    imageHistoryBrowser.build(path, folders, mapped);
 }
 
 function setMetadataBoolValue(metadata, key, value) {
@@ -502,25 +529,29 @@ function listOutputHistoryFolderAndFiles(path, isRefresh, callback, depth, onErr
         showHidden = controlElems.showHiddenElem.checked;
         imageHistoryShowHidden = showHidden;
     }
-    let prefix = path == '' ? '' : (path.endsWith('/') ? path : `${path}/`);
     let isRetryLoad = imageHistoryNextLoadIsRetry;
     imageHistoryNextLoadIsRetry = false;
+    let loadToken = ++imageHistoryLoadToken;
+    let useFastFirst = imageHistoryStartupStage == 'pending' && path == '' && !isRefresh;
+    let request = { 'path': path, 'depth': depth, 'sortBy': sortBy, 'sortReverse': reverse, 'includeHidden': showHidden };
+    if (useFastFirst) {
+        request.fastFirst = true;
+        request.fastFirstLimit = IMAGE_HISTORY_FAST_FIRST_LIMIT;
+    }
     setImageHistoryRequestStatus(isRetryLoad ? 'retrying' : 'loading', isRetryLoad ? 'Retrying history load...' : 'Loading history...');
-    genericRequest('ListImages', {'path': path, 'depth': depth, 'sortBy': sortBy, 'sortReverse': reverse, 'includeHidden': showHidden}, data => {
+    genericRequest('ListImages', request, data => {
         clearImageHistoryAutoRetry();
         imageHistoryHasLoadedOnce = true;
+        let prefix = path == '' ? '' : (path.endsWith('/') ? path : `${path}/`);
         let folders = data.folders.sort((a, b) => b.toLowerCase().localeCompare(a.toLowerCase()));
-        function isPreSortFile(f) {
-            return f.src == 'index.html'; // Grid index files
-        }
-        let preFiles = data.files.filter(f => isPreSortFile(f));
-        let postFiles = data.files.filter(f => !isPreSortFile(f));
-        data.files = preFiles.concat(postFiles);
-        let mapped = data.files.map(f => {
-            let fullSrc = `${prefix}${f.src}`;
-            return { 'name': fullSrc, 'data': { 'src': getHistoryImageSrc(fullSrc), 'fullsrc': fullSrc, 'name': f.src, 'metadata': safeInterpretHistoryMetadata(f.metadata, fullSrc) } };
-        });
+        let mapped = mapHistoryFiles(prefix, orderHistoryFilesForDisplay(data.files));
         callback(folders, mapped);
+        if (useFastFirst) {
+            imageHistoryStartupStage = 'recent_loaded';
+            queueFullImageHistoryLoad(path, depth, sortBy, reverse, showHidden, loadToken);
+            return;
+        }
+        imageHistoryStartupStage = 'complete';
         setImageHistoryRequestStatus('idle');
     }, 0, error => {
         showError(error);
@@ -534,6 +565,28 @@ function listOutputHistoryFolderAndFiles(path, isRefresh, callback, depth, onErr
             onError(error);
         }
     });
+}
+
+function queueFullImageHistoryLoad(path, depth, sortBy, reverse, showHidden, loadToken) {
+    setTimeout(() => {
+        genericRequest('ListImages', { 'path': path, 'depth': depth, 'sortBy': sortBy, 'sortReverse': reverse, 'includeHidden': showHidden }, data => {
+            if (loadToken != imageHistoryLoadToken || !imageHistoryBrowser || imageHistoryBrowser.folder != path) {
+                return;
+            }
+            let prefix = path == '' ? '' : (path.endsWith('/') ? path : `${path}/`);
+            let folders = data.folders.sort((a, b) => b.toLowerCase().localeCompare(a.toLowerCase()));
+            let mapped = mapHistoryFiles(prefix, orderHistoryFilesForDisplay(data.files));
+            imageHistoryStartupStage = 'complete';
+            replaceHistoryBrowserContents(path, folders, mapped);
+            setImageHistoryRequestStatus('idle');
+        }, 0, error => {
+            if (loadToken != imageHistoryLoadToken || !imageHistoryBrowser || imageHistoryBrowser.folder != path) {
+                return;
+            }
+            console.log(`Background history fill failed: ${error}`);
+            setImageHistoryRequestStatus('idle');
+        });
+    }, 0);
 }
 
 function buttonsForImage(fullsrc, src, metadata, parsedMetadata = null) {
