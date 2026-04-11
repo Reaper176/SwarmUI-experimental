@@ -12,6 +12,12 @@ const IMAGE_HISTORY_METADATA_CACHE_LIMIT = 1024;
 const IMAGE_HISTORY_AUTO_RETRY_DELAY_MS = 1500;
 const IMAGE_HISTORY_FAST_FIRST_LIMIT = 128;
 const imageHistoryMetadataCache = new Map();
+let registeredMediaButtons = [];
+
+/** Registers a media button for extensions. 'mediaTypes' filters by type eg ['audio'], null means all. 'isDefault' promotes to visible (vs More dropdown). 'showInHistory' controls whether button appears in the History panel. */
+function registerMediaButton(name, action, title = '', mediaTypes = null, isDefault = false, showInHistory = true, href = null, is_download = false) {
+    registeredMediaButtons.push({ name, action, title, mediaTypes, isDefault, showInHistory, href, is_download });
+}
 
 function getHistoryImageSrc(fullSrc) {
     let safePath = fullSrc.split('/').map(part => encodeURIComponent(part)).join('/');
@@ -86,12 +92,6 @@ function ensureImageHistoryBrowserShellReady() {
 
 function ensureImageHistoryHeaderControlsReady(sortBy, reverse, allowAnims, showHidden) {
     ensureImageHistoryBrowserShellReady();
-let registeredMediaButtons = [];
-
-/** Registers a media button for extensions. 'mediaTypes' filters by type eg ['audio'], null means all. 'isDefault' promotes to visible (vs More dropdown). 'showInHistory' controls whether button appears in the History panel. */
-function registerMediaButton(name, action, title = '', mediaTypes = null, isDefault = false, showInHistory = true, href = null, is_download = false) {
-    registeredMediaButtons.push({ name, action, title, mediaTypes, isDefault, showInHistory, href, is_download });
-}
     let sortElem = document.getElementById('image_history_sort_by');
     let sortReverseElem = document.getElementById('image_history_sort_reverse');
     let allowAnimsElem = document.getElementById('image_history_allow_anims');
@@ -584,7 +584,7 @@ function queueFullImageHistoryLoad(path, depth, sortBy, reverse, showHidden, loa
                 return;
             }
             console.log(`Background history fill failed: ${error}`);
-            setImageHistoryRequestStatus('idle');
+            setImageHistoryRequestStatus('error', `History failed to load fully: ${error}`);
         });
     }, 0);
 }

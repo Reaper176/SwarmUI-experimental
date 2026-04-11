@@ -559,46 +559,8 @@ public static class T2IAPI
         }
         try
         {
-            ConcurrentDictionary<string, string> dirsConc = [];
             ConcurrentDictionary<string, string> finalDirs = [];
-            ConcurrentDictionary<string, Task> tasks = [];
-            void addDirs(string dir, int subDepth)
-            {
-                tasks.TryAdd(dir, Utilities.RunCheckedTask(() =>
-                {
-                    if (dir.EndsWith('/'))
-                    {
-                        dir = dir[..^1];
-                    }
-                    if (dir != "")
-                    {
-                        (subDepth == 0 ? finalDirs : dirsConc).TryAdd(dir, dir);
-                    }
-                    if (subDepth > 0)
-                    {
-                        string actualPath = $"{path}/{dir}";
-                        actualPath = UserImageHistoryHelper.GetRealPathFor(session.User, actualPath, root: root);
-                        if (!Directory.Exists(actualPath))
-                        {
-                            return;
-                        }
-                        IEnumerable<string> subDirs = Directory.EnumerateDirectories(actualPath).Select(Path.GetFileName).OrderDescending();
-                        foreach (string subDir in subDirs)
-                        {
-                            if (subDir.StartsWithFast('.'))
-                            {
-                                continue;
-                            }
-                            string subPath = dir == "" ? subDir : $"{dir}/{subDir}";
-                            if (isAllowed(subPath))
-                            {
-                                addDirs(subPath, subDepth - 1);
-                            }
-                        }
-                    }
-                }, "t2i getlist add dir"));
-            }
-            addDirs("", depth);
+            bool starNoFolders = session.User.Settings.StarNoFolders;
             string rawRefPath = Path.GetRelativePath(root, path).Replace('\\', '/');
             if (!rawRefPath.EndsWith('/'))
             {
@@ -608,24 +570,13 @@ public static class T2IAPI
             {
                 rawRefPath = "";
             }
-            foreach (string specialFolder in UserImageHistoryHelper.SharedSpecialFolders.Keys)
-            {
-                if (specialFolder.StartsWith(rawRefPath))
-                {
-                    addDirs(specialFolder[rawRefPath.Length..], 1);
-                }
-            }
-            while (tasks.Any(t => !t.Value.IsCompleted))
-            {
-                Task.WaitAll([.. tasks.Values]);
-            }
-            List<string> fastFirstDirs = [.. dirsConc.Keys.OrderDescending()];
-            List<string> dirs = [.. fastFirstDirs];
-            if (sortReverse)
-            {
-                dirs.Reverse();
-            }
-            bool starNoFolders = session.User.Settings.StarNoFolders;
+            List<string> specialSeedDirs = [.. UserImageHistoryHelper.SharedSpecialFolders.Keys
+                .Where(f => f.StartsWith(rawRefPath))
+                .Select(f => f[rawRefPath.Length..])
+                .Select(f => f.EndsWith('/') ? f[..^1] : f)
+                .Where(f => !string.IsNullOrEmpty(f))
+                .Distinct()
+                .OrderDescending()];
             void sortList(List<ImageHistoryHelper> list)
             {
                 if (sortBy == ImageHistorySortMode.Name)
@@ -641,44 +592,136 @@ public static class T2IAPI
                     list.Reverse();
                 }
             }
+            List<string> dirs;
             List<ImageHistoryHelper> files;
             if (fastFirst)
             {
                 int startupLimit = Math.Max(1, Math.Min(fastFirstLimit, maxInHistory));
-                List<ImageHistoryHelper> collectFastFirstFiles(List<string> knownDirs, bool starNoFoldersLocal)
+                HashSet<string> seenDirs = [];
+                HashSet<string> traversedDirs = [];
+                dirs = [];
+                files = [];
+                void collectFastFirstFiles(string dir, int subDepth)
                 {
-                    List<ImageHistoryHelper> fastFiles = [];
-                    foreach (string folder in knownDirs.Append(""))
+                    if (!traversedDirs.Add(dir))
                     {
-                        int localLimit = startupLimit - fastFiles.Count;
-                        if (localLimit <= 0)
-                        {
-                            break;
-                        }
-                        string prefix = folder == "" ? "" : folder + "/";
-                        string actualPath = $"{path}/{prefix}";
-                        actualPath = UserImageHistoryHelper.GetRealPathFor(session.User, actualPath, root: root);
-                        if (!Directory.Exists(actualPath))
+                        return;
+                    }
+                    if (files.Count >= startupLimit)
+                    {
+                        return;
+                    }
+                    string prefix = dir == "" ? "" : dir + "/";
+                    string actualPath = $"{path}/{prefix}";
+                    actualPath = UserImageHistoryHelper.GetRealPathFor(session.User, actualPath, root: root);
+                    if (!Directory.Exists(actualPath))
+                    {
+                        return;
+                    }
+                    IEnumerable<string> orderedFiles = Directory.EnumerateFiles(actualPath)
+                        .Select(f => f.Replace('\\', '/'))
+                        .Where(isAllowed)
+                        .Where(f => !f.AfterLast('/').StartsWithFast('.') && extensions.Contains(f.AfterLast('.')) && !f.EndsWith(".swarmpreview.jpg") && !f.EndsWith(".swarmpreview.webp"))
+                        .OrderDescending()
+                        .Take(startupLimit - files.Count);
+                    files.AddRange(orderedFiles
+                        .Select(f => new ImageHistoryHelper(prefix + f.AfterLast('/'), OutputMetadataTracker.GetMetadataFor(f, root, starNoFolders)))
+                        .Where(f => f.Metadata is not null)
+                        .Where(f => includeHidden || !MetadataIsHidden(f.Metadata)));
+                    if (files.Count >= startupLimit || subDepth <= 0)
+                    {
+                        return;
+                    }
+                    IEnumerable<string> subDirs;
+                    if (dir == "")
+                    {
+                        subDirs = Directory.EnumerateDirectories(actualPath).Select(Path.GetFileName).Concat(specialSeedDirs).Distinct().OrderDescending();
+                    }
+                    else
+                    {
+                        subDirs = Directory.EnumerateDirectories(actualPath).Select(Path.GetFileName).OrderDescending();
+                    }
+                    foreach (string subDir in subDirs)
+                    {
+                        if (subDir.StartsWithFast('.'))
                         {
                             continue;
                         }
-                        IEnumerable<string> orderedFiles = Directory.EnumerateFiles(actualPath)
-                            .Select(f => f.Replace('\\', '/'))
-                            .Where(isAllowed)
-                            .Where(f => !f.AfterLast('/').StartsWithFast('.') && extensions.Contains(f.AfterLast('.')) && !f.EndsWith(".swarmpreview.jpg") && !f.EndsWith(".swarmpreview.webp"))
-                            .OrderDescending()
-                            .Take(localLimit);
-                        fastFiles.AddRange(orderedFiles
-                            .Select(f => new ImageHistoryHelper(prefix + f.AfterLast('/'), OutputMetadataTracker.GetMetadataFor(f, root, starNoFoldersLocal)))
-                            .Where(f => f.Metadata is not null)
-                            .Where(f => includeHidden || !MetadataIsHidden(f.Metadata)));
+                        string subPath = dir == "" ? subDir : $"{dir}/{subDir}";
+                        if (!isAllowed(subPath))
+                        {
+                            continue;
+                        }
+                        if (seenDirs.Add(subPath))
+                        {
+                            dirs.Add(subPath);
+                        }
+                        collectFastFirstFiles(subPath, subDepth - 1);
+                        if (files.Count >= startupLimit)
+                        {
+                            return;
+                        }
                     }
-                    return fastFiles;
                 }
-                files = collectFastFirstFiles(fastFirstDirs, session.User.Settings.StarNoFolders);
+                collectFastFirstFiles("", depth);
             }
             else
             {
+                ConcurrentDictionary<string, string> dirsConc = [];
+                ConcurrentDictionary<string, Task> tasks = [];
+                void addDirs(string dir, int subDepth)
+                {
+                    tasks.TryAdd(dir, Utilities.RunCheckedTask(() =>
+                    {
+                        if (dir.EndsWith('/'))
+                        {
+                            dir = dir[..^1];
+                        }
+                        if (dir != "")
+                        {
+                            (subDepth == 0 ? finalDirs : dirsConc).TryAdd(dir, dir);
+                        }
+                        if (subDepth > 0)
+                        {
+                            string actualPath = $"{path}/{dir}";
+                            actualPath = UserImageHistoryHelper.GetRealPathFor(session.User, actualPath, root: root);
+                            if (!Directory.Exists(actualPath))
+                            {
+                                return;
+                            }
+                            IEnumerable<string> subDirs = Directory.EnumerateDirectories(actualPath).Select(Path.GetFileName).OrderDescending();
+                            foreach (string subDir in subDirs)
+                            {
+                                if (subDir.StartsWithFast('.'))
+                                {
+                                    continue;
+                                }
+                                string subPath = dir == "" ? subDir : $"{dir}/{subDir}";
+                                if (isAllowed(subPath))
+                                {
+                                    addDirs(subPath, subDepth - 1);
+                                }
+                            }
+                        }
+                    }, "t2i getlist add dir"));
+                }
+                addDirs("", depth);
+                foreach (string specialFolder in UserImageHistoryHelper.SharedSpecialFolders.Keys)
+                {
+                    if (specialFolder.StartsWith(rawRefPath))
+                    {
+                        addDirs(specialFolder[rawRefPath.Length..], 1);
+                    }
+                }
+                while (tasks.Any(t => !t.Value.IsCompleted))
+                {
+                    Task.WaitAll([.. tasks.Values]);
+                }
+                dirs = [.. dirsConc.Keys.OrderDescending()];
+                if (sortReverse)
+                {
+                    dirs.Reverse();
+                }
                 ConcurrentDictionary<int, List<ImageHistoryHelper>> filesConc = [];
                 int id = 0;
                 int remaining = limit;
