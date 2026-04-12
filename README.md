@@ -1,8 +1,8 @@
 I have made this fork to add some basic functionality to the ui.
 
-Added Functionality
+# Added Functionality
 
-Added search options to models tabs.
+## Added search options to models tabs.
 
 <br/>
 
@@ -18,7 +18,7 @@ Just a couple of small changes to search functionality. You can now pick what fi
 
 <br/>
 
-Added Inpainting and Image editing tab.
+## Added Inpainting and Image editing tab.
 
 <br/>
 
@@ -26,7 +26,7 @@ The Image editing tools were a little lacking, also a bit squished, and felt cra
 
 <br/>
 
-Some of the things I will be adding are:
+## Some of the things I will be adding are:
 
 <br/>
 
@@ -42,7 +42,7 @@ Some of the things I will be adding are:
 
 <br/>
 
-Added Save Image Option For Inpainting.
+## Added Save Image Option For Inpainting.
 
 <br/>
 
@@ -56,7 +56,7 @@ When generating images or inpainting, you often do not want to save every single
 
 <img width="2256" height="1298" alt="image" src="https://github.com/user-attachments/assets/534cb447-dce3-4d73-a1bf-257c3ce15af7" />
 
-Multi-image selection in history
+## Multi-image selection in history
 
 <br/>
 
@@ -70,7 +70,7 @@ This places check boxes in the top left corner of each image in the history to a
 
 <br/>
 
-Lora trigger tag usability.
+## Lora trigger tag usability.
 
 <br/>
 
@@ -84,7 +84,7 @@ When importing Loras often enough, the trigger phrases section is filled with mu
 
 <br/>
 
-Exposed perimeters to allow for inpainting resolution setting
+## Exposed perimeters to allow for inpainting resolution setting
 
 <br/>
 
@@ -96,7 +96,7 @@ This lets you set a resolution manually for inpainting so you can do a part of a
 
 <br/>
 
-Pre-upscale refiner
+## Pre-upscale refiner
 
 <br/>
 
@@ -108,7 +108,7 @@ When doing upscales, it is well known that you will simply amplify the errors th
 
 <br/>
 
-Added better save folder override
+## Added better save folder override
 
 Currently, in Swarm, you have to manually type out the save path override when doing so from the generate tab. I don’t like this. I have added an option directly under this current implementation that shows all your current folders, and also the option to add a new folder if you want that. Yes, searching works.
 
@@ -118,7 +118,7 @@ Currently, in Swarm, you have to manually type out the save path override when d
 
 <br/>
 
-Added a hide image function.
+## Added a hide image function.
 
 From time to time, I make images that I do not wish to show when streaming or while at work. So I added a simple show hide option that also uses the bulk image selection check boxes the same way that the remove image options do. This allows for easy search and bulk hide operations.
 
@@ -128,7 +128,7 @@ From time to time, I make images that I do not wish to show when streaming or wh
 
 <br/>
 
-FIXES:
+## FIXES:
 
 <br/>
 
