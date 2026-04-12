@@ -1,11 +1,12 @@
 I have made this fork to add some basic functionality to the ui.
-# Added Functionality
 
-## Added search options to models tabs.
+Added Functionality
+
+Added search options to models tabs.
 
 <br/>
 
-Just a couple of small changes to search functionality. You can now pick what field you would like to search. Also relevance is now a thing so when you type a word that thing will be sorted to the top of the list. Some highlighting should also happen when all "everything" mode.
+Just a couple of small changes to search functionality. You can now pick what field you would like to search. Also, relevance is now a thing, so when you type a word, that thing will be sorted to the top of the list. Some highlighting should also happen when in the “everything” mode.
 
 <br/>
 
@@ -17,21 +18,21 @@ Just a couple of small changes to search functionality. You can now pick what fi
 
 <br/>
 
-## Added Inpainting and Image editing tab.
+Added Inpainting and Image editing tab.
 
 <br/>
 
-The Image editing tools were a little....lacking, also a little smushed and felt cramped. I have added them to a seperate tab. (if you like the old way, it is still in place.) Under the new image editing tab a few new options have been added like saturation, light value, and Color blance for shadows, midtones, and highlights. These adjustments are per layer. This is very much a wip but I will try to avoid pushing anything that breaks the normal way of doing things. Many more changes are comming. I intent to turn this tab into a tool capable of getting most of the basic alterations that people normaly do all contained in one place so you dont need to open in krita, gimp, or photoshop just to finalize your edits. 
+The Image editing tools were a little lacking, also a bit squished, and felt cramped. I have added them to a separate tab. (If you prefer the old way, it remains in place.) Under the new image editing tab, several new options have been added, including saturation, light value, and color balance for shadows, midtones, and highlights. These adjustments are per layer. This is very much a WIP, but I will try to avoid pushing anything that breaks the normal way of doing things. Many more changes are coming. I intend to turn this tab into a tool capable of getting most of the basic alterations that people normally do, all contained in one place, so you don't need to open it in Krita, gimp, or Photoshop just to finalize your edits.
 
 <br/>
 
-Some of the things I will be adding are: 
+Some of the things I will be adding are:
 
 <br/>
 
 1. Luts
-2. Proper brushes with flow, scaling, transparancy, and potentialy presure controle.
-3. Better photo bashing tools for croping, rotating, fliping etc.
+2. Proper brushes with flow, scaling, transparency, and potentially pressure control.
+3. Better photo-bashing tools for cropping, rotating, flipping, etc.
 4. Better path tools.
 5. Much more.
 
@@ -41,12 +42,11 @@ Some of the things I will be adding are:
 
 <br/>
 
-
-## Added Save Image Option For Inpainting.
+Added Save Image Option For Inpainting.
 
 <br/>
 
-When generating images or inpainting often you do not want to save every single image or iteration of the inpainting process. I added a manual save button that saves a selected image while respecting user defined settings under the settings tab such as save folder, naming conventions, etc. This allows you to toggle the "do not save" option on and only save the things you want. This is different than the current "Download" option in that it acknowledges the users settings and is a single click instead of needing to click thru context menues or dropdowns. Note: this does also work for normal image generation if you want to que a batch of 50 and go thru them to see what ones you want to save.
+When generating images or inpainting, you often do not want to save every single image or iteration of the inpainting process. I added a manual save button that saves a selected image while respecting user-defined settings, such as the save folder and naming conventions, under the Settings tab. This allows you to toggle the “do not save” option on and only save the things you want. This differs from the current “Download” option in that it acknowledges the user's settings and is a single click, eliminating the need to click through context menus or dropdowns. Note: This also works for normal image generation, allowing you to queue a batch of 50 and review them to select the ones you want to save.
 
 <br/>
 
@@ -56,12 +56,11 @@ When generating images or inpainting often you do not want to save every single 
 
 <img width="2256" height="1298" alt="image" src="https://github.com/user-attachments/assets/534cb447-dce3-4d73-a1bf-257c3ce15af7" />
 
-
-## Multi image selection in history
+Multi-image selection in history
 
 <br/>
 
-This places check boxes in the top left corner of each image in the history to allow for the easy removal of multiple images at once. 
+This places check boxes in the top left corner of each image in the history to allow for the easy removal of multiple images at once.
 
 <br/>
 
@@ -71,25 +70,25 @@ This places check boxes in the top left corner of each image in the history to a
 
 <br/>
 
-## Lora triger tag usability
+Lora trigger tag usability.
 
 <br/>
 
-When importing loras often enough the trigger phrases section is filled with multiple tags. I have implemented the standard fuctionality available in all other interfaces to select individual tags from the list and copy them instead of copying the entire trigger phrase section. (if nothing is selected the entire section is still copied for ease of use). This works under the lora tab as well as when clicking on the active lora under the center area. The colors of the bubles should obey theming.
+When importing Loras often enough, the trigger phrases section is filled with multiple tags. I have implemented the standard functionality available in all other interfaces to select individual tags from the list and copy them instead of copying the entire trigger phrase section. (If nothing is selected, the entire section is still copied for ease of use. This works under the LORA tab as well as when clicking on the active LORA under the center area. The colors of the bubbles should obey theming.
 
 <br/>
 
 <br/>
 
-<img width="680" height="242" alt="image" src="https://github.com/user-attachments/assets/193319d4-435b-4d96-8b49-307f0cb3a8c9" /> <img width="857" height="324" alt="image" src="https://github.com/user-attachments/assets/4a83eb80-958c-4944-bf8c-479ffa189e0e" />
+ 
 
 <br/>
 
-## Exposed peramiters to allow for inpainting resolution setting
+Exposed perimeters to allow for inpainting resolution setting
 
 <br/>
 
-This lets you set a resolution manualy for inpainting so you can do a part of an image at a higher resolution than the rest of the image or just override swarms default resolution without going into the models metadata. 
+This lets you set a resolution manually for inpainting so you can do a part of an image at a higher resolution than the rest of the image or just override Swarm's default resolution without going into the model's metadata.
 
 <br/>
 
@@ -97,11 +96,11 @@ This lets you set a resolution manualy for inpainting so you can do a part of an
 
 <br/>
 
-## Pre upscale refiner 
+Pre-upscale refiner
 
 <br/>
 
-When doing upscales it is well known that you will simply amplify the errors that are already present this is somewhat offset by doing a refiner pass after the fact. However doing a refiner pass to add detail and correct mistakes before upscalling makes even the after upscale refiner even more effective.
+When doing upscales, it is well known that you will simply amplify the errors that are already present. This is somewhat offset by doing a refiner pass after the fact. However, doing a refiner pass to add detail and correct mistakes before upscalling makes the after-upscale refiner even more effective.
 
 <br/>
 
@@ -109,8 +108,9 @@ When doing upscales it is well known that you will simply amplify the errors tha
 
 <br/>
 
-## Added better save folder override
-Currently in swarm you have to manualy type out the save path override when doing so from the generate tab. I don't like this. I have added an option directly under this current implementation that shows all your current folders and also the option to add a new folder if you want that. Yes searching works.
+Added better save folder override
+
+Currently, in Swarm, you have to manually type out the save path override when doing so from the generate tab. I don’t like this. I have added an option directly under this current implementation that shows all your current folders, and also the option to add a new folder if you want that. Yes, searching works.
 
 <br/>
 
@@ -118,8 +118,9 @@ Currently in swarm you have to manualy type out the save path override when doin
 
 <br/>
 
-## Added a hide image function. 
-From time to time I make images that I do not wish to show when streaming or while at work. So I added a simple show hide option that also uses the bulk image selection check boxes the same way that the remove image options does. This allows for easy search and bulk hide operations. 
+Added a hide image function.
+
+From time to time, I make images that I do not wish to show when streaming or while at work. So I added a simple show hide option that also uses the bulk image selection check boxes the same way that the remove image options do. This allows for easy search and bulk hide operations.
 
 <br/>
 
@@ -127,11 +128,11 @@ From time to time I make images that I do not wish to show when streaming or whi
 
 <br/>
 
-# FIXES:
+FIXES:
 
 <br/>
 
-Nothing big but when resizing images at spacific resolutions with spacific ui positioning some times the center image will "jiter" or resize repeatedly over and over. This was anoying and should be fixed now. I will try to keep this repo in parody with the origional but may be a day behind.
+Nothing big, but when resizing images at specific resolutions with spacific ui positioning, sometimes the center image will “jitter” or resize repeatedly over and over. This was annoying and should be fixed now. I will try to keep this repo in parity with the original, but may be a day behind.
 
 <br/>
 
@@ -139,202 +140,205 @@ Fixed my own save image button. It now saves metadata correctly.
 
 <br/>
 
-Fixed issues with large history loads. Now retries once and then gives you a manual option after that. This helps when loading large amounts of image (100k+). Most helpfull when loading off of a spining drive.
-
-<br/> 
-
-Adjusted the drag and drop image functionality. Dropped images now snap to the base image instead of dropping where ever the coursor is. The base image is deffined currently by the image at the bottom of the stack. This allows you to change what is considered the base image. 
-
-When resizing images they will also snap to the edges of the base image following the same logic. 
+Fixed issues with large history loads. Now retries once and then gives you a manual option after that. This helps when loading large amounts of images (100k+). Most helpful when loading off a spinning drive.
 
 <br/>
 
-# SwarmUI
+Adjusted the drag and drop image functionality. Dropped images now snap to the base image instead of dropping wherever the cursor is. The base image is currently defined by the image at the bottom of the stack. This allows you to change what is considered the base image.
+
+When resizing images, they will also snap to the edges of the base image, following the same logic.
 
 <br/>
 
-*Formerly known as StableSwarmUI.*
+SwarmUI
 
 <br/>
 
-A Modular AI Image Generation Web-User-Interface, with an emphasis on making powertools easily accessible, high performance, and extensibility. Supports AI image models (*Stable Diffusion, Z-Image, Flux, Qwen Image, etc.*), and AI video models (*Wan, Hunyuan Video, etc.*), with plans to support eg audio and more in the future.
+Formerly known as StableSwarmUI.
 
 <br/>
 
-![ui-screenshot](.github/images/swarmui.jpg)
+A Modular AI Image Generation Web-User-Interface, with an emphasis on making powertools easily accessible, high performance, and extensibility. Supports AI image models (Stable Diffusion, Z-Image, Flux, Qwen Image, etc.), and AI video models (Wan, Hunyuan Video, etc.), with plans to support, e.g., audio and more in the future.
 
 <br/>
 
-- **Discord Community**: Join the [Discord](https://discord.gg/q2y38cqjNw) to discuss the project, get support, see announcements, etc.
-- **Announcements**: Follow the [Feature Announcements Thread](https://github.com/mcmonkeyprojects/SwarmUI/discussions/1) for updates on new features.
-- **General documentation**: [/docs folder](https://github.com/mcmonkeyprojects/SwarmUI/blob/master/docs/README.md)
-- **Website**: [SwarmUI.net](https://swarmui.net/)
+ui-screenshot
+
 <br/>
-----
 
-# Status
+* Discord Community: Join the Discord to discuss the project, get support, see announcements, etc.
+* Announcements: Follow the Feature Announcements Thread for updates on new features.
+* General documentation: /docs folder
+* Website: SwarmUI.net
 
-This project is in **Beta** status. This means for most tasks, Swarm has excellent tooling available to you, but there is much more planned. Swarm is recommended as an ideal UI for most users, beginners and pros alike. There are still some things to be worked out.
 
-Beginner users will love Swarm's primary Generate tab interface, making it easy to generate anything with a variety of powerful features. Advanced users may favor the Comfy Workflow tab to get the unrestricted raw graph, but will still have reason to come back to the Generate tab for convenience features (image editor, auto-workflow-generation, etc) and powertools (eg Grid Generator).
+---
 
-Those interested in helping push Swarm from Beta to a Full ready-for-anything perfected Release status are welcome to submit PRs (read the [Contributing](/CONTRIBUTING.md) document first), and you can contact us here on GitHub or on [Discord](https://discord.gg/q2y38cqjNw). I highly recommend reaching out to ask about plans for a feature before PRing it. There may already be specific plans or even a work in progress.
+Status
+
+This project is in Beta status. This means for most tasks, Swarm has excellent tooling available to you, but there is much more planned. Swarm is recommended as an ideal UI for most users, beginners, and pros alike. There are still some things to be worked out.
+
+Beginner users will love Swarm’s primary Generate tab interface, making it easy to generate anything with a variety of powerful features. Advanced users may favor the Comfy Workflow tab to get the unrestricted raw graph, but will still have reason to come back to the Generate tab for convenience features (image editor, auto-workflow-generation, etc) and powertools (e.g., Grid Generator).
+
+Those interested in helping push Swarm from Beta to a full, ready-for-anything, perfected Release status are welcome to submit PRs (read the Contributing document first), and you can contact us here on GitHub or on Discord. I highly recommend reaching out to ask about plans for a feature before PRing it. There may already be specific plans or even a work in progress.
 
 Key feature targets not yet implemented:
-- Better mobile browser support
-- full detail "Current Model" display in UI, separate from the model selector (probably as a tab within the batch sidebar?)
-- LLM-assisted prompting (there's an extension for it, but LLM control should be natively supported)
-- convenient direct-distribution of Swarm as a program ([Tauri](https://tauri.app/), [Blazor Desktop](https://learn.microsoft.com/en-us/training/modules/build-blazor-hybrid/), or an Electron app?)
 
-# Donate
+* Better mobile browser support
+* Full detail “Current Model” display in UI, separate from the model selector (probably as a tab within the batch sidebar?)
+* LLM-assisted prompting (there’s an extension for it, but LLM control should be natively supported)
+* convenient direct-distribution of Swarm as a program (Tauri, Blazor Desktop, or an Electron app?)
 
-SwarmUI is 100% free and open source forever. If you want to help make sure it keeps pace with the best despite my refusal to paywall access or shove ads down your throat, [donate to SwarmUI](https://patreon.com/swarmui)!
+Donate
 
-# Try It On Google Colab
+SwarmUI is 100% free and open source forever. If you want to help make sure it keeps pace with the best despite my refusal to paywall access or shove ads down your throat, donate to SwarmUI!
 
-### Google Colab
+Try It On Google Colab
 
-**WARNING**: Google Colab does not necessarily allow remote WebUIs, particularly for free accounts, use at your own risk.
+Google Colab
+
+WARNING: Google Colab does not necessarily allow remote WebUIs, particularly for free accounts, for use at your own risk.
 
 Colab link if you want to try Swarm: https://colab.research.google.com/github/mcmonkeyprojects/SwarmUI/blob/master/colab/colab-notebook.ipynb
 
-# Run it on a Cloud GPU Provider
+Run it on a Cloud GPU Provider
 
-### Runpod
+Runpod
 
-Runpod template (note: maintained by third party contributor [nerdylive123](https://github.com/nerdylive123)): https://get.runpod.io/swarmui
+Runpod template (note: maintained by third-party contributor nerdylive123): https://get.runpod.io/swarmui
 
-### Vast.ai
+Vast.ai
 
-Vast.ai template ([readme](https://cloud.vast.ai/template/readme/8e5e6ab1fceb9db3f813e815907b3390)): https://cloud.vast.ai/?ref_id=62897&creator_id=62897&name=SwarmUI
+Vast.ai template (readme): https://cloud.vast.ai/?ref_id=62897&creator_id=62897&name=SwarmUI
 
-Note it may take several minutes to start up the first time. Check the container logs to see setup progress. Check the template `?` info for hints on how to use.
+Note that it may take several minutes to start up the first time. Check the container logs to see setup progress. Check the template ? info for hints on how to use.
 
-# Installing on Windows
+Installing on Windows
 
-Note: if you're on Windows 10, you may need to manually install [git](https://git-scm.com/download/win) and [DotNET 8 SDK](https://dotnet.microsoft.com/en-us/download/dotnet/8.0) first. (Windows 11 this is automated).
+Note: if you’re on Windows 10, you may need to manually install git and DotNET 8 SDK first. (Windows 11, this is automated.
 
-- Download [The Install-Windows.bat file](https://github.com/mcmonkeyprojects/SwarmUI/releases/download/0.9.8-Beta/install-windows.bat), store it somewhere you want to install at (not `Program Files`), and run it.
-    - It should open a command prompt and install itself.
-    - If it closes without going further, try running it again, it sometimes needs to run twice. (TODO: Fix that)
-    - It will place an icon on your desktop that you can use to re-launch the server at any time.
-    - When the installer completes, it will automatically launch the SwarmUI server, and open a browser window to the install page.
-    - Follow the install instructions on the page.
-    - After you submit, be patient, some of the install processing take a few minutes (downloading models and etc).
+* Download the Install-Windows.bat file, store it somewhere you want to install it (not Program Files), and run it.
+  * It should open a command prompt and install itself.
+  * If it closes without going further, try running it again; it sometimes needs to run twice. (TODO: Fix that)
+  * It will place an icon on your desktop that you can use to re-launch the server at any time.
+  * When the installer completes, it will automatically launch the SwarmUI server and open a browser window to the install page.
+  * Follow the installation instructions on the page.
+  * After you submit, be patient; some of the installation processing takes a few minutes (downloading models, etc.).
 
-(TODO): Even easier self-contained pre-installer, a `.msi` or `.exe` that provides a general install screen and lets you pick folder and all.
+(TODO): Even easier self-contained pre-installer, a .msi or .exe that provides a general install screen and lets you pick a folder and all.
 
-# Alternate Manual Windows Install
+Alternate Manual Windows Install
 
-- Install git from https://git-scm.com/download/win
-- Install DotNET 8 SDK from https://dotnet.microsoft.com/en-us/download/dotnet/8.0 (Make sure to get the SDK x64 for Windows)
-- open a terminal to the folder you want swarm in and run `git clone https://github.com/mcmonkeyprojects/SwarmUI`
-- open the folder and run `launch-windows.bat`
+* Install git from https://git-scm.com/download/win
+* Install DotNET 8 SDK from https://dotnet.microsoft.com/en-us/download/dotnet/8.0 (Make sure to get the SDK x64 for Windows)
+* Open a terminal to the folder you want Swarm in and run git clone https://github.com/Reaper176/SwarmUI-experimental.
+* Open the folder and run launch-windows.bat
 
-# Installing on Linux
+Installing on Linux
 
-### Prereqs
+Prereqs
 
-- Install `git` and `python3` via your OS package manager if they are not already installed (make sure to include `pip` and `venv` on distros that do not include them in python directly)
-    - For example, on some Ubuntu (desktop) versions, `sudo apt install git python3-pip python3-venv`, or you may need <https://launchpad.net/~deadsnakes/+archive/ubuntu/ppa>
-    - For Debian or Ubuntu Server, `sudo apt install git python3-full`
-    - You'll want Python 3.11 or 3.12. Things should also work fine with 3.10. Do not use 3.13.
-    - Make sure `python3.11 -m pip --version` returns a valid package
+* Install git and Python 3 via your OS package manager if they are not already installed (make sure to include pip and venv on distros that do not include them in Python directly)
+  * For example, on some Ubuntu (desktop) versions, sudo apt install git python3-pip python3-venv, or you may need https://launchpad.net/~deadsnakes/+archive/ubuntu/ppa
+  * For Debian or Ubuntu Server, sudo apt install git python3-full
+  * You’ll want Python 3.11 or 3.12. Things should also work fine with 3.10. Do not use 3.13.
+  * Make sure python3.11 -m pip --version returns a valid package
 
-### Linux Easy Install
+Linux Easy Install
 
-- Download [the install-linux.sh file](https://github.com/mcmonkeyprojects/SwarmUI/releases/download/0.6.5-Beta/install-linux.sh), store it somewhere you want to install at, and run it
-    - If you like terminals, you can open a terminal to the folder and run the following commands: (Yes this link is still current):
-        - `wget https://github.com/mcmonkeyprojects/SwarmUI/releases/download/0.6.5-Beta/install-linux.sh -O install-linux.sh`
-        - `chmod +x install-linux.sh`
-- Run the `./install-linux.sh` script, it will install everything for you and eventually open the webpage in your browser.
-- Follow the install instructions on-page.
+* Download the install-linux.sh file, store it somewhere you want to install it, and run it
+  * If you like terminals, you can open a terminal to the folder and run the following commands: (Yes, this link is still current):
+    * wget https://github.com/Reaper176/SwarmUI-experimental/releases/download/0.6.5-Beta/install-linux.sh -O install-linux.sh
+    * chmod +x install-linux.sh
+* Run the ./install-linux.sh script, and it will install everything for you and eventually open the webpage in your browser.
+* Follow the installation instructions on the page.
 
-### Linux Manual Install
+Linux Manual Install
 
-- Install DotNET 8 using the instructions at https://dotnet.microsoft.com/en-us/download/dotnet/8.0 (you need `dotnet-sdk-8.0`, as that includes all relevant sub-packages)
-- Open a shell terminal and `cd` to a directory you want to install into
-- Run shell commands:
-    - `git clone https://github.com/mcmonkeyprojects/SwarmUI`
-    - cd `SwarmUI`
-    - `./launch-linux.sh`
-    - or if running on a headless server, `./launch-linux.sh --launch_mode none --host 0.0.0.0` and/or swap host for [cloudflared](/docs/Advanced%20Usage.md)
-- open `http://localhost:7801/Install` (if it doesn't launch itself)
-- Follow the install instructions on-page.
+* Install DotNET 8 using the instructions at https://dotnet.microsoft.com/en-us/download/dotnet/8.0 (you need dotnet-sdk-8.0, as that includes all relevant sub-packages)
+* Open a shell terminal and cd to a directory you want to install into
+* Run shell commands:
+  * git clone https://github.com/Reaper176/SwarmUI-experimental
+  * cd SwarmUI
+  * ./launch-linux.sh
+  * or if running on a headless server, ./launch-linux.sh --launch_mode none --host 0.0.0.0 and/or swap host for cloudflared
+* open http://localhost:7801/Install (if it doesn’t launch itself)
+* Follow the installation instructions on the page.
 
-### Linux Install Notes
+Linux Install Notes
 
-- You can at any time in the future run the `launch-linux.sh` script to re-launch Swarm.
-- If the page doesn't open itself, you can manually open `http://localhost:7801`
+* You can, at any time in the future, run the launch-linux.sh script to re-launch Swarm.
+* If the page doesn’t open itself, you can manually open http://localhost:7801.
 
-(TODO): Maybe outlink a dedicated document with per-distro details and whatever. Maybe also make a one-click installer for Linux? Can we remove the global python install prereq?
+(TODO): Maybe outlink a dedicated document with per-distro details and whatever. Maybe also make a one-click installer for Linux? Can we remove the global Python install prereq?
 
-# Installing on Mac
+Installing on Mac
 
-> **Note**: You can only run SwarmUI on Mac computers with M-Series Apple silicon processors (eg M1, M2, ...).
+Note: You can only run SwarmUI on Mac computers with M-Series Apple silicon processors (e.g., M1, M2, …).
 
-- Open Terminal.
-- Ensure your `brew` packages are updated with `brew update`.
-- Verify your `brew` installation with `brew doctor`. You should not see any error in the command output.
-- Install .NET for macOS: `brew install dotnet`.
-- If you don't have Python, install it: `brew install python@3.11` and `brew install virtualenv`
-    - Python 3.11, 3.12, 3.10 are all fine. 3.13 is not, do not use 3.13.
-- Change the directory (`cd`) to the folder where you want to install SwarmUI.
-- Clone the SwarmUI GitHub repository: `git clone https://github.com/mcmonkeyprojects/SwarmUI`.
-- `cd SwarmUI` and run the installation script: `./launch-macos.sh`.
-- Wait for the web browser to open, and follow the install instructions on-page.
+* Open Terminal.
+* Ensure your brew packages are updated with brew update.
+* Verify your brew installation with brew doctor. You should not see any error in the command output.
+* Install .NET for macOS: brew install dotnet.
+* If you don’t have Python, install it: brew install python@3.11 and brew install virtualenv
+  * Python 3.11, 3.12, and 3.10 are all fine. 3.13 is not; do not use 3.13.
+* Change the directory (cd) to the folder where you want to install SwarmUI.
+* Clone the SwarmUI GitHub repository: git clone https://github.com/mcmonkeyprojects/SwarmUI.
+* cd SwarmUI and run the installation script: ./launch-macos.sh.
+* Wait for the web browser to open, and follow the installation instructions on the page.
 
-# Installing With Docker
+Installing With Docker
 
-See [Docs/Docker.md](/docs/Docker.md) for detailed instructions on using SwarmUI in Docker.
+See Docs/Docker.md for detailed instructions on using SwarmUI in Docker.
 
-# Documentation
+Documentation
 
-See [the documentation folder](/docs/README.md).
+See the documentation folder.
 
-# Motivations
+Motivations
 
-The "Swarm" name is in reference to the original key function of the UI: enabling a 'swarm' of GPUs to all generate images for the same user at once (especially for large grid generations). This is just the feature that inspired the name and not the end all of what Swarm is.
+The “Swarm” name is in reference to the original key function of the UI: enabling a ‘swarm’ of GPUs to all generate images for the same user at once (especially for large grid generations). This is just the feature that inspired the name and not the end-all of what Swarm is.
 
-The overall goal of SwarmUI is to a be full-featured one-stop-shop for all things Stable Diffusion.
+The overall goal of SwarmUI is to be a full-featured one-stop shop for all things Stable Diffusion.
 
-See [the motivations document](/docs/Motivations.md) for motivations on technical choices.
+See the motivations document for motivations on technical choices.
 
-# Legal
+Legal
 
 This project:
-- embeds a copy of [7-zip](https://7-zip.org/download.html) (LGPL).
-- has the ability to auto-install [ComfyUI](https://github.com/comfyanonymous/ComfyUI) (GPL).
-- has the option to use as a backend [AUTOMATIC1111/stable-diffusion-webui](https://github.com/AUTOMATIC1111/stable-diffusion-webui) (AGPL).
-- can automatically install [christophschuhmann/improved-aesthetic-predictor](https://github.com/christophschuhmann/improved-aesthetic-predictor) (Apache2) and [yuvalkirstain/PickScore](https://github.com/yuvalkirstain/PickScore) (MIT).
-- can automatically install [git-for-windows](https://git-scm.com/download/win) (GPLv2).
-- can automatically install MIT/BSD/Apache2/PythonSoftwareFoundation pip packages: [spandrel](https://pypi.org/project/spandrel/), [dill](https://pypi.org/project/dill/), [imageio-ffmpeg](https://pypi.org/project/imageio-ffmpeg/), [opencv-python-headless](https://pypi.org/project/opencv-python-headless/), [matplotlib](https://pypi.org/project/matplotlib/), [rembg](https://pypi.org/project/rembg/), [kornia](https://pypi.org/project/kornia/), [Cython](https://pypi.org/project/Cython/)
-- can automatically install [ultralytics](https://github.com/ultralytics/ultralytics) (AGPL) for `YOLOv8` face detection (ie `SwarmYoloDetection` node or `<segment:yolo-...>` syntax usage may become subject to AGPL terms),
-- can automatically install [insightface](https://github.com/deepinsight/insightface) (MIT) for `IP Adapter - Face` support
-- uses [JSON.NET](https://github.com/JamesNK/Newtonsoft.Json) (MIT), [FreneticUtilities](https://github.com/FreneticLLC/FreneticUtilities) (MIT), [LiteDB](https://github.com/mbdavid/LiteDB) (MIT), [ImageSharp](https://github.com/SixLabors/ImageSharp/) (Apache2 under open-source Split License)
-- embeds copies of web assets from [BootStrap](https://getbootstrap.com/) (MIT), [Select2](https://select2.org/) (MIT), [JQuery](https://jquery.com/) (MIT), [exif-reader](https://github.com/mattiasw/ExifReader) (MPL-2.0).
-- contains some icons from [Cristian Munoz](https://www.figma.com/community/file/1311159026125960259/7000-free-ui-icons) (CC-BY-4.0), the font [inter by rsms](https://github.com/rsms/inter) (OFL), [Unifont by GNU](https://unifoundry.com/unifont/) (OFL), [Material Symbols Outlined by Google](https://fonts.google.com/icons) (Apache2).
-- can be used to install some custom node packs, which have individual license notices for any non-pure-FOSS licenses before install.
-- supports user-built extensions which may have their own licenses or legal conditions.
 
-SwarmUI itself is under the MIT license, however some usages may be affected by the GPL variant licenses of connected projects list above, and note that any models used have their own licenses.
+* embeds a copy of 7-Zip (LGPL).
+* has the ability to auto-install ComfyUI (GPL).
+* has the option to use as a backend AUTOMATIC1111/stable-diffusion-webui (AGPL).
+* can automatically install christophschuhmann/improved-aesthetic-predictor (Apache2) and yuvalkirstain/PickScore (MIT).
+* can automatically install git-for-windows (GPLv2).
+* can automatically install MIT/BSD/Apache2/PythonSoftwareFoundation pip packages: spandrel, dill, imageio-ffmpeg, opencv-python-headless, matplotlib, rembg, kornia, Cython
+* can automatically install Ultralytics (AGPL) for YOLOv8 face detection (i.e., SwarmYoloDetection node or <segment:yolo-...> syntax usage may become subject to AGPL terms),
+* can automatically install InsightFace (MIT) for IP Adapter - Face support
+* uses JSON.NET (MIT), FreneticUtilities (MIT), LiteDB (MIT), ImageSharp (Apache2 under open-source Split License)
+* embeds copies of web assets from Bootstrap (MIT), Select2 (MIT), JQuery (MIT), exif-reader (MPL-2.0).
+* contains some icons from Cristian Munoz (CC-BY-4.0), the font Inter by RSMS (OFL), Unifont by GNU (OFL), and Material Symbols Outlined by Google (Apache2).
+* can be used to install some custom node packs, which have individual license notices for any non-pure-FOSS licenses before installation.
+* supports user-built extensions, which may have their own licenses or legal conditions.
 
-### Previous License
+SwarmUI itself is under the MIT license; some usages may be affected by the GPL variant licenses of connected projects listed above, and note that any models used have their own licenses.
+
+Previous License
 
 (For updates prior to June 2024)
 
 The MIT License (MIT)
-Copyright (c) 2024 Stability AI
+Copyright © 2024 Stability AI
 
-### License
+License
 
 The MIT License (MIT)
 
-Copyright (c) 2024-2026 Alex "mcmonkey" Goodwin
+Copyright © 2024-2026 Alex “mcmonkey” Goodwin
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
+of this software and associated documentation files (the “Software”), to deal
+in the Software without restriction, including, without limitation, the rights
 to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
 copies of the Software, and to permit persons to whom the Software is
 furnished to do so, subject to the following conditions:
@@ -342,10 +346,10 @@ furnished to do so, subject to the following conditions:
 The above copyright notice and this permission notice shall be included in all
 copies or substantial portions of the Software.
 
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+THE SOFTWARE IS PROVIDED “AS IS”, WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
 IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
 FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES, OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT, OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
