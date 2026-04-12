@@ -283,7 +283,7 @@ Note: You can only run SwarmUI on Mac computers with M-Series Apple silicon proc
 * If you don’t have Python, install it: brew install python@3.11 and brew install virtualenv
   * Python 3.11, 3.12, and 3.10 are all fine. 3.13 is not; do not use 3.13.
 * Change the directory (cd) to the folder where you want to install SwarmUI.
-* Clone the SwarmUI GitHub repository: git clone https://github.com/mcmonkeyprojects/SwarmUI.
+* Clone the SwarmUI GitHub repository: git clone https://github.com/Reaper176/SwarmUI-experimental.
 * cd SwarmUI and run the installation script: ./launch-macos.sh.
 * Wait for the web browser to open, and follow the installation instructions on the page.
 
