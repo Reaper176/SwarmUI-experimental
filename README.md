@@ -150,7 +150,7 @@ When resizing images, they will also snap to the edges of the base image, follow
 
 <br/>
 
-SwarmUI
+# SwarmUI
 
 <br/>
 
