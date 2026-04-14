@@ -690,7 +690,6 @@ function buttonsForImage(fullsrc, src, metadata, parsedMetadata = null, isCurren
                     imageFullView.close();
                 }
                 deleteSingleHistoryImage(fullsrc, src, e);
-            }
             },
             can_multi: true
         });
