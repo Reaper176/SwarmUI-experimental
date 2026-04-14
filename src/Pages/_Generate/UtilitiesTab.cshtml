@@ -43,6 +43,7 @@
                     <span data-requiredpermission="edit_model_metadata">
                         <div class="card-center-container">
                             <button id="util_modelmetadatascanner_button" class="basic-button translate" onclick="modelMetadataScanner.run()">Scan Civitai For Metadata</button>
+                            <button id="util_modelmetadatascanner_repair_button" class="basic-button translate" onclick="if (modelMetadataScanner && typeof modelMetadataScanner.runRepairBrokenMetadata == 'function') { modelMetadataScanner.runRepairBrokenMetadata(); } else { showError('Repair scanner is not loaded yet. Please hard refresh this page (Ctrl+F5).'); }" style="margin-left:1rem">Repair Broken Metadata From Civitai</button>
                         </div>
                         <br>Model Sub-type: <select id="util_modelmetadatascanner_subtype" class="auto-dropdown">
                             <option value="all" class="translate" selected>all</option>
@@ -77,6 +78,7 @@
                         <br>If you click this button, Swarm will scan Civitai for metadata on models, and update the metadata database with any information found.
                         <br>You can filter by date range (eg only recently downloaded model files), and/or by required missing content (eg only scan those without images).
                         <br>You can also choose what metadata gets updated (eg only the image).
+                        <br>The "Repair Broken Metadata From Civitai" button specifically targets models with missing/broken basic metadata or preview image and force-replaces from Civitai where possible.
                         <br>Optionally use the model filename filter to only scan models with a specific filename. Use '*' as a wildcard.
                         <br>(For example, 'SDXL/*' will scan only models within a folder named 'SDXL/'. This is case-insensitive.)
                         <br>Will take a while, and may seem to freeze up if it has to apply edits. This is normal.

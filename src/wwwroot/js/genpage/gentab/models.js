@@ -1223,6 +1223,11 @@ class ModelBrowserWrapper {
             description = `<span class="model_filename">${fileNameHtml}</span><br>${matchInfoHtml}(Metadata only available for 'safetensors' models.)<br><b>WARNING:</b> 'ckpt' pickle files can contain malicious code! Use with caution.<br>`;
             detail_list.push(`(Metadata only available for 'safetensors' models.)`, `<b>WARNING:</b> 'ckpt' pickle files can contain malicious code! Use with caution.`);
         }
+        if (model.data.local && this.subType != 'Wildcards' && permissions.hasPermission('local_image_folder') && !buttons.some(b => b.label == 'Open In Folder')) {
+            buttons.push({ label: 'Open In Folder', onclick: () => {
+                genericRequest('OpenModelFolder', { 'modelName': model.data.name, 'subtype': this.subType }, data => {});
+            } });
+        }
         let className = this.getClassFor(model, isCorrect);
         let searchable = `${model.data.name}, ${searchableAdded}, ${model.data.license}, ${model.data.architecture||'no-arch'}, ${model.data.usage_hint}, ${model.data.trigger_phrase}, ${model.data.merged_from}, ${model.data.tags}`;
         searchData.allFields = searchable;

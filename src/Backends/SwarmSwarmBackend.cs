@@ -538,7 +538,7 @@ public class SwarmSwarmBackend : AbstractT2IBackend
     public override async Task<Image[]> Generate(T2IParamInput user_input)
     {
         user_input.ProcessPromptEmbeds(x => $"<embedding:{x}>");
-        JObject generated = SendAPIJSON("GenerateText2Image", BuildRequest(user_input)).Result;
+        JObject generated = await SendAPIJSON("GenerateText2Image", BuildRequest(user_input));
         Image[] images = [.. generated["images"].Select(img => ImageFile.FromDataString(img.ToString()) as Image)];
         return images;
     }

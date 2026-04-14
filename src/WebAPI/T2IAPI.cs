@@ -313,6 +313,7 @@ public static class T2IAPI
         }
         int max_degrees = session.User.CalcMaxT2ISimultaneous;
         List<int> discard = [];
+        object discardLock = new();
         int batchSizeExpected = user_input.Get(T2IParamTypes.BatchSize, 1);
         void saveImage(T2IEngine.ImageOutput image, int actualIndex, T2IParamInput thisParams, string metadata)
         {
@@ -347,7 +348,10 @@ public static class T2IAPI
                 {
                     File.Delete(filePath);
                 }
-                discard.Add(actualIndex);
+                lock (discardLock)
+                {
+                    discard.Add(actualIndex);
+                }
                 lock (imageSet)
                 {
                     imageSet.Remove(image);
@@ -411,7 +415,7 @@ public static class T2IAPI
                 })));
             if (Program.Backends.QueuedRequests < Program.ServerSettings.Backends.MaxRequestsForcedOrder)
             {
-                Task.Delay(20).Wait(); // Tiny few-ms delay to encourage tasks retaining order.
+                await Task.Delay(20); // Tiny few-ms delay to encourage tasks retaining order.
             }
         }
         while (tasks.Any())
@@ -457,7 +461,12 @@ public static class T2IAPI
             saveImage(gridOutput, -1, finalInput, metadata);
         }
         T2IEngine.PostBatchEvent?.Invoke(new(user_input, [.. griddables]));
-        output(new JObject() { ["discard_indices"] = JToken.FromObject(discard) });
+        List<int> discardFinal;
+        lock (discardLock)
+        {
+            discardFinal = [.. discard];
+        }
+        output(new JObject() { ["discard_indices"] = JToken.FromObject(discardFinal) });
         WebhookManager.SendManualAtEndWebhook(user_input);
     }
 

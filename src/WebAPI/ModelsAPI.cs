@@ -7,7 +7,10 @@ using SwarmUI.Core;
 using SwarmUI.Media;
 using SwarmUI.Text2Image;
 using SwarmUI.Utils;
+using System.Diagnostics;
 using System.IO;
+using System.Net.Http;
+using System.Runtime.InteropServices;
 using System.Net.WebSockets;
 using System.Text.RegularExpressions;
 
@@ -33,6 +36,7 @@ public static class ModelsAPI
         API.RegisterAPICall(DoModelDownloadWS, true, Permissions.DownloadModels);
         API.RegisterAPICall(GetModelHash, true, Permissions.EditModelMetadata);
         API.RegisterAPICall(ForwardMetadataRequest, false, Permissions.EditModelMetadata);
+        API.RegisterAPICall(OpenModelFolder, true, Permissions.LocalImageFolder);
         API.RegisterAPICall(DeleteModel, false, Permissions.DeleteModels);
         API.RegisterAPICall(RenameModel, false, Permissions.DeleteModels);
     }
@@ -761,15 +765,47 @@ public static class ModelsAPI
         {
             return new JObject() { ["error"] = "Invalid URL." };
         }
-        string resp;
+        HttpResponseMessage response;
         try
         {
-            resp = await Utilities.UtilWebClient.GetStringAsync(url);
+            response = await Utilities.UtilWebClient.GetAsync(url, Program.GlobalProgramCancel);
         }
         catch (Exception ex)
         {
             Logs.Warning($"While making metadata request to '{url}', got exception: {ex.ReadableString()}");
             return new JObject() { ["error"] = $"{ex.GetType().Name}: {ex.Message}" };
+        }
+        string resp = await response.Content.ReadAsStringAsync(Program.GlobalProgramCancel);
+        if (!response.IsSuccessStatusCode)
+        {
+            JObject errData = new()
+            {
+                ["error"] = $"HTTP {(int)response.StatusCode}: {response.ReasonPhrase}",
+                ["status_code"] = (int)response.StatusCode
+            };
+            if (response.Headers.RetryAfter is not null)
+            {
+                int retryAfterSeconds = 0;
+                if (response.Headers.RetryAfter.Delta.HasValue)
+                {
+                    retryAfterSeconds = (int)Math.Ceiling(response.Headers.RetryAfter.Delta.Value.TotalSeconds);
+                }
+                else if (response.Headers.RetryAfter.Date.HasValue)
+                {
+                    DateTimeOffset retryDate = response.Headers.RetryAfter.Date.Value;
+                    retryAfterSeconds = Math.Max(0, (int)Math.Ceiling((retryDate - DateTimeOffset.UtcNow).TotalSeconds));
+                }
+                if (retryAfterSeconds > 0)
+                {
+                    errData["retry_after_seconds"] = retryAfterSeconds;
+                }
+            }
+            if (!string.IsNullOrWhiteSpace(resp))
+            {
+                errData["response_body"] = resp.Length > 1000 ? resp[..1000] : resp;
+            }
+            Logs.Warning($"Metadata request to '{url}' returned non-success status {(int)response.StatusCode} ({response.ReasonPhrase}).");
+            return errData;
         }
         try
         {
@@ -780,6 +816,55 @@ public static class ModelsAPI
             Logs.Warning($"While parsing JSON response from '{url}', got exception: {ex.ReadableString()}");
             return new JObject() { ["error"] = $"{ex.GetType().Name}: {ex.Message}" };
         }
+    }
+
+    [API.APIDescription("Open a model file folder in the file explorer. Used for local users directly.", "\"success\": true")]
+    public static async Task<JObject> OpenModelFolder(Session session,
+        [API.APIParameter("Full filepath name of the model being requested.")] string modelName,
+        [API.APIParameter("What model sub-type to use, can be eg `LoRA` or `Stable-Diffusion` or etc.")] string subtype = "Stable-Diffusion")
+    {
+        if (!Program.T2IModelSets.TryGetValue(subtype, out T2IModelHandler handler))
+        {
+            return new JObject() { ["error"] = "Invalid sub-type." };
+        }
+        if (TryGetRefusalForModel(session, modelName, out JObject refusal))
+        {
+            return refusal;
+        }
+        T2IModel match = null;
+        using (ManyReadOneWriteLock.ReadClaim claim = Program.RefreshLock.LockRead())
+        {
+            if (handler.Models.TryGetValue(modelName, out T2IModel model))
+            {
+                match = model;
+            }
+            else if (handler.Models.TryGetValue(modelName + ".safetensors", out model))
+            {
+                match = model;
+            }
+        }
+        if (match is null || string.IsNullOrWhiteSpace(match.RawFilePath) || !File.Exists(match.RawFilePath))
+        {
+            return new JObject() { ["error"] = "Model not found." };
+        }
+        if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
+        {
+            Process.Start("explorer.exe", $"/select,\"{Path.GetFullPath(match.RawFilePath)}\"");
+        }
+        else if (RuntimeInformation.IsOSPlatform(OSPlatform.Linux))
+        {
+            Process.Start("xdg-open", $"\"{Path.GetDirectoryName(Path.GetFullPath(match.RawFilePath))}\"");
+        }
+        else if (RuntimeInformation.IsOSPlatform(OSPlatform.OSX))
+        {
+            Process.Start("open", $"-R \"{Path.GetFullPath(match.RawFilePath)}\"");
+        }
+        else
+        {
+            Logs.Warning("Cannot open model path on unrecognized OS type.");
+            return new JObject() { ["error"] = "Cannot open model folder on this OS." };
+        }
+        return new JObject() { ["success"] = true };
     }
 
     /// <summary>Internal call for model/image delete to clean up folders recursively.</summary>

@@ -22,6 +22,8 @@ If a user is just asking questions or requesting tips (not wanting you to make e
 
 This file, [AGENTS.md](/AGENTS.md) should always be used as a key reference during development, keep it in context.
 
+For quick repository orientation and reusable factual architecture notes, consult [docs/project-memory.md](/docs/project-memory.md) at the start of tasks.
+
 If a new understanding of core repository rules is learned during development, add it to this file. Make sure it is not duplicate or redundant with existing information.
 
 This document is exclusively for development of the core SwarmUI repo. It does not apply to development of extensions, and should not be considered when making changes exclusively to extensions in the `src/Extensions/` path.
