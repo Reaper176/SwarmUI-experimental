@@ -114,6 +114,7 @@ let backendsWereLoadingEver = false;
 let reviseStatusInterval = null;
 let currentBackendFeatureSet = [];
 let rawBackendFeatureSet = [];
+let hasLoadedBackendTypesMenu = false;
 let lastStatusRequestPending = 0;
 let lastStatusHiddenPoll = 0;
 function reviseStatusBar() {
@@ -134,7 +135,7 @@ function reviseStatusBar() {
     lastStatusRequestPending = Date.now();
     genericRequest('GetCurrentStatus', {}, data => {
         lastStatusRequestPending = 0;
-        if (JSON.stringify(data.supported_features) != JSON.stringify(currentBackendFeatureSet)) {
+        if (!arraysEqual(data.supported_features, currentBackendFeatureSet)) {
             rawBackendFeatureSet = data.supported_features;
             currentBackendFeatureSet = data.supported_features;
             reviseBackendFeatureSet();
@@ -763,6 +764,23 @@ function genpageLoad() {
     genTabLayout.init();
     reviseStatusBar();
     loadHashHelper();
+    let serverTabButton = document.getElementById('servertabbutton');
+    if (serverTabButton) {
+        serverTabButton.addEventListener('click', () => {
+            if (!hasLoadedBackendTypesMenu && permissions.hasPermission('view_backends_list')) {
+                hasLoadedBackendTypesMenu = true;
+                if (typeof loadBackendTypesMenuOnce == 'function') {
+                    loadBackendTypesMenuOnce();
+                }
+                else {
+                    loadBackendTypesMenu();
+                }
+            }
+            if (typeof queueServerTabHeightFix == 'function') {
+                queueServerTabHeightFix();
+            }
+        });
+    }
     getSession(() => {
         ensureImageHistoryBrowserShellReady();
         imageHistoryBrowser.navigate('');
@@ -785,9 +803,6 @@ function genpageLoad() {
             toggle_advanced();
             currentModelHelper.ensureCurrentModel();
             loadUserData(() => {
-                if (permissions.hasPermission('view_backends_list')) {
-                    loadBackendTypesMenu();
-                }
                 selectInitialPresetList();
             });
             for (let callback of sessionReadyCallbacks) {
@@ -797,7 +812,13 @@ function genpageLoad() {
             autoTitle();
             swarmHasLoaded = true;
         });
+        if (reviseStatusInterval) {
+            clearInterval(reviseStatusInterval);
+        }
         reviseStatusInterval = setInterval(reviseStatusBar, 2000);
-        window.resLoopInterval = setInterval(serverResourceLoop, 1000);
+        if (window.resLoopInterval) {
+            clearInterval(window.resLoopInterval);
+        }
+        window.resLoopInterval = setInterval(serverResourceLoop, 2000);
     });
 }

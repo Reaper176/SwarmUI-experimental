@@ -24,6 +24,7 @@ class ServerLogsHelper {
         this.levels = ['Verbose', 'Debug', 'Info', 'Init', 'Warning', 'Error'];
         this.mayLoop = true;
         this.logLoopRate = 500;
+        this.loopInterval = null;
     }
 
     doPastebinModal() {
@@ -72,7 +73,10 @@ class ServerLogsHelper {
     onTabButtonClick() {
         if (!this.loaded) {
             this.loadTypeList(() => {
-                setInterval(() => this.updateLoop(), this.logLoopRate);
+                if (this.loopInterval != null) {
+                    clearInterval(this.loopInterval);
+                }
+                this.loopInterval = setInterval(() => this.updateLoop(), this.logLoopRate);
                 this.loaded = true;
             });
         }

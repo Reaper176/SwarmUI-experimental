@@ -559,6 +559,50 @@ let extensionsAvailableText = translatable("extension(s) can be updated:");
 let backendsAvailableText = translatable("backend(s) can be updated:");
 
 let hasEverCheckedForUpdates = false;
+let serverResourceLastPoll = 0;
+let serverUsersLastPoll = 0;
+let serverResourceRequestPending = false;
+let serverUsersRequestPending = false;
+let serverResourceLastKey = null;
+let serverUsersLastKey = null;
+let serverTabHeightFixTimer = null;
+let SERVER_RESOURCE_POLL_MS = 3000;
+let SERVER_USERS_POLL_MS = 3000;
+
+function queueServerTabHeightFix() {
+    if (serverTabHeightFixTimer) {
+        return;
+    }
+    serverTabHeightFixTimer = setTimeout(() => {
+        serverTabHeightFixTimer = null;
+        if (isVisible(getRequiredElementById('server_tab'))) {
+            fixTabHeights();
+        }
+    }, 16);
+}
+
+function buildResourceUsageHtml(data) {
+    if (!data.gpus) {
+        return '';
+    }
+    let html = '<table class="simple-table"><tr><th>Resource</th><th>ID</th><th>Temp</th><th>Usage</th><th>Mem Usage</th><th>Used Mem</th><th>Free Mem</th><th>Total Mem</th></tr>';
+    html += `<tr><td>CPU</td><td>...</td><td>...</td><td>${Math.round(data.cpu.usage * 100)}% (${data.cpu.cores} cores)</td><td>${Math.round(data.system_ram.used / data.system_ram.total * 100)}%</td><td>${fileSizeStringify(data.system_ram.used)}</td><td>${fileSizeStringify(data.system_ram.free)}</td><td>${fileSizeStringify(data.system_ram.total)}</td></tr>`;
+    for (let gpu of Object.values(data.gpus)) {
+        html += `<tr><td>${gpu.name}</td><td>${gpu.id}</td><td>${gpu.temperature}&deg;C</td><td>${gpu.utilization_gpu}% Core, ${gpu.utilization_memory}% Mem</td><td>${Math.round(gpu.used_memory / gpu.total_memory * 100)}%</td><td>${fileSizeStringify(gpu.used_memory)}</td><td>${fileSizeStringify(gpu.free_memory)}</td><td>${fileSizeStringify(gpu.total_memory)}</td></tr>`;
+    }
+    html += '</table>';
+    return html;
+}
+
+function buildConnectedUsersHtml(data) {
+    let html = '<table class="simple-table"><tr><th>Name</th><th>Last Active</th><th>Active Sessions</th><th>Current Gens</th></tr>';
+    for (let user of data.users) {
+        let button = (user.waiting_gens == 0 && user.loading_models == 0 && user.waiting_backends == 0 && user.live_gens == 0) ? '' : `<button class="basic-button" onclick="adminInterruptUser('${escapeHtml(user.id)}')">Interrupt</button>`;
+        html += `<tr><td>${user.id}</td><td>${user.last_active}</td><td>${user.active_sessions.map(sess => `${sess.count}x from ${sess.address}`).join(', ')}</td><td>${currentGenString(user.waiting_gens, user.loading_models, user.live_gens, user.waiting_backends)}${button}</td></tr>`;
+    }
+    html += '</table>';
+    return html;
+}
 
 function buildUpdateCheckRow(id, typeId, targetName, titleText, previewLines) {
     let row = createDiv(null, 'update-check-row');
@@ -700,10 +744,9 @@ function serverResourceLoop() {
     if (document.hidden) {
         return;
     }
-    if (isVisible(getRequiredElementById('server_tab'))) {
-        fixTabHeights();
-    }
+    let now = Date.now();
     if (isVisible(getRequiredElementById('Server-Info'))) {
+        queueServerTabHeightFix();
         if (!hasEverCheckedForUpdates) {
             if (window.checkForUpdatesAutomatically) {
                 check_for_updates();
@@ -713,40 +756,68 @@ function serverResourceLoop() {
                 getRequiredElementById('updates_available_notice_area').innerText = 'Automatic update checks disabled in Server Configuration';
             }
         }
-        genericRequest('GetServerResourceInfo', {}, data => {
-            let target = getRequiredElementById('resource_usage_area');
-            let priorWidth = 0;
-            if (target.style.minWidth) {
-                priorWidth = parseFloat(target.style.minWidth.replaceAll('px', ''));
-            }
-            target.style.minWidth = `${Math.max(priorWidth, target.offsetWidth)}px`;
-            if (data.gpus) {
-                let html = '<table class="simple-table"><tr><th>Resource</th><th>ID</th><th>Temp</th><th>Usage</th><th>Mem Usage</th><th>Used Mem</th><th>Free Mem</th><th>Total Mem</th></tr>';
-                html += `<tr><td>CPU</td><td>...</td><td>...</td><td>${Math.round(data.cpu.usage * 100)}% (${data.cpu.cores} cores)</td><td>${Math.round(data.system_ram.used / data.system_ram.total * 100)}%</td><td>${fileSizeStringify(data.system_ram.used)}</td><td>${fileSizeStringify(data.system_ram.free)}</td><td>${fileSizeStringify(data.system_ram.total)}</td></tr>`;
-                for (let gpu of Object.values(data.gpus)) {
-                    html += `<tr><td>${gpu.name}</td><td>${gpu.id}</td><td>${gpu.temperature}&deg;C</td><td>${gpu.utilization_gpu}% Core, ${gpu.utilization_memory}% Mem</td><td>${Math.round(gpu.used_memory / gpu.total_memory * 100)}%</td><td>${fileSizeStringify(gpu.used_memory)}</td><td>${fileSizeStringify(gpu.free_memory)}</td><td>${fileSizeStringify(gpu.total_memory)}</td></tr>`;
+        if (!serverResourceRequestPending && now - serverResourceLastPoll >= SERVER_RESOURCE_POLL_MS) {
+            serverResourceRequestPending = true;
+            serverResourceLastPoll = now;
+            genericRequest('GetServerResourceInfo', {}, data => {
+                serverResourceRequestPending = false;
+                let dataKey = JSON.stringify(data);
+                if (dataKey == serverResourceLastKey) {
+                    return;
                 }
-                html += '</table>';
-                target.innerHTML = html;
-            }
-        });
-        genericRequest('ListConnectedUsers', {}, data => {
-            let target = getRequiredElementById('connected_users_list');
-            let priorWidth = 0;
-            if (target.style.minWidth) {
-                priorWidth = parseFloat(target.style.minWidth.replaceAll('px', ''));
-            }
-            target.style.minWidth = `${Math.max(priorWidth, target.offsetWidth)}px`;
-            let html = '<table class="simple-table"><tr><th>Name</th><th>Last Active</th><th>Active Sessions</th><th>Current Gens</th></tr>';
-            for (let user of data.users) {
-                let button = (user.waiting_gens == 0 && user.loading_models == 0 && user.waiting_backends == 0 && user.live_gens == 0) ? '' : `<button class="basic-button" onclick="adminInterruptUser('${escapeHtml(user.id)}')">Interrupt</button>`;
-                html += `<tr><td>${user.id}</td><td>${user.last_active}</td><td>${user.active_sessions.map(sess => `${sess.count}x from ${sess.address}`).join(', ')}</td><td>${currentGenString(user.waiting_gens, user.loading_models, user.live_gens, user.waiting_backends)}${button}</td></tr>`;
-            }
-            html += '</table>';
-            target.innerHTML = html;
-        });
+                serverResourceLastKey = dataKey;
+                let target = getRequiredElementById('resource_usage_area');
+                let priorWidth = 0;
+                if (target.style.minWidth) {
+                    priorWidth = parseFloat(target.style.minWidth.replaceAll('px', ''));
+                }
+                target.style.minWidth = `${Math.max(priorWidth, target.offsetWidth)}px`;
+                let html = buildResourceUsageHtml(data);
+                if (target.innerHTML != html) {
+                    target.innerHTML = html;
+                }
+            }, 0, _e => {
+                serverResourceRequestPending = false;
+            });
+        }
+        if (!serverUsersRequestPending && now - serverUsersLastPoll >= SERVER_USERS_POLL_MS) {
+            serverUsersRequestPending = true;
+            serverUsersLastPoll = now;
+            genericRequest('ListConnectedUsers', {}, data => {
+                serverUsersRequestPending = false;
+                let dataKey = JSON.stringify(data.users);
+                if (dataKey == serverUsersLastKey) {
+                    return;
+                }
+                serverUsersLastKey = dataKey;
+                let target = getRequiredElementById('connected_users_list');
+                let priorWidth = 0;
+                if (target.style.minWidth) {
+                    priorWidth = parseFloat(target.style.minWidth.replaceAll('px', ''));
+                }
+                target.style.minWidth = `${Math.max(priorWidth, target.offsetWidth)}px`;
+                let html = buildConnectedUsersHtml(data);
+                if (target.innerHTML != html) {
+                    target.innerHTML = html;
+                }
+            }, 0, _e => {
+                serverUsersRequestPending = false;
+            });
+        }
     }
     if (isVisible(backendsListView)) {
         backendLoopUpdate();
+    }
+}
+
+window.addEventListener('resize', () => {
+    queueServerTabHeightFix();
+});
+for (let id of ['servertabbutton', 'serverinfotabbutton', 'serverbackendstabbutton', 'serverconfigtabbutton', 'manageusersbutton', 'extensionstabbutton', 'logtabbutton']) {
+    let button = document.getElementById(id);
+    if (button) {
+        button.addEventListener('click', () => {
+            queueServerTabHeightFix();
+        });
     }
 }

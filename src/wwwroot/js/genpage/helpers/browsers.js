@@ -760,6 +760,49 @@ class GenPageBrowserClass {
     }
 
     /**
+     * Computes a simple stable hash for a string.
+     */
+    hashStringQuick(text) {
+        let hash = 0;
+        for (let i = 0; i < text.length; i++) {
+            hash = ((hash * 31) + text.charCodeAt(i)) >>> 0;
+        }
+        return hash;
+    }
+
+    /**
+     * Computes a lightweight signature for an entry list.
+     */
+    listSignature(list) {
+        if (!list) {
+            return '0:0';
+        }
+        let hash = list.length;
+        for (let i = 0; i < list.length; i++) {
+            let entry = list[i];
+            let text = '';
+            if (typeof entry == 'string') {
+                text = entry;
+            }
+            else if (entry?.name) {
+                text = entry.name;
+            }
+            else {
+                text = `${entry}`;
+            }
+            hash = ((hash * 131) + this.hashStringQuick(text)) >>> 0;
+        }
+        return `${list.length}:${hash}`;
+    }
+
+    /**
+     * Computes a render signature for skip-when-unchanged behavior.
+     */
+    computeRenderSignature(path, folders, files) {
+        return `${path}|${this.format}|${this.filter}|${this.depth}|${this.folderTreeShowFiles}|${this.isSmallWindow}|${this.noContentUpdates}|${this.listSignature(folders)}|${this.listSignature(files)}`;
+    }
+
+    /**
      * Central call to build the browser content area.
      */
     build(path, folders, files) {
@@ -777,6 +820,21 @@ class GenPageBrowserClass {
         }
         if (files == null) {
             files = this.lastFiles;
+        }
+        let canSkipUnchangedBuild = this.hasGenerated && folders != null && files != null;
+        if (canSkipUnchangedBuild) {
+            let signature = this.computeRenderSignature(path, folders, files);
+            if (signature == this.lastRenderSignature) {
+                this.everLoaded = true;
+                if (this.builtEvent) {
+                    this.builtEvent();
+                }
+                return;
+            }
+            this.lastRenderSignature = signature;
+        }
+        else {
+            this.lastRenderSignature = null;
         }
         this.lastFiles = files;
         this.lastFilesMap = new Map();

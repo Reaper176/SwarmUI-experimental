@@ -206,9 +206,6 @@ function loadServerSettings() {
 }
 
 function loadSettingsEditor() {
-    if (permissions.hasPermission('read_server_settings')) {
-        loadServerSettings();
-    }
     loadUserSettings(() => {
         let inputBatchSize = document.getElementById('input_batchsize');
         let shouldResetBatch = getUserSetting('resetbatchsizetoone', false);

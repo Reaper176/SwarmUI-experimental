@@ -6,6 +6,8 @@ let backends_loaded = {};
 let backendsRevisedCallbacks = [];
 
 let hasLoadedBackends = false;
+let hasLoadedBackendTypes = false;
+let backendTypesLoadPending = false;
 
 function addNewBackend(type_id) {
     if (confirm(`Are you sure you want to add a new backend of type ${backend_types[type_id].name}?`)) {
@@ -245,9 +247,15 @@ function toggleShowAdvancedBackends() {
     }
 }
 
-function loadBackendTypesMenu() {
+function loadBackendTypesMenu(force = false) {
+    if (!force && (hasLoadedBackendTypes || backendTypesLoadPending)) {
+        return;
+    }
+    backendTypesLoadPending = true;
     let addButtonsSection = document.getElementById('backend_add_buttons');
     genericRequest('ListBackendTypes', {}, data => {
+        backendTypesLoadPending = false;
+        hasLoadedBackendTypes = true;
         backend_types = {};
         addButtonsSection.innerHTML = '';
         for (let type of data.list) {
@@ -264,7 +272,13 @@ function loadBackendTypesMenu() {
             addButtonsSection.appendChild(button);
         }
         loadBackendsList();
+    }, 0, _e => {
+        backendTypesLoadPending = false;
     });
+}
+
+function loadBackendTypesMenuOnce() {
+    loadBackendTypesMenu(false);
 }
 
 let backendsListView = document.getElementById('backends_list');
@@ -282,6 +296,10 @@ function isVisible(element) {
 
 function backendLoopUpdate() {
     if (isVisible(backendsListView)) {
+        if (!hasLoadedBackendTypes) {
+            loadBackendTypesMenuOnce();
+            return;
+        }
         serverLogs.onTabButtonClick();
         if (backendsCheckRateCounter++ % 3 == 0) {
             loadBackendsList();
