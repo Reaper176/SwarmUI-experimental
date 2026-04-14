@@ -234,10 +234,6 @@ function loadBackendsList() {
     });
 }
 
-function countBackendsByStatus(status) {
-    return Object.values(backends_loaded).filter(x => x.enabled && x.status == status).length;
-}
-
 function toggleShowAdvancedBackends() {
     let showAdvanced = document.getElementById('backends_show_advanced').checked;
     for (let button of document.querySelectorAll('#backend_add_buttons button')) {

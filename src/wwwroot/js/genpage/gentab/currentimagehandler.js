@@ -1482,48 +1482,6 @@ function imageEditingGetLayerOpacityContext() {
 }
 
 /**
- * Gets the Image Editing layer saturation slider.
- */
-function imageEditingGetLayerSaturationSlider() {
-    return document.getElementById('imageediting_layer_saturation_slider');
-}
-
-/**
- * Gets the Image Editing layer saturation label.
- */
-function imageEditingGetLayerSaturationValue() {
-    return document.getElementById('imageediting_layer_saturation_value');
-}
-
-/**
- * Gets the Image Editing layer saturation context text.
- */
-function imageEditingGetLayerSaturationContext() {
-    return document.getElementById('imageediting_layer_saturation_context');
-}
-
-/**
- * Gets the Image Editing layer light-value slider.
- */
-function imageEditingGetLayerLightValueSlider() {
-    return document.getElementById('imageediting_layer_light_value_slider');
-}
-
-/**
- * Gets the Image Editing layer light-value label.
- */
-function imageEditingGetLayerLightValueValue() {
-    return document.getElementById('imageediting_layer_light_value_value');
-}
-
-/**
- * Gets the Image Editing layer light-value context text.
- */
-function imageEditingGetLayerLightValueContext() {
-    return document.getElementById('imageediting_layer_light_value_context');
-}
-
-/**
  * Gets the Image Editing layer blend-mode select.
  */
 function imageEditingGetLayerBlendModeSelect() {
@@ -2210,34 +2168,6 @@ function imageEditingRefreshLayerAdjustmentControls() {
         imageEditingRefreshLayerAdjustmentControl(def.key);
     }
     imageEditingRefreshToneBalanceControls();
-}
-
-/**
- * Applies the current layer's saturation from the Image Options slider.
- */
-function imageEditingSetActiveLayerSaturationFromSlider() {
-    imageEditingSetActiveLayerAdjustmentFromSliderKey('saturation');
-}
-
-/**
- * Refreshes Image Options controls for the currently selected layer.
- */
-function imageEditingRefreshLayerSaturationControl() {
-    imageEditingRefreshLayerAdjustmentControl('saturation');
-}
-
-/**
- * Applies the current layer's light value from the Image Options slider.
- */
-function imageEditingSetActiveLayerLightValueFromSlider() {
-    imageEditingSetActiveLayerAdjustmentFromSliderKey('light_value');
-}
-
-/**
- * Refreshes Image Options light-value control for the currently selected layer.
- */
-function imageEditingRefreshLayerLightValueControl() {
-    imageEditingRefreshLayerAdjustmentControl('light_value');
 }
 
 /**
