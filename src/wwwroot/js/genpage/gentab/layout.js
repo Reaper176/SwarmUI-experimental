@@ -266,14 +266,16 @@ class GenTabLayout {
         setCookie('barspot_pageBarMidPx', this.bottomSectionBarPos, 365);
         setCookie('barspot_imageEditorSizeBar', this.imageEditorBarPos, 365);
         this.toolContainer.style.minHeight = `calc(100% - ${this.toolContainer.getBoundingClientRect().top - this.toolContainer.parentElement.getBoundingClientRect().top}px - 1.5rem)`;
-        let barTopLeft = leftShut ? `0px` : this.leftSectionBarPos == -1 ? (this.isSmallWindow ? `14rem` : `28rem`) : `${this.leftSectionBarPos}px`;
-        let barTopRight = this.rightSectionBarPos == -1 ? (this.isSmallWindow ? `4rem` : `21rem`) : `${this.rightSectionBarPos}px`;
-        let curImgWidth = `100vw - ${barTopLeft} - ${barTopRight} - 10px`;
-        // TODO: this 'eval()' hack to read the size in advance is a bit cursed.
         let fontRem = parseFloat(getComputedStyle(document.documentElement).fontSize);
-        let curImgWidthNum = eval(curImgWidth.replace(/vw/g, `* ${window.innerWidth * 0.01}`).replace(/rem/g, `* ${fontRem}`).replace(/px/g, ''));
+        let barTopLeftPx = leftShut ? 0 : this.leftSectionBarPos == -1 ? (this.isSmallWindow ? 14 * fontRem : 28 * fontRem) : this.leftSectionBarPos;
+        let barTopRightPx = this.rightSectionBarPos == -1 ? (this.isSmallWindow ? 4 * fontRem : 21 * fontRem) : this.rightSectionBarPos;
+        let barTopLeft = `${barTopLeftPx}px`;
+        let barTopRight = `${barTopRightPx}px`;
+        let curImgWidth = `100vw - ${barTopLeft} - ${barTopRight} - 10px`;
+        let curImgWidthNum = window.innerWidth - barTopLeftPx - barTopRightPx - 10;
         if (curImgWidthNum < 400 && !this.isSmallWindow) {
-            barTopRight = `${barTopRight} + ${400 - curImgWidthNum}px`;
+            barTopRightPx += 400 - curImgWidthNum;
+            barTopRight = `${barTopRightPx}px`;
             curImgWidth = `100vw - ${barTopLeft} - ${barTopRight} - 10px`;
         }
         if (this.isSmallWindow && (this.rightSectionBarPos > 0 || !this.bottomShut)) {

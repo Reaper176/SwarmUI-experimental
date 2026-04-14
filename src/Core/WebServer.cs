@@ -47,6 +47,42 @@ public class WebServer
     /// <summary>Minimum ASP.NET Log Level.</summary>
     public static LogLevel LogLevel;
 
+    /// <summary>Cached raw `AuthBypassIPs` setting text.</summary>
+    public static string AuthBypassIPsRawCache = null;
+
+    /// <summary>Cached parsed set of auth-bypass IPs.</summary>
+    public static HashSet<string> AuthBypassIPsCache = [];
+
+    /// <summary>Lock for auth bypass cache rebuilds.</summary>
+    public static readonly object AuthBypassIPsCacheLock = new();
+
+    /// <summary>Returns true if a remote IP is currently configured to bypass auth checks.</summary>
+    public static bool IsAuthBypassIP(string remoteIp)
+    {
+        string rawBypass = Program.ServerSettings.Network.AuthBypassIPs ?? "";
+        if (rawBypass != AuthBypassIPsRawCache)
+        {
+            lock (AuthBypassIPsCacheLock)
+            {
+                if (rawBypass != AuthBypassIPsRawCache)
+                {
+                    HashSet<string> parsed = [];
+                    foreach (string ip in rawBypass.SplitFast(','))
+                    {
+                        string trimmed = ip.Trim();
+                        if (!string.IsNullOrWhiteSpace(trimmed))
+                        {
+                            parsed.Add(trimmed);
+                        }
+                    }
+                    AuthBypassIPsCache = parsed;
+                    AuthBypassIPsRawCache = rawBypass;
+                }
+            }
+        }
+        return AuthBypassIPsCache.Contains(remoteIp);
+    }
+
     /// <summary>Like a <see cref="Lazy{T}"/>, but lets you dynamically re-call the getter if you need to.</summary>
     public class LazyOrReusable<T>(Func<T> getter)
     {
@@ -152,17 +188,19 @@ public class WebServer
             {
                 string host = context.Request.Headers.Host[0].ToLowerFast();
                 string origin = context.Request.Headers.Origin[0].ToLowerFast();
-                Uri uri = new(origin);
-                string originMain = uri.Authority.ToLowerFast();
-                if (host != originMain)
+                if (Uri.TryCreate(origin, UriKind.Absolute, out Uri uri))
                 {
-                    // TODO: Instate this check fully only after comfy's version is stable.
-                    // Swarm doesn't technically need it (as we have session token checks) but still better to validate
-                    /*
-                    context.Response.StatusCode = 403;
-                    await context.Response.WriteAsync("Forbidden");
-                    return;
-                    */
+                    string originMain = uri.Authority.ToLowerFast();
+                    if (host != originMain)
+                    {
+                        // TODO: Instate this check fully only after comfy's version is stable.
+                        // Swarm doesn't technically need it (as we have session token checks) but still better to validate
+                        /*
+                        context.Response.StatusCode = 403;
+                        await context.Response.WriteAsync("Forbidden");
+                        return;
+                        */
+                    }
                 }
             }
             if (!string.IsNullOrWhiteSpace(Program.ServerSettings.Network.AccessControlAllowOrigin))
@@ -189,7 +227,7 @@ public class WebServer
                     {
                         remoteIp = addr.MapToIPv4().ToString();
                     }
-                    if (!Program.ServerSettings.Network.AuthBypassIPs.SplitFast(',').Contains(remoteIp))
+                    if (!IsAuthBypassIP(remoteIp))
                     {
                         if (string.IsNullOrWhiteSpace(authHeader))
                         {

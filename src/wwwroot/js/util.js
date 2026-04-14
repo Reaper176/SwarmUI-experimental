@@ -1,25 +1,31 @@
 /** Dirt-simple direct POST request sender. */
 function sendJsonToServer(url, json_input, callback, error_callback) {
-    var xhr = new XMLHttpRequest();
+    let xhr = new XMLHttpRequest();
     xhr.open('POST', url, true);
     xhr.responseType = 'json';
+    xhr.timeout = window.swarmXhrTimeoutMs || 30000;
     xhr.onload = function() {
         callback(xhr.status, xhr.response);
     };
     xhr.onerror = error_callback;
+    xhr.ontimeout = error_callback;
+    xhr.onabort = error_callback;
     xhr.setRequestHeader('Content-Type', 'application/json');
     xhr.send(JSON.stringify(json_input));
 };
 
 /** Dirt-simple direct GET request sender. */
 function getJsonDirect(url, callback, error_callback) {
-    var xhr = new XMLHttpRequest();
+    let xhr = new XMLHttpRequest();
     xhr.open('GET', url, true);
     xhr.responseType = 'json';
+    xhr.timeout = window.swarmXhrTimeoutMs || 30000;
     xhr.onload = function() {
         callback(xhr.status, xhr.response);
     };
     xhr.onerror = error_callback;
+    xhr.ontimeout = error_callback;
+    xhr.onabort = error_callback;
     xhr.setRequestHeader('Content-Type', 'application/json');
     xhr.send();
 };

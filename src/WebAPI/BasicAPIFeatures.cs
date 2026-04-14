@@ -117,7 +117,7 @@ public static class BasicAPIFeatures
             Logs.Warning($"Login attempt from {ip} as {username}, failed due to session creation failure.");
             return new JObject() { ["error_id"] = "internal_error" };
         }
-        context.Response.Cookies.Append("swarm_token", tok, new CookieOptions() { HttpOnly = true, Expires = DateTimeOffset.UtcNow.AddYears(1), SameSite = SameSiteMode.Lax });
+        context.Response.Cookies.Append("swarm_token", tok, new CookieOptions() { HttpOnly = true, Expires = DateTimeOffset.UtcNow.AddYears(1), SameSite = SameSiteMode.Lax, Secure = context.Request.IsHttps });
         Logs.Info($"Login attempt from {ip} as {username}, successful.");
         return new JObject() { ["success"] = "true" };
     }
@@ -309,7 +309,7 @@ public static class BasicAPIFeatures
                 Program.Sessions.RemoveSession(sess);
             }
         }
-        context.Response.Cookies.Append("swarm_token", "", new CookieOptions() { HttpOnly = true, MaxAge = TimeSpan.FromSeconds(-1), SameSite = SameSiteMode.Lax });
+        context.Response.Cookies.Append("swarm_token", "", new CookieOptions() { HttpOnly = true, MaxAge = TimeSpan.FromSeconds(-1), SameSite = SameSiteMode.Lax, Secure = context.Request.IsHttps });
         return new JObject() { ["success"] = "true" };
     }
 

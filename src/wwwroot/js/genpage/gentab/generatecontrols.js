@@ -25,13 +25,47 @@ let genForeverInterval, genPreviewsInterval;
 
 let lastGenForeverParams = null;
 
+function deepEqualParams(a, b) {
+    if (a == b) {
+        return true;
+    }
+    if (a == null || b == null || typeof a != typeof b) {
+        return false;
+    }
+    if (Array.isArray(a)) {
+        if (!Array.isArray(b) || a.length != b.length) {
+            return false;
+        }
+        for (let i = 0; i < a.length; i++) {
+            if (!deepEqualParams(a[i], b[i])) {
+                return false;
+            }
+        }
+        return true;
+    }
+    if (typeof a == 'object') {
+        let keysA = Object.keys(a);
+        let keysB = Object.keys(b);
+        if (keysA.length != keysB.length) {
+            return false;
+        }
+        for (let key of keysA) {
+            if (!(key in b) || !deepEqualParams(a[key], b[key])) {
+                return false;
+            }
+        }
+        return true;
+    }
+    return false;
+}
+
 function doGenForeverOnce(minQueueSize) {
     if (num_waiting_gens >= minQueueSize) {
         return;
     }
     let allParams = getGenInput();
     if (allParams['seed'] != -1 && allParams['variationseed'] != -1) {
-        if (lastGenForeverParams && JSON.stringify(lastGenForeverParams) == JSON.stringify(allParams)) {
+        if (lastGenForeverParams && deepEqualParams(lastGenForeverParams, allParams)) {
             return;
         }
         lastGenForeverParams = allParams;
@@ -66,7 +100,7 @@ let lastPreviewParams = null;
 
 function genOnePreview() {
     let allParams = getGenInput();
-    if (lastPreviewParams && JSON.stringify(lastPreviewParams) == JSON.stringify(allParams)) {
+    if (lastPreviewParams && deepEqualParams(lastPreviewParams, allParams)) {
         return;
     }
     lastPreviewParams = allParams;

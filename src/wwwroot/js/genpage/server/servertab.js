@@ -130,13 +130,18 @@ class UserAdminManager {
     }
 
     buildUserList() {
-        let html = '';
+        this.leftBoxUserList.innerHTML = '';
         for (let user of this.userNames) {
             if (!this.filterBox.value || user.includes(this.filterBox.value)) {
-                html += `<div class="admin-user-manage-name" onclick="userAdminManager.clickUser(unescapeHtml('${escapeHtml(user)}'))" title="Click to manage user '${escapeHtml(user)}'">${escapeHtml(user)}</div>`;
+                let row = createDiv(null, 'admin-user-manage-name');
+                row.innerText = user;
+                row.title = `Click to manage user '${user}'`;
+                row.addEventListener('click', () => {
+                    this.clickUser(user);
+                });
+                this.leftBoxUserList.appendChild(row);
             }
         }
-        this.leftBoxUserList.innerHTML = html;
     }
 
     setNothingDisplayed() {
@@ -169,16 +174,32 @@ class UserAdminManager {
         };
         let prefix = `admin_edit_user_${escapeHtml(name)}_settings_`;
         this.rightBox.innerHTML = `<div class="admin-user-right-titlebar">User: <span class="admin-user-right-titlebar-name">${escapeHtml(name)}</span></div>`
-            + (name == user_id ? `<div class="admin-user-manage-notice translate">This is you! You shouldn't admin-edit yourself.</div>` : `<button type="button" class="basic-button translate" onclick="userAdminManager.deleteUser(unescapeHtml('${escapeHtml(name)}'))">Delete User</button> <button type="button" class="basic-button translate" onclick="userAdminManager.impersonateUser(unescapeHtml('${escapeHtml(name)}'))">Impersonate User</button>`)
-            + `<br><br><button type="button" class="basic-button translate" onclick="userAdminManager.editUserPw(unescapeHtml('${escapeHtml(name)}'))">Change User Password</button>`
+            + (name == user_id ? `<div class="admin-user-manage-notice translate">This is you! You shouldn't admin-edit yourself.</div>` : `<button type="button" class="basic-button translate user-admin-delete-btn">Delete User</button> <button type="button" class="basic-button translate user-admin-impersonate-btn">Impersonate User</button>`)
+            + `<br><br><button type="button" class="basic-button translate user-admin-password-btn">Change User Password</button>`
             + `&emsp;<span class="translate">Password was set by: </span><b class="translate password-set-by-field"></b>`
-            + `<br><span class="translate">OAuth email: </span><input type="text" class="translate oauth-email-field" value="" /> <button type="button" class="basic-button translate" onclick="userAdminManager.editUserOAuth(unescapeHtml('${escapeHtml(name)}'))">Apply OAuth Email Change</button>`
+            + `<br><span class="translate">OAuth email: </span><input type="text" class="translate oauth-email-field" value="" /> <button type="button" class="basic-button translate user-admin-oauth-btn">Apply OAuth Email Change</button>`
             + `<br><br><div class="admin_edit_user_settings_container" id="admin_edit_user_settings_container"></div>
             <div class="settings_submit_confirmer" id="${prefix}confirmer">
                 <span class="settings_submit_confirmer_text">Save <span id="${prefix}edit_count">0</span> edited setting(s)?</span>
                 <button type="button" class="btn btn-primary basic-button translate" onclick="userAdminManager.saveUserSettings()">Save</button>
                 <button type="button" class="btn btn-secondary basic-button translate" onclick="userAdminManager.cancelUserSettings()">Cancel</button>
             </div>`;
+        let deleteBtn = this.rightBox.querySelector('.user-admin-delete-btn');
+        if (deleteBtn) {
+            deleteBtn.addEventListener('click', () => this.deleteUser(name));
+        }
+        let impersonateBtn = this.rightBox.querySelector('.user-admin-impersonate-btn');
+        if (impersonateBtn) {
+            impersonateBtn.addEventListener('click', () => this.impersonateUser(name));
+        }
+        let passwordBtn = this.rightBox.querySelector('.user-admin-password-btn');
+        if (passwordBtn) {
+            passwordBtn.addEventListener('click', () => this.editUserPw(name));
+        }
+        let oauthBtn = this.rightBox.querySelector('.user-admin-oauth-btn');
+        if (oauthBtn) {
+            oauthBtn.addEventListener('click', () => this.editUserOAuth(name));
+        }
         let userSettingsContainer = getRequiredElementById('admin_edit_user_settings_container');
         genericRequest('AdminGetUserInfo', {'name': name}, data => {
             if (this.displayedUser != name) {
@@ -466,26 +487,34 @@ class UserAdminManager {
         genericRequest('AdminListRoles', {}, data => {
             this.roles = data.roles;
             let selected = this.addUserRoleInput.value;
-            let optionListHtml = '';
+            this.addUserRoleInput.innerHTML = '';
             for (let roleId of Object.keys(data.roles)) {
                 let role = data.roles[roleId];
-                optionListHtml += `<option value="${escapeHtml(roleId)}" title="${escapeHtml(role.description)}">${escapeHtml(role.name)}</option>`;
+                let option = document.createElement('option');
+                option.value = roleId;
+                option.title = role.description || '';
+                option.innerText = role.name || roleId;
+                this.addUserRoleInput.appendChild(option);
             }
-            this.addUserRoleInput.innerHTML = optionListHtml;
             this.addUserRoleInput.value = selected;
             this.buildRoleList();
         });
     }
 
     buildRoleList() {
-        let roleListHtml = '';
+        this.leftBoxRoleList.innerHTML = '';
         for (let roleId of Object.keys(this.roles)) {
             let role = this.roles[roleId];
             if (!this.filterBox.value || role.name.includes(this.filterBox.value) || roleId.includes(this.filterBox.value)) {
-                roleListHtml += `<div class="admin-user-manage-name" onclick="userAdminManager.clickRole('${escapeHtml(roleId)}')" title="${escapeHtml(role.description)}">${escapeHtml(role.name)}</div>`;
+                let row = createDiv(null, 'admin-user-manage-name');
+                row.innerText = role.name;
+                row.title = role.description || '';
+                row.addEventListener('click', () => {
+                    this.clickRole(roleId);
+                });
+                this.leftBoxRoleList.appendChild(row);
             }
         }
-        this.leftBoxRoleList.innerHTML = roleListHtml;
     }
 
     showAddUserMenu() {
@@ -588,7 +617,7 @@ function buildResourceUsageHtml(data) {
     let html = '<table class="simple-table"><tr><th>Resource</th><th>ID</th><th>Temp</th><th>Usage</th><th>Mem Usage</th><th>Used Mem</th><th>Free Mem</th><th>Total Mem</th></tr>';
     html += `<tr><td>CPU</td><td>...</td><td>...</td><td>${Math.round(data.cpu.usage * 100)}% (${data.cpu.cores} cores)</td><td>${Math.round(data.system_ram.used / data.system_ram.total * 100)}%</td><td>${fileSizeStringify(data.system_ram.used)}</td><td>${fileSizeStringify(data.system_ram.free)}</td><td>${fileSizeStringify(data.system_ram.total)}</td></tr>`;
     for (let gpu of Object.values(data.gpus)) {
-        html += `<tr><td>${gpu.name}</td><td>${gpu.id}</td><td>${gpu.temperature}&deg;C</td><td>${gpu.utilization_gpu}% Core, ${gpu.utilization_memory}% Mem</td><td>${Math.round(gpu.used_memory / gpu.total_memory * 100)}%</td><td>${fileSizeStringify(gpu.used_memory)}</td><td>${fileSizeStringify(gpu.free_memory)}</td><td>${fileSizeStringify(gpu.total_memory)}</td></tr>`;
+        html += `<tr><td>${escapeHtml(`${gpu.name}`)}</td><td>${escapeHtml(`${gpu.id}`)}</td><td>${escapeHtml(`${gpu.temperature}`)}&deg;C</td><td>${escapeHtml(`${gpu.utilization_gpu}`)}% Core, ${escapeHtml(`${gpu.utilization_memory}`)}% Mem</td><td>${Math.round(gpu.used_memory / gpu.total_memory * 100)}%</td><td>${fileSizeStringify(gpu.used_memory)}</td><td>${fileSizeStringify(gpu.free_memory)}</td><td>${fileSizeStringify(gpu.total_memory)}</td></tr>`;
     }
     html += '</table>';
     return html;
@@ -597,8 +626,12 @@ function buildResourceUsageHtml(data) {
 function buildConnectedUsersHtml(data) {
     let html = '<table class="simple-table"><tr><th>Name</th><th>Last Active</th><th>Active Sessions</th><th>Current Gens</th></tr>';
     for (let user of data.users) {
-        let button = (user.waiting_gens == 0 && user.loading_models == 0 && user.waiting_backends == 0 && user.live_gens == 0) ? '' : `<button class="basic-button" onclick="adminInterruptUser('${escapeHtml(user.id)}')">Interrupt</button>`;
-        html += `<tr><td>${user.id}</td><td>${user.last_active}</td><td>${user.active_sessions.map(sess => `${sess.count}x from ${sess.address}`).join(', ')}</td><td>${currentGenString(user.waiting_gens, user.loading_models, user.live_gens, user.waiting_backends)}${button}</td></tr>`;
+        let button = '';
+        if (user.waiting_gens != 0 || user.loading_models != 0 || user.waiting_backends != 0 || user.live_gens != 0) {
+            button = `<button class="basic-button server-interrupt-user" data-user-id="${escapeHtml(`${user.id}`)}">Interrupt</button>`;
+        }
+        let sessionInfo = user.active_sessions.map(sess => `${sess.count}x from ${sess.address}`).join(', ');
+        html += `<tr><td>${escapeHtml(`${user.id}`)}</td><td>${escapeHtml(`${user.last_active}`)}</td><td>${escapeHtml(sessionInfo)}</td><td>${currentGenString(user.waiting_gens, user.loading_models, user.live_gens, user.waiting_backends)}${button}</td></tr>`;
     }
     html += '</table>';
     return html;
@@ -799,6 +832,11 @@ function serverResourceLoop() {
                 let html = buildConnectedUsersHtml(data);
                 if (target.innerHTML != html) {
                     target.innerHTML = html;
+                    for (let button of target.querySelectorAll('.server-interrupt-user')) {
+                        button.addEventListener('click', () => {
+                            adminInterruptUser(button.dataset.userId);
+                        });
+                    }
                 }
             }, 0, _e => {
                 serverUsersRequestPending = false;
