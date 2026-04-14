@@ -1114,10 +1114,19 @@ class ImageEditor {
             e.stopPropagation();
         });
         overlayCanvas.addEventListener('drop', (e) => this.handleCanvasImageDrop(e));
-        overlayCanvas.addEventListener('contextmenu', (e) => {
-            if (this.activeTool && this.activeTool.onContextMenu(e)) {
-                e.preventDefault();
+        canvas.addEventListener('drop', (e) => this.handleCanvasImageDrop(e));
+        let onCanvasContextMenu = (e) => {
+            let handled = this.activeTool && this.activeTool.onContextMenu(e);
+            e.preventDefault();
+            if (handled) {
+                e.stopPropagation();
             }
+        };
+        overlayCanvas.addEventListener('contextmenu', (e) => {
+            onCanvasContextMenu(e);
+        });
+        canvas.addEventListener('contextmenu', (e) => {
+            onCanvasContextMenu(e);
         });
         this.sceneCtx = canvas.getContext('2d');
         this.ctx = this.sceneCtx;
@@ -1359,6 +1368,9 @@ class ImageEditor {
         if (this.altDown || e.button == 1) {
             this.handleAltDown();
         }
+        if (e.button == 2 && this.activeTool && !this.activeTool.onRightMouseDown(e)) {
+            this.handleAltDown();
+        }
         this.mouseDown = true;
         this.activeTool.onMouseDown(e);
         this.queueOverlayRedraw();
@@ -1398,7 +1410,7 @@ class ImageEditor {
             return;
         }
         this.updateMousePosFrom(e);
-        if (e.button == 1) {
+        if (e.button == 1 || e.button == 2) {
             this.handleAltUp();
         }
         let wasDown = this.mouseDown;
