@@ -495,6 +495,7 @@ class ModelBrowserWrapper {
         extraHeader += `<label for="models_${subType}_sort_by">Sort:</label> <select id="models_${subType}_sort_by"><option>Name</option><option>Title</option><option>DateCreated</option><option>DateModified</option></select> <input type="checkbox" id="models_${subType}_sort_reverse"> <label for="models_${subType}_sort_reverse">Reverse</label>`;
         this.browser = new GenPageBrowserClass(container, this.listModelFolderAndFiles.bind(this), id, format, this.describeModel.bind(this), this.selectModel.bind(this), extraHeader);
         this.mediaWindowManager = new BrowserMediaWindowManager(8, 2);
+        this.browser.enableDescriptionCache = true;
         if (subType != 'Wildcards') {
             this.browser.filterMatcher = this.browserFilterMatches.bind(this);
             this.browser.filterSorter = this.browserFilterSorter.bind(this);
@@ -1296,18 +1297,20 @@ class ModelBrowserWrapper {
         this.willRebuildSelected = true;
         setTimeout(() => {
             this.willRebuildSelected = false;
-            for (let child of this.browser.contentDiv.children) {
+            let children = this.browser.contentDiv.children;
+            for (let i = 0; i < children.length; i++) {
+                let child = children[i];
                 if (child.dataset.name) {
                     let hasSelectedClass = child.classList.contains('model-selected');
                     let isSelected = this.isSelected(child.dataset.name);
-                    if (hasSelectedClass == isSelected) {
-                        continue;
-                    }
                     if (this.isStarred(child.dataset.name)) {
                         child.classList.add('model-starred');
                     }
                     else {
                         child.classList.remove('model-starred');
+                    }
+                    if (hasSelectedClass == isSelected) {
+                        continue;
                     }
                     if (isSelected) {
                         child.classList.add('model-selected');
@@ -1322,12 +1325,17 @@ class ModelBrowserWrapper {
                         }
                         if (this.subType != 'Wildcards') {
                             if (model.data.loaded) {
-                                child.classList.add('model.loaded');
+                                child.classList.add('model-loaded');
+                                child.classList.remove('model-unavailable');
                             }
                             else {
                                 let isCorrect = this.subType == 'Stable-Diffusion' || isModelArchCorrect(model.data);
+                                child.classList.remove('model-loaded');
                                 if (!isCorrect) {
                                     child.classList.add('model-unavailable');
+                                }
+                                else {
+                                    child.classList.remove('model-unavailable');
                                 }
                             }
                         }

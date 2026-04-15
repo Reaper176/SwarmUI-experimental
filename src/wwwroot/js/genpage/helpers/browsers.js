@@ -283,6 +283,8 @@ class GenPageBrowserClass {
         this.filterUpdateDelayMs = 120;
         this.lastFiles = [];
         this.lastFilesMap = new Map();
+        this.describeCache = new Map();
+        this.enableDescriptionCache = false;
         this.maxPreBuild = 512;
         this.chunksRendered = 0;
         this.rerenderPlanned = false;
@@ -440,6 +442,7 @@ class GenPageBrowserClass {
      */
     lightRefresh() {
         this.lastListCache = null;
+        this.describeCache.clear();
         this.update();
     }
 
@@ -455,6 +458,7 @@ class GenPageBrowserClass {
         if (isRefresh) {
             this.tree = new BrowserTreePart('', false, null, null, '');
             this.contentDiv.scrollTop = 0;
+            this.describeCache.clear();
         }
         let folder = this.folder;
         let parseContent = (folders, files) => {
@@ -676,7 +680,7 @@ class GenPageBrowserClass {
         if (requiresDescribedEntries) {
             for (let entry of entries) {
                 if (entry.desc == null) {
-                    entry.desc = this.describe(entry.file);
+                    entry.desc = this.describeEntry(entry.file);
                 }
             }
             entries = entries.filter(entry => this.filterMatchesEntry(entry.desc));
@@ -701,7 +705,7 @@ class GenPageBrowserClass {
             let file = entry.file;
             let desc = entry.desc;
             if (desc == null) {
-                desc = this.describe(file);
+                desc = this.describeEntry(file);
                 entry.desc = desc;
             }
             id++;
@@ -892,6 +896,22 @@ class GenPageBrowserClass {
         setTimeout(() => {
             browserUtil.queueMakeVisible(container);
         }, 100);
+    }
+
+    /**
+     * Gets a described browser entry, using the optional cache when enabled.
+     */
+    describeEntry(file) {
+        if (!this.enableDescriptionCache || !file?.name) {
+            return this.describe(file);
+        }
+        let cached = this.describeCache.get(file.name);
+        if (cached) {
+            return cached;
+        }
+        let desc = this.describe(file);
+        this.describeCache.set(file.name, desc);
+        return desc;
     }
 
     /**
