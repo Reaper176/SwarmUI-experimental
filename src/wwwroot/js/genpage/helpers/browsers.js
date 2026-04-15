@@ -660,19 +660,27 @@ class GenPageBrowserClass {
      */
     buildContentList(container, files, before = null, startId = 0) {
         let entries = [];
+        let requiresDescribedEntries = !!this.filter;
         for (let i = 0; i < files.length; i++) {
             let file = files[i];
-            if (file?.file != null && file?.desc != null) {
+            if (file?.file != null) {
                 if (file.browserSortIndex == null) {
                     file.browserSortIndex = i;
                 }
                 entries.push(file);
             }
             else {
-                entries.push({ file, desc: this.describe(file), browserSortIndex: i });
+                entries.push({ file, desc: null, browserSortIndex: i });
             }
         }
-        entries = entries.filter(entry => this.filterMatchesEntry(entry.desc));
+        if (requiresDescribedEntries) {
+            for (let entry of entries) {
+                if (entry.desc == null) {
+                    entry.desc = this.describe(entry.file);
+                }
+            }
+            entries = entries.filter(entry => this.filterMatchesEntry(entry.desc));
+        }
         if (this.filter && this.filterSorter) {
             let sortedEntries = this.filterSorter(entries, this.filter);
             if (sortedEntries) {
@@ -692,6 +700,10 @@ class GenPageBrowserClass {
             let entry = entries[i];
             let file = entry.file;
             let desc = entry.desc;
+            if (desc == null) {
+                desc = this.describe(file);
+                entry.desc = desc;
+            }
             id++;
             if (i > maxBuildNow) {
                 let remainingEntries = entries.slice(i);
@@ -1069,10 +1081,14 @@ class GenPageBrowserClass {
                 if (this.filterUpdateTimeout) {
                     clearTimeout(this.filterUpdateTimeout);
                 }
+                let delayMs = this.filterUpdateDelayMs;
+                if ((this.lastFiles?.length || 0) > 1000) {
+                    delayMs = Math.max(delayMs, 220);
+                }
                 this.filterUpdateTimeout = setTimeout(() => {
                     this.filterUpdateTimeout = null;
                     this.update();
-                }, this.filterUpdateDelayMs);
+                }, delayMs);
             });
             if (!this.showFilter) {
                 filterInput.parentElement.style.display = 'none';
