@@ -11,8 +11,153 @@ let imageHistoryLoadToken = 0;
 const IMAGE_HISTORY_METADATA_CACHE_LIMIT = 1024;
 const IMAGE_HISTORY_AUTO_RETRY_DELAY_MS = 1500;
 const IMAGE_HISTORY_FAST_FIRST_LIMIT = 128;
+let IMAGE_HISTORY_UNLOAD_ROW_BUFFER = 10;
+let IMAGE_HISTORY_MIN_MEDIA_ROWS_TO_UNLOAD = 2;
 const imageHistoryMetadataCache = new Map();
 let registeredMediaButtons = [];
+
+class ImageHistoryWindowManager {
+    constructor() {
+        this.content = null;
+        this.updateQueued = false;
+        this.boundScroll = this.queueUpdate.bind(this);
+        this.boundResize = this.queueUpdate.bind(this);
+    }
+
+    attach(content) {
+        if (this.content == content) {
+            this.queueUpdate();
+            return;
+        }
+        if (this.content) {
+            this.content.removeEventListener('scroll', this.boundScroll);
+        }
+        this.content = content;
+        if (this.content) {
+            this.content.addEventListener('scroll', this.boundScroll);
+        }
+        window.removeEventListener('resize', this.boundResize);
+        window.addEventListener('resize', this.boundResize);
+        this.queueUpdate();
+    }
+
+    getEntries() {
+        if (!this.content) {
+            return [];
+        }
+        return Array.from(this.content.children).filter(entry => entry?.dataset?.name);
+    }
+
+    queueUpdate() {
+        if (!this.content || this.updateQueued) {
+            return;
+        }
+        this.updateQueued = true;
+        let run = () => {
+            this.updateQueued = false;
+            this.updateVisibleWindow();
+        };
+        if (window.requestAnimationFrame) {
+            requestAnimationFrame(run);
+        }
+        else {
+            setTimeout(run, 16);
+        }
+    }
+
+    hydrateEntry(entry) {
+        let img = entry.querySelector('img.image-block-img-inner');
+        if (!img || !img.dataset.origSrc) {
+            return false;
+        }
+        if (img.getAttribute('src')) {
+            return false;
+        }
+        img.dataset.src = img.dataset.origSrc;
+        img.classList.add('lazyload');
+        return true;
+    }
+
+    dehydrateEntry(entry) {
+        let img = entry.querySelector('img.image-block-img-inner');
+        if (!img || !img.dataset.origSrc) {
+            return;
+        }
+        if (!img.getAttribute('src') && img.dataset.src == img.dataset.origSrc) {
+            return;
+        }
+        img.classList.add('lazyload');
+        img.dataset.src = img.dataset.origSrc;
+        img.removeAttribute('src');
+    }
+
+    buildRows(entries) {
+        let rows = [];
+        for (let entry of entries) {
+            let top = entry.offsetTop;
+            let bottom = top + entry.offsetHeight;
+            let lastRow = rows.length > 0 ? rows[rows.length - 1] : null;
+            if (!lastRow || Math.abs(lastRow.top - top) > 4) {
+                rows.push({ top, bottom, entries: [entry] });
+                continue;
+            }
+            lastRow.entries.push(entry);
+            lastRow.bottom = Math.max(lastRow.bottom, bottom);
+        }
+        return rows;
+    }
+
+    updateVisibleWindow() {
+        if (!this.content || !this.content.isConnected) {
+            return;
+        }
+        let entries = this.getEntries();
+        if (entries.length == 0) {
+            return;
+        }
+        let rows = this.buildRows(entries);
+        if (rows.length == 0) {
+            return;
+        }
+        let scrollTop = this.content.scrollTop;
+        let scrollBottom = scrollTop + this.content.clientHeight;
+        let visibleStart = 0;
+        let visibleEnd = rows.length - 1;
+        for (let i = 0; i < rows.length; i++) {
+            if (rows[i].bottom >= scrollTop) {
+                visibleStart = i;
+                break;
+            }
+        }
+        for (let i = rows.length - 1; i >= 0; i--) {
+            if (rows[i].top <= scrollBottom) {
+                visibleEnd = i;
+                break;
+            }
+        }
+        let keepStart = Math.max(0, visibleStart - IMAGE_HISTORY_UNLOAD_ROW_BUFFER);
+        let keepEnd = Math.min(rows.length - 1, visibleEnd + IMAGE_HISTORY_UNLOAD_ROW_BUFFER);
+        let hydrateQueued = false;
+        for (let i = 0; i < rows.length; i++) {
+            let row = rows[i];
+            if (i >= keepStart && i <= keepEnd) {
+                for (let entry of row.entries) {
+                    hydrateQueued = this.hydrateEntry(entry) || hydrateQueued;
+                }
+            }
+            else if (i < keepStart - IMAGE_HISTORY_MIN_MEDIA_ROWS_TO_UNLOAD || i > keepEnd + IMAGE_HISTORY_MIN_MEDIA_ROWS_TO_UNLOAD) {
+                for (let entry of row.entries) {
+                    this.dehydrateEntry(entry);
+                }
+            }
+        }
+        if (hydrateQueued) {
+            browserUtil.queueMakeVisible(this.content);
+        }
+    }
+}
+
+let imageHistoryWindowManager = new ImageHistoryWindowManager();
 
 /** Registers a media button for extensions. 'mediaTypes' filters by type eg ['audio'], null means all. 'isDefault' promotes to visible (vs More dropdown). 'showInHistory' controls whether button appears in the History panel. */
 function registerMediaButton(name, action, title = '', mediaTypes = null, isDefault = false, showInHistory = true, href = null, is_download = false, can_multi = false, multi_only = false) {
@@ -800,12 +945,15 @@ imageHistoryBrowser.builtEvent = () => {
     ensureImageHistoryStatusReady();
     pruneImageHistorySelectionToCurrentFiles();
     updateImageHistoryBulkControls();
+    imageHistoryWindowManager.attach(imageHistoryBrowser.contentDiv);
 };
 
 getRequiredElementById('imagehistorytabclickable').addEventListener('shown.bs.tab', () => {
     let historyContent = document.getElementById('imagehistorybrowser-content');
     if (historyContent) {
         browserUtil.queueMakeVisible(historyContent);
+        imageHistoryWindowManager.attach(historyContent);
+        imageHistoryWindowManager.queueUpdate();
     }
 });
 

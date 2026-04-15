@@ -73,7 +73,35 @@ let swarmImageCardRegistry = {
         this.register(card);
     },
 
+    pruneDisconnected() {
+        for (let [card] of this.cardToKeys) {
+            if (!card || !card.isConnected) {
+                this.unregister(card);
+            }
+        }
+        for (let [key, cards] of this.byCanonicalSrc) {
+            if (!cards || cards.size == 0) {
+                this.byCanonicalSrc.delete(key);
+                continue;
+            }
+            for (let card of [...cards]) {
+                if (!card || !card.isConnected) {
+                    cards.delete(card);
+                }
+            }
+            if (cards.size == 0) {
+                this.byCanonicalSrc.delete(key);
+            }
+        }
+        for (let card of [...this.currentCards]) {
+            if (!card || !card.isConnected) {
+                this.currentCards.delete(card);
+            }
+        }
+    },
+
     forSource(src, callback) {
+        this.pruneDisconnected();
         let key = this.canonicalize(src);
         if (!key) {
             return;
@@ -888,14 +916,27 @@ function clickImageInBatch(div) {
     setCurrentImage(div.dataset.src, div.dataset.metadata, div.dataset.batch_id ?? '', imgElem && imgElem.dataset.previewGrow == 'true', false, true, div.dataset.is_placeholder == 'true');
 }
 
+function cleanupBatchContainerIfEmpty(div) {
+    let parent = div?.parentElement;
+    if (!parent || parent.id == 'current_image_batch') {
+        return;
+    }
+    if (parent.children.length > 0) {
+        return;
+    }
+    parent.remove();
+}
+
 /** Removes a preview thumbnail and moves to either previous or next image. */
 function removeImageBlockFromBatch(div, shift = false) {
     if (!div.classList.contains('image-block-current')) {
         div.remove();
+        cleanupBatchContainerIfEmpty(div);
         return;
     }
     let chosen = div.previousElementSibling || div.nextElementSibling;
     div.remove();
+    cleanupBatchContainerIfEmpty(div);
     if (shift && chosen) {
         clickImageInBatch(chosen);
     }
@@ -3309,6 +3350,10 @@ function openGenerateTabEditorForImage(img, actionLabel = 'Edit Image', retryCou
         inputAspectRatio.value = 'Custom';
         triggerChangeFor(inputAspectRatio);
     }
+    if (!ensureGenerateImageEditorReady()) {
+        showError(`Cannot use "${actionLabel}": Generate tab editor is unavailable.`);
+        return false;
+    }
     imageEditor.setBaseImage(img);
     imageEditor.activate();
     return true;
@@ -3350,6 +3395,10 @@ function openGenerateTabEditorForEditorData(sourceEditor, actionLabel = 'Send La
     if (inputAspectRatio) {
         inputAspectRatio.value = 'Custom';
         triggerChangeFor(inputAspectRatio);
+    }
+    if (!ensureGenerateImageEditorReady()) {
+        showError(`Cannot use "${actionLabel}": Generate tab editor is unavailable.`);
+        return false;
     }
     let wasActive = imageEditor.active;
     imageEditor.clearVars();
@@ -3485,10 +3534,9 @@ function sendImageEditingLayersToGenerateEditor() {
     doTransfer();
 }
 
-imageEditingEnsureUiReady();
 let imageEditingTopTabButton = document.getElementById('imageeditingtabbutton');
 if (imageEditingTopTabButton) {
-    imageEditingTopTabButton.addEventListener('click', () => {
+    imageEditingTopTabButton.addEventListener('shown.bs.tab', () => {
         imageEditingEnsureUiReady();
     });
 }
@@ -3517,6 +3565,7 @@ $('#toptablist').on('shown.bs.tab', function (e) {
             imageEditingTabEditor.deactivate();
         }
         if (e.target.id == 'text2imagetabbutton' && imageEditingPausedGenerateEditor) {
+            ensureGenerateImageEditorReady();
             if (window.imageEditor && !window.imageEditor.active) {
                 window.imageEditor.activate();
             }

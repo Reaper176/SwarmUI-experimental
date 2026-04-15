@@ -494,6 +494,7 @@ class ModelBrowserWrapper {
         }
         extraHeader += `<label for="models_${subType}_sort_by">Sort:</label> <select id="models_${subType}_sort_by"><option>Name</option><option>Title</option><option>DateCreated</option><option>DateModified</option></select> <input type="checkbox" id="models_${subType}_sort_reverse"> <label for="models_${subType}_sort_reverse">Reverse</label>`;
         this.browser = new GenPageBrowserClass(container, this.listModelFolderAndFiles.bind(this), id, format, this.describeModel.bind(this), this.selectModel.bind(this), extraHeader);
+        this.mediaWindowManager = new BrowserMediaWindowManager(8, 2);
         if (subType != 'Wildcards') {
             this.browser.filterMatcher = this.browserFilterMatches.bind(this);
             this.browser.filterSorter = this.browserFilterSorter.bind(this);
@@ -1350,6 +1351,7 @@ let sdControlnetBrowser = new ModelBrowserWrapper('ControlNet', ['controlnet', '
 let wildcardsBrowser = new ModelBrowserWrapper('Wildcards', [], 'wildcard_list', 'wildcardsbrowser', (wildcard) => { wildcardHelpers.selectWildcard(wildcard.data); }, `<button id="wildcards_list_create_new_button" class="refresh-button" onclick="wildcardHelpers.createNewWildcardButton()">Create New Wildcard</button>`);
 
 let allModelBrowsers = [sdModelBrowser, sdVAEBrowser, sdLoraBrowser, sdEmbedBrowser, sdControlnetBrowser, wildcardsBrowser];
+let initialModelBrowsersLoaded = false;
 let subModelBrowsers = [sdVAEBrowser, sdLoraBrowser, sdEmbedBrowser, sdControlnetBrowser];
 
 function embedClearFromPrompt(model, element) {
@@ -1437,8 +1439,35 @@ function setControlNet(model) {
 }
 
 function initialModelListLoad() {
+    if (initialModelBrowsersLoaded) {
+        return;
+    }
+    initialModelBrowsersLoaded = true;
     for (let browser of allModelBrowsers) {
         browser.browser.navigate('');
+    }
+}
+
+for (let tabSpec of [
+    { selector: '#modelstabheader', browser: sdModelBrowser },
+    { selector: 'a[href="#Vaes-Tab"]', browser: sdVAEBrowser },
+    { selector: 'a[href="#Loras-Tab"]', browser: sdLoraBrowser },
+    { selector: 'a[href="#Embeddings-Tab"]', browser: sdEmbedBrowser },
+    { selector: 'a[href="#ControlNets-Tab"]', browser: sdControlnetBrowser },
+    { selector: 'a[href="#Wildcards-Tab"]', browser: wildcardsBrowser }
+]) {
+    let tab = document.querySelector(tabSpec.selector);
+    if (tab) {
+        let activateTab = () => {
+            initialModelListLoad();
+            tabSpec.browser.browser.mediaWindowManager = tabSpec.browser.mediaWindowManager;
+            setTimeout(() => {
+                tabSpec.browser.browser.mediaWindowManager?.attach(tabSpec.browser.browser.contentDiv);
+                tabSpec.browser.browser.mediaWindowManager?.queueUpdate();
+            }, 1);
+        };
+        tab.addEventListener('click', activateTab);
+        tab.addEventListener('shown.bs.tab', activateTab);
     }
 }
 

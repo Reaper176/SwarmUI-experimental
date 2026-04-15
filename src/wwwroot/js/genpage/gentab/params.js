@@ -662,14 +662,14 @@ function genInputs(delay_final = false) {
                 triggerChangeFor(inputHeight);
             });
             inputWidth.addEventListener('change', () => {
-                if (imageEditor.active) {
+                if (window.imageEditor && imageEditor.active) {
                     imageEditor.realWidth = parseInt(inputWidth.value);
                     imageEditor.redraw();
                     imageEditor.markChanged();
                 }
             });
             inputHeight.addEventListener('change', () => {
-                if (imageEditor.active) {
+                if (window.imageEditor && imageEditor.active) {
                     imageEditor.realHeight = parseInt(inputHeight.value);
                     imageEditor.redraw();
                     imageEditor.markChanged();
@@ -952,7 +952,7 @@ function genInputs(delay_final = false) {
         if (loras) {
             loraHelper.loadFromParams();
         }
-        if (imageEditor.active) {
+        if (window.imageEditor && imageEditor.active) {
             imageEditor.doParamHides();
         }
         if (currentPresets.length > 0) {
@@ -1061,7 +1061,7 @@ function getGenInput(input_overrides = {}, input_preoverrides = {}) {
     if (revisionImages.length > 0) {
         input["promptimages"] = revisionImages.map(img => img.dataset.filedata);
     }
-    if (imageEditor.active) {
+    if (window.imageEditor && imageEditor.active) {
         extraMetadata["used_image_editor"] = "true";
         input["initimage"] = imageEditor.getFinalImageData();
         input["maskimage"] = imageEditor.getFinalMaskData();

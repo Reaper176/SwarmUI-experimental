@@ -2,8 +2,8 @@ class GenerateHandler {
 
     constructor() {
         this.batchesEver = 0;
-        this.totalGensThisRun = 0;
-        this.totalGenRunTime = 0;
+        this.genTimeSamples = [];
+        this.maxGenTimeSamples = 64;
         this.validateModel = true;
         this.interrupted = -1;
         this.sockets = {};
@@ -55,8 +55,21 @@ class GenerateHandler {
     }
 
     appendGenTimeFrom(time) {
-        this.totalGensThisRun++;
-        this.totalGenRunTime += time;
+        this.genTimeSamples.push(time);
+        if (this.genTimeSamples.length > this.maxGenTimeSamples) {
+            this.genTimeSamples.splice(0, this.genTimeSamples.length - this.maxGenTimeSamples);
+        }
+    }
+
+    getAverageGenTime() {
+        if (this.genTimeSamples.length == 0) {
+            return 0;
+        }
+        let total = 0;
+        for (let sample of this.genTimeSamples) {
+            total += sample;
+        }
+        return total / this.genTimeSamples.length;
     }
 
     beforeGenRun() {
@@ -322,6 +335,9 @@ class GenerateHandler {
             let socket = null;
             let handleError = e => {
                 console.log(`Error in GenerateText2ImageWS:`, e, this.interrupted, batch_id);
+                if (this.sockets[socketId] == socket) {
+                    this.sockets[socketId] = null;
+                }
                 setTimeout(() => {
                     for (let imgHolder of Object.values(images)) {
                         let div = this.getDiv(imgHolder);

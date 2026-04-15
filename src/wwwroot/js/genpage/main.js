@@ -26,6 +26,7 @@ let currentMetadataVal = null, currentImgSrc = null;
 
 let autoCompletionsList = null;
 let autoCompletionsOptimize = false;
+window.imageEditor = window.imageEditor || null;
 
 let mainGenHandler = new GenerateHandler();
 
@@ -90,8 +91,8 @@ function updateCurrentStatusDirect(data) {
     }
     let elem = getRequiredElementById('num_jobs_span');
     let timeEstimate = '';
-    if (total > 0 && mainGenHandler.totalGensThisRun > 0) {
-        let avgGenTime = mainGenHandler.totalGenRunTime / mainGenHandler.totalGensThisRun;
+    let avgGenTime = typeof mainGenHandler.getAverageGenTime == 'function' ? mainGenHandler.getAverageGenTime() : 0;
+    if (total > 0 && avgGenTime > 0) {
         let estTime = avgGenTime * total;
         timeEstimate = ` (est. ${durationStringify(estTime)})`;
     }
@@ -180,10 +181,16 @@ function reviseStatusBar() {
 
 document.addEventListener('visibilitychange', () => {
     if (document.hidden) {
+        if (typeof stopServerResourceLoop == 'function') {
+            stopServerResourceLoop();
+        }
         return;
     }
     lastStatusHiddenPoll = 0;
     reviseStatusBar();
+    if (typeof refreshServerResourceLoopState == 'function') {
+        refreshServerResourceLoopState();
+    }
 });
 
 /** Array of functions called on key events (eg model selection change) to update displayed features.
@@ -669,6 +676,10 @@ function imagePromptImagePaste(e) {
 }
 
 function openEmptyEditor() {
+    if (!ensureGenerateImageEditorReady()) {
+        showError('Image editor is unavailable.');
+        return;
+    }
     let canvas = document.createElement('canvas');
     canvas.width = document.getElementById('input_width').value;
     canvas.height = document.getElementById('input_height').value;
@@ -682,6 +693,93 @@ function openEmptyEditor() {
         imageEditor.activate();
     };
     image.src = canvas.toDataURL();
+}
+
+/** Ensures the Generate tab image editor exists, creating it only on first use. */
+function ensureGenerateImageEditorReady() {
+    if (window.imageEditor) {
+        return true;
+    }
+    let editorInput = document.getElementById('image_editor_input');
+    if (!editorInput) {
+        return false;
+    }
+    window.imageEditor = new ImageEditor(editorInput, true, true, () => genTabLayout.reapplyPositions(), () => needsNewPreview());
+    let editorSizebar = getRequiredElementById('image_editor_sizebar');
+    window.imageEditor.onActivate = () => {
+        editorSizebar.style.display = '';
+    };
+    window.imageEditor.onDeactivate = () => {
+        editorSizebar.style.display = 'none';
+    };
+    window.imageEditor.tools['options'].optionButtons = [
+        ...window.imageEditor.tools['options'].optionButtons,
+        { key: 'Store Current Image To History', action: () => {
+            let img = window.imageEditor.getFinalImageData();
+            storeImageToHistoryWithCurrentParams(img);
+        }},
+        { key: 'Store Full Canvas To History', action: () => {
+            let img = window.imageEditor.getMaximumImageData();
+            storeImageToHistoryWithCurrentParams(img);
+        }},
+        { key: 'Auto Segment Image (SAM2)', action: () => {
+            if (!currentBackendFeatureSet.includes('sam2')) {
+                $('#sam2_installer').modal('show');
+            }
+            else {
+                let img = window.imageEditor.getFinalImageData();
+                let genData = getGenInput();
+                genData['controlnetimageinput'] = img;
+                genData['controlnetstrength'] = 1;
+                genData['controlnetpreprocessor'] = 'Segment Anything 2 Global Autosegment base_plus';
+                genData['images'] = 1;
+                genData['prompt'] = '';
+                delete genData['batchsize'];
+                genData['donotsave'] = true;
+                genData['controlnetpreviewonly'] = true;
+                makeWSRequestT2I('GenerateText2ImageWS', genData, data => {
+                    if (!data.image) {
+                        return;
+                    }
+                    let newImg = new Image();
+                    newImg.onload = () => {
+                        imageEditor.addImageLayer(newImg);
+                    };
+                    newImg.src = data.image;
+                });
+            }
+        }}
+    ];
+    return true;
+}
+
+/** Starts the server resource loop only when server UI is actually used. */
+function ensureServerResourceLoopRunning() {
+    if (window.resLoopInterval) {
+        return;
+    }
+    window.resLoopInterval = setInterval(serverResourceLoop, 2000);
+}
+
+function stopServerResourceLoop() {
+    if (!window.resLoopInterval) {
+        return;
+    }
+    clearInterval(window.resLoopInterval);
+    window.resLoopInterval = null;
+}
+
+function isServerTopTabActive() {
+    let serverTab = document.getElementById('server_tab');
+    return serverTab && serverTab.classList.contains('active');
+}
+
+function refreshServerResourceLoopState() {
+    if (document.hidden || !isServerTopTabActive()) {
+        stopServerResourceLoop();
+        return;
+    }
+    ensureServerResourceLoopRunning();
 }
 
 function debugGenAPIDocs() {
@@ -778,52 +876,6 @@ function genpageLoad() {
             versionDisp.style.display = '';
         }
     });
-    window.imageEditor = new ImageEditor(getRequiredElementById('image_editor_input'), true, true, () => genTabLayout.reapplyPositions(), () => needsNewPreview());
-    let editorSizebar = getRequiredElementById('image_editor_sizebar');
-    window.imageEditor.onActivate = () => {
-        editorSizebar.style.display = '';
-    };
-    window.imageEditor.onDeactivate = () => {
-        editorSizebar.style.display = 'none';
-    };
-    window.imageEditor.tools['options'].optionButtons = [
-        ... window.imageEditor.tools['options'].optionButtons,
-        { key: 'Store Current Image To History', action: () => {
-            let img = window.imageEditor.getFinalImageData();
-            storeImageToHistoryWithCurrentParams(img);
-        }},
-        { key: 'Store Full Canvas To History', action: () => {
-            let img = window.imageEditor.getMaximumImageData();
-            storeImageToHistoryWithCurrentParams(img);
-        }},
-        { key: 'Auto Segment Image (SAM2)', action: () => {
-            if (!currentBackendFeatureSet.includes('sam2')) {
-                $('#sam2_installer').modal('show');
-            }
-            else {
-                let img = window.imageEditor.getFinalImageData();
-                let genData = getGenInput();
-                genData['controlnetimageinput'] = img;
-                genData['controlnetstrength'] = 1;
-                genData['controlnetpreprocessor'] = 'Segment Anything 2 Global Autosegment base_plus';
-                genData['images'] = 1;
-                genData['prompt'] = '';
-                delete genData['batchsize'];
-                genData['donotsave'] = true;
-                genData['controlnetpreviewonly'] = true;
-                makeWSRequestT2I('GenerateText2ImageWS', genData, data => {
-                    if (!data.image) {
-                        return;
-                    }
-                    let newImg = new Image();
-                    newImg.onload = () => {
-                        imageEditor.addImageLayer(newImg);
-                    };
-                    newImg.src = data.image;
-                });
-            }
-        }}
-    ];
     genTabLayout.init();
     reviseStatusBar();
     loadHashHelper();
@@ -842,12 +894,20 @@ function genpageLoad() {
             if (typeof queueServerTabHeightFix == 'function') {
                 queueServerTabHeightFix();
             }
+            refreshServerResourceLoopState();
+        });
+    }
+    let topTabList = document.getElementById('toptablist');
+    if (topTabList) {
+        topTabList.addEventListener('click', () => {
+            setTimeout(() => {
+                refreshServerResourceLoopState();
+            }, 1);
         });
     }
     getSession(() => {
         ensureImageHistoryBrowserShellReady();
         imageHistoryBrowser.navigate('');
-        initialModelListLoad();
         genericRequest('ListT2IParams', {}, data => {
             modelsHelpers.loadClassesFromServer(data.models, data.model_compat_classes, data.model_classes);
             updateAllModels(data.models);
@@ -858,7 +918,10 @@ function genpageLoad() {
             paramConfig.applyParamEdits(data.param_edits);
             paramConfig.loadUserParamConfigTab();
             autoRepersistParams();
-            setInterval(autoRepersistParams, 60 * 60 * 1000); // Re-persist again hourly if UI left over
+            if (window.autoRepersistParamsInterval) {
+                clearInterval(window.autoRepersistParamsInterval);
+            }
+            window.autoRepersistParamsInterval = setInterval(autoRepersistParams, 60 * 60 * 1000); // Re-persist again hourly if UI left over
             genInputs();
             genToolsList();
             reviseStatusBar();
@@ -881,7 +944,7 @@ function genpageLoad() {
         reviseStatusInterval = setInterval(reviseStatusBar, 2000);
         if (window.resLoopInterval) {
             clearInterval(window.resLoopInterval);
+            window.resLoopInterval = null;
         }
-        window.resLoopInterval = setInterval(serverResourceLoop, 2000);
     });
 }

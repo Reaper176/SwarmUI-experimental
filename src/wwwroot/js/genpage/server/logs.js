@@ -2,6 +2,8 @@
 
 class ServerLogsHelper {
     constructor() {
+        this.maxMessagesPerType = 1536;
+        this.trimThresholdPerType = 2048;
         this.logTypes = [];
         this.loaded = false;
         this.tabButton = getRequiredElementById('logtabbutton');
@@ -25,6 +27,17 @@ class ServerLogsHelper {
         this.mayLoop = true;
         this.logLoopRate = 500;
         this.loopInterval = null;
+        this.serverTabButton = getRequiredElementById('servertabbutton');
+        this.boundEvaluateLoopState = this.evaluateLoopState.bind(this);
+        this.serverTabButton.addEventListener('click', () => {
+            setTimeout(this.boundEvaluateLoopState, 1);
+        });
+        getRequiredElementById('servertablist').addEventListener('click', () => {
+            setTimeout(this.boundEvaluateLoopState, 1);
+        });
+        document.addEventListener('visibilitychange', () => {
+            this.evaluateLoopState();
+        });
     }
 
     doPastebinModal() {
@@ -73,12 +86,42 @@ class ServerLogsHelper {
     onTabButtonClick() {
         if (!this.loaded) {
             this.loadTypeList(() => {
-                if (this.loopInterval != null) {
-                    clearInterval(this.loopInterval);
-                }
-                this.loopInterval = setInterval(() => this.updateLoop(), this.logLoopRate);
                 this.loaded = true;
+                this.evaluateLoopState();
             });
+            return;
+        }
+        this.evaluateLoopState();
+    }
+
+    startLoop() {
+        if (this.loopInterval != null) {
+            return;
+        }
+        this.loopInterval = setInterval(() => this.updateLoop(), this.logLoopRate);
+    }
+
+    stopLoop() {
+        if (this.loopInterval == null) {
+            return;
+        }
+        clearInterval(this.loopInterval);
+        this.loopInterval = null;
+    }
+
+    shouldLoop() {
+        if (!this.loaded || document.hidden) {
+            return false;
+        }
+        return this.serverTabBody.classList.contains('active') && this.tabBody.classList.contains('active');
+    }
+
+    evaluateLoopState() {
+        if (this.shouldLoop()) {
+            this.startLoop();
+        }
+        else {
+            this.stopLoop();
         }
     }
 
@@ -194,9 +237,9 @@ class ServerLogsHelper {
                     continue;
                 }
                 await sleep(1);
-                if (storedData.raw.length > 2048) {
-                    let keys = Object.keys(storedData.raw);
-                    let removeCount = keys.length - 1536;
+                let keys = Object.keys(storedData.raw);
+                if (keys.length > this.trimThresholdPerType) {
+                    let removeCount = keys.length - this.maxMessagesPerType;
                     keys.sort((a, b) => a - b);
                     for (let i = 0; i < removeCount; i++) {
                         delete storedData.raw[keys[i]];

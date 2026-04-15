@@ -61,6 +61,151 @@ class BrowserUtil {
 
 let browserUtil = new BrowserUtil();
 
+class BrowserMediaWindowManager {
+    constructor(rowBuffer = 8, minRowsToUnload = 2) {
+        this.rowBuffer = rowBuffer;
+        this.minRowsToUnload = minRowsToUnload;
+        this.content = null;
+        this.updateQueued = false;
+        this.boundScroll = this.queueUpdate.bind(this);
+        this.boundResize = this.queueUpdate.bind(this);
+    }
+
+    attach(content) {
+        if (this.content == content) {
+            this.queueUpdate();
+            return;
+        }
+        if (this.content) {
+            this.content.removeEventListener('scroll', this.boundScroll);
+        }
+        this.content = content;
+        if (this.content) {
+            this.content.addEventListener('scroll', this.boundScroll);
+        }
+        window.removeEventListener('resize', this.boundResize);
+        window.addEventListener('resize', this.boundResize);
+        this.queueUpdate();
+    }
+
+    queueUpdate() {
+        if (!this.content || this.updateQueued) {
+            return;
+        }
+        this.updateQueued = true;
+        let run = () => {
+            this.updateQueued = false;
+            this.updateVisibleWindow();
+        };
+        if (window.requestAnimationFrame) {
+            requestAnimationFrame(run);
+        }
+        else {
+            setTimeout(run, 16);
+        }
+    }
+
+    getEntries() {
+        if (!this.content) {
+            return [];
+        }
+        return Array.from(this.content.children).filter(entry => entry?.dataset?.name);
+    }
+
+    getEntryImage(entry) {
+        return entry.querySelector('img.image-block-img-inner');
+    }
+
+    hydrateEntry(entry) {
+        let img = this.getEntryImage(entry);
+        if (!img || !img.dataset.origSrc || img.getAttribute('src')) {
+            return false;
+        }
+        img.dataset.src = img.dataset.origSrc;
+        img.classList.add('lazyload');
+        return true;
+    }
+
+    dehydrateEntry(entry) {
+        let img = this.getEntryImage(entry);
+        if (!img || !img.dataset.origSrc) {
+            return;
+        }
+        if (!img.getAttribute('src') && img.dataset.src == img.dataset.origSrc) {
+            return;
+        }
+        img.classList.add('lazyload');
+        img.dataset.src = img.dataset.origSrc;
+        img.removeAttribute('src');
+    }
+
+    buildRows(entries) {
+        let rows = [];
+        for (let entry of entries) {
+            let top = entry.offsetTop;
+            let bottom = top + entry.offsetHeight;
+            let lastRow = rows.length > 0 ? rows[rows.length - 1] : null;
+            if (!lastRow || Math.abs(lastRow.top - top) > 4) {
+                rows.push({ top, bottom, entries: [entry] });
+            }
+            else {
+                lastRow.entries.push(entry);
+                lastRow.bottom = Math.max(lastRow.bottom, bottom);
+            }
+        }
+        return rows;
+    }
+
+    updateVisibleWindow() {
+        if (!this.content || !this.content.isConnected) {
+            return;
+        }
+        let entries = this.getEntries();
+        if (entries.length == 0) {
+            return;
+        }
+        let rows = this.buildRows(entries);
+        if (rows.length == 0) {
+            return;
+        }
+        let scrollTop = this.content.scrollTop;
+        let scrollBottom = scrollTop + this.content.clientHeight;
+        let visibleStart = 0;
+        let visibleEnd = rows.length - 1;
+        for (let i = 0; i < rows.length; i++) {
+            if (rows[i].bottom >= scrollTop) {
+                visibleStart = i;
+                break;
+            }
+        }
+        for (let i = rows.length - 1; i >= 0; i--) {
+            if (rows[i].top <= scrollBottom) {
+                visibleEnd = i;
+                break;
+            }
+        }
+        let keepStart = Math.max(0, visibleStart - this.rowBuffer);
+        let keepEnd = Math.min(rows.length - 1, visibleEnd + this.rowBuffer);
+        let hydrateQueued = false;
+        for (let i = 0; i < rows.length; i++) {
+            let row = rows[i];
+            if (i >= keepStart && i <= keepEnd) {
+                for (let entry of row.entries) {
+                    hydrateQueued = this.hydrateEntry(entry) || hydrateQueued;
+                }
+            }
+            else if (i < keepStart - this.minRowsToUnload || i > keepEnd + this.minRowsToUnload) {
+                for (let entry of row.entries) {
+                    this.dehydrateEntry(entry);
+                }
+            }
+        }
+        if (hydrateQueued) {
+            browserUtil.queueMakeVisible(this.content);
+        }
+    }
+}
+
 /**
  * Hack to attempt to prevent callback recursion.
  * In practice this seems to not work.
@@ -147,6 +292,7 @@ class GenPageBrowserClass {
         this.runAfterUpdate = [];
         this.refreshHandler = (callback) => callback();
         this.pendingRefreshPath = null;
+        this.mediaWindowManager = null;
         this.checkIsSmall();
     }
 
@@ -715,6 +861,7 @@ class GenPageBrowserClass {
             }
             img.classList.add('lazyload');
             img.dataset.src = desc.image;
+            img.dataset.origSrc = desc.image;
             if (desc.dragimage) {
                 img.addEventListener('dragstart', (e) => {
                     chromeIsDumbFileHack(e.dataTransfer.files[0], desc.dragimage);
@@ -954,6 +1101,7 @@ class GenPageBrowserClass {
             this.contentDiv = createDiv(`${this.id}-content`, 'browser-content-container');
             this.contentDiv.addEventListener('scroll', () => {
                 browserUtil.queueMakeVisible(this.contentDiv);
+                this.mediaWindowManager?.queueUpdate();
             });
             this.fullContentDiv.appendChild(this.contentDiv);
             this.barSpot = 0;
@@ -1015,10 +1163,12 @@ class GenPageBrowserClass {
         applyTranslations(this.headerBar);
         if (!this.noContentUpdates) {
             this.buildContentList(this.contentDiv, files);
+            this.mediaWindowManager?.attach(this.contentDiv);
             browserUtil.queueMakeVisible(this.contentDiv);
             if (scrollOffset) {
                 this.contentDiv.scrollTop = scrollOffset;
             }
+            this.mediaWindowManager?.queueUpdate();
             applyTranslations(this.contentDiv);
         }
         if (folderScroll) {
