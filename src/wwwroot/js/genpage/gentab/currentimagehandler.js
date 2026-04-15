@@ -333,6 +333,46 @@ class ImageFullViewHelper {
         return parseFloat((this.getImgOrContainer().style.top || '0').replaceAll('px', ''));
     }
 
+    getFitGeometry() {
+        let wrap = this.imageWrap;
+        if (!wrap || !wrap.isConnected) {
+            wrap = this.content.querySelector('#imageview_modal_imagewrap');
+            this.imageWrap = wrap;
+        }
+        let img = this.getImg();
+        if (!wrap || !img) {
+            return null;
+        }
+        let intrinsicWidth = img.naturalWidth ?? img.videoWidth ?? 0;
+        let intrinsicHeight = img.naturalHeight ?? img.videoHeight ?? 0;
+        if (intrinsicWidth <= 0 || intrinsicHeight <= 0 || wrap.offsetWidth <= 0 || wrap.offsetHeight <= 0) {
+            return null;
+        }
+        let imgAspectRatio = intrinsicWidth / intrinsicHeight;
+        let fittedWidth = wrap.offsetHeight * imgAspectRatio;
+        let fittedHeight = wrap.offsetHeight;
+        let fittedLeft = 0;
+        let fittedTop = 0;
+        if (fittedWidth > wrap.offsetWidth) {
+            fittedWidth = wrap.offsetWidth;
+            fittedHeight = wrap.offsetWidth / imgAspectRatio;
+            fittedTop = (wrap.offsetHeight - fittedHeight) / 2;
+        }
+        else {
+            fittedLeft = (wrap.offsetWidth - fittedWidth) / 2;
+        }
+        return {
+            wrap,
+            intrinsicWidth,
+            intrinsicHeight,
+            fittedWidth,
+            fittedHeight,
+            fittedLeft,
+            fittedTop,
+            fittedHeightPercent: (fittedHeight / wrap.offsetHeight) * 100
+        };
+    }
+
     onMouseDown(e) {
         if (this.modal.style.display != 'block') {
             return;
@@ -406,27 +446,18 @@ class ImageFullViewHelper {
     }
 
     detachImg() {
-        let wrap = getRequiredElementById('imageview_modal_imagewrap');
-        if (wrap.style.textAlign == 'center') {
+        let geometry = this.getFitGeometry();
+        if (!geometry) {
+            return;
+        }
+        if (geometry.wrap.style.textAlign == 'center') {
             let img = this.getImgOrContainer();
-            let width = img.naturalWidth ?? img.videoWidth;
-            let height = img.naturalHeight ?? img.videoHeight;
-            let imgAspectRatio = width / height;
-            let wrapAspectRatio = wrap.offsetWidth / wrap.offsetHeight;
-            let targetWidth = wrap.offsetHeight * imgAspectRatio;
-            if (targetWidth > wrap.offsetWidth) {
-                img.style.top = `${(wrap.offsetHeight - (wrap.offsetWidth / imgAspectRatio)) / 2}px`;
-                img.style.height = `${(wrapAspectRatio / imgAspectRatio) * 100}%`;
-                img.style.left = '0px';
-            }
-            else {
-                img.style.top = '0px';
-                img.style.left = `${(wrap.offsetWidth - targetWidth) / 2}px`;
-                img.style.height = `100%`;
-            }
+            img.style.left = `${geometry.fittedLeft}px`;
+            img.style.top = `${geometry.fittedTop}px`;
+            img.style.height = `${geometry.fittedHeightPercent}%`;
             img.style.objectFit = '';
             img.style.maxWidth = '';
-            wrap.style.textAlign = 'left';
+            geometry.wrap.style.textAlign = 'left';
         }
     }
 
