@@ -373,6 +373,23 @@ class ImageFullViewHelper {
         };
     }
 
+    getCurrentRect() {
+        let geometry = this.getFitGeometry();
+        if (!geometry) {
+            return null;
+        }
+        let currentHeightPercent = this.getHeightPercent();
+        let scale = currentHeightPercent / geometry.fittedHeightPercent;
+        return {
+            geometry,
+            left: this.getImgLeft(),
+            top: this.getImgTop(),
+            width: geometry.fittedWidth * scale,
+            height: geometry.fittedHeight * scale,
+            heightPercent: currentHeightPercent
+        };
+    }
+
     onMouseDown(e) {
         if (this.modal.style.display != 'block') {
             return;
@@ -404,14 +421,17 @@ class ImageFullViewHelper {
 
     moveImg(xDiff, yDiff) {
         let img = this.getImgOrContainer();
-        let newLeft = this.getImgLeft() + xDiff;
-        let newTop = this.getImgTop() + yDiff;
-        let overWidth = img.parentElement.offsetWidth / 2;
-        let overHeight = img.parentElement.offsetHeight / 2;
-        newLeft = Math.min(overWidth, Math.max(newLeft, img.parentElement.offsetWidth - img.offsetWidth - overWidth));
-        newTop = Math.min(overHeight, Math.max(newTop, img.parentElement.offsetHeight - img.offsetHeight - overHeight));
-        img.style.left = `${newLeft}px`;
-        img.style.top = `${newTop}px`;
+        let geometry = this.getFitGeometry();
+        if (!geometry) {
+            return;
+        }
+        let width = img.offsetWidth;
+        let height = img.offsetHeight;
+        let targetLeft = this.getImgLeft() + xDiff;
+        let targetTop = this.getImgTop() + yDiff;
+        let clamped = this.clampPosition(targetLeft, targetTop, width, height, geometry.wrap);
+        img.style.left = `${clamped.left}px`;
+        img.style.top = `${clamped.top}px`;
     }
 
     flushPendingDragMove() {
@@ -461,6 +481,63 @@ class ImageFullViewHelper {
         }
     }
 
+    applyImageRendering(targetHeightPercent, maxHeight, img) {
+        if (targetHeightPercent > maxHeight / 5) {
+            img.style.imageRendering = 'pixelated';
+        }
+        else {
+            img.style.imageRendering = '';
+        }
+    }
+
+    /** Clamp media position within the current wrap bounds using rendered dimensions. */
+    clampPosition(left, top, width, height, wrap) {
+        let overWidth = wrap.offsetWidth / 2;
+        let overHeight = wrap.offsetHeight / 2;
+        return {
+            left: Math.min(overWidth, Math.max(left, wrap.offsetWidth - width - overWidth)),
+            top: Math.min(overHeight, Math.max(top, wrap.offsetHeight - height - overHeight))
+        };
+    }
+
+    /** Keep pointer-relative anchor math inside the rendered media even when the pointer is in empty margins. */
+    clampMediaRatio(value) {
+        return Math.min(1, Math.max(0, value));
+    }
+
+    shouldShowMetadata(targetHeightPercent, fitPercent) {
+        return targetHeightPercent <= fitPercent;
+    }
+
+    /** Blend anchored zoom placement back toward the exact fit-center position only while zooming out. */
+    resolveZoomPosition(targetLeft, targetTop, targetWidth, targetHeight, geometry, targetHeightPercent, isZoomingOut) {
+        let fitPercent = geometry.fittedHeightPercent;
+        let fitLeft = geometry.fittedLeft;
+        let fitTop = geometry.fittedTop;
+        if (targetHeightPercent <= fitPercent) {
+            return {
+                left: fitLeft,
+                top: fitTop,
+                heightPercent: fitPercent
+            };
+        }
+        let clamped = this.clampPosition(targetLeft, targetTop, targetWidth, targetHeight, geometry.wrap);
+        if (!isZoomingOut) {
+            return {
+                left: clamped.left,
+                top: clamped.top,
+                heightPercent: targetHeightPercent
+            };
+        }
+        let blendRange = Math.max(5, fitPercent * 0.35);
+        let blendAmount = Math.min(1, Math.max(0, (targetHeightPercent - fitPercent) / blendRange));
+        return {
+            left: fitLeft + (clamped.left - fitLeft) * blendAmount,
+            top: fitTop + (clamped.top - fitTop) * blendAmount,
+            heightPercent: targetHeightPercent
+        };
+    }
+
     copyState() {
         let img = this.getImgOrContainer();
         if (img.style.objectFit) {
@@ -475,7 +552,7 @@ class ImageFullViewHelper {
     }
 
     pasteState(state) {
-        if (!state || !state.left) {
+        if (!state || state.left == undefined || state.top == undefined || state.height == undefined) {
             return;
         }
         let img = this.getImgOrContainer();
@@ -489,39 +566,35 @@ class ImageFullViewHelper {
 
     applyWheelZoom(stepDelta, clientX, clientY) {
         this.detachImg();
-        let img = this.getImg();
-        if (!img) {
+        let rect = this.getCurrentRect();
+        if (!rect) {
             return;
         }
+        let img = this.getImg();
         let container = this.getImgOrContainer();
         if (!container) {
             return;
         }
-        let origHeight = this.getHeightPercent();
         let zoom = Math.pow(this.zoomRate, stepDelta);
-        let width = img.naturalWidth ?? img.videoWidth;
-        let height = img.naturalHeight ?? img.videoHeight;
-        let maxHeight = Math.sqrt(width * height) * 2;
-        let newHeight = Math.max(10, Math.min(origHeight * zoom, maxHeight));
-        if (newHeight > maxHeight / 5) {
-            img.style.imageRendering = 'pixelated';
-        }
-        else {
-            img.style.imageRendering = '';
-        }
-        if (newHeight > 100.1) {
-            this.toggleMetadataVisibility(false);
-        }
-        else if (newHeight < 100.1) {
-            this.toggleMetadataVisibility(true);
-        }
+        let maxHeight = Math.sqrt(rect.geometry.intrinsicWidth * rect.geometry.intrinsicHeight) * 2;
+        let targetHeightPercent = Math.max(10, Math.min(rect.heightPercent * zoom, maxHeight));
+        let wrapRect = rect.geometry.wrap.getBoundingClientRect();
+        let pointerX = clientX - wrapRect.left;
+        let pointerY = clientY - wrapRect.top;
+        let mediaX = this.clampMediaRatio((pointerX - rect.left) / rect.width);
+        let mediaY = this.clampMediaRatio((pointerY - rect.top) / rect.height);
+        let scale = targetHeightPercent / rect.geometry.fittedHeightPercent;
+        let targetWidth = rect.geometry.fittedWidth * scale;
+        let targetHeight = rect.geometry.fittedHeight * scale;
+        let targetLeft = pointerX - mediaX * targetWidth;
+        let targetTop = pointerY - mediaY * targetHeight;
+        let resolved = this.resolveZoomPosition(targetLeft, targetTop, targetWidth, targetHeight, rect.geometry, targetHeightPercent, targetHeightPercent < rect.heightPercent);
+        container.style.height = `${resolved.heightPercent}%`;
+        container.style.left = `${resolved.left}px`;
+        container.style.top = `${resolved.top}px`;
+        this.applyImageRendering(resolved.heightPercent, maxHeight, img);
+        this.toggleMetadataVisibility(this.shouldShowMetadata(resolved.heightPercent, rect.geometry.fittedHeightPercent));
         container.style.cursor = 'grab';
-        let [imgLeft, imgTop] = [this.getImgLeft(), this.getImgTop()];
-        let [mouseX, mouseY] = [clientX - container.offsetLeft, clientY - container.offsetTop];
-        let [origX, origY] = [mouseX / origHeight - imgLeft, mouseY / origHeight - imgTop];
-        let [newX, newY] = [mouseX / newHeight - imgLeft, mouseY / newHeight - imgTop];
-        this.moveImg((newX - origX) * newHeight, (newY - origY) * newHeight);
-        container.style.height = `${newHeight}%`;
     }
 
     onWheel(e) {
