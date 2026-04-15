@@ -481,6 +481,15 @@ public class Settings : AutoConfiguration
         [ConfigComment("Settings related to the parsing of generation parameters.")]
         public ParamParsingData ParamParsing = new();
 
+        public class NotesData : AutoConfiguration
+        {
+            [ConfigComment("Filesystem root for notes used by the Generate tab Notes sub-tab.\nThis folder is user-specific and notes access is restricted to stay within it.\nCan be an absolute path, or relative to the SwarmUI folder.\nIf blank, the Notes tab will remain disabled until set.")]
+            public string Root = "";
+        }
+
+        [ConfigComment("Settings related to markdown notes in the Generate tab.")]
+        public NotesData Notes = new();
+
         [ConfigComment("Whether your image output files save to server data drive or not.\nDisabling this can make some systems misbehave, and makes the Image History do nothing.")]
         public bool SaveFiles = true;
 

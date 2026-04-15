@@ -13,6 +13,7 @@ using Microsoft.Extensions.Primitives;
 using System.Reflection;
 using FreneticUtilities.FreneticToolkit;
 using SwarmUI.Media;
+using System.IO;
 
 namespace SwarmUI.WebAPI;
 
@@ -49,6 +50,13 @@ public static class BasicAPIFeatures
         API.RegisterAPICall(ListMyAuthTokens, false, Permissions.ReadUserSettings);
         API.RegisterAPICall(RevokeMyAuthToken, true, Permissions.EditUserSettings);
         API.RegisterAPICall(CreateAuthToken, true, Permissions.EditUserSettings);
+        API.RegisterAPICall(ListNotes, false, Permissions.ReadUserSettings);
+        API.RegisterAPICall(ReadNote, false, Permissions.ReadUserSettings);
+        API.RegisterAPICall(SaveNote, true, Permissions.EditUserSettings);
+        API.RegisterAPICall(CreateNote, true, Permissions.EditUserSettings);
+        API.RegisterAPICall(CreateNoteFolder, true, Permissions.EditUserSettings);
+        API.RegisterAPICall(RenameNotePath, true, Permissions.EditUserSettings);
+        API.RegisterAPICall(DeleteNotePath, true, Permissions.EditUserSettings);
         T2IAPI.Register();
         ModelsAPI.Register();
         BackendAPI.Register();
@@ -630,6 +638,325 @@ public static class BasicAPIFeatures
         }
         session.User.Save();
         return new JObject() { ["success"] = true };
+    }
+
+    /// <summary>Allowed file extension for note files.</summary>
+    public const string AllowedNoteExtension = ".md";
+
+    /// <summary>Gets the absolute note root for a user, if configured.</summary>
+    public static string GetUserNotesRoot(Session session)
+    {
+        string configured = session.User.Settings.Notes.Root?.Trim() ?? "";
+        if (configured.Length == 0)
+        {
+            return null;
+        }
+        return Utilities.CombinePathWithAbsolute(Environment.CurrentDirectory, configured);
+    }
+
+    /// <summary>Resolves a note path relative to the user's note root.</summary>
+    public static (string Root, string Path, string ConsoleError, string UserError) ResolveUserNotePath(Session session, string path)
+    {
+        string root = GetUserNotesRoot(session);
+        if (string.IsNullOrWhiteSpace(root))
+        {
+            return (null, null, null, "You must set a Notes Root in User Settings first.");
+        }
+        if (path is null)
+        {
+            path = "";
+        }
+        (string finalPath, string consoleError, string userError) = WebServer.CheckFilePath(root, path);
+        return (root, finalPath, consoleError, userError);
+    }
+
+    /// <summary>Checks whether a path is a valid note file path.</summary>
+    public static bool IsAllowedNoteFilePath(string path)
+    {
+        return path.EndsWith(AllowedNoteExtension, StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>Returns a normalized relative path for browser-facing note results.</summary>
+    public static string GetRelativeNotePath(string root, string path)
+    {
+        return Path.GetRelativePath(root, path).Replace('\\', '/');
+    }
+
+    /// <summary>Lists note folders and files within the user's configured note root.</summary>
+    [API.APIDescription("Lists folders and markdown notes inside the configured user note root.",
+        """
+            "root_configured": true,
+            "root_exists": true,
+            "folders": ["folder", "folder/subfolder"],
+            "files": [{ "name": "note.md", "modified": 1712345678 }]
+        """)]
+    public static async Task<JObject> ListNotes(Session session,
+        [API.APIParameter("The folder path to start the listing in. Use an empty string for root.")] string path,
+        [API.APIParameter("Maximum depth (number of recursive folders) to search.")] int depth = 8)
+    {
+        string root = GetUserNotesRoot(session);
+        if (string.IsNullOrWhiteSpace(root))
+        {
+            return new JObject()
+            {
+                ["root_configured"] = false,
+                ["root_exists"] = false,
+                ["folders"] = new JArray(),
+                ["files"] = new JArray()
+            };
+        }
+        (string fullPath, string consoleError, string userError) = WebServer.CheckFilePath(root, path ?? "");
+        if (consoleError is not null)
+        {
+            Logs.Error(consoleError);
+            return new JObject() { ["error"] = userError };
+        }
+        if (!Directory.Exists(root))
+        {
+            return new JObject()
+            {
+                ["root_configured"] = true,
+                ["root_exists"] = false,
+                ["folders"] = new JArray(),
+                ["files"] = new JArray()
+            };
+        }
+        if (!Directory.Exists(fullPath))
+        {
+            return new JObject()
+            {
+                ["root_configured"] = true,
+                ["root_exists"] = true,
+                ["folders"] = new JArray(),
+                ["files"] = new JArray()
+            };
+        }
+        depth = Math.Max(1, Math.Min(depth, 32));
+        List<string> folders = [];
+        List<JObject> files = [];
+        void addDir(string dir, int subDepth)
+        {
+            if (!Directory.Exists(dir))
+            {
+                return;
+            }
+            foreach (string subDir in Directory.EnumerateDirectories(dir).OrderBy(s => s, StringComparer.OrdinalIgnoreCase))
+            {
+                string name = Path.GetFileName(subDir);
+                if (name.StartsWith('.'))
+                {
+                    continue;
+                }
+                string relPath = GetRelativeNotePath(fullPath, subDir);
+                folders.Add(relPath);
+                if (subDepth > 1)
+                {
+                    addDir(subDir, subDepth - 1);
+                }
+            }
+            foreach (string file in Directory.EnumerateFiles(dir).OrderBy(s => s, StringComparer.OrdinalIgnoreCase))
+            {
+                string name = Path.GetFileName(file);
+                if (name.StartsWith('.') || !IsAllowedNoteFilePath(file))
+                {
+                    continue;
+                }
+                files.Add(new JObject()
+                {
+                    ["name"] = GetRelativeNotePath(fullPath, file),
+                    ["modified"] = new DateTimeOffset(File.GetLastWriteTimeUtc(file)).ToUnixTimeSeconds()
+                });
+            }
+        }
+        addDir(fullPath, depth);
+        return new JObject()
+        {
+            ["root_configured"] = true,
+            ["root_exists"] = true,
+            ["folders"] = JArray.FromObject(folders),
+            ["files"] = JArray.FromObject(files)
+        };
+    }
+
+    /// <summary>Reads a markdown note from the configured note root.</summary>
+    [API.APIDescription("Reads a markdown note file from the user's configured note root.",
+        """
+            "path": "folder/note.md",
+            "content": "# note",
+            "modified": 1712345678
+        """)]
+    public static async Task<JObject> ReadNote(Session session,
+        [API.APIParameter("Relative path to the markdown note file.")] string path)
+    {
+        (string root, string fullPath, string consoleError, string userError) = ResolveUserNotePath(session, path);
+        if (consoleError is not null)
+        {
+            Logs.Error(consoleError);
+            return new JObject() { ["error"] = userError };
+        }
+        if (!IsAllowedNoteFilePath(fullPath))
+        {
+            return new JObject() { ["error"] = "Notes must use the .md file extension." };
+        }
+        if (!File.Exists(fullPath))
+        {
+            return new JObject() { ["error"] = "That note does not exist." };
+        }
+        string content = await File.ReadAllTextAsync(fullPath);
+        return new JObject()
+        {
+            ["path"] = GetRelativeNotePath(root, fullPath),
+            ["content"] = content,
+            ["modified"] = new DateTimeOffset(File.GetLastWriteTimeUtc(fullPath)).ToUnixTimeSeconds()
+        };
+    }
+
+    /// <summary>Saves a markdown note within the user's configured note root.</summary>
+    [API.APIDescription("Writes markdown content to a note file in the user's configured note root.", "\"success\": true")]
+    public static async Task<JObject> SaveNote(Session session,
+        [API.APIParameter("Relative path to the markdown note file.")] string path,
+        [API.APIParameter("Markdown content to write.")] string content)
+    {
+        (string root, string fullPath, string consoleError, string userError) = ResolveUserNotePath(session, path);
+        if (consoleError is not null)
+        {
+            Logs.Error(consoleError);
+            return new JObject() { ["error"] = userError };
+        }
+        if (!IsAllowedNoteFilePath(fullPath))
+        {
+            return new JObject() { ["error"] = "Notes must use the .md file extension." };
+        }
+        Directory.CreateDirectory(root);
+        Directory.CreateDirectory(Path.GetDirectoryName(fullPath));
+        await File.WriteAllTextAsync(fullPath, content ?? "");
+        return new JObject() { ["success"] = true };
+    }
+
+    /// <summary>Creates a new markdown note within the user's configured note root.</summary>
+    [API.APIDescription("Creates a new markdown note file inside the user's configured note root.", "\"success\": true")]
+    public static async Task<JObject> CreateNote(Session session,
+        [API.APIParameter("Relative path to the markdown note file to create.")] string path)
+    {
+        (string root, string fullPath, string consoleError, string userError) = ResolveUserNotePath(session, path);
+        if (consoleError is not null)
+        {
+            Logs.Error(consoleError);
+            return new JObject() { ["error"] = userError };
+        }
+        if (!IsAllowedNoteFilePath(fullPath))
+        {
+            return new JObject() { ["error"] = "Notes must use the .md file extension." };
+        }
+        if (File.Exists(fullPath) || Directory.Exists(fullPath))
+        {
+            return new JObject() { ["error"] = "A file or folder already exists at that path." };
+        }
+        Directory.CreateDirectory(root);
+        Directory.CreateDirectory(Path.GetDirectoryName(fullPath));
+        await File.WriteAllTextAsync(fullPath, "");
+        return new JObject() { ["success"] = true };
+    }
+
+    /// <summary>Creates a new folder inside the user's configured note root.</summary>
+    [API.APIDescription("Creates a folder inside the user's configured note root.", "\"success\": true")]
+    public static async Task<JObject> CreateNoteFolder(Session session,
+        [API.APIParameter("Relative path to the folder to create.")] string path)
+    {
+        (string root, string fullPath, string consoleError, string userError) = ResolveUserNotePath(session, path);
+        if (consoleError is not null)
+        {
+            Logs.Error(consoleError);
+            return new JObject() { ["error"] = userError };
+        }
+        if (fullPath.EndsWith(AllowedNoteExtension, StringComparison.OrdinalIgnoreCase))
+        {
+            return new JObject() { ["error"] = "Folder names may not end with .md." };
+        }
+        if (File.Exists(fullPath))
+        {
+            return new JObject() { ["error"] = "A file already exists at that path." };
+        }
+        Directory.CreateDirectory(root);
+        Directory.CreateDirectory(fullPath);
+        return new JObject() { ["success"] = true };
+    }
+
+    /// <summary>Renames or moves a note file or folder within the configured note root.</summary>
+    [API.APIDescription("Renames a note file or folder within the user's configured note root.", "\"success\": true")]
+    public static async Task<JObject> RenameNotePath(Session session,
+        [API.APIParameter("Existing relative path to rename.")] string oldPath,
+        [API.APIParameter("New relative target path.")] string newPath)
+    {
+        (_, string fullOldPath, string oldConsoleError, string oldUserError) = ResolveUserNotePath(session, oldPath);
+        (_, string fullNewPath, string newConsoleError, string newUserError) = ResolveUserNotePath(session, newPath);
+        if (oldConsoleError is not null)
+        {
+            Logs.Error(oldConsoleError);
+            return new JObject() { ["error"] = oldUserError };
+        }
+        if (newConsoleError is not null)
+        {
+            Logs.Error(newConsoleError);
+            return new JObject() { ["error"] = newUserError };
+        }
+        bool oldIsFile = File.Exists(fullOldPath);
+        bool oldIsDir = Directory.Exists(fullOldPath);
+        if (!oldIsFile && !oldIsDir)
+        {
+            return new JObject() { ["error"] = "That note path does not exist." };
+        }
+        if (File.Exists(fullNewPath) || Directory.Exists(fullNewPath))
+        {
+            return new JObject() { ["error"] = "The target path already exists." };
+        }
+        if (oldIsFile)
+        {
+            if (!IsAllowedNoteFilePath(fullOldPath) || !IsAllowedNoteFilePath(fullNewPath))
+            {
+                return new JObject() { ["error"] = "Notes must use the .md file extension." };
+            }
+            Directory.CreateDirectory(Path.GetDirectoryName(fullNewPath));
+            File.Move(fullOldPath, fullNewPath);
+        }
+        else
+        {
+            if (fullNewPath.EndsWith(AllowedNoteExtension, StringComparison.OrdinalIgnoreCase))
+            {
+                return new JObject() { ["error"] = "Folder names may not end with .md." };
+            }
+            Directory.CreateDirectory(Path.GetDirectoryName(fullNewPath));
+            Directory.Move(fullOldPath, fullNewPath);
+        }
+        return new JObject() { ["success"] = true };
+    }
+
+    /// <summary>Deletes a note file or folder from the configured note root.</summary>
+    [API.APIDescription("Deletes a note file or folder from the user's configured note root.", "\"success\": true")]
+    public static async Task<JObject> DeleteNotePath(Session session,
+        [API.APIParameter("Relative path to the note file or folder to delete.")] string path)
+    {
+        (_, string fullPath, string consoleError, string userError) = ResolveUserNotePath(session, path);
+        if (consoleError is not null)
+        {
+            Logs.Error(consoleError);
+            return new JObject() { ["error"] = userError };
+        }
+        if (File.Exists(fullPath))
+        {
+            if (!IsAllowedNoteFilePath(fullPath))
+            {
+                return new JObject() { ["error"] = "Notes must use the .md file extension." };
+            }
+            File.Delete(fullPath);
+            return new JObject() { ["success"] = true };
+        }
+        if (Directory.Exists(fullPath))
+        {
+            Directory.Delete(fullPath, true);
+            return new JObject() { ["success"] = true };
+        }
+        return new JObject() { ["error"] = "That note path does not exist." };
     }
 
     /// <summary>Rate limiter for <see cref="ChangePassword(Session, string, string)"/> to prevent spamming it.</summary>

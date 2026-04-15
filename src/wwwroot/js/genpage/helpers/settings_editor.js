@@ -227,6 +227,9 @@ function save_user_settings() {
         getRequiredElementById(`usersettings_confirmer`).style.display = 'none';
         loadUserSettings();
         loadUserData();
+        if (window.notesTab && typeof window.notesTab.onUserSettingsSaved == 'function') {
+            window.notesTab.onUserSettingsSaved();
+        }
     });
 }
 

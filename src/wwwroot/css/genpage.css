@@ -2522,3 +2522,130 @@ mark.model-search-highlight {
 .update-check-preview {
     opacity: 0.75;
 }
+.notes-tab-layout {
+    display: flex;
+    gap: 0.75rem;
+    height: 100%;
+    min-height: 0;
+    padding: 0.75rem;
+}
+.notes-browser-container {
+    width: min(42%, 34rem);
+    min-width: 20rem;
+    flex: 0 0 auto;
+}
+.notes-editor-panel {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+    min-width: 0;
+    min-height: 0;
+    flex: 1 1 auto;
+    border: 0.0625rem solid var(--light-border);
+    border-radius: 0.5rem;
+    padding: 0.85rem;
+    background: rgba(0, 0, 0, 0.08);
+}
+.notes-editor-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 1rem;
+}
+.notes-editor-title-row {
+    min-width: 0;
+    flex: 1 1 auto;
+}
+.notes-editor-title {
+    font-size: 1.05rem;
+    font-weight: 700;
+}
+.notes-editor-path {
+    color: var(--text-soft);
+    word-break: break-word;
+}
+.notes-editor-actions {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    flex-wrap: wrap;
+}
+.notes-preview-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    margin: 0;
+}
+.notes-status-line {
+    min-height: 1.35rem;
+    color: var(--text-soft);
+}
+.notes-status-line.notes-status-error {
+    color: #ff8d8d;
+}
+.notes-status-line.notes-status-dirty {
+    color: #ffd27a;
+}
+.notes-empty-state {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 8rem;
+    padding: 1rem;
+    border: 0.0625rem dashed var(--light-border);
+    border-radius: 0.5rem;
+    color: var(--text-soft);
+    text-align: center;
+}
+.notes-editor-input {
+    width: 100%;
+    min-height: 14rem;
+    height: 100%;
+    flex: 1 1 auto;
+    resize: none;
+    white-space: pre-wrap;
+    font-family: "Cascadia Code", "Consolas", monospace;
+}
+.notes-preview-panel {
+    display: none;
+    overflow: auto;
+    flex: 1 1 auto;
+    min-height: 0;
+    padding: 1rem;
+    border: 0.0625rem solid var(--light-border);
+    border-radius: 0.5rem;
+    background: rgba(0, 0, 0, 0.12);
+}
+.notes-preview-panel pre,
+.notes-preview-panel code {
+    font-family: "Cascadia Code", "Consolas", monospace;
+}
+.notes-preview-panel pre {
+    padding: 0.75rem;
+    overflow: auto;
+    border-radius: 0.35rem;
+    background: rgba(0, 0, 0, 0.16);
+}
+.notes-preview-panel blockquote {
+    margin-left: 0;
+    padding-left: 0.9rem;
+    border-left: 0.2rem solid var(--emphasis);
+    opacity: 0.9;
+}
+.notes-preview-panel ul,
+.notes-preview-panel ol {
+    padding-left: 1.4rem;
+}
+.notes-preview-panel hr {
+    border-color: var(--light-border);
+}
+@media (max-width: 900px) {
+    .notes-tab-layout {
+        flex-direction: column;
+    }
+    .notes-browser-container {
+        width: 100%;
+        min-width: 0;
+        min-height: 16rem;
+    }
+}

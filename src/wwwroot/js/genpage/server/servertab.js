@@ -575,9 +575,17 @@ let shutdownConfirmationText = translatable("Are you sure you want to shut Swarm
 
 function shutdown_server() {
     if (confirm(shutdownConfirmationText.get())) {
-        genericRequest('ShutdownServer', {}, data => {
-            close();
-        });
+        let finalizeShutdown = () => {
+            genericRequest('ShutdownServer', {}, data => {
+                close();
+            });
+        };
+        if (window.notesTab && typeof window.notesTab.saveBeforeShutdown == 'function') {
+            window.notesTab.saveBeforeShutdown(finalizeShutdown);
+        }
+        else {
+            finalizeShutdown();
+        }
     }
 }
 
