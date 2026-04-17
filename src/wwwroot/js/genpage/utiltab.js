@@ -184,7 +184,8 @@ class ModelDownloaderUtil {
         this.activeZone = getRequiredElementById('model_downloader_right_sidebar');
         this.folders = getRequiredElementById('model_downloader_folder');
         this.hfPrefix = 'https://huggingface.co/';
-        this.civitPrefix = 'https://civitai.com/';
+        this.civitPrefix = 'https://civitai.red/';
+        this.civitOldPrefix = 'https://civitai.com/';
         this.civitGreenPrefix = 'https://civitai.green/';
         this.urlRequestId = 0;
         this.civitaiRequestQueue = [];
@@ -194,6 +195,17 @@ class ModelDownloaderUtil {
         this.civitaiMinRequestSpacingMs = 125;
         this.civitaiNextRequestTime = 0;
         this.civitaiBackoffUntil = 0;
+    }
+
+    normalizeCivitaiUrl(url) {
+        url = url.trim();
+        if (url.startsWith(this.civitGreenPrefix)) {
+            return this.civitPrefix + url.substring(this.civitGreenPrefix.length);
+        }
+        if (url.startsWith(this.civitOldPrefix)) {
+            return this.civitPrefix + url.substring(this.civitOldPrefix.length);
+        }
+        return url;
     }
 
     buildFolderSelector(selector) {
@@ -306,7 +318,7 @@ class ModelDownloaderUtil {
                 callback(null);
                 return;
             }
-            callback(`https://civitai.com/models/${rawData.response.modelId}?modelVersionId=${rawData.response.id}`);
+            callback(`https://civitai.red/models/${rawData.response.modelId}?modelVersionId=${rawData.response.id}`);
         }, () => {
             callback(null);
         });
@@ -453,10 +465,7 @@ class ModelDownloaderUtil {
     }
 
     parseCivitaiUrl(url) {
-        url = url.trim();
-        if (url.startsWith(this.civitGreenPrefix)) {
-            url = this.civitPrefix + url.substring(this.civitGreenPrefix.length);
-        }
+        url = this.normalizeCivitaiUrl(url);
         let parts = splitWithTail(url.substring(this.civitPrefix.length), '/', 4); // 'models', id, name + sometimes version OR 'api', 'download', 'models', versid
         if (parts.length == 2 && parts[0] == 'models' && parts[1].includes('?')) {
             let subparts = splitWithTail(parts[1], '?', 2);
@@ -546,7 +555,10 @@ class ModelDownloaderUtil {
         this.metadataZone.dataset.raw = '';
         delete this.metadataZone.dataset.image;
         this.imageSide.innerHTML = '';
-        let url = this.url.value.trim();
+        let url = this.normalizeCivitaiUrl(this.url.value);
+        if (url != this.url.value) {
+            this.url.value = url;
+        }
         this.urlRequestId++;
         let requestId = this.urlRequestId;
         if (url.endsWith('.pt') || url.endsWith('.pth') || url.endsWith('.ckpt') || url.endsWith('.bin')) {
@@ -589,9 +601,6 @@ class ModelDownloaderUtil {
             this.urlStatusArea.innerText = "URL appears to be a huggingface link, but seems to not be valid. Please double-check the link.";
             this.button.disabled = false;
             return;
-        }
-        if (url.startsWith(this.civitGreenPrefix)) {
-            url = this.civitPrefix + url.substring(this.civitGreenPrefix.length);
         }
         if (url.startsWith(this.civitPrefix)) {
             let parts = splitWithTail(url.substring(this.civitPrefix.length), '/', 4); // 'models', id, name + sometimes version OR 'api', 'download', 'models', versid
