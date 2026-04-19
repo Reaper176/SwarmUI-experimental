@@ -665,6 +665,7 @@ class GenPageBrowserClass {
     buildContentList(container, files, before = null, startId = 0) {
         let entries = [];
         let requiresDescribedEntries = !!this.filter;
+        let allowCachedDescriptions = !(this.filter && (this.filterMatcher || this.filterSorter));
         for (let i = 0; i < files.length; i++) {
             let file = files[i];
             if (file?.file != null) {
@@ -680,7 +681,7 @@ class GenPageBrowserClass {
         if (requiresDescribedEntries) {
             for (let entry of entries) {
                 if (entry.desc == null) {
-                    entry.desc = this.describeEntry(entry.file);
+                    entry.desc = this.describeEntry(entry.file, allowCachedDescriptions);
                 }
             }
             entries = entries.filter(entry => this.filterMatchesEntry(entry.desc));
@@ -705,7 +706,7 @@ class GenPageBrowserClass {
             let file = entry.file;
             let desc = entry.desc;
             if (desc == null) {
-                desc = this.describeEntry(file);
+                desc = this.describeEntry(file, allowCachedDescriptions);
                 entry.desc = desc;
             }
             id++;
@@ -901,8 +902,8 @@ class GenPageBrowserClass {
     /**
      * Gets a described browser entry, using the optional cache when enabled.
      */
-    describeEntry(file) {
-        if (!this.enableDescriptionCache || !file?.name) {
+    describeEntry(file, allowCache = true) {
+        if (!allowCache || !this.enableDescriptionCache || !file?.name) {
             return this.describe(file);
         }
         let cached = this.describeCache.get(file.name);
