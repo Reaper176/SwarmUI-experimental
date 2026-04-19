@@ -330,6 +330,147 @@ class GenPageBrowserClass {
     }
 
     /**
+     * Wraps a set of header controls into a movable group.
+     */
+    createHeaderControlGroup(elements, className = '', isPinned = false) {
+        let group = createDiv(null, `browser-header-control-group ${className}`.trim());
+        group.dataset.headerPinned = isPinned ? 'true' : 'false';
+        for (let element of elements) {
+            group.appendChild(element);
+        }
+        return group;
+    }
+
+    /**
+     * Flattens extra-header elements into ordered movable groups.
+     */
+    flattenHeaderControlElements(elements) {
+        let groups = [];
+        for (let i = 0; i < elements.length; i++) {
+            let element = elements[i];
+            if (!element || element.style.display == 'none') {
+                continue;
+            }
+            if ((element.tagName == 'SPAN' || element.tagName == 'DIV') && element.children.length > 0 && !element.classList.contains('input_filter_container')) {
+                let childElements = [...element.children].filter(child => child.nodeType == 1);
+                if (childElements.length > 0) {
+                    groups.push(...this.flattenHeaderControlElements(childElements));
+                    continue;
+                }
+            }
+            if (element.tagName == 'LABEL') {
+                let next = elements[i + 1];
+                if (next && (next.tagName == 'SELECT' || next.tagName == 'INPUT') && (!element.htmlFor || element.htmlFor == next.id)) {
+                    let isSortLabel = element.innerText.trim() == 'Sort:';
+                    groups.push(this.createHeaderControlGroup([element, next], isSortLabel ? 'browser-header-control-group-sort' : '', isSortLabel));
+                    i++;
+                    continue;
+                }
+            }
+            if (element.tagName == 'INPUT' && element.type == 'checkbox') {
+                let next = elements[i + 1];
+                if (next && next.tagName == 'LABEL' && next.htmlFor == element.id) {
+                    groups.push(this.createHeaderControlGroup([element, next]));
+                    i++;
+                    continue;
+                }
+            }
+            groups.push(this.createHeaderControlGroup([element]));
+        }
+        return groups;
+    }
+
+    /**
+     * Closes the browser header overflow menu.
+     */
+    closeHeaderOverflowMenu() {
+        if (!this.headerOverflowPopover) {
+            return;
+        }
+        this.headerOverflowPopover.classList.remove('sui-popover-visible');
+        if (this.headerMoreButton) {
+            this.headerMoreButton.setAttribute('aria-expanded', 'false');
+        }
+    }
+
+    /**
+     * Repositions the browser header overflow menu to the More button.
+     */
+    repositionHeaderOverflowMenu() {
+        if (!this.headerOverflowPopover || !this.headerMoreButton || this.headerOverflowPopover.classList.contains('sui-popover-visible') == false) {
+            return;
+        }
+        let rect = this.headerMoreButton.getBoundingClientRect();
+        let left = Math.max(8, Math.min(rect.right - this.headerOverflowPopover.offsetWidth, window.innerWidth - this.headerOverflowPopover.offsetWidth - 8));
+        let top = Math.min(rect.bottom + 6, window.innerHeight - this.headerOverflowPopover.offsetHeight - 8);
+        this.headerOverflowPopover.style.left = `${left}px`;
+        this.headerOverflowPopover.style.top = `${top}px`;
+    }
+
+    /**
+     * Toggles the browser header overflow menu.
+     */
+    toggleHeaderOverflowMenu() {
+        if (!this.headerOverflowPopover || !this.headerMoreButton || this.headerOverflowGroups.length == 0) {
+            return;
+        }
+        let shouldOpen = !this.headerOverflowPopover.classList.contains('sui-popover-visible');
+        this.closeHeaderOverflowMenu();
+        if (!shouldOpen) {
+            return;
+        }
+        this.headerOverflowPopover.classList.add('sui-popover-visible');
+        this.headerMoreButton.setAttribute('aria-expanded', 'true');
+        this.repositionHeaderOverflowMenu();
+    }
+
+    /**
+     * Queues header layout recalculation.
+     */
+    queueHeaderLayout() {
+        if (this.headerLayoutQueued) {
+            return;
+        }
+        this.headerLayoutQueued = true;
+        let run = () => {
+            this.headerLayoutQueued = false;
+            this.layoutHeaderControls();
+        };
+        if (window.requestAnimationFrame) {
+            requestAnimationFrame(run);
+        }
+        else {
+            setTimeout(run, 16);
+        }
+    }
+
+    /**
+     * Lays out browser header control groups and overflows right-side candidates.
+     */
+    layoutHeaderControls() {
+        if (!this.headerControlRow || !this.headerMoreButton || !this.headerOverflowPopover || !this.headerControlGroups) {
+            return;
+        }
+        this.closeHeaderOverflowMenu();
+        this.headerOverflowGroups = [];
+        for (let group of this.headerControlGroups) {
+            this.headerControlRow.insertBefore(group, this.headerMoreButton);
+        }
+        this.headerMoreButton.style.display = 'none';
+        this.headerOverflowPopover.innerHTML = '';
+        let candidates = this.headerControlGroups.filter(group => group.dataset.headerPinned != 'true');
+        while (this.headerControlRow.scrollWidth > this.headerControlRow.clientWidth && candidates.length > 0) {
+            let group = candidates.pop();
+            this.headerMoreButton.style.display = '';
+            this.headerOverflowPopover.appendChild(group);
+            this.headerOverflowGroups.unshift(group);
+        }
+        if (this.headerOverflowGroups.length == 0) {
+            this.headerMoreButton.style.display = 'none';
+        }
+    }
+
+    /**
      * Marks the current update as completed successfully.
      */
     completeUpdate(callback = null) {
@@ -1046,7 +1187,9 @@ class GenPageBrowserClass {
             this.folderTreeDiv = createDiv(`${this.id}-foldertree`, 'browser-folder-tree-container');
             let folderTreeSplitter = createDiv(`${this.id}-splitter`, 'browser-folder-tree-splitter splitter-bar');
             this.headerBar = createDiv(`${this.id}-header`, 'browser-header-bar');
+            this.headerControlRow = createDiv(`${this.id}-header-row`, 'browser-header-control-row');
             this.fullContentDiv = createDiv(`${this.id}-fullcontent`, 'browser-fullcontent-container');
+            this.headerBar.appendChild(this.headerControlRow);
             this.container.appendChild(this.folderTreeDiv);
             this.container.appendChild(folderTreeSplitter);
             this.container.appendChild(this.fullContentDiv);
@@ -1131,8 +1274,55 @@ class GenPageBrowserClass {
             if (!this.showUpFolder) {
                 this.upButton.style.display = 'none';
             }
-            this.headerBar.appendChild(formatSelector);
-            this.headerBar.appendChild(buttons);
+            this.headerMoreButton = document.createElement('button');
+            this.headerMoreButton.type = 'button';
+            this.headerMoreButton.className = 'refresh-button browser-header-more-button';
+            this.headerMoreButton.innerText = 'More';
+            this.headerMoreButton.style.display = 'none';
+            this.headerMoreButton.setAttribute('aria-expanded', 'false');
+            this.headerOverflowPopover = createDiv(`${this.id}-header-more-popover`, 'sui-popover sui_popover_model browser-header-more-popover');
+            document.body.appendChild(this.headerOverflowPopover);
+            let extraElements = [...buttons.children].slice(4);
+            this.headerControlGroups = [
+                this.createHeaderControlGroup([formatSelector], '', true),
+                this.createHeaderControlGroup([refreshButton], '', true),
+                this.createHeaderControlGroup([this.upButton], '', true),
+                this.createHeaderControlGroup([depthInput.parentElement], '', true),
+                this.createHeaderControlGroup([filterInput.parentElement], 'browser-header-control-group-filter', true),
+                ...this.flattenHeaderControlElements(extraElements)
+            ];
+            this.headerPathGroup = this.createHeaderControlGroup([], 'browser-header-control-group-path', true);
+            this.headerCountGroup = this.createHeaderControlGroup([], 'browser-header-control-group-count', true);
+            this.headerControlGroups.push(this.headerPathGroup, this.headerCountGroup);
+            for (let group of this.headerControlGroups) {
+                this.headerControlRow.appendChild(group);
+            }
+            this.headerControlRow.appendChild(this.headerMoreButton);
+            this.headerMoreButton.addEventListener('click', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                this.toggleHeaderOverflowMenu();
+            });
+            if (!this.headerOuterClickHandler) {
+                this.headerOuterClickHandler = (e) => {
+                    if (this.headerOverflowPopover?.contains(e.target) || this.headerMoreButton?.contains(e.target)) {
+                        return;
+                    }
+                    this.closeHeaderOverflowMenu();
+                };
+                document.addEventListener('mousedown', this.headerOuterClickHandler);
+            }
+            if (!this.headerResizeHandler) {
+                this.headerResizeHandler = () => {
+                    this.closeHeaderOverflowMenu();
+                    this.queueHeaderLayout();
+                };
+                window.addEventListener('resize', this.headerResizeHandler);
+            }
+            if (window.ResizeObserver && !this.headerResizeObserver) {
+                this.headerResizeObserver = new ResizeObserver(() => this.queueHeaderLayout());
+                this.headerResizeObserver.observe(this.headerBar);
+            }
             refreshButton.onclick = this.refresh.bind(this);
             this.fullContentDiv.appendChild(this.headerBar);
             this.contentDiv = createDiv(`${this.id}-content`, 'browser-content-container');
@@ -1152,6 +1342,7 @@ class GenPageBrowserClass {
                 if (this.sizeChangedEvent) {
                     this.sizeChangedEvent();
                 }
+                this.queueHeaderLayout();
             }
             this.lastReset = () => {
                 this.barSpot = parseInt(localStorage.getItem(`barspot_browser_${this.id}`) || convertRemToPixels(20));
@@ -1192,12 +1383,13 @@ class GenPageBrowserClass {
             this.headerCount.remove();
         }
         this.headerPath = this.genPath(path, this.upButton);
-        this.headerBar.appendChild(this.headerPath);
         this.headerCount = createSpan(null, 'browser-header-count');
         this.headerCount.innerText = files.length;
-        this.headerBar.appendChild(this.headerCount);
+        this.headerPathGroup.appendChild(this.headerPath);
+        this.headerCountGroup.appendChild(this.headerCount);
         this.buildTreeElements(this.folderTreeDiv, '', this.tree);
         applyTranslations(this.headerBar);
+        this.queueHeaderLayout();
         if (!this.noContentUpdates) {
             this.buildContentList(this.contentDiv, files);
             this.mediaWindowManager?.attach(this.contentDiv);
