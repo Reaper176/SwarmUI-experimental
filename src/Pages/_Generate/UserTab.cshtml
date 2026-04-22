@@ -38,6 +38,13 @@
                         <button class="basic-button translate" id="impersonate_user_button" onclick="stopImpersonatingUser()">Stop Impersonating</button>
                     </div>
                 }
+                <br>
+                <br>
+                <div style="display:flex; gap:0.5rem; align-items:center; flex-wrap:wrap">
+                    <span class="translate"><b>Session ID</b>:</span>
+                    <input type="text" class="auto-text auto-text-block" id="user_session_id" readonly style="max-width:30rem" />
+                    <button class="basic-button translate" onclick="copySessionIdToClipboard()">Copy Session ID</button>
+                </div>
             </div>
         </div>
         @WebUtil.ModalHeader("change_password_modal", "Change Password")

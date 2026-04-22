@@ -355,6 +355,9 @@ function tweakNegativePromptBox() {
 
 function loadUserData(callback) {
     genericRequest('GetMyUserData', {}, data => {
+        if (typeof populateUserSessionId == 'function') {
+            populateUserSessionId();
+        }
         permissions.updateFrom(data.permissions);
         starredModels = data.starred_models;
         autoCompletionsList = {};

@@ -19,7 +19,7 @@ public class API
     public static Dictionary<string, APICall> APIHandlers = [];
 
     /// <summary>All-lowercase short labels of API routes that have no session requirement, eg 'login'. Only for very special cases.</summary>
-    public static HashSet<string> SessionlessRoutes = ["login", "getnewsession", "registerbasic", "registeroauth"];
+    public static HashSet<string> SessionlessRoutes = ["login", "getnewsession", "registerbasic", "registeroauth", "getactivekritasession"];
 
     /// <summary>Register a new API call handler.</summary>
     public static void RegisterAPICall(APICall call)

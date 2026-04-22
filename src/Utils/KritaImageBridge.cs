@@ -2,6 +2,7 @@ using Newtonsoft.Json.Linq;
 using SwarmUI.Core;
 using System.Collections.Concurrent;
 using System.Diagnostics;
+using System.IO;
 using System.Runtime.InteropServices;
 
 namespace SwarmUI.Utils;
@@ -11,6 +12,9 @@ public static class KritaImageBridge
 {
     /// <summary>Pending per-session Krita image imports.</summary>
     public static ConcurrentDictionary<string, string> PendingImports = [];
+
+    /// <summary>The most recently selected local Swarm session for Krita round-trips.</summary>
+    public static string ActiveSessionId;
 
     /// <summary>Gets the directory used for temporary Krita bridge image exports.</summary>
     public static string GetTempDirectory()
@@ -51,8 +55,9 @@ public static class KritaImageBridge
     /// <summary>Starts Krita with the given local image path.</summary>
     public static void LaunchKrita(string imagePath)
     {
+        string fullPath = Path.GetFullPath(imagePath);
         string executable = ResolveKritaExecutable();
-        ProcessStartInfo start = new(executable, $"\"{Path.GetFullPath(imagePath)}\"")
+        ProcessStartInfo start = new(executable, $"\"{fullPath}\"")
         {
             UseShellExecute = true
         };
@@ -63,6 +68,18 @@ public static class KritaImageBridge
     public static void StorePendingImport(string sessionId, string imageData)
     {
         PendingImports[sessionId] = imageData;
+    }
+
+    /// <summary>Marks a session as the active local Krita target.</summary>
+    public static void SetActiveSession(string sessionId)
+    {
+        ActiveSessionId = sessionId;
+    }
+
+    /// <summary>Gets the active local Krita target session.</summary>
+    public static string GetActiveSession()
+    {
+        return ActiveSessionId;
     }
 
     /// <summary>Takes and clears a pending image import for a target session.</summary>

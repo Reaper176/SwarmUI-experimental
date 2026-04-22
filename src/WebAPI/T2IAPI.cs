@@ -1,5 +1,6 @@
 using FreneticUtilities.FreneticExtensions;
 using FreneticUtilities.FreneticToolkit;
+using Microsoft.AspNetCore.Http;
 using Newtonsoft.Json.Linq;
 using SixLabors.ImageSharp;
 using SixLabors.ImageSharp.Processing;
@@ -37,6 +38,7 @@ public static class T2IAPI
         API.RegisterAPICall(SendImageToKrita, true, Permissions.LocalKritaBridge);
         API.RegisterAPICall(ImportKritaImage, true, Permissions.FundamentalGenerateTabAccess);
         API.RegisterAPICall(CheckPendingKritaImage, false, Permissions.FundamentalGenerateTabAccess);
+        API.RegisterAPICall(GetActiveKritaSession, false, Permissions.FundamentalGenerateTabAccess);
         API.RegisterAPICall(ListT2IParams, false, Permissions.FundamentalGenerateTabAccess);
         API.RegisterAPICall(TriggerRefresh, true, Permissions.FundamentalGenerateTabAccess); // Intentionally weird perm here: internal check for readonly vs true refresh
     }
@@ -916,10 +918,10 @@ public static class T2IAPI
         }
         try
         {
-            Image image = new(imageData);
-            Image pngImage = image.ForceToPng();
+            ImageFile image = ImageFile.FromDataString(imageData).ForceToPng();
             string path = KritaImageBridge.CreateTempPngPath();
-            await File.WriteAllBytesAsync(path, pngImage.RawData);
+            await File.WriteAllBytesAsync(path, image.RawData);
+            KritaImageBridge.SetActiveSession(session.ID);
             KritaImageBridge.LaunchKrita(path);
             return new JObject() { ["success"] = true, ["path"] = path };
         }
@@ -946,8 +948,8 @@ public static class T2IAPI
         try
         {
             byte[] bytes = Convert.FromBase64String(imageBase64);
-            Image image = new(bytes, MediaType.ImagePng);
-            KritaImageBridge.StorePendingImport(targetSession, image.ForceToPng().AsDataString());
+            ImageFile image = new Image(bytes, MediaType.ImagePng).ForceToPng();
+            KritaImageBridge.StorePendingImport(targetSession, image.AsDataString());
             return new JObject() { ["success"] = true };
         }
         catch (Exception ex)
@@ -965,6 +967,23 @@ public static class T2IAPI
         if (image is not null)
         {
             result["image"] = image;
+        }
+        return result;
+    }
+
+    [API.APIDescription("Get the current active local Swarm session targeted for Krita round-trips.", "\"success\": true, \"session_id\": \"...\"")]
+    public static async Task<JObject> GetActiveKritaSession(HttpContext context)
+    {
+        string ip = WebUtil.GetIPString(context);
+        if ((ip != "127.0.0.1" && ip != "::1" && ip != "::ffff:127.0.0.1") || context.Request.Headers.ContainsKey("X-Forwarded-For"))
+        {
+            return KritaImageBridge.Error("This route is only available from local loopback connections.");
+        }
+        string activeSession = KritaImageBridge.GetActiveSession();
+        JObject result = new() { ["success"] = true };
+        if (!string.IsNullOrWhiteSpace(activeSession))
+        {
+            result["session_id"] = activeSession;
         }
         return result;
     }
