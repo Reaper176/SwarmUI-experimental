@@ -9,6 +9,17 @@ let hasLoadedBackends = false;
 let hasLoadedBackendTypes = false;
 let backendTypesLoadPending = false;
 
+function backendLogInfoIsAvailable(backendId) {
+    return typeof serverLogs != 'undefined' && serverLogs ? serverLogs.matchIdentifier(`backend-${backendId}`) != null : false;
+}
+
+function showBackendLogs(backendId) {
+    if (typeof serverLogs == 'undefined' || !serverLogs) {
+        return;
+    }
+    serverLogs.showLogsForIdentifier(`backend-${backendId}`);
+}
+
 function addNewBackend(type_id) {
     if (confirm(`Are you sure you want to add a new backend of type ${backend_types[type_id].name}?`)) {
         if (backend_types[type_id].is_standard || confirm('This backend type is labeled as Advanced users only. This is likely not a backend you want to use. Are you sure you want to continue?')) {
@@ -88,8 +99,8 @@ function addBackendToHtml(backend, disable, spot = null) {
     });
     let cardBody = createDiv(null, 'card-body');
     let buttons = document.createElement('div');
-    let isLogAvailable = serverLogs.matchIdentifier(`backend-${backend.id}`) != null;
-    buttons.innerHTML = `<button class="basic-button backend-restart-button" disabled onclick="restart_backend('${backend.id}')">Restart</button> <button class="basic-button backend-log-view-button"${isLogAvailable ? '' : ' disabled'} onclick="serverLogs.showLogsForIdentifier('backend-${backend.id}')">View Logs</button> <span class="backend-last-used-time">Last used: <code>${backend.time_since_used}</code></span>`;
+    let isLogAvailable = backendLogInfoIsAvailable(backend.id);
+    buttons.innerHTML = `<button class="basic-button backend-restart-button" disabled onclick="restart_backend('${backend.id}')">Restart</button> <button class="basic-button backend-log-view-button"${isLogAvailable ? '' : ' disabled'} onclick="showBackendLogs('${backend.id}')">View Logs</button> <span class="backend-last-used-time">Last used: <code>${backend.time_since_used}</code></span>`;
     cardBody.appendChild(buttons);
     for (let setting of type.settings) {
         let input = document.createElement('div');
@@ -212,7 +223,7 @@ function loadBackendsList() {
                     card.querySelector('.card-title-status').innerText = newBack.status;
                 }
                 card.querySelector('.backend-restart-button').disabled = newBack.status != 'errored' && newBack.status != 'running';
-                card.querySelector('.backend-log-view-button').disabled = serverLogs.matchIdentifier(`backend-${newBack.id}`) == null;
+                card.querySelector('.backend-log-view-button').disabled = !backendLogInfoIsAvailable(newBack.id);
                 card.querySelector('.backend-last-used-time').innerHTML = `Last used: <code>${newBack.time_since_used}</code>`;
                 if (newBack.modcount > oldBack.modcount) {
                     addBackendToHtml(newBack, true, spot);
@@ -277,8 +288,11 @@ function loadBackendTypesMenuOnce() {
     loadBackendTypesMenu(false);
 }
 
-let backendsListView = document.getElementById('backends_list');
 let backendsCheckRateCounter = 0;
+
+function getBackendsListView() {
+    return document.getElementById('backends_list');
+}
 
 function isVisible(element) {
     // DOM Element visibility isn't supported in all browsers
@@ -291,12 +305,15 @@ function isVisible(element) {
 }
 
 function backendLoopUpdate() {
-    if (isVisible(backendsListView)) {
+    let backendsListView = getBackendsListView();
+    if (backendsListView && isVisible(backendsListView)) {
         if (!hasLoadedBackendTypes) {
             loadBackendTypesMenuOnce();
             return;
         }
-        serverLogs.onTabButtonClick();
+        if (typeof serverLogs != 'undefined' && serverLogs) {
+            serverLogs.onTabButtonClick();
+        }
         if (backendsCheckRateCounter++ % 3 == 0) {
             loadBackendsList();
         }

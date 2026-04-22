@@ -675,9 +675,15 @@ function imagePromptImagePaste(e) {
     }
 }
 
-function openEmptyEditor() {
-    if (!ensureGenerateImageEditorReady()) {
-        showError('Image editor is unavailable.');
+async function openEmptyEditor() {
+    try {
+        if (!await ensureGenerateImageEditorReady()) {
+            showError('Image editor is unavailable.');
+            return;
+        }
+    }
+    catch (e) {
+        showError(`${e}`);
         return;
     }
     let canvas = document.createElement('canvas');
@@ -696,7 +702,11 @@ function openEmptyEditor() {
 }
 
 /** Ensures the Generate tab image editor exists, creating it only on first use. */
-function ensureGenerateImageEditorReady() {
+async function ensureGenerateImageEditorReady() {
+    await ensureLazyScriptGroup('imageediting');
+    if (typeof ensureImageEditorHelpersInitialized == 'function') {
+        ensureImageEditorHelpersInitialized();
+    }
     if (window.imageEditor) {
         return true;
     }
@@ -770,12 +780,16 @@ function stopServerResourceLoop() {
 }
 
 function isServerTopTabActive() {
-    let serverTab = document.getElementById('server_tab');
+    let serverTab = document.getElementById(window.genpageLazyTabs.server.tabId);
     return serverTab && serverTab.classList.contains('active');
 }
 
 function refreshServerResourceLoopState() {
     if (document.hidden || !isServerTopTabActive()) {
+        stopServerResourceLoop();
+        return;
+    }
+    if (!lazyTabState.server || !lazyTabState.server.initDone) {
         stopServerResourceLoop();
         return;
     }
@@ -786,13 +800,417 @@ function debugGenAPIDocs() {
     genericRequest('DebugGenDocs', { }, data => { });
 }
 
-let hashSubTabMapping = {
-    'utilities_tab': 'utilitiestablist',
-    'user_tab': 'usertablist',
-    'server_tab': 'servertablist',
+let lazyTabInfoById = {};
+for (let [tabKey, tabInfo] of Object.entries(window.genpageLazyTabs || {})) {
+    lazyTabInfoById[tabInfo.tabId] = tabKey;
+}
+
+let lazyScriptLoaders = {};
+let lazyScriptGroupState = {};
+let latestTopTabOpenRequestId = 0;
+let suppressHashUpdateDepth = 0;
+
+let lazyTabState = {
+    imageediting: { loaded: false, loading: null, initDone: false, activation: null },
+    utilities: { loaded: false, loading: null, initDone: false, activation: null },
+    user: { loaded: false, loading: null, initDone: false, activation: null },
+    server: { loaded: false, loading: null, initDone: false, activation: null }
 };
 
-function updateHash() {
+/** Loads a JavaScript file exactly once and resolves when it is ready. */
+function loadScript(src) {
+    if (lazyScriptLoaders[src]) {
+        return lazyScriptLoaders[src];
+    }
+    for (let existing of document.getElementsByTagName('script')) {
+        if (existing.getAttribute('src') == src) {
+            lazyScriptLoaders[src] = Promise.resolve();
+            return lazyScriptLoaders[src];
+        }
+    }
+    lazyScriptLoaders[src] = new Promise((resolve, reject) => {
+        let script = document.createElement('script');
+        script.src = src;
+        script.async = false;
+        script.onload = () => {
+            resolve();
+        };
+        script.onerror = () => {
+            delete lazyScriptLoaders[src];
+            reject(`Failed to load script "${src}".`);
+        };
+        document.body.appendChild(script);
+    });
+    return lazyScriptLoaders[src];
+}
+
+/** Ensures a configured lazy script group is loaded in order exactly once. */
+async function ensureLazyScriptGroup(groupKey) {
+    let scriptList = window.genpageLazyScriptGroups ? window.genpageLazyScriptGroups[groupKey] : null;
+    if (!scriptList || scriptList.length == 0) {
+        return;
+    }
+    if (!lazyScriptGroupState[groupKey]) {
+        lazyScriptGroupState[groupKey] = {
+            loaded: false,
+            loading: null
+        };
+    }
+    let state = lazyScriptGroupState[groupKey];
+    if (state.loaded) {
+        return;
+    }
+    if (state.loading) {
+        await state.loading;
+        return;
+    }
+    state.loading = (async () => {
+        for (let src of scriptList) {
+            await loadScript(src);
+        }
+        state.loaded = true;
+    })();
+    try {
+        await state.loading;
+    }
+    finally {
+        if (!state.loaded) {
+            state.loading = null;
+        }
+    }
+}
+
+/** Returns the lazy tab key for a top-tab button, if it is lazy-loaded. */
+function getLazyTabKeyForTabId(tabId) {
+    if (!tabId) {
+        return null;
+    }
+    return lazyTabInfoById[tabId] || null;
+}
+
+/** Returns the lazy tab key for a top-tab button, if it is lazy-loaded. */
+function getLazyTabKeyForTabButton(tabButton) {
+    if (!tabButton) {
+        return null;
+    }
+    let href = tabButton.getAttribute('href');
+    if (!href || !href.startsWith('#')) {
+        return null;
+    }
+    return getLazyTabKeyForTabId(href.substring(1));
+}
+
+/** Shows a Bootstrap tab button after lazy content is ready. */
+function showTabButton(tabButton) {
+    if (!tabButton) {
+        return;
+    }
+    if (window.bootstrap && bootstrap.Tab) {
+        bootstrap.Tab.getOrCreateInstance(tabButton).show();
+        return;
+    }
+    tabButton.click();
+}
+
+/** Ensures a lazy-loaded tab has its server-rendered HTML injected exactly once. */
+async function ensureLazyTabMarkup(tabKey) {
+    let state = lazyTabState[tabKey];
+    let tabInfo = window.genpageLazyTabs ? window.genpageLazyTabs[tabKey] : null;
+    if (!state || !tabInfo) {
+        return;
+    }
+    if (state.loaded) {
+        return;
+    }
+    if (state.loading) {
+        await state.loading;
+        return;
+    }
+    state.loading = new Promise((resolve, reject) => {
+        genericRequest('GetGenPageTabPartial', { tab: tabKey }, data => {
+            let target = document.getElementById(tabInfo.tabId);
+            if (!target) {
+                state.loading = null;
+                reject(`Lazy tab target "${tabInfo.tabId}" was not found.`);
+                return;
+            }
+            target.innerHTML = data.html;
+            enableSlidersIn(target);
+            if (typeof applyTranslations == 'function') {
+                applyTranslations(target);
+            }
+            state.loaded = true;
+            state.loading = null;
+            resolve();
+        }, 0, e => {
+            state.loading = null;
+            reject(e);
+        });
+    });
+    await state.loading;
+}
+
+function isTopTabOpenRequestStale(expectedRequestId) {
+    return expectedRequestId != null && expectedRequestId != latestTopTabOpenRequestId;
+}
+
+function beginTopTabOpenRequest(tabButton = null, allowReuse = false) {
+    if (allowReuse && tabButton) {
+        let existingRequestId = getTopTabOpenRequestId(tabButton);
+        if (existingRequestId && existingRequestId == latestTopTabOpenRequestId) {
+            return existingRequestId;
+        }
+    }
+    let requestId = ++latestTopTabOpenRequestId;
+    if (tabButton) {
+        tabButton.dataset.topTabOpenRequestId = `${requestId}`;
+    }
+    return requestId;
+}
+
+function getTopTabOpenRequestId(tabButton) {
+    if (!tabButton || !tabButton.dataset.topTabOpenRequestId) {
+        return null;
+    }
+    return parseInt(tabButton.dataset.topTabOpenRequestId);
+}
+
+async function runWithHashUpdatesSuppressed(callback) {
+    suppressHashUpdateDepth++;
+    try {
+        return await callback();
+    }
+    finally {
+        suppressHashUpdateDepth--;
+    }
+}
+
+function findSubTabButton(topTabButton, subTabSpecifier) {
+    if (!subTabSpecifier) {
+        return null;
+    }
+    let subTabButton = document.getElementById(subTabSpecifier);
+    if (subTabButton) {
+        return subTabButton;
+    }
+    let topTabHref = topTabButton ? topTabButton.getAttribute('href') : null;
+    if (!topTabHref || !topTabHref.startsWith('#')) {
+        return null;
+    }
+    let subMapping = hashSubTabMapping[topTabHref.substring(1)];
+    let subTabList = subMapping ? document.getElementById(subMapping) : null;
+    if (!subTabList) {
+        return null;
+    }
+    return subTabList.querySelector(`a[href='#${subTabSpecifier}']`);
+}
+
+/** Ensures a top tab and optional sub-tab are shown, including lazy setup when needed. */
+async function openGenPageTabAsync(topTabButtonId, subTabSpecifier = null, expectedRequestId = null, historyMode = 'push') {
+    let topTabButton = getRequiredElementById(topTabButtonId);
+    if (expectedRequestId == null && topTabButton.classList.contains('active')) {
+        expectedRequestId = getTopTabOpenRequestId(topTabButton);
+    }
+    expectedRequestId = expectedRequestId || beginTopTabOpenRequest(topTabButton);
+    if (isTopTabOpenRequestStale(expectedRequestId)) {
+        return false;
+    }
+    return await runWithHashUpdatesSuppressed(async () => {
+        await showTabButtonAndWait(topTabButton);
+        if (isTopTabOpenRequestStale(expectedRequestId)) {
+            return false;
+        }
+        let lazyTabKey = getLazyTabKeyForTabButton(topTabButton);
+        if (lazyTabKey) {
+            if (!await activateLazyTab(lazyTabKey, expectedRequestId)) {
+                return false;
+            }
+        }
+        if (isTopTabOpenRequestStale(expectedRequestId)) {
+            return false;
+        }
+        let subTabButton = findSubTabButton(topTabButton, subTabSpecifier);
+        if (subTabButton) {
+            await showTabButtonAndWait(subTabButton);
+            if (isTopTabOpenRequestStale(expectedRequestId)) {
+                return false;
+            }
+        }
+        updateHash(historyMode);
+        return true;
+    });
+}
+
+/** Starts an async tab open flow from inline handlers without exposing promise errors. */
+function openGenPageTab(topTabButtonId, subTabButtonId = null) {
+    openGenPageTabAsync(topTabButtonId, subTabButtonId).catch((e) => {
+        showError(`${e}`);
+    });
+    return false;
+}
+
+window.openGenPageTab = openGenPageTab;
+window.openGenPageTabAsync = openGenPageTabAsync;
+
+let lazyTabHooks = {
+    imageediting: async () => {
+        if (typeof ensureImageEditorHelpersInitialized == 'function') {
+            ensureImageEditorHelpersInitialized();
+        }
+        if (typeof imageEditingEnsureUiReady == 'function') {
+            imageEditingEnsureUiReady();
+        }
+    },
+    utilities: async () => {
+        if (typeof ensureUtilitiesTabInitialized == 'function') {
+            ensureUtilitiesTabInitialized();
+        }
+        if (typeof refreshUtilitiesTab == 'function') {
+            refreshUtilitiesTab();
+        }
+        else if (typeof initUtilitiesTab == 'function') {
+            initUtilitiesTab();
+        }
+    },
+    user: async () => {
+        if (typeof notifySettingsEditorTabReady == 'function') {
+            notifySettingsEditorTabReady('user');
+        }
+        if (typeof ensureUserTabInitialized == 'function') {
+            ensureUserTabInitialized();
+        }
+        if (typeof refreshUserTab == 'function') {
+            refreshUserTab();
+        }
+        else if (typeof initUserTab == 'function') {
+            initUserTab();
+        }
+    },
+    server: async () => {
+        if (typeof notifySettingsEditorTabReady == 'function') {
+            notifySettingsEditorTabReady('server');
+        }
+        if (typeof initServerTab == 'function') {
+            initServerTab();
+        }
+        else if (typeof ensureServerTabInitialized == 'function') {
+            ensureServerTabInitialized();
+        }
+        if (typeof ensureServerLogsTabInitialized == 'function' && typeof initServerTab != 'function') {
+            ensureServerLogsTabInitialized();
+        }
+        else if (typeof initServerLogsTab == 'function') {
+            initServerLogsTab();
+        }
+        if (!hasLoadedBackendTypesMenu && permissions.hasPermission('view_backends_list')) {
+            hasLoadedBackendTypesMenu = true;
+            if (typeof loadBackendTypesMenuOnce == 'function') {
+                loadBackendTypesMenuOnce();
+            }
+            else if (typeof loadBackendTypesMenu == 'function') {
+                loadBackendTypesMenu();
+            }
+        }
+    }
+};
+
+sessionReadyCallbacks.push(() => {
+    let activeTopTab = getRequiredElementById('toptablist').querySelector('.active');
+    let activeLazyTabKey = getLazyTabKeyForTabButton(activeTopTab);
+    if (activeLazyTabKey == 'server') {
+        activateLazyTab(activeLazyTabKey).catch((e) => {
+            showError(`${e}`);
+        });
+    }
+});
+
+/** Runs first-open lazy tab work for a lazy top tab exactly once. */
+async function activateLazyTab(tabKey, expectedRequestId = null) {
+    let state = lazyTabState[tabKey];
+    if (!state) {
+        return false;
+    }
+    if (isTopTabOpenRequestStale(expectedRequestId)) {
+        return false;
+    }
+    if (!state.activation) {
+        state.activation = (async () => {
+            await ensureLazyScriptGroup(tabKey);
+            await ensureLazyTabMarkup(tabKey);
+            if (!state.initDone && lazyTabHooks[tabKey]) {
+                await lazyTabHooks[tabKey]();
+                state.initDone = true;
+            }
+        })();
+        state.activation.catch(() => {
+            state.activation = null;
+        });
+    }
+    await state.activation;
+    if (isTopTabOpenRequestStale(expectedRequestId)) {
+        return false;
+    }
+    let tabInfo = window.genpageLazyTabs ? window.genpageLazyTabs[tabKey] : null;
+    bindHashTrackingForTabListId(tabInfo ? hashSubTabMapping[tabInfo.tabId] : null);
+    let tabBody = tabInfo ? document.getElementById(tabInfo.tabId) : null;
+    if (tabBody && tabBody.classList.contains('active') && suppressHashUpdateDepth == 0) {
+        updateHash();
+    }
+    return true;
+}
+
+function bindHashTrackingForTabListId(tabListId) {
+    if (!tabListId) {
+        return;
+    }
+    let tabList = document.getElementById(tabListId);
+    if (!tabList) {
+        return;
+    }
+    if (tabList.dataset.hashTracked == 'true') {
+        return;
+    }
+    tabList.dataset.hashTracked = 'true';
+    tabList.addEventListener('shown.bs.tab', (e) => {
+        if (suppressHashUpdateDepth > 0) {
+            return;
+        }
+        if (tabList.id == 'toptablist') {
+            let lazyTabKey = getLazyTabKeyForTabButton(e.target);
+            if (lazyTabKey) {
+                let state = lazyTabState[lazyTabKey];
+                if (state && (!state.loaded || !state.initDone)) {
+                    return;
+                }
+            }
+        }
+        updateHash();
+    });
+}
+
+async function showTabButtonAndWait(tabButton) {
+    if (!tabButton || tabButton.classList.contains('active')) {
+        return;
+    }
+    await new Promise((resolve) => {
+        let onShown = (e) => {
+            if (e.target != tabButton) {
+                return;
+            }
+            resolve();
+        };
+        tabButton.addEventListener('shown.bs.tab', onShown, { once: true });
+        showTabButton(tabButton);
+    });
+}
+
+let hashSubTabMapping = {
+    [window.genpageLazyTabs.utilities.tabId]: 'utilitiestablist',
+    [window.genpageLazyTabs.user.tabId]: 'usertablist',
+    [window.genpageLazyTabs.server.tabId]: 'servertablist',
+};
+
+function updateHash(historyMode = 'push') {
     let tabList = getRequiredElementById('toptablist');
     let bottomTabList = getRequiredElementById('bottombartabcollection');
     let activeTopTab = tabList.querySelector('.active');
@@ -802,9 +1220,11 @@ function updateHash() {
     let hash = `#${activeBottomTabHref},${activeTopTabHref}`;
     let subMapping = hashSubTabMapping[activeTopTabHref];
     if (subMapping) {
-        let subTabList = getRequiredElementById(subMapping);
-        let activeSubTab = subTabList.querySelector('.active');
-        hash += `,${activeSubTab.href.split('#')[1]}`;
+        let subTabList = document.getElementById(subMapping);
+        let activeSubTab = subTabList ? subTabList.querySelector('.active') : null;
+        if (activeSubTab) {
+            hash += `,${activeSubTab.href.split('#')[1]}`;
+        }
     }
     else if (activeTopTabHref == 'Simple') {
         let target = simpleTab.browser.selected || simpleTab.browser.folder;
@@ -812,46 +1232,49 @@ function updateHash() {
             hash += `,${encodeURIComponent(target)}`;
         }
     }
-    history.pushState(null, null, hash);
+    if (location.hash != hash) {
+        if (historyMode == 'replace') {
+            history.replaceState(null, null, hash);
+        }
+        else {
+            history.pushState(null, null, hash);
+        }
+    }
     autoTitle();
 }
 
-function loadHashHelper() {
+async function loadHashHelper() {
     let tabList = getRequiredElementById('toptablist');
     let bottomTabList = getRequiredElementById('bottombartabcollection');
-    let tabs = [... tabList.getElementsByTagName('a')];
-    tabs = tabs.concat([... bottomTabList.getElementsByTagName('a')]);
+    bindHashTrackingForTabListId('toptablist');
+    bindHashTrackingForTabListId('bottombartabcollection');
     for (let subMapping of Object.values(hashSubTabMapping)) {
-        tabs = tabs.concat([... getRequiredElementById(subMapping).getElementsByTagName('a')]);
+        bindHashTrackingForTabListId(subMapping);
     }
     if (location.hash) {
         let split = location.hash.substring(1).split(',');
         let bottomTarget = bottomTabList.querySelector(`a[href='#${split[0]}']`);
-        if (bottomTarget && bottomTarget.style.display != 'none') {
-            bottomTarget.click();
-        }
-        let target = tabList.querySelector(`a[href='#${split[1]}']`);
-        if (target) {
-            target.click();
-        }
-        let subMapping = hashSubTabMapping[split[1]];
-        if (subMapping && split.length > 2) {
-            let subTabList = getRequiredElementById(subMapping);
-            let subTarget = subTabList.querySelector(`a[href='#${split[2]}']`);
-            if (subTarget) {
-                subTarget.click();
+        try {
+            if (split[1] == 'Simple' && split.length > 2) {
+                let target = decodeURIComponent(split[2]);
+                simpleTab.mustSelectTarget = target;
             }
+            let requestId = beginTopTabOpenRequest();
+            await runWithHashUpdatesSuppressed(async () => {
+                if (bottomTarget && bottomTarget.style.display != 'none') {
+                    await showTabButtonAndWait(bottomTarget);
+                }
+                let target = tabList.querySelector(`a[href='#${split[1]}']`);
+                if (target) {
+                    target.dataset.topTabOpenRequestId = `${requestId}`;
+                    await openGenPageTabAsync(target.id, split.length > 2 ? split[2] : null, requestId, 'replace');
+                }
+            });
         }
-        else if (split[1] == 'Simple' && split.length > 2) {
-            let target = decodeURIComponent(split[2]);
-            simpleTab.mustSelectTarget = target;
+        catch (e) {
+            showError(`${e}`);
         }
         autoTitle();
-    }
-    for (let tab of tabs) {
-        tab.addEventListener('click', (e) => {
-            updateHash();
-        });
     }
 }
 
@@ -867,6 +1290,9 @@ function clearParamFilterInput() {
 }
 
 function genpageLoad() {
+    $('#toptablist').on('show.bs.tab', function (e) {
+        beginTopTabOpenRequest(e.target, true);
+    });
     $('#toptablist').on('shown.bs.tab', function (e) {
         let versionDisp = getRequiredElementById('version_display');
         if (e.target.id == 'maintab_comfyworkflow') {
@@ -875,36 +1301,33 @@ function genpageLoad() {
         else {
             versionDisp.style.display = '';
         }
+        let shownLazyTabKey = getLazyTabKeyForTabButton(e.target);
+        if (shownLazyTabKey) {
+            let wasLazyTabInitialized = lazyTabState[shownLazyTabKey] ? lazyTabState[shownLazyTabKey].initDone : false;
+            let requestId = getTopTabOpenRequestId(e.target);
+            activateLazyTab(shownLazyTabKey, requestId).then((wasActivated) => {
+                if (!wasActivated) {
+                    return;
+                }
+                if (shownLazyTabKey == 'user' && wasLazyTabInitialized && typeof refreshUserTab == 'function') {
+                    refreshUserTab();
+                }
+                if (shownLazyTabKey == 'server' && typeof queueServerTabHeightFix == 'function') {
+                    queueServerTabHeightFix();
+                }
+                refreshServerResourceLoopState();
+            }).catch((e) => {
+                showError(`${e}`);
+            });
+            return;
+        }
+        refreshServerResourceLoopState();
     });
     genTabLayout.init();
     reviseStatusBar();
-    loadHashHelper();
-    let serverTabButton = document.getElementById('servertabbutton');
-    if (serverTabButton) {
-        serverTabButton.addEventListener('click', () => {
-            if (!hasLoadedBackendTypesMenu && permissions.hasPermission('view_backends_list')) {
-                hasLoadedBackendTypesMenu = true;
-                if (typeof loadBackendTypesMenuOnce == 'function') {
-                    loadBackendTypesMenuOnce();
-                }
-                else {
-                    loadBackendTypesMenu();
-                }
-            }
-            if (typeof queueServerTabHeightFix == 'function') {
-                queueServerTabHeightFix();
-            }
-            refreshServerResourceLoopState();
-        });
-    }
-    let topTabList = document.getElementById('toptablist');
-    if (topTabList) {
-        topTabList.addEventListener('click', () => {
-            setTimeout(() => {
-                refreshServerResourceLoopState();
-            }, 1);
-        });
-    }
+    loadHashHelper().catch((e) => {
+        showError(`${e}`);
+    });
     getSession(() => {
         ensureImageHistoryBrowserShellReady();
         imageHistoryBrowser.navigate('');

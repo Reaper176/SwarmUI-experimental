@@ -86,21 +86,41 @@ class NotesTab {
         let newNote = document.getElementById('notes_new_note_button');
         let rename = document.getElementById('notes_rename_button');
         let del = document.getElementById('notes_delete_button');
+        let headerNewFolder = document.getElementById('notes_header_new_folder_button');
+        let headerNewNote = document.getElementById('notes_header_new_note_button');
+        let headerRename = document.getElementById('notes_header_rename_button');
+        let headerDelete = document.getElementById('notes_header_delete_button');
         if (newFolder && !newFolder.dataset.ready) {
             newFolder.dataset.ready = 'true';
             newFolder.addEventListener('click', this.createFolderPrompt.bind(this));
+        }
+        if (headerNewFolder && !headerNewFolder.dataset.ready) {
+            headerNewFolder.dataset.ready = 'true';
+            headerNewFolder.addEventListener('click', this.createFolderPrompt.bind(this));
         }
         if (newNote && !newNote.dataset.ready) {
             newNote.dataset.ready = 'true';
             newNote.addEventListener('click', this.createNotePrompt.bind(this));
         }
+        if (headerNewNote && !headerNewNote.dataset.ready) {
+            headerNewNote.dataset.ready = 'true';
+            headerNewNote.addEventListener('click', this.createNotePrompt.bind(this));
+        }
         if (rename && !rename.dataset.ready) {
             rename.dataset.ready = 'true';
             rename.addEventListener('click', this.renameCurrentPrompt.bind(this));
         }
+        if (headerRename && !headerRename.dataset.ready) {
+            headerRename.dataset.ready = 'true';
+            headerRename.addEventListener('click', this.renameCurrentPrompt.bind(this));
+        }
         if (del && !del.dataset.ready) {
             del.dataset.ready = 'true';
             del.addEventListener('click', this.deleteCurrentPrompt.bind(this));
+        }
+        if (headerDelete && !headerDelete.dataset.ready) {
+            headerDelete.dataset.ready = 'true';
+            headerDelete.addEventListener('click', this.deleteCurrentPrompt.bind(this));
         }
     }
 
@@ -108,11 +128,29 @@ class NotesTab {
     updateActionButtons() {
         let rename = document.getElementById('notes_rename_button');
         let del = document.getElementById('notes_delete_button');
+        let headerRename = document.getElementById('notes_header_rename_button');
+        let headerDelete = document.getElementById('notes_header_delete_button');
+        let headerNewNote = document.getElementById('notes_header_new_note_button');
+        let headerNewFolder = document.getElementById('notes_header_new_folder_button');
+        let hasTarget = !!this.getCurrentTargetPath();
+        let canCreate = this.rootConfigured;
         if (rename) {
-            rename.disabled = !this.getCurrentTargetPath();
+            rename.disabled = !hasTarget;
         }
         if (del) {
-            del.disabled = !this.getCurrentTargetPath();
+            del.disabled = !hasTarget;
+        }
+        if (headerRename) {
+            headerRename.disabled = !hasTarget;
+        }
+        if (headerDelete) {
+            headerDelete.disabled = !hasTarget;
+        }
+        if (headerNewNote) {
+            headerNewNote.disabled = !canCreate;
+        }
+        if (headerNewFolder) {
+            headerNewFolder.disabled = !canCreate;
         }
         this.saveButton.disabled = !this.currentPath;
     }

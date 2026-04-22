@@ -34,7 +34,7 @@ class GenerateHandler {
         if (!curImgElem || autoLoadImagesElem.checked || curImgElem.dataset.batch_id == batchId) {
             this.setCurrentImage(image, metadata, batchId, false, true);
         }
-        if ((getUserSetting('AutoSwapImagesIncludesFullView') || imageFullView.currentBatchId == batchId) && imageFullView.isOpen()) {
+        if ((internalSiteJsGetUserSetting('AutoSwapImagesIncludesFullView', false) || imageFullView.currentBatchId == batchId) && imageFullView.isOpen()) {
             imageFullView.showImage(image, metadata, batchId);
         }
     }
@@ -156,21 +156,109 @@ class GenerateHandler {
         return null;
     }
 
+    isDebugTrackingEnabled() {
+        return localStorage.getItem('swarm_gen_debug') == 'true';
+    }
+
+    debugTrack(label, data) {
+        if (!this.isDebugTrackingEnabled()) {
+            return;
+        }
+        console.log(`[SwarmGenDebug] ${label}`, data);
+    }
+
+    /** Converts a still-tracked preview card into a finished batch card when a socket closes without a final image event. */
+    finalizeLingeringPreview(imgHolder, requestId = null, markFailed = false) {
+        let div = this.getDiv(imgHolder);
+        if (!div) {
+            return false;
+        }
+        let spinner = div.querySelector('.loading-spinner-parent');
+        if (spinner) {
+            spinner.remove();
+        }
+        let progressBars = div.querySelector('.image-preview-progress-wrapper');
+        if (progressBars) {
+            progressBars.remove();
+        }
+        if (markFailed && !div.querySelector('.image-block-failed')) {
+            let failIcon = createDiv(null, 'image-block-failed');
+            div.appendChild(failIcon);
+        }
+        let imgElem = div.querySelector('img');
+        if (imgElem) {
+            delete imgElem.dataset.previewGrow;
+        }
+        delete div.dataset.is_generating;
+        if (requestId) {
+            div.dataset.request_id = requestId;
+        }
+        if (!imgHolder.image || div.dataset.is_placeholder == 'true') {
+            return false;
+        }
+        return true;
+    }
+
+    findCompletedImageForRequest(discardable, requestId) {
+        if (!requestId) {
+            return null;
+        }
+        for (let img of Object.values(discardable)) {
+            let div = this.getDiv(img);
+            let candidateRequestId = div?.dataset?.request_id ?? img?.div?.dataset?.request_id;
+            if (candidateRequestId == requestId && img.image) {
+                return img;
+            }
+        }
+        return null;
+    }
+
     internalHandleData(data, images, discardable, timeLastGenHit, actualInput, socketId, socket, isPreview, batch_id) {
         if ('socket_intention' in data && data.socket_intention == 'close' && socket) {
+            this.debugTrack('socket-close', {
+                socketId,
+                batch_id,
+                interrupted: this.interrupted,
+                trackedPreviewKeys: Object.keys(images),
+                completedKeys: Object.keys(discardable),
+                trackedPreviewRequestIds: Object.values(images).map(img => this.getDiv(img)?.dataset?.request_id ?? null),
+                completedRequestIds: Object.values(discardable).map(img => this.getDiv(img)?.dataset?.request_id ?? null)
+            });
             if (this.sockets[socketId] == socket) {
                 this.sockets[socketId] = null;
             }
-            if (this.interrupted < batch_id || getUserSetting('ui.removeinterruptedgens', false)) {
-                // clear any lingering previews
-                for (let img of Object.values(images)) {
-                    let div = this.getDiv(img);
-                    if (div) {
-                        div.remove();
+            let removeInterrupted = getUserSetting('ui.removeinterruptedgens', false);
+            let wasInterrupted = this.interrupted >= batch_id;
+            for (let [index, img] of Object.entries(images)) {
+                let div = this.getDiv(img);
+                if (!div) {
+                    delete images[index];
+                    continue;
+                }
+                if (wasInterrupted && removeInterrupted) {
+                    div.remove();
+                    delete images[index];
+                    continue;
+                }
+                let replacement = this.findCompletedImageForRequest(discardable, div.dataset.request_id);
+                if (replacement && replacement.image && replacement.image != img.image) {
+                    this.setImageFor(img, replacement.image);
+                    img.image = replacement.image;
+                    if (replacement.metadata) {
+                        img.metadata = replacement.metadata;
+                        div.dataset.metadata = replacement.metadata;
                     }
                 }
-                playCompletionAudio();
+                let keepPreview = this.finalizeLingeringPreview(img, div.dataset.request_id, wasInterrupted);
+                if (keepPreview) {
+                    discardable[index] = img;
+                }
+                else {
+                    div.remove();
+                }
+                delete images[index];
             }
+            playCompletionAudio();
             return;
         }
         if (isPreview) {
@@ -180,6 +268,14 @@ class GenerateHandler {
             return;
         }
         if (data.image) {
+            this.debugTrack('final-image', {
+                request_id: data.request_id,
+                batch_index: data.batch_index,
+                trackedKeysBefore: Object.keys(images),
+                completedKeysBefore: Object.keys(discardable),
+                hadTrackedEntry: !!images[data.batch_index],
+                imageSnippet: `${data.image}`.substring(0, 160)
+            });
             let timeNow = Date.now();
             let timeDiff = timeNow - timeLastGenHit[0];
             timeLastGenHit[0] = timeNow;
@@ -241,6 +337,15 @@ class GenerateHandler {
             }
         }
         if (data.gen_progress) {
+            this.debugTrack('progress', {
+                request_id: data.gen_progress.request_id,
+                batch_index: data.gen_progress.batch_index,
+                trackedKeysBefore: Object.keys(images),
+                completedKeysBefore: Object.keys(discardable),
+                hasPreview: !!data.gen_progress.preview,
+                overall_percent: data.gen_progress.overall_percent,
+                current_percent: data.gen_progress.current_percent
+            });
             let thisBatchId = `${data.gen_progress.request_id}_${data.gen_progress.batch_index}`;
             let metadataRaw = data.gen_progress.metadata ?? '{}';
             if (!(data.gen_progress.batch_index in images)) {
@@ -289,14 +394,16 @@ class GenerateHandler {
                 let img = discardable[index] ?? images[index];
                 if (img) {
                     let div = this.getDiv(img);
-                    if (div) {
+                    let shouldRemoveDiv = div && (div.dataset.is_generating == 'true' || !img.image);
+                    if (shouldRemoveDiv) {
                         div.remove();
                     }
                     let curImgElem = document.getElementById(this.imageId);
                     if (curImgElem && curImgElem.src == img.image) {
                         needsNew = true;
-                        delete discardable[index];
                     }
+                    delete discardable[index];
+                    delete images[index];
                 }
             }
             if (needsNew) {

@@ -2599,37 +2599,61 @@ mark.model-search-highlight {
 .notes-editor-panel {
     display: flex;
     flex-direction: column;
-    gap: 0.75rem;
     min-width: 0;
     min-height: 0;
     flex: 1 1 auto;
     border: 0.0625rem solid var(--light-border);
     border-radius: 0.5rem;
-    padding: 0.85rem;
+    overflow: hidden;
     background: rgba(0, 0, 0, 0.08);
 }
 .notes-editor-header {
+    flex: 0 0 auto;
+    padding: 0.8rem 0.9rem 0.65rem;
+    border-bottom: 0.0625rem solid var(--light-border);
+    background: rgba(0, 0, 0, 0.16);
+}
+.notes-editor-toolbar {
     display: flex;
     justify-content: space-between;
-    align-items: flex-start;
+    align-items: center;
     gap: 1rem;
-}
-.notes-editor-title-row {
-    min-width: 0;
-    flex: 1 1 auto;
+    flex-wrap: wrap;
 }
 .notes-editor-title {
     font-size: 1.05rem;
     font-weight: 700;
+    flex: 0 0 auto;
+}
+.notes-editor-meta {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 0.75rem 1rem;
+    flex-wrap: wrap;
+    padding: 0.65rem 0.9rem 0.8rem;
+    border-bottom: 0.0625rem solid var(--light-border);
+    background: rgba(0, 0, 0, 0.1);
+}
+.notes-editor-body {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+    flex: 1 1 auto;
+    min-height: 0;
+    padding: 0.85rem;
 }
 .notes-editor-path {
     color: var(--text-soft);
     word-break: break-word;
+    min-width: 16rem;
+    flex: 1 1 24rem;
 }
 .notes-editor-actions {
     display: flex;
     align-items: center;
-    gap: 0.75rem;
+    justify-content: flex-end;
+    gap: 0.55rem;
     flex-wrap: wrap;
 }
 .notes-preview-toggle {
@@ -2637,10 +2661,16 @@ mark.model-search-highlight {
     align-items: center;
     gap: 0.35rem;
     margin: 0;
+    padding: 0.25rem 0.35rem;
+    border: 0.0625rem solid var(--light-border);
+    border-radius: 0.4rem;
+    background: rgba(255, 255, 255, 0.03);
 }
 .notes-status-line {
     min-height: 1.35rem;
     color: var(--text-soft);
+    text-align: right;
+    flex: 0 1 auto;
 }
 .notes-status-line.notes-status-error {
     color: #ff8d8d;
@@ -2664,6 +2694,7 @@ mark.model-search-highlight {
     min-height: 14rem;
     height: 100%;
     flex: 1 1 auto;
+    min-height: 0;
     resize: none;
     white-space: pre-wrap;
     font-family: "Cascadia Code", "Consolas", monospace;
@@ -2709,5 +2740,15 @@ mark.model-search-highlight {
         width: 100%;
         min-width: 0;
         min-height: 16rem;
+    }
+    .notes-editor-toolbar,
+    .notes-editor-meta {
+        align-items: stretch;
+    }
+    .notes-editor-actions {
+        justify-content: flex-start;
+    }
+    .notes-status-line {
+        text-align: left;
     }
 }

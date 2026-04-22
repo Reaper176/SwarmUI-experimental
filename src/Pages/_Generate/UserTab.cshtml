@@ -21,7 +21,7 @@
             <div class="card-body">
                 @if (!Model.IsLoginEnabled)
                 {
-                    <p class="translate">User accounts are not enabled. You are the local default user. You can enable multi-user accounts in the <a href="#Settings-Server" onclick="getRequiredElementById('servertabbutton').click();getRequiredElementById('serverconfigtabbutton').click()">Server Configuration</a> tab.</p>
+                    <p class="translate">User accounts are not enabled. You are the local default user. You can enable multi-user accounts in the <a href="#Settings-Server" onclick="return openGenPageTab('servertabbutton', 'serverconfigtabbutton')">Server Configuration</a> tab.</p>
                 }
                 else
                 {

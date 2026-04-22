@@ -55,7 +55,11 @@ class MovableGenTab {
                 this.clickOther();
                 this.setNotSelected();
             }
-            this.currentGroup = getRequiredElementById(this.targetGroupId);
+            let targetGroup = document.getElementById(this.targetGroupId) || this.defaultGroup;
+            if (!targetGroup) {
+                return;
+            }
+            this.currentGroup = targetGroup;
             this.currentGroup.appendChild(this.navElem.parentElement);
             let newContentContainer = getRequiredElementById(this.currentGroup.dataset.content);
             newContentContainer.appendChild(this.contentElem);
@@ -130,7 +134,7 @@ class GenTabLayout {
         this.altImageRegion = getRequiredElementById('alt_prompt_extra_area');
         this.editorSizebar = getRequiredElementById('image_editor_sizebar');
         this.tabCollections = document.querySelectorAll('.swarm-gen-tab-subnav');
-        this.layoutConfigArea = getRequiredElementById('layoutconfigarea');
+        this.layoutConfigArea = document.getElementById('layoutconfigarea');
         this.toolContainer = getRequiredElementById('tool_container');
         this.t2iRootDiv = getRequiredElementById('Text2Image');
         this.quickToolsButton = getRequiredElementById('quicktools-button');
@@ -289,9 +293,9 @@ class GenTabLayout {
         this.altRegion.style.width = `calc(100vw - ${barTopLeft} - ${barTopRight} - 10px)`;
         this.mainImageArea.style.width = `calc(100vw - ${barTopLeft})`;
         this.mainImageArea.scrollTop = 0;
-        if (imageEditor && imageEditor.active) {
+        if (window.imageEditor && window.imageEditor.active) {
             let imageEditorSizePercent = this.imageEditorBarPos < 0 ? 0.5 : (this.imageEditorBarPos / 100.0);
-            imageEditor.inputDiv.style.width = `calc((${curImgWidth}) * ${imageEditorSizePercent})`;
+            window.imageEditor.inputDiv.style.width = `calc((${curImgWidth}) * ${imageEditorSizePercent})`;
             this.currentImage.style.width = `calc((${curImgWidth}) * ${(1.0 - imageEditorSizePercent)} - 6px)`;
         }
         else {
@@ -334,8 +338,8 @@ class GenTabLayout {
             let bottomBarHeight = this.bottomInfoBar.offsetHeight;
             this.bottomBar.style.height = `calc(49vh - 30px)`;
         }
-        if (imageEditor) {
-            imageEditor.resize();
+        if (window.imageEditor) {
+            window.imageEditor.resize();
         }
         alignImageDataFormat();
         for (let collection of this.tabCollections) {
@@ -467,8 +471,8 @@ class GenTabLayout {
                 this.reapplyPositions();
             }
             if (this.imageEditorSizeBarDrag) {
-                let maxAreaWidth = imageEditor.inputDiv.offsetWidth + this.currentImage.offsetWidth + 10;
-                let imageAreaLeft = imageEditor.inputDiv.getBoundingClientRect().left;
+                let maxAreaWidth = window.imageEditor.inputDiv.offsetWidth + this.currentImage.offsetWidth + 10;
+                let imageAreaLeft = window.imageEditor.inputDiv.getBoundingClientRect().left;
                 let val = Math.min(Math.max(offX - imageAreaLeft + 3, 200), maxAreaWidth - 200);
                 this.imageEditorBarPos = Math.min(90, Math.max(10, val / maxAreaWidth * 100));
                 this.reapplyPositions();
@@ -644,7 +648,10 @@ class GenTabLayout {
         textPromptAddKeydownHandler(this.altText);
         textPromptAddKeydownHandler(this.altNegText);
         addEventListener("resize", this.reapplyPositions.bind(this));
-        textPromptAddKeydownHandler(getRequiredElementById('edit_wildcard_contents'));
+        let editWildcardContents = document.getElementById('edit_wildcard_contents');
+        if (editWildcardContents) {
+            textPromptAddKeydownHandler(editWildcardContents);
+        }
         this.buildConfigArea();
     }
 
@@ -663,6 +670,10 @@ class GenTabLayout {
     }
 
     buildConfigArea() {
+        this.layoutConfigArea = document.getElementById('layoutconfigarea');
+        if (!this.layoutConfigArea) {
+            return;
+        }
         let html = '<table class="simple-table">\n<tr><th>Tab</th><th>Group</th><th>Visible</th></tr>\n';
         let selectOptions = filterDistinctBy(this.managedTabs.map(t => t.defaultGroup), g => g.id).map(e => `<option value="${e.id}">${escapeHtml(e.dataset.title)}</option>`).join('\n');
         for (let tab of this.managedTabs) {
@@ -695,7 +706,11 @@ class GenTabLayout {
     }
 
     onMobileDesktopLayoutChange() {
-        this.mobileDesktopLayout = getRequiredElementById('mobile_desktop_layout_selector').value;
+        let selector = document.getElementById('mobile_desktop_layout_selector');
+        if (!selector) {
+            return;
+        }
+        this.mobileDesktopLayout = selector.value;
         localStorage.setItem('layout_mobileDesktop', this.mobileDesktopLayout);
         this.reapplyPositions();
     }

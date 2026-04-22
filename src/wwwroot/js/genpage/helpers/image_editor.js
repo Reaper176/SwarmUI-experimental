@@ -2759,6 +2759,16 @@ class ImageEditor {
     }
 }
 
+let hasInitializedImageEditorHelpers = false;
+
+/** Ensures image editor helper globals are initialized exactly once. */
+function ensureImageEditorHelpersInitialized() {
+    if (hasInitializedImageEditorHelpers) {
+        return;
+    }
+    hasInitializedImageEditorHelpers = true;
+}
+
 function imageEditorCreateCanvas(width, height) {
     let canvas = document.createElement('canvas');
     canvas.width = Math.max(1, Math.round(width));

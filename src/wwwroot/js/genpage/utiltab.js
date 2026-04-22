@@ -42,12 +42,19 @@ function utilClipTokenize() {
     }
 }
 
-function showPromptTokenizen(box) {
+async function showPromptTokenizen(box) {
     let src = getRequiredElementById(box);
+    try {
+        if (!await openGenPageTabAsync('utilitiestabbutton', 'cliptokentabbutton')) {
+            return;
+        }
+    }
+    catch (e) {
+        showError(`${e}`);
+        return;
+    }
     let target = getRequiredElementById('clip_tokenization_test_textarea');
     target.value = src.value || src.innerText;
-    getRequiredElementById('utilitiestabbutton').click();
-    getRequiredElementById('cliptokentabbutton').click();
     triggerChangeFor(target);
 }
 
@@ -55,6 +62,9 @@ function showPromptTokenizen(box) {
 function pickle2safetensor_load(mapping = null) {
     if (mapping == null) {
         mapping = coreModelMap;
+    }
+    if (!document.getElementById('pickle2safetensor_stable-diffusion_count')) {
+        return;
     }
     for (let type of ['Stable-Diffusion', 'LoRA', 'VAE', 'Embedding', 'ControlNet']) {
         let modelSet = mapping[type];
@@ -98,17 +108,28 @@ function util_massMetadataClear() {
 
 class LoraExtractorUtil {
     constructor() {
-        this.tabHeader = getRequiredElementById('loraextractortabbutton');
-        this.baseInput = getRequiredElementById('lora_extractor_base_model');
-        this.otherInput = getRequiredElementById('lora_extractor_other_model');
-        this.rankInput = getRequiredElementById('lora_extractor_rank');
-        this.nameInput = getRequiredElementById('lora_extractor_name');
-        this.textArea = getRequiredElementById('lora_extractor_text_area');
-        this.progressBar = getRequiredElementById('lora_extractor_special_progressbar');
-        this.tabHeader.addEventListener('click', () => this.refillInputModels());
+        this.hasBoundTabHeader = false;
+        this.getElems();
+    }
+
+    getElems() {
+        this.tabHeader = document.getElementById('loraextractortabbutton');
+        this.baseInput = document.getElementById('lora_extractor_base_model');
+        this.otherInput = document.getElementById('lora_extractor_other_model');
+        this.rankInput = document.getElementById('lora_extractor_rank');
+        this.nameInput = document.getElementById('lora_extractor_name');
+        this.textArea = document.getElementById('lora_extractor_text_area');
+        this.progressBar = document.getElementById('lora_extractor_special_progressbar');
+        if (this.tabHeader && !this.hasBoundTabHeader) {
+            this.tabHeader.addEventListener('shown.bs.tab', () => this.refillInputModels());
+            this.hasBoundTabHeader = true;
+        }
     }
 
     refillInputModels() {
+        if (!this.baseInput || !this.otherInput) {
+            return;
+        }
         let html = '';
         for (let model of allModels.filter(m => !m.endsWith('.engine'))) {
             html += `<option>${cleanModelName(model)}</option>`;
@@ -122,6 +143,10 @@ class LoraExtractorUtil {
     }
 
     run() {
+        this.getElems();
+        if (!this.baseInput || !this.otherInput || !this.rankInput || !this.nameInput || !this.textArea || !this.progressBar) {
+            return;
+        }
         let baseModel = this.baseInput.value;
         let otherModel = this.otherInput.value;
         let rank = this.rankInput.value;
@@ -173,16 +198,7 @@ loraExtractor = new LoraExtractorUtil();
 
 class ModelDownloaderUtil {
     constructor() {
-        this.tabHeader = getRequiredElementById('modeldownloadertabbutton');
-        this.url = getRequiredElementById('model_downloader_url');
-        this.urlStatusArea = getRequiredElementById('model_downloader_status');
-        this.type = getRequiredElementById('model_downloader_type');
-        this.name = getRequiredElementById('model_downloader_name');
-        this.button = getRequiredElementById('model_downloader_button');
-        this.metadataZone = getRequiredElementById('model_downloader_metadatazone');
-        this.imageSide = getRequiredElementById('model_downloader_imageside');
-        this.activeZone = getRequiredElementById('model_downloader_right_sidebar');
-        this.folders = getRequiredElementById('model_downloader_folder');
+        this.getElems();
         this.hfPrefix = 'https://huggingface.co/';
         this.civitPrefix = 'https://civitai.red/';
         this.civitOldPrefix = 'https://civitai.com/';
@@ -195,6 +211,19 @@ class ModelDownloaderUtil {
         this.civitaiMinRequestSpacingMs = 125;
         this.civitaiNextRequestTime = 0;
         this.civitaiBackoffUntil = 0;
+    }
+
+    getElems() {
+        this.tabHeader = document.getElementById('modeldownloadertabbutton');
+        this.url = document.getElementById('model_downloader_url');
+        this.urlStatusArea = document.getElementById('model_downloader_status');
+        this.type = document.getElementById('model_downloader_type');
+        this.name = document.getElementById('model_downloader_name');
+        this.button = document.getElementById('model_downloader_button');
+        this.metadataZone = document.getElementById('model_downloader_metadatazone');
+        this.imageSide = document.getElementById('model_downloader_imageside');
+        this.activeZone = document.getElementById('model_downloader_right_sidebar');
+        this.folders = document.getElementById('model_downloader_folder');
     }
 
     normalizeCivitaiUrl(url) {
@@ -239,7 +268,7 @@ class ModelDownloaderUtil {
     }
 
     reloadFolders() {
-        if (!coreModelMap) {
+        if (!coreModelMap || !this.folders) {
             return;
         }
         let selected = this.folders.value;
@@ -812,7 +841,7 @@ class ActiveModelDownload {
                 this.isDone();
             }
         }, 0, e => {
-            let hintInfo = `Are you sure the URL is correct? Note some models may require you to authenticate using an <a href="#" onclick="getRequiredElementById('usersettingstabbutton').click();getRequiredElementById('userinfotabbutton').click();">API Key</a>.`;
+            let hintInfo = `Are you sure the URL is correct? Note some models may require you to authenticate using an <a href="#" onclick="return openGenPageTab('usersettingstabbutton', 'userinfotabbutton')">API Key</a>.`;
             if (e == "Download was cancelled.") {
                 hintInfo = "";
                 this.setBorderColor('#aaaa00');
@@ -843,20 +872,26 @@ modelDownloader = new ModelDownloaderUtil();
 
 class ModelMetadataScanner {
     constructor() {
-        this.button = getRequiredElementById('util_modelmetadatascanner_button');
-        this.repairButton = getRequiredElementById('util_modelmetadatascanner_repair_button');
-        this.subTypeSelector = getRequiredElementById('util_modelmetadatascanner_subtype');
-        this.dateSelector = getRequiredElementById('util_modelmetadatascanner_date');
-        this.filterSelector = getRequiredElementById('util_modelmetadatascanner_requirements');
-        this.replaceSelector = getRequiredElementById('util_modelmetadatascanner_replace');
-        this.nameFilter = getRequiredElementById('util_modelmetadatascanner_filter');
-        this.resultArea = getRequiredElementById('util_modelmetadatascanner_result');
+        this.getElems();
         this.maxSimulLoads = 30;
         this.isRunning = false;
     }
 
+    getElems() {
+        this.button = document.getElementById('util_modelmetadatascanner_button');
+        this.repairButton = document.getElementById('util_modelmetadatascanner_repair_button');
+        this.subTypeSelector = document.getElementById('util_modelmetadatascanner_subtype');
+        this.dateSelector = document.getElementById('util_modelmetadatascanner_date');
+        this.filterSelector = document.getElementById('util_modelmetadatascanner_requirements');
+        this.replaceSelector = document.getElementById('util_modelmetadatascanner_replace');
+        this.nameFilter = document.getElementById('util_modelmetadatascanner_filter');
+        this.resultArea = document.getElementById('util_modelmetadatascanner_result');
+    }
+
     setButtonsDisabled(disabled) {
-        this.button.disabled = disabled;
+        if (this.button) {
+            this.button.disabled = disabled;
+        }
         if (this.repairButton) {
             this.repairButton.disabled = disabled;
         }
@@ -1181,3 +1216,30 @@ class ModelMetadataScanner {
 }
 
 modelMetadataScanner = new ModelMetadataScanner();
+
+let hasInitializedUtilitiesTab = false;
+
+/** Ensures utility-tab lazy DOM bindings and first-open refresh work are ready. */
+function ensureUtilitiesTabInitialized() {
+    if (hasInitializedUtilitiesTab) {
+        return;
+    }
+    loraExtractor.getElems();
+    modelDownloader.getElems();
+    modelMetadataScanner.getElems();
+    hasInitializedUtilitiesTab = true;
+}
+
+function refreshUtilitiesTab() {
+    loraExtractor.getElems();
+    modelDownloader.getElems();
+    modelMetadataScanner.getElems();
+    loraExtractor.refillInputModels();
+    pickle2safetensor_load();
+    modelDownloader.reloadFolders();
+}
+
+function initUtilitiesTab() {
+    ensureUtilitiesTabInitialized();
+    refreshUtilitiesTab();
+}

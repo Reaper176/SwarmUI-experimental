@@ -3320,7 +3320,7 @@ function imageEditingCloneToneBalance(toneBalance) {
 /**
  * Opens the Generate tab edit-image area with a provided image.
  */
-function openGenerateTabEditorForImage(img, actionLabel = 'Edit Image', retryCount = 0) {
+async function openGenerateTabEditorForImage(img, actionLabel = 'Edit Image', retryCount = 0) {
     let initImageGroupToggle = document.getElementById('input_group_content_initimage_toggle');
     if (initImageGroupToggle) {
         initImageGroupToggle.checked = true;
@@ -3350,8 +3350,14 @@ function openGenerateTabEditorForImage(img, actionLabel = 'Edit Image', retryCou
         inputAspectRatio.value = 'Custom';
         triggerChangeFor(inputAspectRatio);
     }
-    if (!ensureGenerateImageEditorReady()) {
-        showError(`Cannot use "${actionLabel}": Generate tab editor is unavailable.`);
+    try {
+        if (!await ensureGenerateImageEditorReady()) {
+            showError(`Cannot use "${actionLabel}": Generate tab editor is unavailable.`);
+            return false;
+        }
+    }
+    catch (e) {
+        showError(`${e}`);
         return false;
     }
     imageEditor.setBaseImage(img);
@@ -3362,7 +3368,7 @@ function openGenerateTabEditorForImage(img, actionLabel = 'Edit Image', retryCou
 /**
  * Opens the Generate tab edit-image area with full editor layer data.
  */
-function openGenerateTabEditorForEditorData(sourceEditor, actionLabel = 'Send Layers To Generate Editor', retryCount = 0) {
+async function openGenerateTabEditorForEditorData(sourceEditor, actionLabel = 'Send Layers To Generate Editor', retryCount = 0) {
     if (!sourceEditor || !sourceEditor.layers || sourceEditor.layers.length == 0) {
         showError(`Cannot use "${actionLabel}": no editor layers are available.`);
         return false;
@@ -3396,8 +3402,14 @@ function openGenerateTabEditorForEditorData(sourceEditor, actionLabel = 'Send La
         inputAspectRatio.value = 'Custom';
         triggerChangeFor(inputAspectRatio);
     }
-    if (!ensureGenerateImageEditorReady()) {
-        showError(`Cannot use "${actionLabel}": Generate tab editor is unavailable.`);
+    try {
+        if (!await ensureGenerateImageEditorReady()) {
+            showError(`Cannot use "${actionLabel}": Generate tab editor is unavailable.`);
+            return false;
+        }
+    }
+    catch (e) {
+        showError(`${e}`);
         return false;
     }
     let wasActive = imageEditor.active;
@@ -3473,10 +3485,17 @@ function openGenerateTabEditorForEditorData(sourceEditor, actionLabel = 'Send La
 /**
  * Sends an image source to the Image Editing tab's editor and activates that tab.
  */
-function sendToImageEditingTabPreview(src, metadata = '{}') {
-    let imageEditingTopTabButton = document.getElementById('imageeditingtabbutton');
-    if (imageEditingTopTabButton) {
-        imageEditingTopTabButton.click();
+async function sendToImageEditingTabPreview(src, metadata = '{}') {
+    try {
+        if (document.getElementById('imageeditingtabbutton')) {
+            if (!await openGenPageTabAsync('imageeditingtabbutton')) {
+                return;
+            }
+        }
+    }
+    catch (e) {
+        showError(`${e}`);
+        return;
     }
     imageEditingEnsureUiReady();
     if (!imageEditingTabEditor) {
@@ -3511,7 +3530,9 @@ function sendImageEditingLayersToGenerateEditor() {
         return;
     }
     let doTransfer = () => {
-        openGenerateTabEditorForEditorData(imageEditingTabEditor, 'Send Layers To Generate Editor');
+        openGenerateTabEditorForEditorData(imageEditingTabEditor, 'Send Layers To Generate Editor').catch((e) => {
+            showError(`${e}`);
+        });
     };
     let generateTopTabButton = document.getElementById('text2imagetabbutton');
     if (!generateTopTabButton) {
@@ -3565,11 +3586,14 @@ $('#toptablist').on('shown.bs.tab', function (e) {
             imageEditingTabEditor.deactivate();
         }
         if (e.target.id == 'text2imagetabbutton' && imageEditingPausedGenerateEditor) {
-            ensureGenerateImageEditorReady();
-            if (window.imageEditor && !window.imageEditor.active) {
-                window.imageEditor.activate();
-            }
-            imageEditingPausedGenerateEditor = false;
+            ensureGenerateImageEditorReady().then(() => {
+                if (window.imageEditor && !window.imageEditor.active) {
+                    window.imageEditor.activate();
+                }
+                imageEditingPausedGenerateEditor = false;
+            }).catch((e) => {
+                showError(`${e}`);
+            });
         }
     }
 });
@@ -3691,7 +3715,7 @@ function setCurrentImage(src, metadata = '', batchId = '', previewGrow = false, 
     }
     img.onload = () => {
         let [width, height] = naturalDim();
-        if (previewGrow || getUserSetting('centerimagealwaysgrow')) {
+        if (previewGrow || internalSiteJsGetUserSetting('centerimagealwaysgrow', false)) {
             img.width = width * 8;
             img.height = height * 8;
             img.dataset.previewGrow = 'true';
@@ -3853,11 +3877,15 @@ function setCurrentImage(src, metadata = '', batchId = '', previewGrow = false, 
         tmpImg.src = img.src;
     }, '', 'Uses this image as an Image Prompt input', ['image']);
     includeButton('Edit Image', () => {
-        openGenerateTabEditorForImage(img, 'Edit Image');
+        openGenerateTabEditorForImage(img, 'Edit Image').catch((e) => {
+            showError(`${e}`);
+        });
     }, '', 'Opens an Image Editor for this image', ['image']);
     if (mediaType == 'image') {
         includeButton('Send To Image Edit Tab', () => {
-            sendToImageEditingTabPreview(img.src, img.dataset.metadata);
+            sendToImageEditingTabPreview(img.src, img.dataset.metadata).catch((e) => {
+                showError(`${e}`);
+            });
         }, '', 'Sends this image to the Image Editing tab preview area');
     }
     includeButton('Upscale 2x', () => {
@@ -4083,7 +4111,7 @@ function gotImageResult(image, metadata, batchId) {
     if (!currentImageHelper.getCurrentImage() || autoLoadImagesElem.checked) {
         setCurrentImage(src, metadata, batchId, false, true);
     }
-    if ((getUserSetting('AutoSwapImagesIncludesFullView') || imageFullView.currentBatchId == batchId) && imageFullView.isOpen()) {
+    if ((internalSiteJsGetUserSetting('AutoSwapImagesIncludesFullView', false) || imageFullView.currentBatchId == batchId) && imageFullView.isOpen()) {
         imageFullView.showImage(src, metadata, batchId);
     }
     return batch_div;

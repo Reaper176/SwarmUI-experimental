@@ -1,5 +1,5 @@
-let serverSettingsContainer = getRequiredElementById('server_settings_container');
-let userSettingsContainer = getRequiredElementById('user_settings_container');
+let pendingUserSettingsLoads = [];
+let shouldLoadServerSettingsWhenReady = false;
 
 let userSettingsData = {
     known: {},
@@ -181,6 +181,13 @@ function applyThemeSetting(theme_info) {
 }
 
 function loadUserSettings(callback = null) {
+    let userSettingsContainer = document.getElementById('user_settings_container');
+    if (!userSettingsContainer) {
+        if (callback) {
+            pendingUserSettingsLoads.push(callback);
+        }
+        return;
+    }
     genericRequest('GetUserSettings', {}, data => {
         if (coreModelMap['VAE'] != null) {
             for (let setting of ['defaultsdxlvae', 'defaultsdv1vae', 'defaultsvdvae', 'defaultfluxvae', 'defaultflux2vae', 'defaultsd3vae', 'defaultmochivae']) {
@@ -192,6 +199,11 @@ function loadUserSettings(callback = null) {
         // Build a second time to self-apply settings
         buildSettingsMenu(userSettingsContainer, data.settings, 'usersettings_', userSettingsData);
         findParentOfClass(getRequiredElementById('usersettings_language'), 'auto-input').style.display = 'none';
+        let pendingCallbacks = pendingUserSettingsLoads;
+        pendingUserSettingsLoads = [];
+        for (let pendingCallback of pendingCallbacks) {
+            pendingCallback();
+        }
         if (callback) {
             callback();
         }
@@ -199,7 +211,13 @@ function loadUserSettings(callback = null) {
 }
 
 function loadServerSettings() {
+    let serverSettingsContainer = document.getElementById('server_settings_container');
+    if (!serverSettingsContainer) {
+        shouldLoadServerSettingsWhenReady = true;
+        return;
+    }
     genericRequest('ListServerSettings', {}, data => {
+        shouldLoadServerSettingsWhenReady = false;
         buildSettingsMenu(serverSettingsContainer, data.settings, 'serversettings_', serverSettingsData);
         toggleGroupOpen(getRequiredElementById('input_group_serversettings_defaultuser'), false);
     });
@@ -217,8 +235,31 @@ function loadSettingsEditor() {
     });
 }
 
-document.getElementById('serverconfigtabbutton').addEventListener('click', loadServerSettings);
-document.getElementById('usersettingstabbutton').addEventListener('click', () => loadUserSettings());
+function bindSettingsEditorButton(buttonId, onClick) {
+    let button = document.getElementById(buttonId);
+    if (!button || button.dataset.settingsEditorBound == 'true') {
+        return;
+    }
+    button.dataset.settingsEditorBound = 'true';
+    button.addEventListener('click', onClick);
+}
+
+function ensureSettingsEditorBindings() {
+    bindSettingsEditorButton('serverconfigtabbutton', loadServerSettings);
+    bindSettingsEditorButton('usersettingstabbutton', () => loadUserSettings());
+}
+
+function notifySettingsEditorTabReady(tabKey) {
+    ensureSettingsEditorBindings();
+    if (tabKey == 'user' && (pendingUserSettingsLoads.length > 0 || document.getElementById('user_settings_container'))) {
+        loadUserSettings();
+    }
+    else if (tabKey == 'server' && shouldLoadServerSettingsWhenReady) {
+        loadServerSettings();
+    }
+}
+
+ensureSettingsEditorBindings();
 
 sessionReadyCallbacks.push(loadSettingsEditor);
 

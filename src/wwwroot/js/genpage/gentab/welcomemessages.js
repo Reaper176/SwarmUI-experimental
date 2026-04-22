@@ -30,7 +30,7 @@ function automaticWelcomeMessage(override = null) {
     let curModelElem = getRequiredElementById('current_model');
     if (!curModelElem.value) {
         if (allModels.length == 0) {
-            div.innerHTML = `${prefix}You don't seem to have downloaded any models yet.\nPlease download a model, or go to the <a href="#Settings-Server" onclick="getRequiredElementById('servertabbutton').click();getRequiredElementById('serverconfigtabbutton').click();">Server Configuration Tab</a> to set your models folder.`;
+            div.innerHTML = `${prefix}You don't seem to have downloaded any models yet.\nPlease download a model, or go to the <a href="#Settings-Server" onclick="return openGenPageTab('servertabbutton', 'serverconfigtabbutton')">Server Configuration Tab</a> to set your models folder.`;
             return;
         }
         div.innerHTML = `${prefix}Please select a model in the <a href="#models-tab" onclick="getRequiredElementById('modelstabheader').click()">Models</a> tab below to get started.`;

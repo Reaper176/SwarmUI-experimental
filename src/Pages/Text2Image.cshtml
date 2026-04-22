@@ -3,6 +3,13 @@
     ViewData["Title"] = "Page is loading...";
     GeneratePageModel pageModel = new(HttpContext);
     string doCheckForUpdates = Program.ServerSettings.Maintenance.CheckForUpdates ? "true" : "false";
+    List<(string Key, string TabId, string Partial, string LoadingText)> lazyTabs = new()
+    {
+        ("imageediting", "ImageEditing", "_Generate/ImageEditingTab", "Loading image editor..."),
+        ("utilities", "utilities_tab", "_Generate/UtilitiesTab", "Loading utilities..."),
+        ("user", "user_tab", "_Generate/UserTab", "Loading user settings..."),
+        ("server", "server_tab", "_Generate/ServerTab", "Loading server tools...")
+    };
 }
 @section Header {
     <link rel="stylesheet" href="css/genpage.css?vary=@Utilities.VaryID" />
@@ -27,6 +34,29 @@
     window.instanceTitle = "@pageModel.InstanceTitle";
     window.comfy_features = {};
     window.checkForUpdatesAutomatically = @doCheckForUpdates;
+    window.genpageLazyTabs = {
+@for (int i = 0; i < lazyTabs.Count; i++)
+{
+    (string key, string tabId, string partial, string loadingText) lazyTab = lazyTabs[i];
+        <text>        @lazyTab.key: { tabId: "@lazyTab.tabId", partial: "@lazyTab.partial", loadingText: "@lazyTab.loadingText" }@(i < lazyTabs.Count - 1 ? "," : "")</text>
+}
+    };
+    window.genpageLazyScriptGroups = {
+        imageediting: [
+            "js/genpage/helpers/color_picker.js?vary=@Utilities.VaryID",
+            "js/genpage/helpers/image_editor_tools.js?vary=@Utilities.VaryID",
+            "js/genpage/helpers/image_editor.js?vary=@Utilities.VaryID"
+        ],
+        utilities: [
+        ],
+        user: [
+        ],
+        server: [
+            "js/genpage/server/backends.js?vary=@Utilities.VaryID",
+            "js/genpage/server/servertab.js?vary=@Utilities.VaryID",
+            "js/genpage/server/logs.js?vary=@Utilities.VaryID"
+        ]
+    };
     @foreach (InstallableFeatures.ComfyInstallableFeature feature in InstallableFeatures.ComfyFeatures.Values)
     {
         <text>
@@ -79,25 +109,22 @@
     <div class="tab-pane show active" style="line-height:0" id="Text2Image" role="tabpanel">
         @await Html.PartialAsync("_Generate/GenerateTab.cshtml", pageModel)
     </div>
-    <div class="tab-pane tab-pane-vw tab-no-scroll" id="ImageEditing" role="tabpanel">
-        @await Html.PartialAsync("_Generate/ImageEditingTab.cshtml", pageModel)
+    <div class="tab-pane tab-pane-vw tab-no-scroll" id="@lazyTabs[0].TabId" role="tabpanel">
+        <div class="tab-loading-shell">@lazyTabs[0].LoadingText</div>
     </div>
     @WebServer.T2ITabBody
-    <div class="tab-pane tab-pane-vw tab-no-scroll" id="utilities_tab" role="tabpanel">
-        @await Html.PartialAsync("_Generate/UtilitiesTab.cshtml", pageModel)
+@for (int i = 1; i < lazyTabs.Count; i++)
+{
+    (string key, string tabId, string partial, string loadingText) lazyTab = lazyTabs[i];
+    <div class="tab-pane tab-pane-vw tab-no-scroll" id="@lazyTab.tabId" role="tabpanel">
+        <div class="tab-loading-shell">@lazyTab.loadingText</div>
     </div>
-    <div class="tab-pane tab-pane-vw tab-no-scroll" id="user_tab" role="tabpanel">
-        @await Html.PartialAsync("_Generate/UserTab.cshtml", pageModel)
-    </div>
-    <div class="tab-pane tab-pane-vw tab-no-scroll" id="server_tab" role="tabpanel">
-        @await Html.PartialAsync("_Generate/ServerTab.cshtml", pageModel)
-    </div>
+}
 </div>
 
 @section Scripts {
     <script src="js/lib/exif-reader.min.js"></script>
     <script src="js/genpage/gentab/welcomemessages.js?vary=@Utilities.VaryID"></script>
-    <script src="js/genpage/server/backends.js?vary=@Utilities.VaryID"></script>
     <script src="js/genpage/helpers/browsers.js?vary=@Utilities.VaryID"></script>
     <script src="js/genpage/gentab/presets.js?vary=@Utilities.VaryID"></script>
     <script src="js/genpage/gentab/wildcards.js?vary=@Utilities.VaryID"></script>
@@ -106,11 +133,7 @@
     <script src="js/genpage/gentab/params.js?vary=@Utilities.VaryID"></script>
     <script src="js/genpage/gentab/prompttools.js?vary=@Utilities.VaryID"></script>
     <script src="js/genpage/utiltab.js?vary=@Utilities.VaryID"></script>
-    <script src="js/genpage/server/servertab.js?vary=@Utilities.VaryID"></script>
     <script src="js/genpage/usertab.js?vary=@Utilities.VaryID"></script>
-    <script src="js/genpage/helpers/color_picker.js?vary=@Utilities.VaryID"></script>
-    <script src="js/genpage/helpers/image_editor_tools.js?vary=@Utilities.VaryID"></script>
-    <script src="js/genpage/helpers/image_editor.js?vary=@Utilities.VaryID"></script>
     <script src="js/genpage/helpers/generatehandler.js?vary=@Utilities.VaryID"></script>
     <script src="js/genpage/simpletab.js?vary=@Utilities.VaryID"></script>
     <script src="js/genpage/gentab/layout.js?vary=@Utilities.VaryID"></script>
@@ -121,7 +144,6 @@
     <script src="js/genpage/gentab/notes.js?vary=@Utilities.VaryID"></script>
     <script src="js/genpage/main.js?vary=@Utilities.VaryID"></script>
     <script src="js/genpage/helpers/settings_editor.js?vary=@Utilities.VaryID"></script>
-    <script src="js/genpage/server/logs.js?vary=@Utilities.VaryID"></script>
     <script src="js/genpage/helpers/ui_improvements.js?vary=@Utilities.VaryID"></script>
     <script src="js/genpage/helpers/mediacontrols.js?vary=@Utilities.VaryID"></script>
     @WebServer.PageFooterExtra
