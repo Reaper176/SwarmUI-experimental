@@ -668,7 +668,7 @@ class ImageFullViewHelper {
         if (this.didPasteState) {
             return;
         }
-        if (getUserSetting('ui.defaulthidemetadatainfullview')) {
+        if (internalSiteJsGetUserSetting('ui.defaulthidemetadatainfullview', false)) {
             let img = this.getImg();
             let width = img.naturalWidth ?? img.videoWidth;
             let height = img.naturalHeight ?? img.videoHeight;
@@ -711,7 +711,7 @@ class ImageFullViewHelper {
                 quickAppendButton(subDiv, added.label, (e, button) => added.onclick(button), added.className || '', added.title);
             }
         }
-        if (getUserSetting('ui.defaulthidemetadatainfullview')) {
+        if (internalSiteJsGetUserSetting('ui.defaulthidemetadatainfullview', false)) {
             this.getImgOrContainer().style.height = '100.2%';
             this.toggleMetadataVisibility(false);
         }
