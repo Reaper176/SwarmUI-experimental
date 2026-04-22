@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Service
+ServiceTypes=Krita/PythonPlugin
+X-KDE-Library=swarm_krita_bridge
+X-Python-2-Compatible=false
+X-Krita-Manual=Manual.html
+Name=Swarm Krita Bridge
+Comment=Send flattened Krita images back to SwarmUI
