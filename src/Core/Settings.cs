@@ -67,6 +67,9 @@ public class Settings : AutoConfiguration
     [ConfigComment("Settings related to server performance.")]
     public PerformanceData Performance = new();
 
+    [ConfigComment("Settings related to the local Krita round-trip integration.")]
+    public KritaBridgeData KritaBridge = new();
+
     [ConfigComment("List of disabled extension folder names.\nDisabled extensions remain installed on disk, but are not loaded at server startup.")]
     [SettingHidden]
     public List<string> DisabledExtensions = [];
@@ -194,6 +197,16 @@ public class Settings : AutoConfiguration
 
         [ConfigComment("How many models can be loaded in a model list at once.\nPast this count, the list will simply be cut off.\nUse sub-folder organization to prevent issues.")]
         public int ModelListSanityCap = 5000;
+    }
+
+    /// <summary>Settings related to local Krita integration.</summary>
+    public class KritaBridgeData : AutoConfiguration
+    {
+        [ConfigComment("Optional full path to the Krita executable for local launch integration.\nIf empty, SwarmUI will attempt simple OS-default executable names.\nDefaults to empty.")]
+        public string KritaExecutablePath = "";
+
+        [ConfigComment("Relative path under the Data directory for temporary Swarm-to-Krita image exports.\nDefaults to 'Temp/KritaBridge'.")]
+        public string TempPath = "Temp/KritaBridge";
     }
 
     /// <summary>Settings related to backends.</summary>
