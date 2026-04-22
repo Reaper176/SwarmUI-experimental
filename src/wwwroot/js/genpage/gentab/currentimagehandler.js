@@ -73,7 +73,35 @@ let swarmImageCardRegistry = {
         this.register(card);
     },
 
+    pruneDisconnected() {
+        for (let [card] of this.cardToKeys) {
+            if (!card || !card.isConnected) {
+                this.unregister(card);
+            }
+        }
+        for (let [key, cards] of this.byCanonicalSrc) {
+            if (!cards || cards.size == 0) {
+                this.byCanonicalSrc.delete(key);
+                continue;
+            }
+            for (let card of [...cards]) {
+                if (!card || !card.isConnected) {
+                    cards.delete(card);
+                }
+            }
+            if (cards.size == 0) {
+                this.byCanonicalSrc.delete(key);
+            }
+        }
+        for (let card of [...this.currentCards]) {
+            if (!card || !card.isConnected) {
+                this.currentCards.delete(card);
+            }
+        }
+    },
+
     forSource(src, callback) {
+        this.pruneDisconnected();
         let key = this.canonicalize(src);
         if (!key) {
             return;
@@ -333,6 +361,63 @@ class ImageFullViewHelper {
         return parseFloat((this.getImgOrContainer().style.top || '0').replaceAll('px', ''));
     }
 
+    getFitGeometry() {
+        let wrap = this.imageWrap;
+        if (!wrap || !wrap.isConnected) {
+            wrap = this.content.querySelector('#imageview_modal_imagewrap');
+            this.imageWrap = wrap;
+        }
+        let img = this.getImg();
+        if (!wrap || !img) {
+            return null;
+        }
+        let intrinsicWidth = img.naturalWidth ?? img.videoWidth ?? 0;
+        let intrinsicHeight = img.naturalHeight ?? img.videoHeight ?? 0;
+        if (intrinsicWidth <= 0 || intrinsicHeight <= 0 || wrap.offsetWidth <= 0 || wrap.offsetHeight <= 0) {
+            return null;
+        }
+        let imgAspectRatio = intrinsicWidth / intrinsicHeight;
+        let fittedWidth = wrap.offsetHeight * imgAspectRatio;
+        let fittedHeight = wrap.offsetHeight;
+        let fittedLeft = 0;
+        let fittedTop = 0;
+        if (fittedWidth > wrap.offsetWidth) {
+            fittedWidth = wrap.offsetWidth;
+            fittedHeight = wrap.offsetWidth / imgAspectRatio;
+            fittedTop = (wrap.offsetHeight - fittedHeight) / 2;
+        }
+        else {
+            fittedLeft = (wrap.offsetWidth - fittedWidth) / 2;
+        }
+        return {
+            wrap,
+            intrinsicWidth,
+            intrinsicHeight,
+            fittedWidth,
+            fittedHeight,
+            fittedLeft,
+            fittedTop,
+            fittedHeightPercent: (fittedHeight / wrap.offsetHeight) * 100
+        };
+    }
+
+    getCurrentRect() {
+        let geometry = this.getFitGeometry();
+        if (!geometry) {
+            return null;
+        }
+        let currentHeightPercent = this.getHeightPercent();
+        let scale = currentHeightPercent / geometry.fittedHeightPercent;
+        return {
+            geometry,
+            left: this.getImgLeft(),
+            top: this.getImgTop(),
+            width: geometry.fittedWidth * scale,
+            height: geometry.fittedHeight * scale,
+            heightPercent: currentHeightPercent
+        };
+    }
+
     onMouseDown(e) {
         if (this.modal.style.display != 'block') {
             return;
@@ -364,14 +449,17 @@ class ImageFullViewHelper {
 
     moveImg(xDiff, yDiff) {
         let img = this.getImgOrContainer();
-        let newLeft = this.getImgLeft() + xDiff;
-        let newTop = this.getImgTop() + yDiff;
-        let overWidth = img.parentElement.offsetWidth / 2;
-        let overHeight = img.parentElement.offsetHeight / 2;
-        newLeft = Math.min(overWidth, Math.max(newLeft, img.parentElement.offsetWidth - img.offsetWidth - overWidth));
-        newTop = Math.min(overHeight, Math.max(newTop, img.parentElement.offsetHeight - img.offsetHeight - overHeight));
-        img.style.left = `${newLeft}px`;
-        img.style.top = `${newTop}px`;
+        let geometry = this.getFitGeometry();
+        if (!geometry) {
+            return;
+        }
+        let width = img.offsetWidth;
+        let height = img.offsetHeight;
+        let targetLeft = this.getImgLeft() + xDiff;
+        let targetTop = this.getImgTop() + yDiff;
+        let clamped = this.clampPosition(targetLeft, targetTop, width, height, geometry.wrap);
+        img.style.left = `${clamped.left}px`;
+        img.style.top = `${clamped.top}px`;
     }
 
     flushPendingDragMove() {
@@ -406,28 +494,76 @@ class ImageFullViewHelper {
     }
 
     detachImg() {
-        let wrap = getRequiredElementById('imageview_modal_imagewrap');
-        if (wrap.style.textAlign == 'center') {
+        let geometry = this.getFitGeometry();
+        if (!geometry) {
+            return;
+        }
+        if (geometry.wrap.style.textAlign == 'center') {
             let img = this.getImgOrContainer();
-            let width = img.naturalWidth ?? img.videoWidth;
-            let height = img.naturalHeight ?? img.videoHeight;
-            let imgAspectRatio = width / height;
-            let wrapAspectRatio = wrap.offsetWidth / wrap.offsetHeight;
-            let targetWidth = wrap.offsetHeight * imgAspectRatio;
-            if (targetWidth > wrap.offsetWidth) {
-                img.style.top = `${(wrap.offsetHeight - (wrap.offsetWidth / imgAspectRatio)) / 2}px`;
-                img.style.height = `${(wrapAspectRatio / imgAspectRatio) * 100}%`;
-                img.style.left = '0px';
-            }
-            else {
-                img.style.top = '0px';
-                img.style.left = `${(wrap.offsetWidth - targetWidth) / 2}px`;
-                img.style.height = `100%`;
-            }
+            img.style.left = `${geometry.fittedLeft}px`;
+            img.style.top = `${geometry.fittedTop}px`;
+            img.style.height = `${geometry.fittedHeightPercent}%`;
             img.style.objectFit = '';
             img.style.maxWidth = '';
-            wrap.style.textAlign = 'left';
+            geometry.wrap.style.textAlign = 'left';
         }
+    }
+
+    applyImageRendering(targetHeightPercent, maxHeight, img) {
+        if (targetHeightPercent > maxHeight / 5) {
+            img.style.imageRendering = 'pixelated';
+        }
+        else {
+            img.style.imageRendering = '';
+        }
+    }
+
+    /** Clamp media position within the current wrap bounds using rendered dimensions. */
+    clampPosition(left, top, width, height, wrap) {
+        let overWidth = wrap.offsetWidth / 2;
+        let overHeight = wrap.offsetHeight / 2;
+        return {
+            left: Math.min(overWidth, Math.max(left, wrap.offsetWidth - width - overWidth)),
+            top: Math.min(overHeight, Math.max(top, wrap.offsetHeight - height - overHeight))
+        };
+    }
+
+    /** Keep pointer-relative anchor math inside the rendered media even when the pointer is in empty margins. */
+    clampMediaRatio(value) {
+        return Math.min(1, Math.max(0, value));
+    }
+
+    shouldShowMetadata(targetHeightPercent, fitPercent) {
+        return targetHeightPercent <= fitPercent;
+    }
+
+    /** Blend anchored zoom placement back toward the exact fit-center position only while zooming out. */
+    resolveZoomPosition(targetLeft, targetTop, targetWidth, targetHeight, geometry, targetHeightPercent, isZoomingOut) {
+        let fitPercent = geometry.fittedHeightPercent;
+        let fitLeft = geometry.fittedLeft;
+        let fitTop = geometry.fittedTop;
+        if (targetHeightPercent <= fitPercent) {
+            return {
+                left: fitLeft,
+                top: fitTop,
+                heightPercent: fitPercent
+            };
+        }
+        let clamped = this.clampPosition(targetLeft, targetTop, targetWidth, targetHeight, geometry.wrap);
+        if (!isZoomingOut) {
+            return {
+                left: clamped.left,
+                top: clamped.top,
+                heightPercent: targetHeightPercent
+            };
+        }
+        let blendRange = Math.max(5, fitPercent * 0.35);
+        let blendAmount = Math.min(1, Math.max(0, (targetHeightPercent - fitPercent) / blendRange));
+        return {
+            left: fitLeft + (clamped.left - fitLeft) * blendAmount,
+            top: fitTop + (clamped.top - fitTop) * blendAmount,
+            heightPercent: targetHeightPercent
+        };
     }
 
     copyState() {
@@ -444,7 +580,7 @@ class ImageFullViewHelper {
     }
 
     pasteState(state) {
-        if (!state || !state.left) {
+        if (!state || state.left == undefined || state.top == undefined || state.height == undefined) {
             return;
         }
         let img = this.getImgOrContainer();
@@ -458,39 +594,35 @@ class ImageFullViewHelper {
 
     applyWheelZoom(stepDelta, clientX, clientY) {
         this.detachImg();
-        let img = this.getImg();
-        if (!img) {
+        let rect = this.getCurrentRect();
+        if (!rect) {
             return;
         }
+        let img = this.getImg();
         let container = this.getImgOrContainer();
         if (!container) {
             return;
         }
-        let origHeight = this.getHeightPercent();
         let zoom = Math.pow(this.zoomRate, stepDelta);
-        let width = img.naturalWidth ?? img.videoWidth;
-        let height = img.naturalHeight ?? img.videoHeight;
-        let maxHeight = Math.sqrt(width * height) * 2;
-        let newHeight = Math.max(10, Math.min(origHeight * zoom, maxHeight));
-        if (newHeight > maxHeight / 5) {
-            img.style.imageRendering = 'pixelated';
-        }
-        else {
-            img.style.imageRendering = '';
-        }
-        if (newHeight > 100.1) {
-            this.toggleMetadataVisibility(false);
-        }
-        else if (newHeight < 100.1) {
-            this.toggleMetadataVisibility(true);
-        }
+        let maxHeight = Math.sqrt(rect.geometry.intrinsicWidth * rect.geometry.intrinsicHeight) * 2;
+        let targetHeightPercent = Math.max(10, Math.min(rect.heightPercent * zoom, maxHeight));
+        let wrapRect = rect.geometry.wrap.getBoundingClientRect();
+        let pointerX = clientX - wrapRect.left;
+        let pointerY = clientY - wrapRect.top;
+        let mediaX = this.clampMediaRatio((pointerX - rect.left) / rect.width);
+        let mediaY = this.clampMediaRatio((pointerY - rect.top) / rect.height);
+        let scale = targetHeightPercent / rect.geometry.fittedHeightPercent;
+        let targetWidth = rect.geometry.fittedWidth * scale;
+        let targetHeight = rect.geometry.fittedHeight * scale;
+        let targetLeft = pointerX - mediaX * targetWidth;
+        let targetTop = pointerY - mediaY * targetHeight;
+        let resolved = this.resolveZoomPosition(targetLeft, targetTop, targetWidth, targetHeight, rect.geometry, targetHeightPercent, targetHeightPercent < rect.heightPercent);
+        container.style.height = `${resolved.heightPercent}%`;
+        container.style.left = `${resolved.left}px`;
+        container.style.top = `${resolved.top}px`;
+        this.applyImageRendering(resolved.heightPercent, maxHeight, img);
+        this.toggleMetadataVisibility(this.shouldShowMetadata(resolved.heightPercent, rect.geometry.fittedHeightPercent));
         container.style.cursor = 'grab';
-        let [imgLeft, imgTop] = [this.getImgLeft(), this.getImgTop()];
-        let [mouseX, mouseY] = [clientX - container.offsetLeft, clientY - container.offsetTop];
-        let [origX, origY] = [mouseX / origHeight - imgLeft, mouseY / origHeight - imgTop];
-        let [newX, newY] = [mouseX / newHeight - imgLeft, mouseY / newHeight - imgTop];
-        this.moveImg((newX - origX) * newHeight, (newY - origY) * newHeight);
-        container.style.height = `${newHeight}%`;
     }
 
     onWheel(e) {
@@ -784,14 +916,27 @@ function clickImageInBatch(div) {
     setCurrentImage(div.dataset.src, div.dataset.metadata, div.dataset.batch_id ?? '', imgElem && imgElem.dataset.previewGrow == 'true', false, true, div.dataset.is_placeholder == 'true');
 }
 
+function cleanupBatchContainerIfEmpty(div) {
+    let parent = div?.parentElement;
+    if (!parent || parent.id == 'current_image_batch') {
+        return;
+    }
+    if (parent.children.length > 0) {
+        return;
+    }
+    parent.remove();
+}
+
 /** Removes a preview thumbnail and moves to either previous or next image. */
 function removeImageBlockFromBatch(div, shift = false) {
     if (!div.classList.contains('image-block-current')) {
         div.remove();
+        cleanupBatchContainerIfEmpty(div);
         return;
     }
     let chosen = div.previousElementSibling || div.nextElementSibling;
     div.remove();
+    cleanupBatchContainerIfEmpty(div);
     if (shift && chosen) {
         clickImageInBatch(chosen);
     }
@@ -3175,7 +3320,7 @@ function imageEditingCloneToneBalance(toneBalance) {
 /**
  * Opens the Generate tab edit-image area with a provided image.
  */
-function openGenerateTabEditorForImage(img, actionLabel = 'Edit Image', retryCount = 0) {
+async function openGenerateTabEditorForImage(img, actionLabel = 'Edit Image', retryCount = 0) {
     let initImageGroupToggle = document.getElementById('input_group_content_initimage_toggle');
     if (initImageGroupToggle) {
         initImageGroupToggle.checked = true;
@@ -3205,6 +3350,16 @@ function openGenerateTabEditorForImage(img, actionLabel = 'Edit Image', retryCou
         inputAspectRatio.value = 'Custom';
         triggerChangeFor(inputAspectRatio);
     }
+    try {
+        if (!await ensureGenerateImageEditorReady()) {
+            showError(`Cannot use "${actionLabel}": Generate tab editor is unavailable.`);
+            return false;
+        }
+    }
+    catch (e) {
+        showError(`${e}`);
+        return false;
+    }
     imageEditor.setBaseImage(img);
     imageEditor.activate();
     return true;
@@ -3213,7 +3368,7 @@ function openGenerateTabEditorForImage(img, actionLabel = 'Edit Image', retryCou
 /**
  * Opens the Generate tab edit-image area with full editor layer data.
  */
-function openGenerateTabEditorForEditorData(sourceEditor, actionLabel = 'Send Layers To Generate Editor', retryCount = 0) {
+async function openGenerateTabEditorForEditorData(sourceEditor, actionLabel = 'Send Layers To Generate Editor', retryCount = 0) {
     if (!sourceEditor || !sourceEditor.layers || sourceEditor.layers.length == 0) {
         showError(`Cannot use "${actionLabel}": no editor layers are available.`);
         return false;
@@ -3246,6 +3401,16 @@ function openGenerateTabEditorForEditorData(sourceEditor, actionLabel = 'Send La
     if (inputAspectRatio) {
         inputAspectRatio.value = 'Custom';
         triggerChangeFor(inputAspectRatio);
+    }
+    try {
+        if (!await ensureGenerateImageEditorReady()) {
+            showError(`Cannot use "${actionLabel}": Generate tab editor is unavailable.`);
+            return false;
+        }
+    }
+    catch (e) {
+        showError(`${e}`);
+        return false;
     }
     let wasActive = imageEditor.active;
     imageEditor.clearVars();
@@ -3320,10 +3485,17 @@ function openGenerateTabEditorForEditorData(sourceEditor, actionLabel = 'Send La
 /**
  * Sends an image source to the Image Editing tab's editor and activates that tab.
  */
-function sendToImageEditingTabPreview(src, metadata = '{}') {
-    let imageEditingTopTabButton = document.getElementById('imageeditingtabbutton');
-    if (imageEditingTopTabButton) {
-        imageEditingTopTabButton.click();
+async function sendToImageEditingTabPreview(src, metadata = '{}') {
+    try {
+        if (document.getElementById('imageeditingtabbutton')) {
+            if (!await openGenPageTabAsync('imageeditingtabbutton')) {
+                return;
+            }
+        }
+    }
+    catch (e) {
+        showError(`${e}`);
+        return;
     }
     imageEditingEnsureUiReady();
     if (!imageEditingTabEditor) {
@@ -3358,7 +3530,9 @@ function sendImageEditingLayersToGenerateEditor() {
         return;
     }
     let doTransfer = () => {
-        openGenerateTabEditorForEditorData(imageEditingTabEditor, 'Send Layers To Generate Editor');
+        openGenerateTabEditorForEditorData(imageEditingTabEditor, 'Send Layers To Generate Editor').catch((e) => {
+            showError(`${e}`);
+        });
     };
     let generateTopTabButton = document.getElementById('text2imagetabbutton');
     if (!generateTopTabButton) {
@@ -3381,10 +3555,9 @@ function sendImageEditingLayersToGenerateEditor() {
     doTransfer();
 }
 
-imageEditingEnsureUiReady();
 let imageEditingTopTabButton = document.getElementById('imageeditingtabbutton');
 if (imageEditingTopTabButton) {
-    imageEditingTopTabButton.addEventListener('click', () => {
+    imageEditingTopTabButton.addEventListener('shown.bs.tab', () => {
         imageEditingEnsureUiReady();
     });
 }
@@ -3413,10 +3586,14 @@ $('#toptablist').on('shown.bs.tab', function (e) {
             imageEditingTabEditor.deactivate();
         }
         if (e.target.id == 'text2imagetabbutton' && imageEditingPausedGenerateEditor) {
-            if (window.imageEditor && !window.imageEditor.active) {
-                window.imageEditor.activate();
-            }
-            imageEditingPausedGenerateEditor = false;
+            ensureGenerateImageEditorReady().then(() => {
+                if (window.imageEditor && !window.imageEditor.active) {
+                    window.imageEditor.activate();
+                }
+                imageEditingPausedGenerateEditor = false;
+            }).catch((e) => {
+                showError(`${e}`);
+            });
         }
     }
 });
@@ -3538,7 +3715,7 @@ function setCurrentImage(src, metadata = '', batchId = '', previewGrow = false, 
     }
     img.onload = () => {
         let [width, height] = naturalDim();
-        if (previewGrow || getUserSetting('centerimagealwaysgrow')) {
+        if (previewGrow || internalSiteJsGetUserSetting('centerimagealwaysgrow', false)) {
             img.width = width * 8;
             img.height = height * 8;
             img.dataset.previewGrow = 'true';
@@ -3578,8 +3755,8 @@ function setCurrentImage(src, metadata = '', batchId = '', previewGrow = false, 
         }
         return normalized;
     }
-    function includeButton(name, action, extraClass = '', title = '', mediaTypes = null) {
-        buttonDefs[normalizeButtonKey(name)] = { name, action, extraClass, title, mediaTypes };
+    function includeButton(name, action, extraClass = '', title = '', mediaTypes = null, can_multi = false, multi_only = false) {
+        buttonDefs[normalizeButtonKey(name)] = { name, action, extraClass, title, mediaTypes, can_multi, multi_only };
     }
     function includeLinkButton(name, href, isDownload = false, title = '', mediaTypes = null) {
         buttonDefs[normalizeButtonKey(name)] = { name, href, is_download: isDownload, title, mediaTypes };
@@ -3609,6 +3786,9 @@ function setCurrentImage(src, metadata = '', batchId = '', previewGrow = false, 
             }
         }
         for (let def of Object.values(buttonDefs)) {
+            if (def.multi_only) {
+                continue;
+            }
             if (def.mediaTypes && !def.mediaTypes.includes(mediaType)) {
                 continue;
             }
@@ -3697,11 +3877,15 @@ function setCurrentImage(src, metadata = '', batchId = '', previewGrow = false, 
         tmpImg.src = img.src;
     }, '', 'Uses this image as an Image Prompt input', ['image']);
     includeButton('Edit Image', () => {
-        openGenerateTabEditorForImage(img, 'Edit Image');
+        openGenerateTabEditorForImage(img, 'Edit Image').catch((e) => {
+            showError(`${e}`);
+        });
     }, '', 'Opens an Image Editor for this image', ['image']);
     if (mediaType == 'image') {
         includeButton('Send To Image Edit Tab', () => {
-            sendToImageEditingTabPreview(img.src, img.dataset.metadata);
+            sendToImageEditingTabPreview(img.src, img.dataset.metadata).catch((e) => {
+                showError(`${e}`);
+            });
         }, '', 'Sends this image to the Image Editing tab preview area');
     }
     includeButton('Upscale 2x', () => {
@@ -3776,7 +3960,7 @@ function setCurrentImage(src, metadata = '', batchId = '', previewGrow = false, 
             imageHistoryBrowser.navigate(folder);
         }, '', 'Jumps the History browser to where this file is at.');
     }
-    for (let added of buttonsForImage(imagePathClean, src, metadata)) {
+    for (let added of buttonsForImage(imagePathClean, src, metadata, true)) {
         if (added.label == 'Star' || added.label == 'Unstar') {
             continue;
         }
@@ -3786,9 +3970,6 @@ function setCurrentImage(src, metadata = '', batchId = '', previewGrow = false, 
         else {
             includeButton(added.label, added.onclick, '', added.title);
         }
-    }
-    for (let reg of registeredMediaButtons) {
-        includeButton(reg.name, () => reg.action(src), '', reg.title, reg.mediaTypes);
     }
     renderButtonsFromDefs();
     quickAppendButton(buttons, 'More &#x2B9F;', (e, button) => {
@@ -3930,7 +4111,7 @@ function gotImageResult(image, metadata, batchId) {
     if (!currentImageHelper.getCurrentImage() || autoLoadImagesElem.checked) {
         setCurrentImage(src, metadata, batchId, false, true);
     }
-    if ((getUserSetting('AutoSwapImagesIncludesFullView') || imageFullView.currentBatchId == batchId) && imageFullView.isOpen()) {
+    if ((internalSiteJsGetUserSetting('AutoSwapImagesIncludesFullView', false) || imageFullView.currentBatchId == batchId) && imageFullView.isOpen()) {
         imageFullView.showImage(src, metadata, batchId);
     }
     return batch_div;

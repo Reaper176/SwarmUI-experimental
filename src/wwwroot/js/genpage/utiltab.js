@@ -42,12 +42,19 @@ function utilClipTokenize() {
     }
 }
 
-function showPromptTokenizen(box) {
+async function showPromptTokenizen(box) {
     let src = getRequiredElementById(box);
+    try {
+        if (!await openGenPageTabAsync('utilitiestabbutton', 'cliptokentabbutton')) {
+            return;
+        }
+    }
+    catch (e) {
+        showError(`${e}`);
+        return;
+    }
     let target = getRequiredElementById('clip_tokenization_test_textarea');
     target.value = src.value || src.innerText;
-    getRequiredElementById('utilitiestabbutton').click();
-    getRequiredElementById('cliptokentabbutton').click();
     triggerChangeFor(target);
 }
 
@@ -55,6 +62,9 @@ function showPromptTokenizen(box) {
 function pickle2safetensor_load(mapping = null) {
     if (mapping == null) {
         mapping = coreModelMap;
+    }
+    if (!document.getElementById('pickle2safetensor_stable-diffusion_count')) {
+        return;
     }
     for (let type of ['Stable-Diffusion', 'LoRA', 'VAE', 'Embedding', 'ControlNet']) {
         let modelSet = mapping[type];
@@ -98,17 +108,28 @@ function util_massMetadataClear() {
 
 class LoraExtractorUtil {
     constructor() {
-        this.tabHeader = getRequiredElementById('loraextractortabbutton');
-        this.baseInput = getRequiredElementById('lora_extractor_base_model');
-        this.otherInput = getRequiredElementById('lora_extractor_other_model');
-        this.rankInput = getRequiredElementById('lora_extractor_rank');
-        this.nameInput = getRequiredElementById('lora_extractor_name');
-        this.textArea = getRequiredElementById('lora_extractor_text_area');
-        this.progressBar = getRequiredElementById('lora_extractor_special_progressbar');
-        this.tabHeader.addEventListener('click', () => this.refillInputModels());
+        this.hasBoundTabHeader = false;
+        this.getElems();
+    }
+
+    getElems() {
+        this.tabHeader = document.getElementById('loraextractortabbutton');
+        this.baseInput = document.getElementById('lora_extractor_base_model');
+        this.otherInput = document.getElementById('lora_extractor_other_model');
+        this.rankInput = document.getElementById('lora_extractor_rank');
+        this.nameInput = document.getElementById('lora_extractor_name');
+        this.textArea = document.getElementById('lora_extractor_text_area');
+        this.progressBar = document.getElementById('lora_extractor_special_progressbar');
+        if (this.tabHeader && !this.hasBoundTabHeader) {
+            this.tabHeader.addEventListener('shown.bs.tab', () => this.refillInputModels());
+            this.hasBoundTabHeader = true;
+        }
     }
 
     refillInputModels() {
+        if (!this.baseInput || !this.otherInput) {
+            return;
+        }
         let html = '';
         for (let model of allModels.filter(m => !m.endsWith('.engine'))) {
             html += `<option>${cleanModelName(model)}</option>`;
@@ -122,6 +143,10 @@ class LoraExtractorUtil {
     }
 
     run() {
+        this.getElems();
+        if (!this.baseInput || !this.otherInput || !this.rankInput || !this.nameInput || !this.textArea || !this.progressBar) {
+            return;
+        }
         let baseModel = this.baseInput.value;
         let otherModel = this.otherInput.value;
         let rank = this.rankInput.value;
@@ -173,20 +198,43 @@ loraExtractor = new LoraExtractorUtil();
 
 class ModelDownloaderUtil {
     constructor() {
-        this.tabHeader = getRequiredElementById('modeldownloadertabbutton');
-        this.url = getRequiredElementById('model_downloader_url');
-        this.urlStatusArea = getRequiredElementById('model_downloader_status');
-        this.type = getRequiredElementById('model_downloader_type');
-        this.name = getRequiredElementById('model_downloader_name');
-        this.button = getRequiredElementById('model_downloader_button');
-        this.metadataZone = getRequiredElementById('model_downloader_metadatazone');
-        this.imageSide = getRequiredElementById('model_downloader_imageside');
-        this.activeZone = getRequiredElementById('model_downloader_right_sidebar');
-        this.folders = getRequiredElementById('model_downloader_folder');
+        this.getElems();
         this.hfPrefix = 'https://huggingface.co/';
-        this.civitPrefix = 'https://civitai.com/';
+        this.civitPrefix = 'https://civitai.red/';
+        this.civitOldPrefix = 'https://civitai.com/';
         this.civitGreenPrefix = 'https://civitai.green/';
         this.urlRequestId = 0;
+        this.civitaiRequestQueue = [];
+        this.civitaiRequestQueueTimer = null;
+        this.civitaiActiveRequests = 0;
+        this.civitaiMaxConcurrentRequests = 6;
+        this.civitaiMinRequestSpacingMs = 125;
+        this.civitaiNextRequestTime = 0;
+        this.civitaiBackoffUntil = 0;
+    }
+
+    getElems() {
+        this.tabHeader = document.getElementById('modeldownloadertabbutton');
+        this.url = document.getElementById('model_downloader_url');
+        this.urlStatusArea = document.getElementById('model_downloader_status');
+        this.type = document.getElementById('model_downloader_type');
+        this.name = document.getElementById('model_downloader_name');
+        this.button = document.getElementById('model_downloader_button');
+        this.metadataZone = document.getElementById('model_downloader_metadatazone');
+        this.imageSide = document.getElementById('model_downloader_imageside');
+        this.activeZone = document.getElementById('model_downloader_right_sidebar');
+        this.folders = document.getElementById('model_downloader_folder');
+    }
+
+    normalizeCivitaiUrl(url) {
+        url = url.trim();
+        if (url.startsWith(this.civitGreenPrefix)) {
+            return this.civitPrefix + url.substring(this.civitGreenPrefix.length);
+        }
+        if (url.startsWith(this.civitOldPrefix)) {
+            return this.civitPrefix + url.substring(this.civitOldPrefix.length);
+        }
+        return url;
     }
 
     buildFolderSelector(selector) {
@@ -220,7 +268,7 @@ class ModelDownloaderUtil {
     }
 
     reloadFolders() {
-        if (!coreModelMap) {
+        if (!coreModelMap || !this.folders) {
             return;
         }
         let selected = this.folders.value;
@@ -228,40 +276,101 @@ class ModelDownloaderUtil {
         this.folders.value = selected || '(None)';
     }
 
+    detectCivitaiRateLimit(data, status) {
+        let strData = `${data?.error || ''}`.toLowerCase();
+        let isRateLimit = status == 429 || data?.status_code == 429 || strData.includes('429') || strData.includes('too many requests');
+        if (!isRateLimit) {
+            return false;
+        }
+        let retrySeconds = parseInt(data?.retry_after_seconds || '0');
+        let waitMs = retrySeconds > 0 ? retrySeconds * 1000 : 5000;
+        this.civitaiBackoffUntil = Math.max(this.civitaiBackoffUntil, Date.now() + waitMs);
+        return true;
+    }
+
+    scheduleCivitaiQueuePump(waitMs = 0) {
+        if (this.civitaiRequestQueueTimer) {
+            return;
+        }
+        this.civitaiRequestQueueTimer = setTimeout(() => {
+            this.civitaiRequestQueueTimer = null;
+            this.pumpCivitaiRequestQueue();
+        }, waitMs);
+    }
+
+    pumpCivitaiRequestQueue() {
+        while (this.civitaiActiveRequests < this.civitaiMaxConcurrentRequests && this.civitaiRequestQueue.length > 0) {
+            let now = Date.now();
+            let waitMs = Math.max(this.civitaiNextRequestTime, this.civitaiBackoffUntil) - now;
+            if (waitMs > 0) {
+                this.scheduleCivitaiQueuePump(waitMs);
+                return;
+            }
+            let request = this.civitaiRequestQueue.shift();
+            this.civitaiActiveRequests++;
+            this.civitaiNextRequestTime = Date.now() + this.civitaiMinRequestSpacingMs;
+            sendJsonToServer('API/ForwardMetadataRequest', { 'url': request.url, 'session_id': session_id }, (status, data) => {
+                this.civitaiActiveRequests--;
+                if (!data) {
+                    request.errorHandle(`No response while querying Civitai.`, status, data);
+                    this.pumpCivitaiRequestQueue();
+                    return;
+                }
+                if (data.error) {
+                    this.detectCivitaiRateLimit(data, status);
+                    request.errorHandle(data.error, data.status_code || status, data);
+                    this.pumpCivitaiRequestQueue();
+                    return;
+                }
+                request.successHandle(data);
+                this.pumpCivitaiRequestQueue();
+            }, () => {
+                this.civitaiActiveRequests--;
+                request.errorHandle(`Failed to query Civitai.`, 0, null);
+                this.pumpCivitaiRequestQueue();
+            });
+        }
+    }
+
+    requestCivitaiMetadata(url, successHandle, errorHandle) {
+        this.civitaiRequestQueue.push({ url, successHandle, errorHandle });
+        this.pumpCivitaiRequestQueue();
+    }
+
     searchCivitaiForHash(hash, callback) {
         if (hash.startsWith('0x')) {
             hash = hash.substring(2);
         }
         hash = hash.substring(0, 12);
-        genericRequest('ForwardMetadataRequest', { 'url': `${this.civitPrefix}api/v1/model-versions/by-hash/${hash}` }, (rawData) => {
+        this.requestCivitaiMetadata(`${this.civitPrefix}api/v1/model-versions/by-hash/${hash}`, (rawData) => {
             if (rawData.response['error']) {
                 callback(null);
                 return;
             }
-            callback(`https://civitai.com/models/${rawData.response.modelId}?modelVersionId=${rawData.response.id}`);
-        }, 0, () => {
+            callback(`https://civitai.red/models/${rawData.response.modelId}?modelVersionId=${rawData.response.id}`);
+        }, () => {
             callback(null);
         });
     }
 
-    getCivitaiMetadata(id, versId, callback, identifier = '', validateSafe = true, delayedCallback = null) {
+    getCivitaiMetadata(id, versId, callback, identifier = '', validateSafe = true, delayedCallback = null, loadPreview = true) {
         let doError = (msg = null) => {
             callback(null, null, null, null, null, null, null, msg);
         }
         if (!id && versId) {
-            genericRequest('ForwardMetadataRequest', { 'url': `${this.civitPrefix}api/v1/model-versions/${versId}` }, (rawData) => {
+            this.requestCivitaiMetadata(`${this.civitPrefix}api/v1/model-versions/${versId}`, (rawData) => {
                 rawData = rawData.response;
                 if (!rawData || !rawData.modelId) {
                     doError();
                     return;
                 }
-                this.getCivitaiMetadata(rawData.modelId, versId, callback, identifier, validateSafe, delayedCallback);
-            }, 0, () => {
+                this.getCivitaiMetadata(rawData.modelId, versId, callback, identifier, validateSafe, delayedCallback, loadPreview);
+            }, () => {
                 doError();
             });
             return;
         }
-        genericRequest('ForwardMetadataRequest', { 'url': `${this.civitPrefix}api/v1/models/${id}` }, (rawData) => {
+        this.requestCivitaiMetadata(`${this.civitPrefix}api/v1/models/${id}`, (rawData) => {
             rawData = rawData.response;
             if (!rawData) {
                 console.log(`refuse civitai url because response is empty - for model id ${id} / ${identifier}`);
@@ -349,7 +458,10 @@ class ModelDownloaderUtil {
                     previewLoader(applyMetadata);
                 }
             }
-            if (imgUrls.length > 0) {
+            if (!loadPreview) {
+                applyMetadata('');
+            }
+            else if (imgUrls.length > 0) {
                 applyWithOptionalDelay(done => imageToData(imgUrls[0], done, true));
             }
             else {
@@ -376,16 +488,13 @@ class ModelDownloaderUtil {
                     applyMetadata('');
                 }
             }
-        }, 0, (status, data) => {
+        }, (errMsg, status, data) => {
             doError();
         });
     }
 
     parseCivitaiUrl(url) {
-        url = url.trim();
-        if (url.startsWith(this.civitGreenPrefix)) {
-            url = this.civitPrefix + url.substring(this.civitGreenPrefix.length);
-        }
+        url = this.normalizeCivitaiUrl(url);
         let parts = splitWithTail(url.substring(this.civitPrefix.length), '/', 4); // 'models', id, name + sometimes version OR 'api', 'download', 'models', versid
         if (parts.length == 2 && parts[0] == 'models' && parts[1].includes('?')) {
             let subparts = splitWithTail(parts[1], '?', 2);
@@ -475,7 +584,10 @@ class ModelDownloaderUtil {
         this.metadataZone.dataset.raw = '';
         delete this.metadataZone.dataset.image;
         this.imageSide.innerHTML = '';
-        let url = this.url.value.trim();
+        let url = this.normalizeCivitaiUrl(this.url.value);
+        if (url != this.url.value) {
+            this.url.value = url;
+        }
         this.urlRequestId++;
         let requestId = this.urlRequestId;
         if (url.endsWith('.pt') || url.endsWith('.pth') || url.endsWith('.ckpt') || url.endsWith('.bin')) {
@@ -518,9 +630,6 @@ class ModelDownloaderUtil {
             this.urlStatusArea.innerText = "URL appears to be a huggingface link, but seems to not be valid. Please double-check the link.";
             this.button.disabled = false;
             return;
-        }
-        if (url.startsWith(this.civitGreenPrefix)) {
-            url = this.civitPrefix + url.substring(this.civitGreenPrefix.length);
         }
         if (url.startsWith(this.civitPrefix)) {
             let parts = splitWithTail(url.substring(this.civitPrefix.length), '/', 4); // 'models', id, name + sometimes version OR 'api', 'download', 'models', versid
@@ -732,7 +841,7 @@ class ActiveModelDownload {
                 this.isDone();
             }
         }, 0, e => {
-            let hintInfo = `Are you sure the URL is correct? Note some models may require you to authenticate using an <a href="#" onclick="getRequiredElementById('usersettingstabbutton').click();getRequiredElementById('userinfotabbutton').click();">API Key</a>.`;
+            let hintInfo = `Are you sure the URL is correct? Note some models may require you to authenticate using an <a href="#" onclick="return openGenPageTab('usersettingstabbutton', 'userinfotabbutton')">API Key</a>.`;
             if (e == "Download was cancelled.") {
                 hintInfo = "";
                 this.setBorderColor('#aaaa00');
@@ -763,24 +872,68 @@ modelDownloader = new ModelDownloaderUtil();
 
 class ModelMetadataScanner {
     constructor() {
-        this.button = getRequiredElementById('util_modelmetadatascanner_button');
-        this.subTypeSelector = getRequiredElementById('util_modelmetadatascanner_subtype');
-        this.dateSelector = getRequiredElementById('util_modelmetadatascanner_date');
-        this.filterSelector = getRequiredElementById('util_modelmetadatascanner_requirements');
-        this.replaceSelector = getRequiredElementById('util_modelmetadatascanner_replace');
-        this.nameFilter = getRequiredElementById('util_modelmetadatascanner_filter');
-        this.resultArea = getRequiredElementById('util_modelmetadatascanner_result');
+        this.getElems();
         this.maxSimulLoads = 30;
+        this.isRunning = false;
     }
 
-    async runForList(list) {
-        if (this.button.disabled) {
+    getElems() {
+        this.button = document.getElementById('util_modelmetadatascanner_button');
+        this.repairButton = document.getElementById('util_modelmetadatascanner_repair_button');
+        this.subTypeSelector = document.getElementById('util_modelmetadatascanner_subtype');
+        this.dateSelector = document.getElementById('util_modelmetadatascanner_date');
+        this.filterSelector = document.getElementById('util_modelmetadatascanner_requirements');
+        this.replaceSelector = document.getElementById('util_modelmetadatascanner_replace');
+        this.nameFilter = document.getElementById('util_modelmetadatascanner_filter');
+        this.resultArea = document.getElementById('util_modelmetadatascanner_result');
+    }
+
+    setButtonsDisabled(disabled) {
+        if (this.button) {
+            this.button.disabled = disabled;
+        }
+        if (this.repairButton) {
+            this.repairButton.disabled = disabled;
+        }
+    }
+
+    hasBrokenBasicMetadata(model) {
+        let invalidValues = ['', '(none)', '(unset)'];
+        let title = `${model.title || ''}`.trim().toLowerCase();
+        let description = `${model.description || ''}`.trim().toLowerCase();
+        let author = `${model.author || ''}`.trim().toLowerCase();
+        let date = `${model.date || ''}`.trim().toLowerCase();
+        if (!title || invalidValues.includes(title)) {
+            return true;
+        }
+        if (!description || invalidValues.includes(description)) {
+            return true;
+        }
+        if (!author || invalidValues.includes(author)) {
+            return true;
+        }
+        if (!date || invalidValues.includes(date)) {
+            return true;
+        }
+        if (!model.preview_image || model.preview_image == 'imgs/model_placeholder.jpg') {
+            return true;
+        }
+        return false;
+    }
+
+    async runForList(list, options = null) {
+        if (this.isRunning) {
+            this.resultArea.innerText = "Metadata scan is already running.";
             return;
         }
-        this.button.disabled = true;
-        let date = this.dateSelector.value;
-        let filter = this.filterSelector.value;
-        let replace = this.replaceSelector.value;
+        this.isRunning = true;
+        this.setButtonsDisabled(true);
+        this.resultArea.innerText = "Preparing metadata scan...";
+        options = options || {};
+        let date = options.dateOverride || this.dateSelector.value;
+        let filter = options.filterOverride || this.filterSelector.value;
+        let replace = options.replaceOverride || this.replaceSelector.value;
+        let forceBrokenOnly = options.forceBrokenOnly || false;
         let nameFilter = this.nameFilter.value;
         let nameMatcher = simpleAsteriskedMatcher(nameFilter);
         let timeNow = new Date().getTime();
@@ -804,14 +957,26 @@ class ModelMetadataScanner {
             running--;
             update();
         }
-        for (let key of list) {
-            while (running >= this.maxSimulLoads) {
-                await new Promise(resolve => setTimeout(resolve, 200));
-            }
-            running++;
-            update();
-            genericRequest('DescribeModel', { 'modelName': key.name, 'subtype': key.type }, data => {
-                let model = data.model;
+        try {
+            for (let key of list) {
+                while (running >= this.maxSimulLoads) {
+                    await new Promise(resolve => setTimeout(resolve, 200));
+                }
+                running++;
+                update();
+                genericRequest('DescribeModel', { 'modelName': key.name, 'subtype': key.type }, data => {
+                    try {
+                        let model = data.model;
+                        if (!model) {
+                            failed++;
+                            removeOne();
+                            return;
+                        }
+                if (forceBrokenOnly && !this.hasBrokenBasicMetadata(model)) {
+                    skipped++;
+                    removeOne();
+                    return;
+                }
                 if (date != 'all') {
                     let createTime = new Date(model.time_created).getTime();
                     let limit = 24 * 60 * 60 * 1000;
@@ -833,7 +998,7 @@ class ModelMetadataScanner {
                     if (filter == 'no_thumbnail' && model.preview_image && model.preview_image != 'imgs/model_placeholder.jpg') {
                         allowed = false;
                     }
-                    else if (filter == 'no_description' && !invalidDescriptions.includes(model.description.trim())) {
+                    else if (filter == 'no_description' && !invalidDescriptions.includes(`${model.description || ''}`.trim())) {
                         allowed = false;
                     }
                     else if (filter == 'no_author' && model.author) {
@@ -850,6 +1015,10 @@ class ModelMetadataScanner {
                 }
                 let doApply = () => {
                     let [id, versId] = modelDownloader.parseCivitaiUrl(civitUrl);
+                    let shouldLoadPreview = replace == 'all' || replace == 'only_thumbnail';
+                    if (replace == 'only_missing' && (!model.preview_image || model.preview_image == 'imgs/model_placeholder.jpg')) {
+                        shouldLoadPreview = true;
+                    }
                     modelDownloader.getCivitaiMetadata(id, versId, (rawData, rawVersion, metadata, modelType, url, img, imgs, errMsg) => {
                         if (!rawData) {
                             failed++;
@@ -934,7 +1103,7 @@ class ModelMetadataScanner {
                             failed++;
                             removeOne();
                         });
-                    }, model.name, false);
+                    }, model.name, false, null, shouldLoadPreview);
                 };
                 if (civitUrl) {
                     doApply();
@@ -962,13 +1131,23 @@ class ModelMetadataScanner {
                         }, 0, e => { failed++; removeOne(); });
                     }
                 }
-            }, 0, e => {  failed++; removeOne(); });
+                    }
+                    catch (err) {
+                        console.error(`Metadata scanner failed on model ${key.name} (${key.type})`, err);
+                        failed++;
+                        removeOne();
+                    }
+                }, 0, e => {  failed++; removeOne(); });
+            }
+            while (running > 0) {
+                await new Promise(resolve => setTimeout(resolve, 200));
+            }
+            this.resultArea.innerText = `All scans completed: ${scanned} models scanned, ${failed} couldn't be found on civitai, ${updated} models updated with new metadata.`;
         }
-        while (running > 0) {
-            await new Promise(resolve => setTimeout(resolve, 200));
+        finally {
+            this.isRunning = false;
+            this.setButtonsDisabled(false);
         }
-        this.button.disabled = false;
-        this.resultArea.innerText = `All scans completed: ${scanned} models scanned, ${failed} couldn't be found on civitai, ${updated} models updated with new metadata.`;
     }
 
     run() {
@@ -999,6 +1178,68 @@ class ModelMetadataScanner {
             this.runForList(list);
         }
     }
+
+    runRepairBrokenMetadata() {
+        if (!confirm("This will scan all selected models for missing/broken basic metadata and force-replace from Civitai where available. This cannot be undone. Continue?")) {
+            return;
+        }
+        let subType = this.subTypeSelector.value;
+        let options = {
+            dateOverride: 'all',
+            filterOverride: 'all',
+            replaceOverride: 'all',
+            forceBrokenOnly: true
+        };
+        if (subType == 'all') {
+            let list = [];
+            for (let type of Object.keys(coreModelMap)) {
+                let names = coreModelMap[type];
+                for (let name of names) {
+                    list.push({ 'name': name, 'type': type });
+                }
+            }
+            this.runForList(list, options);
+        }
+        else {
+            let names = coreModelMap[subType];
+            if (names == null) {
+                this.resultArea.innerText = "Invalid subtype.";
+                return;
+            }
+            let list = [];
+            for (let name of names) {
+                list.push({ 'name': name, 'type': subType });
+            }
+            this.runForList(list, options);
+        }
+    }
 }
 
 modelMetadataScanner = new ModelMetadataScanner();
+
+let hasInitializedUtilitiesTab = false;
+
+/** Ensures utility-tab lazy DOM bindings and first-open refresh work are ready. */
+function ensureUtilitiesTabInitialized() {
+    if (hasInitializedUtilitiesTab) {
+        return;
+    }
+    loraExtractor.getElems();
+    modelDownloader.getElems();
+    modelMetadataScanner.getElems();
+    hasInitializedUtilitiesTab = true;
+}
+
+function refreshUtilitiesTab() {
+    loraExtractor.getElems();
+    modelDownloader.getElems();
+    modelMetadataScanner.getElems();
+    loraExtractor.refillInputModels();
+    pickle2safetensor_load();
+    modelDownloader.reloadFolders();
+}
+
+function initUtilitiesTab() {
+    ensureUtilitiesTabInitialized();
+    refreshUtilitiesTab();
+}

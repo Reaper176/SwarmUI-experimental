@@ -3,6 +3,14 @@ using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Html;
 using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Mvc.Abstractions;
+using Microsoft.AspNetCore.Mvc.ModelBinding;
+using Microsoft.AspNetCore.Mvc.Razor;
+using Microsoft.AspNetCore.Mvc.Rendering;
+using Microsoft.AspNetCore.Mvc.ViewEngines;
+using Microsoft.AspNetCore.Mvc.ViewFeatures;
+using Microsoft.AspNetCore.Routing;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
@@ -15,6 +23,7 @@ using SwarmUI.Utils;
 using SwarmUI.WebAPI;
 using System.IO;
 using System.Net;
+using System.Text;
 
 namespace SwarmUI.Core;
 
@@ -401,6 +410,34 @@ public class WebServer
         PageFooterExtra = new(scripts.ToString());
         T2ITabHeader = new(tabHeader.ToString());
         T2ITabBody = new(tabFooter.ToString());
+    }
+
+    /// <summary>Renders a Razor partial view to a string for the current request context.</summary>
+    public static async Task<string> RenderPartialViewToString(HttpContext context, string partialViewName, object model)
+    {
+        IRazorViewEngine viewEngine = context.RequestServices.GetRequiredService<IRazorViewEngine>();
+        ITempDataProvider tempDataProvider = context.RequestServices.GetRequiredService<ITempDataProvider>();
+        RouteData routeData = context.GetRouteData() ?? new RouteData();
+        ActionContext actionContext = new(context, routeData, new ActionDescriptor());
+        ViewEngineResult viewResult = viewEngine.GetView(null, partialViewName, false);
+        if (!viewResult.Success)
+        {
+            viewResult = viewEngine.FindView(actionContext, partialViewName, false);
+        }
+        if (!viewResult.Success)
+        {
+            string searched = string.Join(", ", viewResult.SearchedLocations ?? []);
+            throw new InvalidOperationException($"Unable to find partial view '{partialViewName}'{(searched.Length > 0 ? $" (searched: {searched})" : "")}.");
+        }
+        using StringWriter output = new();
+        ViewDataDictionary viewData = new(new EmptyModelMetadataProvider(), new ModelStateDictionary())
+        {
+            Model = model
+        };
+        TempDataDictionary tempData = new(context, tempDataProvider);
+        ViewContext viewContext = new(actionContext, viewResult.View, viewData, tempData, output, new HtmlHelperOptions());
+        await viewResult.View.RenderAsync(viewContext);
+        return output.ToString();
     }
 
     /// <summary>Called by <see cref="Program"/>, generally should not be touched externally.</summary>

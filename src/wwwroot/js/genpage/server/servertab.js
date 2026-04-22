@@ -73,12 +73,12 @@ class ExtensionsManager {
     }
 }
 
-extensionsManager = new ExtensionsManager();
+extensionsManager = null;
 
 class UserAdminManager {
     constructor() {
         this.tabButton = getRequiredElementById('manageusersbutton');
-        this.tabButton.addEventListener('click', () => this.onTabButtonClick());
+        this.tabButton.addEventListener('shown.bs.tab', () => this.onTabButtonClick());
         this.filterBox = getRequiredElementById('admin_user_filter');
         this.filterClear = getRequiredElementById('admin_user_clear_input_icon');
         this.leftBoxRoleList = getRequiredElementById('manage_users_leftbox_content_rolelist');
@@ -567,7 +567,7 @@ class UserAdminManager {
     }
 }
 
-userAdminManager = new UserAdminManager();
+userAdminManager = null;
 
 //// TODO: Put these in classes
 
@@ -604,7 +604,8 @@ function queueServerTabHeightFix() {
     }
     serverTabHeightFixTimer = setTimeout(() => {
         serverTabHeightFixTimer = null;
-        if (isVisible(getRequiredElementById('server_tab'))) {
+        let serverTab = document.getElementById(window.genpageLazyTabs.server.tabId);
+        if (serverTab && isVisible(serverTab)) {
             fixTabHeights();
         }
     }, 16);
@@ -851,11 +852,34 @@ function serverResourceLoop() {
 window.addEventListener('resize', () => {
     queueServerTabHeightFix();
 });
-for (let id of ['servertabbutton', 'serverinfotabbutton', 'serverbackendstabbutton', 'serverconfigtabbutton', 'manageusersbutton', 'extensionstabbutton', 'logtabbutton']) {
-    let button = document.getElementById(id);
-    if (button) {
-        button.addEventListener('click', () => {
-            queueServerTabHeightFix();
-        });
+
+let hasBoundServerTabHeightButtons = false;
+
+/** Ensures the Server tab's one-time lazy initialization has run. */
+function ensureServerTabInitialized() {
+    if (!extensionsManager) {
+        extensionsManager = new ExtensionsManager();
+    }
+    if (!userAdminManager) {
+        userAdminManager = new UserAdminManager();
+    }
+    if (hasBoundServerTabHeightButtons) {
+        return;
+    }
+    for (let id of ['servertabbutton', 'serverinfotabbutton', 'serverbackendstabbutton', 'serverconfigtabbutton', 'manageusersbutton', 'extensionstabbutton', 'logtabbutton']) {
+        let button = document.getElementById(id);
+        if (button) {
+            button.addEventListener('shown.bs.tab', () => {
+                queueServerTabHeightFix();
+            });
+        }
+    }
+    hasBoundServerTabHeightButtons = true;
+}
+
+function initServerTab() {
+    ensureServerTabInitialized();
+    if (typeof ensureServerLogsTabInitialized == 'function') {
+        ensureServerLogsTabInitialized();
     }
 }

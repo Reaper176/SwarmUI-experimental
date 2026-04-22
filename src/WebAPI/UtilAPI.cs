@@ -1,4 +1,5 @@
 using FreneticUtilities.FreneticExtensions;
+using Microsoft.AspNetCore.Http;
 using Newtonsoft.Json.Linq;
 using SwarmUI.Accounts;
 using SwarmUI.Backends;
@@ -13,8 +14,18 @@ namespace SwarmUI.WebAPI;
 [API.APIClass("General utility API routes.")]
 public static class UtilAPI
 {
+    /// <summary>Allowlisted lazy genpage tab partials keyed by client-safe tab identifiers.</summary>
+    public static readonly IReadOnlyDictionary<string, (string PartialView, PermInfo Permission)> LazyGenPageTabPartials = new Dictionary<string, (string PartialView, PermInfo Permission)>()
+    {
+        ["imageediting"] = ("/Pages/_Generate/ImageEditingTab.cshtml", Permissions.FundamentalGenerateTabAccess),
+        ["utilities"] = ("/Pages/_Generate/UtilitiesTab.cshtml", Permissions.UtilitiesTab),
+        ["user"] = ("/Pages/_Generate/UserTab.cshtml", Permissions.UserTab),
+        ["server"] = ("/Pages/_Generate/ServerTab.cshtml", Permissions.ViewServerTab)
+    };
+
     public static void Register()
     {
+        API.RegisterAPICall(GetGenPageTabPartial, false, Permissions.FundamentalGenerateTabAccess);
         API.RegisterAPICall(CountTokens, false, Permissions.UseTokenizer);
         API.RegisterAPICall(TokenizeInDetail, false, Permissions.UseTokenizer);
         API.RegisterAPICall(Pickle2SafeTensor, true, Permissions.Pickle2Safetensors);
@@ -22,6 +33,25 @@ public static class UtilAPI
     }
 
     public static ConcurrentDictionary<string, CliplikeTokenizer> Tokenizers = new();
+
+    [API.APIDescription("Fetches rendered HTML for an allowlisted lazy-loaded generation page tab partial.", """
+        "html": "<div>...</div>"
+    """)]
+    public static async Task<JObject> GetGenPageTabPartial(HttpContext context, Session session,
+        [API.APIParameter("The allowlisted lazy tab key to render.")] string tab)
+    {
+        tab = (tab ?? "").Trim().ToLowerFast();
+        if (!LazyGenPageTabPartials.TryGetValue(tab, out (string PartialView, PermInfo Permission) partialInfo))
+        {
+            return Utilities.ErrorObj("Invalid tab key.", "invalid_tab");
+        }
+        if (partialInfo.Permission is not null && !session.User.HasPermission(partialInfo.Permission))
+        {
+            return Utilities.ErrorObj("You lack permissions for this tab.", "bad_permissions");
+        }
+        string html = await WebServer.RenderPartialViewToString(context, partialInfo.PartialView, new GeneratePageModel(context));
+        return new JObject() { ["html"] = html };
+    }
 
     private static (JObject, CliplikeTokenizer) GetTokenizerForAPI(string text, string tokenset)
     {

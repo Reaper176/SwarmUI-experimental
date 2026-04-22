@@ -3,18 +3,20 @@
 class AuthTokenHelper {
 
     constructor() {
+        this.getElems();
+    }
+
+    getElems() {
         this.container = document.getElementById('auth_tokens_list');
-        if (!this.container) {
-            return;
-        }
-        this.createTokenReason = getRequiredElementById('create_token_reason');
-        this.createTokenConfirmButton = getRequiredElementById('create_token_confirm_button');
-        this.createTokenRawValue = getRequiredElementById('create_token_raw_value');
+        this.createTokenReason = document.getElementById('create_token_reason');
+        this.createTokenConfirmButton = document.getElementById('create_token_confirm_button');
+        this.createTokenRawValue = document.getElementById('create_token_raw_value');
         this.createTokenModal = $('#create_swarm_token_modal');
         this.resultTokenModal = $('#created_token_result_modal');
     }
 
     loadAuthTokens() {
+        this.getElems();
         if (!this.container) {
             return;
         }
@@ -45,12 +47,20 @@ class AuthTokenHelper {
     }
 
     showCreateTokenModal() {
+        this.getElems();
+        if (!this.createTokenReason || !this.createTokenConfirmButton) {
+            return;
+        }
         this.createTokenReason.value = '';
         this.createTokenConfirmButton.disabled = true;
         this.createTokenModal.modal('show');
     }
 
     onReasonInput() {
+        this.getElems();
+        if (!this.createTokenReason || !this.createTokenConfirmButton) {
+            return;
+        }
         this.createTokenConfirmButton.disabled = !this.createTokenReason.value.trim();
     }
 
@@ -63,6 +73,10 @@ class AuthTokenHelper {
     }
 
     doCreateAuthToken() {
+        this.getElems();
+        if (!this.createTokenReason || !this.createTokenConfirmButton || !this.createTokenRawValue) {
+            return;
+        }
         let reason = this.createTokenReason.value.trim();
         this.createTokenConfirmButton.disabled = true;
         genericRequest('CreateAuthToken', { reason: reason }, data => {
@@ -74,6 +88,10 @@ class AuthTokenHelper {
     }
 
     copyTokenToClipboard() {
+        this.getElems();
+        if (!this.createTokenRawValue) {
+            return;
+        }
         copyText(this.createTokenRawValue.value);
         doNoticePopover('Copied!', 'notice-pop-green');
     }
@@ -100,19 +118,26 @@ class APIKeyHelper {
     }
 
     getElems() { // Some form of cursed HTML reset seems to happen? So re-grab elements
-        this.keyInput = getRequiredElementById(`${this.prefix}_api_key`);
-        this.keySubmit = getRequiredElementById(`${this.prefix}_key_submit`);
-        this.keyRemove = getRequiredElementById(`${this.prefix}_key_remove`);
-        this.keyStatus = getRequiredElementById(`${this.prefix}_key_status`);
+        this.keyInput = document.getElementById(`${this.prefix}_api_key`);
+        this.keySubmit = document.getElementById(`${this.prefix}_key_submit`);
+        this.keyRemove = document.getElementById(`${this.prefix}_key_remove`);
+        this.keyStatus = document.getElementById(`${this.prefix}_key_status`);
     }
 
     onKeyInput() {
         this.getElems();
+        if (!this.keyInput || !this.keySubmit) {
+            return;
+        }
         let key = this.keyInput.value;
         this.keySubmit.disabled = !key;
     }
 
     onSaveButton() {
+        this.getElems();
+        if (!this.keyInput || !this.keySubmit) {
+            return;
+        }
         let key = this.keyInput.value;
         if (!key) {
             alert('Please enter a key');
@@ -126,12 +151,20 @@ class APIKeyHelper {
     }
 
     onRemoveButton() {
+        this.getElems();
+        if (!this.keyRemove) {
+            return;
+        }
         genericRequest('SetAPIKey', { keyType: this.keyType, key: 'none' }, data => {
             this.updateStatus();
         });
     }
 
     updateStatus() {
+        this.getElems();
+        if (!this.keyStatus || !this.keyRemove) {
+            return;
+        }
         genericRequest('GetAPIKeyStatus', { keyType: this.keyType }, data => {
             this.keyStatus.innerText = data.status;
             this.keyRemove.disabled = data.status == 'not set';
@@ -140,20 +173,20 @@ class APIKeyHelper {
     }
 }
 
-for (let keyRow of getRequiredElementById('api_keys_table').querySelectorAll('tr')) {
-    let keyType = keyRow.dataset.key;
-    let prefix = keyRow.dataset.prefix;
-    if (keyType && prefix) {
-        apiHelpers[keyType] = new APIKeyHelper(keyType, prefix);
+function rebuildUserApiHelpers() {
+    let keyTable = document.getElementById('api_keys_table');
+    apiHelpers = {};
+    if (!keyTable) {
+        return;
+    }
+    for (let keyRow of keyTable.querySelectorAll('tr')) {
+        let keyType = keyRow.dataset.key;
+        let prefix = keyRow.dataset.prefix;
+        if (keyType && prefix) {
+            apiHelpers[keyType] = new APIKeyHelper(keyType, prefix);
+        }
     }
 }
-
-getRequiredElementById('usersettingstabbutton').addEventListener('click', () => {
-    for (let key in apiHelpers) {
-        apiHelpers[key].updateStatus();
-    }
-    authTokenHelpers.loadAuthTokens();
-});
 
 /** Central handler for user-edited parameters. */
 class ParamConfigurationClass {
@@ -164,8 +197,12 @@ class ParamConfigurationClass {
         this.extra_count = 0;
         this.param_edits = { groups: {}, params: {} };
         this.saved_edits = {};
-        this.container = getRequiredElementById('user_param_config_container');
-        this.confirmer = getRequiredElementById('user_param_config_confirmer');
+        this.getElems();
+    }
+
+    getElems() {
+        this.container = document.getElementById('user_param_config_container');
+        this.confirmer = document.getElementById('user_param_config_confirmer');
     }
 
     /** First init, mostly just to store the server's original param info. */
@@ -180,6 +217,10 @@ class ParamConfigurationClass {
 
     /** Loads the user-editable parameter configuration tab, filling out the inputs and values. Called only once during init. */
     loadUserParamConfigTab() {
+        this.getElems();
+        if (!this.container || !this.confirmer || !rawGenParamTypesFromServer || !this.original_param_types) {
+            return;
+        }
         this.container.innerHTML = ``;
         let lastGroup = '__none__';
         let groupDiv = null;
@@ -485,4 +526,36 @@ function doUserLogout() {
     genericRequest('Logout', {}, data => {
         window.location.href = 'Login';
     });
+}
+
+function refreshUserTabSecurityState() {
+    for (let key in apiHelpers) {
+        apiHelpers[key].updateStatus();
+    }
+    authTokenHelpers.loadAuthTokens();
+}
+
+let hasInitializedUserTab = false;
+
+/** Ensures the User tab's lazy-owned controls and initial content are ready. */
+function ensureUserTabInitialized() {
+    if (hasInitializedUserTab) {
+        return;
+    }
+    authTokenHelpers.getElems();
+    rebuildUserApiHelpers();
+    paramConfig.getElems();
+    paramConfig.loadUserParamConfigTab();
+    hasInitializedUserTab = true;
+}
+
+function initUserTab() {
+    ensureUserTabInitialized();
+    refreshUserTab();
+}
+
+function refreshUserTab() {
+    authTokenHelpers.getElems();
+    rebuildUserApiHelpers();
+    refreshUserTabSecurityState();
 }

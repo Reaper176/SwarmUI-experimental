@@ -185,6 +185,9 @@
         <li class="nav-item" role="presentation">
             <a class="nav-link translate" data-bs-toggle="tab" href="#Tools-Tab" aria-selected="false" tabindex="-1" role="tab">Tools</a>
         </li>
+        <li class="nav-item" role="presentation">
+            <a class="nav-link translate" data-bs-toggle="tab" href="#Notes-Tab" aria-selected="false" tabindex="-1" role="tab">Notes</a>
+        </li>
     </ul>
     <div class="tab-content" id="t2i_bottom_bar_content">
         <div class="tab-pane show active genpage-bottom-tab" id="Image-History-Tab" role="tabpanel">
@@ -227,6 +230,38 @@
                 <option value="" selected></option>
             </select>
             <div class="tool-container" id="tool_container">
+            </div>
+        </div>
+        <div class="tab-pane genpage-bottom-tab" id="Notes-Tab" role="tabpanel">
+            <div class="notes-tab-layout">
+                <div class="browser_container notes-browser-container" id="notes_browser"></div>
+                <div class="notes-editor-panel">
+                    <div class="notes-editor-header">
+                        <div class="notes-editor-toolbar">
+                            <div class="notes-editor-title translate" id="notes_editor_title">Notes</div>
+                            <div class="notes-editor-actions">
+                                <button class="basic-button translate" id="notes_header_new_note_button" type="button">New Note</button>
+                                <button class="basic-button translate" id="notes_header_new_folder_button" type="button">New Folder</button>
+                                <button class="basic-button translate" id="notes_header_rename_button" type="button">Rename</button>
+                                <button class="basic-button translate" id="notes_header_delete_button" type="button">Delete</button>
+                                <label class="notes-preview-toggle" for="notes_preview_toggle">
+                                    <input type="checkbox" id="notes_preview_toggle">
+                                    <span class="translate">Preview</span>
+                                </label>
+                                <button class="basic-button translate" id="notes_save_button" type="button" onclick="window.notesTab.saveCurrentNote()">Save</button>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="notes-editor-meta">
+                        <div class="notes-editor-path" id="notes_current_path">No note selected</div>
+                        <div class="notes-status-line" id="notes_status_line">No note selected.</div>
+                    </div>
+                    <div class="notes-editor-body">
+                        <div class="notes-empty-state" id="notes_empty_state">Select or create a note to begin.</div>
+                        <textarea class="auto-text notes-editor-input" id="notes_editor_input" spellcheck="false" placeholder="Write markdown here..." autocomplete="off"></textarea>
+                        <div class="notes-preview-panel" id="notes_preview_panel"></div>
+                    </div>
+                </div>
             </div>
         </div>
     </div>

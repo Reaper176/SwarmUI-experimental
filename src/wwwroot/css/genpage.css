@@ -1248,9 +1248,71 @@ mark.model-search-highlight {
     width: calc(100% - 1rem);
     height: 2.5rem;
     display: block;
-    overflow-x: auto;
-    overflow-y: hidden;
+    overflow: visible;
     margin-left: 0.5rem;
+}
+.browser-header-control-row {
+    display: flex;
+    align-items: center;
+    gap: 0.35rem;
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+    white-space: nowrap;
+}
+.browser-header-control-group {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    flex: 0 0 auto;
+    white-space: nowrap;
+}
+.browser-header-control-group-filter {
+    min-width: 10rem;
+}
+.browser-header-control-group-filter .input_filter_container.bottom_filter {
+    display: inline-flex;
+    width: 100%;
+}
+.browser-header-control-group-filter .input_filter_container.bottom_filter input {
+    width: 12rem;
+    min-width: 10rem;
+}
+.browser-header-control-group-path {
+    min-width: 8rem;
+    max-width: 14rem;
+    flex: 0 1 14rem;
+    overflow: hidden;
+}
+.browser-header-control-group-count {
+    flex: 0 0 auto;
+}
+.browser-header-more-button {
+    flex: 0 0 auto;
+}
+.browser-header-more-popover {
+    min-width: 12rem;
+    max-width: min(24rem, calc(100vw - 1rem));
+    max-height: min(60vh, 28rem);
+    overflow: auto;
+}
+.browser-header-more-popover .browser-header-control-group {
+    display: flex;
+    width: 100%;
+    margin-bottom: 0.25rem;
+}
+.browser-header-more-popover .browser-header-control-group:last-child {
+    margin-bottom: 0;
+}
+.browser-header-more-popover .browser-header-control-group-filter .input_filter_container.bottom_filter input {
+    width: 100%;
+}
+.browser-path {
+    display: inline-block;
+    width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 .browser-header-count {
     color: var(--text-soft);
@@ -1482,6 +1544,9 @@ mark.model-search-highlight {
     border-right: none !important;
     margin-left: 2px;
 }
+.simple-generate-button {
+    width: calc(100% - 40px);
+}
 .alt-prompt-center-button {
     border-radius: 0 !important;
 }
@@ -1502,6 +1567,7 @@ mark.model-search-highlight {
     position: relative;
     background-color: color-mix(in srgb, transparent 80%, var(--background));
     transition: background-color 0.2s ease-out;
+    margin: 0 2px;
 }
 .alt-prompt-image {
     max-height: 128px;
@@ -1537,6 +1603,10 @@ mark.model-search-highlight {
     background-color: color-mix(in srgb, var(--red) 70%, black) !important;
     border: 1px solid black;
     cursor: pointer;
+}
+.alt-prompt-image-container.image-drop-replace-target .alt-prompt-image {
+    outline: 4px solid var(--emphasis);
+    border-radius: 5px;
 }
 .image-clear-button {
     vertical-align: middle;
@@ -2263,7 +2333,7 @@ mark.model-search-highlight {
 }
 .simpleinput-top-section {
     width: 100%;
-    height: calc(100% - 5rem);
+    height: calc(100% - 6rem);
     overflow: auto;
 }
 .simpleinputsidebar .auto-input-prompt-tokencount {
@@ -2274,7 +2344,7 @@ mark.model-search-highlight {
     bottom: 0;
     left: 0;
     width: 100%;
-    height: 5rem;
+    height: 6rem;
     padding-top: 1rem;
     border-top: 1px solid var(--light-border);
 }
@@ -2513,4 +2583,172 @@ mark.model-search-highlight {
 }
 .update-check-preview {
     opacity: 0.75;
+}
+.notes-tab-layout {
+    display: flex;
+    gap: 0.75rem;
+    height: 100%;
+    min-height: 0;
+    padding: 0.75rem;
+}
+.notes-browser-container {
+    width: min(42%, 34rem);
+    min-width: 20rem;
+    flex: 0 0 auto;
+}
+.notes-editor-panel {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    min-height: 0;
+    flex: 1 1 auto;
+    border: 0.0625rem solid var(--light-border);
+    border-radius: 0.5rem;
+    overflow: hidden;
+    background: rgba(0, 0, 0, 0.08);
+}
+.notes-editor-header {
+    flex: 0 0 auto;
+    padding: 0.8rem 0.9rem 0.65rem;
+    border-bottom: 0.0625rem solid var(--light-border);
+    background: rgba(0, 0, 0, 0.16);
+}
+.notes-editor-toolbar {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 1rem;
+    flex-wrap: wrap;
+}
+.notes-editor-title {
+    font-size: 1.05rem;
+    font-weight: 700;
+    flex: 0 0 auto;
+}
+.notes-editor-meta {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 0.75rem 1rem;
+    flex-wrap: wrap;
+    padding: 0.65rem 0.9rem 0.8rem;
+    border-bottom: 0.0625rem solid var(--light-border);
+    background: rgba(0, 0, 0, 0.1);
+}
+.notes-editor-body {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+    flex: 1 1 auto;
+    min-height: 0;
+    padding: 0.85rem;
+}
+.notes-editor-path {
+    color: var(--text-soft);
+    word-break: break-word;
+    min-width: 16rem;
+    flex: 1 1 24rem;
+}
+.notes-editor-actions {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 0.55rem;
+    flex-wrap: wrap;
+}
+.notes-preview-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    margin: 0;
+    padding: 0.25rem 0.35rem;
+    border: 0.0625rem solid var(--light-border);
+    border-radius: 0.4rem;
+    background: rgba(255, 255, 255, 0.03);
+}
+.notes-status-line {
+    min-height: 1.35rem;
+    color: var(--text-soft);
+    text-align: right;
+    flex: 0 1 auto;
+}
+.notes-status-line.notes-status-error {
+    color: #ff8d8d;
+}
+.notes-status-line.notes-status-dirty {
+    color: #ffd27a;
+}
+.notes-empty-state {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 8rem;
+    padding: 1rem;
+    border: 0.0625rem dashed var(--light-border);
+    border-radius: 0.5rem;
+    color: var(--text-soft);
+    text-align: center;
+}
+.notes-editor-input {
+    width: 100%;
+    min-height: 14rem;
+    height: 100%;
+    flex: 1 1 auto;
+    min-height: 0;
+    resize: none;
+    white-space: pre-wrap;
+    font-family: "Cascadia Code", "Consolas", monospace;
+}
+.notes-preview-panel {
+    display: none;
+    overflow: auto;
+    flex: 1 1 auto;
+    min-height: 0;
+    padding: 1rem;
+    border: 0.0625rem solid var(--light-border);
+    border-radius: 0.5rem;
+    background: rgba(0, 0, 0, 0.12);
+}
+.notes-preview-panel pre,
+.notes-preview-panel code {
+    font-family: "Cascadia Code", "Consolas", monospace;
+}
+.notes-preview-panel pre {
+    padding: 0.75rem;
+    overflow: auto;
+    border-radius: 0.35rem;
+    background: rgba(0, 0, 0, 0.16);
+}
+.notes-preview-panel blockquote {
+    margin-left: 0;
+    padding-left: 0.9rem;
+    border-left: 0.2rem solid var(--emphasis);
+    opacity: 0.9;
+}
+.notes-preview-panel ul,
+.notes-preview-panel ol {
+    padding-left: 1.4rem;
+}
+.notes-preview-panel hr {
+    border-color: var(--light-border);
+}
+@media (max-width: 900px) {
+    .notes-tab-layout {
+        flex-direction: column;
+    }
+    .notes-browser-container {
+        width: 100%;
+        min-width: 0;
+        min-height: 16rem;
+    }
+    .notes-editor-toolbar,
+    .notes-editor-meta {
+        align-items: stretch;
+    }
+    .notes-editor-actions {
+        justify-content: flex-start;
+    }
+    .notes-status-line {
+        text-align: left;
+    }
 }

@@ -2,22 +2,10 @@
 
 class ServerLogsHelper {
     constructor() {
+        this.maxMessagesPerType = 1536;
+        this.trimThresholdPerType = 2048;
         this.logTypes = [];
         this.loaded = false;
-        this.tabButton = getRequiredElementById('logtabbutton');
-        this.tabButton.addEventListener('click', () => this.onTabButtonClick());
-        this.tabBody = getRequiredElementById('Server-Logs');
-        this.serverTabBody = getRequiredElementById('server_tab');
-        this.typeSelectors = getRequiredElementById('server_log_type_selector');
-        this.actualLogContainer = getRequiredElementById('server_logs_container');
-        this.filterInput = getRequiredElementById('server_log_filter');
-        this.pastebinButton = getRequiredElementById('server_log_pastebin');
-        this.pastebinButton.addEventListener('click', () => this.doPastebinModal());
-        this.pastebinSubmitButton = getRequiredElementById('log_submit_pastebin_button');
-        this.pastebinSubmitButton.addEventListener('click', () => this.pastebinSubmitNow());
-        this.pastebinCancelButton = getRequiredElementById('log_cancel_pastebin_button');
-        this.pastebinResultArea = getRequiredElementById('log_pastebin_result_area');
-        this.pastebinLogTypeSelector = getRequiredElementById('log_pastebin_type');
         this.lastSeq = -1;
         this.logMessagesByType = {};
         this.lastBounce = 0;
@@ -25,9 +13,52 @@ class ServerLogsHelper {
         this.mayLoop = true;
         this.logLoopRate = 500;
         this.loopInterval = null;
+        this.hasBoundEvents = false;
+        this.boundEvaluateLoopState = this.evaluateLoopState.bind(this);
+        this.refreshElems();
+        this.bindEvents();
+    }
+
+    refreshElems() {
+        this.tabButton = document.getElementById('logtabbutton');
+        this.tabBody = document.getElementById('Server-Logs');
+        this.serverTabBody = document.getElementById(window.genpageLazyTabs.server.tabId);
+        this.typeSelectors = document.getElementById('server_log_type_selector');
+        this.actualLogContainer = document.getElementById('server_logs_container');
+        this.filterInput = document.getElementById('server_log_filter');
+        this.pastebinButton = document.getElementById('server_log_pastebin');
+        this.pastebinSubmitButton = document.getElementById('log_submit_pastebin_button');
+        this.pastebinCancelButton = document.getElementById('log_cancel_pastebin_button');
+        this.pastebinResultArea = document.getElementById('log_pastebin_result_area');
+        this.pastebinLogTypeSelector = document.getElementById('log_pastebin_type');
+        this.serverTabButton = document.getElementById('servertabbutton');
+        this.serverTabList = document.getElementById('servertablist');
+    }
+
+    bindEvents() {
+        if (this.hasBoundEvents || !this.tabButton || !this.serverTabButton || !this.serverTabList || !this.pastebinButton || !this.pastebinSubmitButton) {
+            return;
+        }
+        this.tabButton.addEventListener('shown.bs.tab', () => this.onTabButtonClick());
+        this.pastebinButton.addEventListener('click', () => this.doPastebinModal());
+        this.pastebinSubmitButton.addEventListener('click', () => this.pastebinSubmitNow());
+        this.serverTabButton.addEventListener('shown.bs.tab', () => {
+            this.boundEvaluateLoopState();
+        });
+        this.serverTabList.addEventListener('shown.bs.tab', () => {
+            this.boundEvaluateLoopState();
+        });
+        document.addEventListener('visibilitychange', () => {
+            this.evaluateLoopState();
+        });
+        this.hasBoundEvents = true;
     }
 
     doPastebinModal() {
+        this.refreshElems();
+        if (!this.pastebinSubmitButton || !this.pastebinCancelButton || !this.pastebinResultArea) {
+            return;
+        }
         $('#do_log_pastebin_modal').modal('show');
         this.pastebinSubmitButton.disabled = false;
         this.pastebinCancelButton.innerText = translate('Cancel');
@@ -35,6 +66,10 @@ class ServerLogsHelper {
     }
 
     pastebinSubmitNow() {
+        this.refreshElems();
+        if (!this.pastebinSubmitButton || !this.pastebinCancelButton || !this.pastebinResultArea || !this.pastebinLogTypeSelector) {
+            return;
+        }
         this.pastebinSubmitButton.disabled = true;
         this.pastebinCancelButton.innerText = translate('Close');
         this.pastebinResultArea.innerHTML = 'Submitting...';
@@ -48,6 +83,9 @@ class ServerLogsHelper {
     }
 
     regenTypeListElem() {
+        if (!this.typeSelectors) {
+            return;
+        }
         let names = this.logTypes.map((t) => t.name);
         if (arraysEqual(this.lastLogTypes || [], names)) {
             return;
@@ -71,14 +109,48 @@ class ServerLogsHelper {
     }
 
     onTabButtonClick() {
+        this.refreshElems();
+        if (!this.tabButton || !this.tabBody || !this.serverTabBody || !this.typeSelectors || !this.actualLogContainer || !this.filterInput) {
+            return;
+        }
         if (!this.loaded) {
             this.loadTypeList(() => {
-                if (this.loopInterval != null) {
-                    clearInterval(this.loopInterval);
-                }
-                this.loopInterval = setInterval(() => this.updateLoop(), this.logLoopRate);
                 this.loaded = true;
+                this.evaluateLoopState();
             });
+            return;
+        }
+        this.evaluateLoopState();
+    }
+
+    startLoop() {
+        if (this.loopInterval != null) {
+            return;
+        }
+        this.loopInterval = setInterval(() => this.updateLoop(), this.logLoopRate);
+    }
+
+    stopLoop() {
+        if (this.loopInterval == null) {
+            return;
+        }
+        clearInterval(this.loopInterval);
+        this.loopInterval = null;
+    }
+
+    shouldLoop() {
+        if (!this.loaded || document.hidden || !this.serverTabBody || !this.tabBody) {
+            return false;
+        }
+        return this.serverTabBody.classList.contains('active') && this.tabBody.classList.contains('active');
+    }
+
+    evaluateLoopState() {
+        if (this.shouldLoop()) {
+            this.startLoop();
+        }
+        else {
+            this.stopLoop();
         }
     }
 
@@ -110,6 +182,10 @@ class ServerLogsHelper {
         if (!matched) {
             return;
         }
+        this.refreshElems();
+        if (!this.typeSelectors || !this.tabButton) {
+            return;
+        }
         this.typeSelectors.value = matched.name;
         getRequiredElementById('servertabbutton').click();
         this.tabButton.click();
@@ -117,10 +193,14 @@ class ServerLogsHelper {
     }
 
     updateLoop() {
+        this.refreshElems();
         if (!this.mayLoop) {
             return;
         }
         if (document.hidden) {
+            return;
+        }
+        if (!this.serverTabBody || !this.tabBody || !this.actualLogContainer || !this.typeSelectors || !this.filterInput) {
             return;
         }
         if (!this.serverTabBody.classList.contains('active') || !this.tabBody.classList.contains('active')) {
@@ -194,9 +274,9 @@ class ServerLogsHelper {
                     continue;
                 }
                 await sleep(1);
-                if (storedData.raw.length > 2048) {
-                    let keys = Object.keys(storedData.raw);
-                    let removeCount = keys.length - 1536;
+                let keys = Object.keys(storedData.raw);
+                if (keys.length > this.trimThresholdPerType) {
+                    let removeCount = keys.length - this.maxMessagesPerType;
                     keys.sort((a, b) => a - b);
                     for (let i = 0; i < removeCount; i++) {
                         delete storedData.raw[keys[i]];
@@ -228,4 +308,21 @@ class ServerLogsHelper {
     }
 }
 
-serverLogs = new ServerLogsHelper();
+serverLogs = null;
+
+/** Ensures the Server Logs tab helper is initialized for lazy loading. */
+function ensureServerLogsTabInitialized() {
+    if (!serverLogs) {
+        serverLogs = new ServerLogsHelper();
+        return;
+    }
+    serverLogs.refreshElems();
+    serverLogs.bindEvents();
+}
+
+function initServerLogsTab() {
+    ensureServerLogsTabInitialized();
+    if (serverLogs) {
+        serverLogs.evaluateLoopState();
+    }
+}
