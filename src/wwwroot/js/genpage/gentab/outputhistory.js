@@ -8,9 +8,15 @@ let imageHistoryAutoRetryTimer = null;
 let imageHistoryNextLoadIsRetry = false;
 let imageHistoryStartupStage = 'pending';
 let imageHistoryLoadToken = 0;
+let imageHistoryBackgroundLoadToken = 0;
+let imageHistoryBackgroundRetryCount = 0;
+let imageHistoryBackgroundRequestKey = null;
+let imageHistoryBackgroundWatchdog = null;
 const IMAGE_HISTORY_METADATA_CACHE_LIMIT = 1024;
 const IMAGE_HISTORY_AUTO_RETRY_DELAY_MS = 1500;
 const IMAGE_HISTORY_FAST_FIRST_LIMIT = 128;
+const IMAGE_HISTORY_BACKGROUND_WATCHDOG_DELAY_MS = 10000;
+const IMAGE_HISTORY_BACKGROUND_MAX_RETRIES = 2;
 let IMAGE_HISTORY_UNLOAD_ROW_BUFFER = 10;
 let IMAGE_HISTORY_MIN_MEDIA_ROWS_TO_UNLOAD = 2;
 const imageHistoryMetadataCache = new Map();
@@ -194,6 +200,43 @@ function clearImageHistoryAutoRetry() {
         imageHistoryAutoRetryTimer = null;
     }
     imageHistoryNextLoadIsRetry = false;
+}
+
+function clearImageHistoryBackgroundWatchdog() {
+    if (imageHistoryBackgroundWatchdog) {
+        clearTimeout(imageHistoryBackgroundWatchdog);
+        imageHistoryBackgroundWatchdog = null;
+    }
+}
+
+function getImageHistoryRequestKey(path, depth, sortBy, reverse, showHidden) {
+    return JSON.stringify({ path, depth, sortBy, reverse, showHidden });
+}
+
+function isImageHistoryBackgroundRequestStillRelevant(path, requestKey, backgroundToken) {
+    if (!imageHistoryBrowser || imageHistoryBrowser.folder != path) {
+        return false;
+    }
+    if (backgroundToken != imageHistoryBackgroundLoadToken) {
+        return false;
+    }
+    return requestKey == imageHistoryBackgroundRequestKey;
+}
+
+function scheduleImageHistoryBackgroundWatchdog(path, depth, sortBy, reverse, showHidden, requestKey, backgroundToken) {
+    clearImageHistoryBackgroundWatchdog();
+    imageHistoryBackgroundWatchdog = setTimeout(() => {
+        if (!isImageHistoryBackgroundRequestStillRelevant(path, requestKey, backgroundToken) || imageHistoryStartupStage != 'recent_loaded') {
+            return;
+        }
+        if (imageHistoryBackgroundRetryCount >= IMAGE_HISTORY_BACKGROUND_MAX_RETRIES) {
+            setImageHistoryRequestStatus('error', 'History is taking too long to fully load. Retry when ready.');
+            return;
+        }
+        imageHistoryBackgroundRetryCount++;
+        setImageHistoryRequestStatus('loading', 'Still loading older history...');
+        queueFullImageHistoryLoad(path, depth, sortBy, reverse, showHidden);
+    }, IMAGE_HISTORY_BACKGROUND_WATCHDOG_DELAY_MS);
 }
 
 function retryImageHistoryManually() {
@@ -735,6 +778,9 @@ function listOutputHistoryFolderAndFiles(path, isRefresh, callback, depth, onErr
     imageHistoryNextLoadIsRetry = false;
     let loadToken = ++imageHistoryLoadToken;
     let useFastFirst = imageHistoryStartupStage == 'pending' && path == '' && !isRefresh;
+    if (useFastFirst || path != '' || isRefresh) {
+        clearImageHistoryBackgroundWatchdog();
+    }
     let request = { 'path': path, 'depth': depth, 'sortBy': sortBy, 'sortReverse': reverse, 'includeHidden': showHidden };
     if (useFastFirst) {
         request.fastFirst = true;
@@ -750,10 +796,13 @@ function listOutputHistoryFolderAndFiles(path, isRefresh, callback, depth, onErr
         callback(folders, mapped);
         if (useFastFirst) {
             imageHistoryStartupStage = 'recent_loaded';
-            queueFullImageHistoryLoad(path, depth, sortBy, reverse, showHidden, loadToken);
+            imageHistoryBackgroundRetryCount = 0;
+            imageHistoryBackgroundRequestKey = getImageHistoryRequestKey(path, depth, sortBy, reverse, showHidden);
+            queueFullImageHistoryLoad(path, depth, sortBy, reverse, showHidden);
             return;
         }
         imageHistoryStartupStage = 'complete';
+        clearImageHistoryBackgroundWatchdog();
         setImageHistoryRequestStatus('idle');
     }, 0, error => {
         showError(error);
@@ -769,24 +818,37 @@ function listOutputHistoryFolderAndFiles(path, isRefresh, callback, depth, onErr
     });
 }
 
-function queueFullImageHistoryLoad(path, depth, sortBy, reverse, showHidden, loadToken) {
+function queueFullImageHistoryLoad(path, depth, sortBy, reverse, showHidden) {
+    let requestKey = getImageHistoryRequestKey(path, depth, sortBy, reverse, showHidden);
+    let backgroundToken = ++imageHistoryBackgroundLoadToken;
+    imageHistoryBackgroundRequestKey = requestKey;
+    scheduleImageHistoryBackgroundWatchdog(path, depth, sortBy, reverse, showHidden, requestKey, backgroundToken);
     setTimeout(() => {
         genericRequest('ListImages', { 'path': path, 'depth': depth, 'sortBy': sortBy, 'sortReverse': reverse, 'includeHidden': showHidden }, data => {
-            if (loadToken != imageHistoryLoadToken || !imageHistoryBrowser || imageHistoryBrowser.folder != path) {
+            if (!isImageHistoryBackgroundRequestStillRelevant(path, requestKey, backgroundToken)) {
                 return;
             }
             let prefix = path == '' ? '' : (path.endsWith('/') ? path : `${path}/`);
             let folders = data.folders.sort((a, b) => b.toLowerCase().localeCompare(a.toLowerCase()));
             let mapped = mapHistoryFiles(prefix, orderHistoryFilesForDisplay(data.files));
             imageHistoryStartupStage = 'complete';
+            imageHistoryBackgroundRetryCount = 0;
+            clearImageHistoryBackgroundWatchdog();
             replaceHistoryBrowserContents(path, folders, mapped);
             setImageHistoryRequestStatus('idle');
         }, 0, error => {
-            if (loadToken != imageHistoryLoadToken || !imageHistoryBrowser || imageHistoryBrowser.folder != path) {
+            if (!isImageHistoryBackgroundRequestStillRelevant(path, requestKey, backgroundToken)) {
                 return;
             }
             console.log(`Background history fill failed: ${error}`);
-            setImageHistoryRequestStatus('error', `History failed to load fully: ${error}`);
+            clearImageHistoryBackgroundWatchdog();
+            if (imageHistoryBackgroundRetryCount >= IMAGE_HISTORY_BACKGROUND_MAX_RETRIES) {
+                setImageHistoryRequestStatus('error', `History failed to load fully: ${error}`);
+                return;
+            }
+            imageHistoryBackgroundRetryCount++;
+            setImageHistoryRequestStatus('loading', 'Retrying older history...');
+            queueFullImageHistoryLoad(path, depth, sortBy, reverse, showHidden);
         });
     }, 0);
 }
