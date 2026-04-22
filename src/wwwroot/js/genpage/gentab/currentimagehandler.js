@@ -3756,7 +3756,7 @@ function setCurrentImage(src, metadata = '', batchId = '', previewGrow = false, 
             img.dataset.previewGrow = 'true';
         }
         alignImageDataFormat();
-    }
+    };
     if (mediaType == 'video' || mediaType == 'audio') {
         img.addEventListener('loadeddata', function() {
             if (img) {
@@ -3916,6 +3916,9 @@ function setCurrentImage(src, metadata = '', batchId = '', previewGrow = false, 
             showError(`${e}`);
         });
     }, '', 'Opens an Image Editor for this image', ['image']);
+    includeButton('Send to Krita', () => {
+        sendImageToKrita(img.src);
+    }, '', 'Exports this image to a temporary PNG and opens it in Krita', ['image']);
     if (mediaType == 'image') {
         includeButton('Send To Image Edit Tab', () => {
             sendToImageEditingTabPreview(img.src, img.dataset.metadata).catch((e) => {
@@ -4026,6 +4029,21 @@ function setCurrentImage(src, metadata = '', batchId = '', previewGrow = false, 
         }
     }
     highlightSelectedImage(src);
+}
+
+/**
+ * Sends the specified image URL to the local Krita bridge.
+ */
+function sendImageToKrita(imgSrc) {
+    toDataURL(imgSrc, (dataUrl) => {
+        genericRequest('SendImageToKrita', { imageData: dataUrl }, data => {
+            if (!data.success) {
+                showError(data.error || 'Failed to send image to Krita.');
+            }
+        }, 0, error => {
+            showError(`${error}`);
+        });
+    });
 }
 
 function highlightSelectedImage(src) {

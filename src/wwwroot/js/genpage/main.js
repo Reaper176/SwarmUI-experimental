@@ -34,6 +34,7 @@ let pageTitleSuffix = document.title.split(' - ').slice(1).join(' - ');
 let curAutoTitle = "Page is loading...";
 
 let featureSetChangedCallbacks = [];
+let hasPendingKritaPoll = false;
 
 function setPageTitle(newTitle) {
     document.title = `${newTitle} - ${pageTitleSuffix}`;
@@ -701,6 +702,43 @@ async function openEmptyEditor() {
     image.src = canvas.toDataURL();
 }
 
+/**
+ * Imports a returned Krita image into the active init/editor image state.
+ */
+async function importReturnedKritaImage(imageData) {
+    let image = new Image();
+    image.onload = async () => {
+        let initImageGroupToggle = document.getElementById('input_group_content_initimage_toggle');
+        if (initImageGroupToggle) {
+            initImageGroupToggle.checked = true;
+            triggerChangeFor(initImageGroupToggle);
+        }
+        setCurrentImage(imageData, '', 'krita');
+        if (await ensureGenerateImageEditorReady()) {
+            imageEditor.clearVars();
+            imageEditor.setBaseImage(image);
+        }
+    };
+    image.src = imageData;
+}
+
+/**
+ * Checks whether Swarm has a pending Krita image for this session.
+ */
+function startPendingKritaImportPoll() {
+    if (hasPendingKritaPoll) {
+        return;
+    }
+    hasPendingKritaPoll = true;
+    setInterval(() => {
+        genericRequest('CheckPendingKritaImage', {}, data => {
+            if (data && data.image) {
+                importReturnedKritaImage(data.image);
+            }
+        }, 0, () => { });
+    }, 2000);
+}
+
 /** Ensures the Generate tab image editor exists, creating it only on first use. */
 async function ensureGenerateImageEditorReady() {
     await ensureLazyScriptGroup('imageediting');
@@ -1357,6 +1395,7 @@ function genpageLoad() {
             for (let callback of sessionReadyCallbacks) {
                 callback();
             }
+            startPendingKritaImportPoll();
             automaticWelcomeMessage();
             autoTitle();
             swarmHasLoaded = true;
