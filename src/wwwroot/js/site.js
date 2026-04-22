@@ -145,12 +145,25 @@ function makeWSRequest(url, in_data, callback, depth = 0, errorHandle = null, on
 
 let genericAjaxError = translatable(`Failed to send request to server (generic ProgressEvent). Did the server crash?`);
 
+/** Converts low-level XHR/browser request failures to a readable message. */
+function describeRequestFailure(e) {
+    if (e instanceof ProgressEvent || e?.constructor?.name == 'ProgressEvent') {
+        let type = e.type || 'error';
+        if (type == 'timeout') {
+            return `Request timed out after ${window.swarmXhrTimeoutMs || 30000}ms.`;
+        }
+        if (type == 'abort') {
+            return `Request was aborted before the server responded.`;
+        }
+        return genericAjaxError.get();
+    }
+    return e;
+}
+
 function genericRequest(url, in_data, callback, depth = 0, errorHandle = null) {
     in_data['session_id'] = session_id;
     function fail(e) {
-        if (e instanceof ProgressEvent) {
-            e = genericAjaxError.get();
-        }
+        e = describeRequestFailure(e);
         if (errorHandle) {
             errorHandle(e);
             return;

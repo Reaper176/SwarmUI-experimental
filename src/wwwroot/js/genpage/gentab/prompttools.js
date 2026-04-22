@@ -255,7 +255,7 @@ class PromptTabCompleteClass {
                         rawMatchSet.push(entry);
                     }
                 }
-                let sortMode = getUserSetting('autocomplete.sortmode');
+                let sortMode = getUserSetting('autocomplete.sortmode', 'Active');
                 let doSortList = (list) => {
                     if (sortMode == 'Active') {
                         list.sort((a, b) => a.low.length - b.low.length || a.low.localeCompare(b.low));
@@ -268,7 +268,7 @@ class PromptTabCompleteClass {
                     }
                     // else 'None'
                 }
-                let matchMode = getUserSetting('autocomplete.matchmode');
+                let matchMode = getUserSetting('autocomplete.matchmode', 'Bucketed');
                 if (matchMode == 'Bucketed') {
                     doSortList(startWithList);
                     doSortList(startWithAltList);

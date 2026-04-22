@@ -971,9 +971,26 @@ function copy_current_image_params() {
         alert('No parameters to copy!');
         return;
     }
-    let readable = interpretMetadata(currentMetadataVal);
-    let metadataFull = JSON.parse(readable);
+    let readable;
+    let metadataFull;
+    try {
+        readable = interpretMetadata(currentMetadataVal);
+        if (!readable) {
+            alert('Failed to read image parameters.');
+            return;
+        }
+        metadataFull = JSON.parse(readable);
+    }
+    catch (e) {
+        console.log(`Failed to parse current image metadata for reuse: ${e}`);
+        alert('Failed to parse image parameters for reuse.');
+        return;
+    }
     let metadata = metadataFull.sui_image_params;
+    if (!metadata) {
+        alert('Selected image does not contain reusable parameters.');
+        return;
+    }
     let extra = metadataFull.sui_extra_data || metadata;
     for (let param of Object.keys(metadata)) {
         let remapId = window.parameter_remaps[param];
@@ -1040,7 +1057,7 @@ function copy_current_image_params() {
     if (!('aspectratio' in metadata) && 'width' in metadata && 'height' in metadata) {
         metadata.aspectratio = 'Custom';
     }
-    let exclude = getUserSetting('reuseparamexcludelist').split(',').map(s => cleanParamName(s));
+    let exclude = getUserSetting('reuseparamexcludelist', '').split(',').map(s => cleanParamName(s));
     let resetExclude = [...exclude, ...Object.keys(metadata), ...Object.keys(extra).map(e => e.endsWith('_filename') ? e.substring(0, e.length - '_filename'.length) : null).filter(e => e != null)];
     resetParamsToDefault(resetExclude, false);
     for (let param of gen_param_types) {
@@ -1053,8 +1070,8 @@ function copy_current_image_params() {
             let group = param.group;
             while (group) {
                 if (group.toggles) {
-                    let toggle = getRequiredElementById(`input_group_content_${group.id}_toggle`);
-                    if (!toggle.checked) {
+                    let toggle = document.getElementById(`input_group_content_${group.id}_toggle`);
+                    if (toggle && !toggle.checked) {
                         toggle.click();
                     }
                 }
@@ -1063,9 +1080,11 @@ function copy_current_image_params() {
             setDirectParamValue(param, val);
         }
         else if (elem && param.toggleable && param.visible && !resetExclude.includes(param.id)) {
-            let toggle = getRequiredElementById(`input_${param.id}_toggle`);
-            toggle.checked = false;
-            doToggleEnable(elem.id);
+            let toggle = document.getElementById(`input_${param.id}_toggle`);
+            if (toggle) {
+                toggle.checked = false;
+                doToggleEnable(elem.id);
+            }
         }
     }
     hideUnsupportableParams();
@@ -3622,11 +3641,27 @@ function getImageFullSrc(src) {
     return fullSrc;
 }
 
+function normalizeCurrentImageMetadata(metadata) {
+    if (!metadata) {
+        return null;
+    }
+    if (typeof metadata == 'object' && !(metadata instanceof Uint8Array) && !Array.isArray(metadata)) {
+        try {
+            metadata = JSON.stringify(metadata);
+        }
+        catch (e) {
+            console.log(`Failed to stringify current image metadata: ${e}`);
+            return null;
+        }
+    }
+    return interpretMetadata(metadata);
+}
+
 function setCurrentImage(src, metadata = '', batchId = '', previewGrow = false, smoothAdd = false, canReparse = true, isPlaceholder = false) {
     currentImgSrc = src;
     if (metadata) {
         try {
-            metadata = interpretMetadata(metadata);
+            metadata = normalizeCurrentImageMetadata(metadata);
         }
         catch (e) {
             console.log(`Failed to interpret current image metadata: ${e}`);
@@ -4044,7 +4079,7 @@ function appendImage(container, imageSrc, batchId, textPreview, metadata = '', t
         div.classList.add('image-block-placeholder');
     }
     div.dataset.src = imageSrc;
-    div.dataset.metadata = metadata;
+    div.dataset.metadata = typeof metadata == 'object' && !(metadata instanceof Uint8Array) && !Array.isArray(metadata) ? JSON.stringify(metadata) : metadata;
     let isVideo = isVideoExt(imageSrc);
     let isAudio = isAudioExt(imageSrc);
     let img, srcTarget;
