@@ -14,7 +14,7 @@
 
 ## Swarm setup
 
-Set `KritaBridge.KritaExecutablePath` in server settings if Krita is not on the default OS path.
+Set `KritaBridge.KritaExecutablePath` in server settings if Krita is not on the default OS path. Environment-variable and home-directory markers such as `%ProgramFiles%`, `$HOME`, or `~` are supported.
 
 ## Krita plugin install
 

@@ -2,12 +2,26 @@
 let backend_types = {};
 
 let backends_loaded = {};
+let iopaintServiceStatus = null;
 
 let backendsRevisedCallbacks = [];
 
 let hasLoadedBackends = false;
 let hasLoadedBackendTypes = false;
 let backendTypesLoadPending = false;
+
+function backendEditableEntries(cardBody) {
+    if (!(cardBody instanceof Element)) {
+        return [];
+    }
+    let results = [];
+    for (let elem of cardBody.getElementsByTagName('*')) {
+        if (elem.dataset && elem.dataset.name) {
+            results.push(elem);
+        }
+    }
+    return results;
+}
 
 function backendLogInfoIsAvailable(backendId) {
     return typeof serverLogs != 'undefined' && serverLogs ? serverLogs.matchIdentifier(`backend-${backendId}`) != null : false;
@@ -131,7 +145,7 @@ function addBackendToHtml(backend, disable, spot = null) {
     cardBase.appendChild(cardHeader);
     cardBase.appendChild(cardBody);
     spot.appendChild(cardBase);
-    for (let entry of cardBody.querySelectorAll('[data-name]')) {
+    for (let entry of backendEditableEntries(cardBody)) {
         entry.disabled = disable;
     }
     if (!disable) {
@@ -157,7 +171,7 @@ function addBackendToHtml(backend, disable, spot = null) {
         actualCardTitle.classList.add('backend-title-editable');
         cardTitleCenterID.contentEditable = true;
         cardTitleCenterID.classList.add('backend-title-editable');
-        for (let entry of cardBody.querySelectorAll('[data-name]')) {
+        for (let entry of backendEditableEntries(cardBody)) {
             entry.disabled = false;
         }
     });
@@ -167,7 +181,7 @@ function addBackendToHtml(backend, disable, spot = null) {
         actualCardTitle.classList.remove('backend-title-editable');
         cardTitleCenterID.contentEditable = false;
         cardTitleCenterID.classList.remove('backend-title-editable');
-        for (let entry of cardBody.querySelectorAll('[data-name]')) {
+        for (let entry of backendEditableEntries(cardBody)) {
             let name = entry.dataset.name;
             let value = entry.type == 'checkbox' ? entry.checked : entry.value;
             backend.settings[name] = value;
@@ -196,6 +210,93 @@ function addBackendToHtml(backend, disable, spot = null) {
     });
 }
 
+function addIOPaintServiceCard(data) {
+    iopaintServiceStatus = data;
+    let backendsList = document.getElementById('backends_list');
+    let spot = document.getElementById('iopaint-service-spot');
+    if (!spot) {
+        spot = createDiv('iopaint-service-spot', 'backend-wrapper-spot');
+        backendsList.prepend(spot);
+    }
+    let statusText = data.ready ? 'running' : (data.installed ? 'waiting' : 'disabled');
+    spot.innerHTML = `
+    <div class="card backend-${statusText} backend-card" id="iopaint-service-card">
+        <div class="card-header">
+            <span><span class="card-title-status">${data.ready ? 'ready' : (data.installed ? 'installed' : 'missing')}</span><span> service: Managed IOPaint</span></span>
+            <button class="backend-save-button" id="iopaint-new-button">Create New</button>
+            <button class="backend-delete-button" id="iopaint-uninstall-button" title="Uninstall">✕</button>
+            <button class="backend-save-button" id="iopaint-install-button">${data.installed ? 'Reinstall' : 'Install'}</button>
+            <button class="backend-save-button" id="iopaint-save-button">Save</button>
+        </div>
+        <div class="card-body">
+            <div class="auto-input auto-checkbox-box auto-input-flex">
+                <span class="auto-input-name">Enabled</span>
+                <input class="auto-checkbox" type="checkbox" data-name="Enabled" id="iopaint_enabled"${data.enabled ? ' checked="true"' : ''}>
+            </div>
+            <div class="auto-input auto-text-box auto-input-flex auto-input-flex-wide">
+                <label><span class="auto-input-name">Bootstrap Python</span></label>
+                <textarea class="auto-text translate translate-no-text" id="iopaint_bootstrap_python" rows="1" placeholder="python3" data-name="Bootstrap Python" autocomplete="off">${escapeHtmlNoBr(data.bootstrap_python || '')}</textarea>
+            </div>
+            <div class="auto-input auto-text-box auto-input-flex auto-input-flex-wide">
+                <label><span class="auto-input-name">Venv Path</span></label>
+                <textarea class="auto-text translate translate-no-text" id="iopaint_venv_path" rows="1" placeholder="" data-name="Venv Path" autocomplete="off">${escapeHtmlNoBr(data.venv_path || '')}</textarea>
+            </div>
+            <div class="auto-input auto-dropdown-box auto-input-flex">
+                <label><span class="auto-input-name">Device</span></label>
+                <select class="auto-dropdown" id="iopaint_device" data-name="Device" autocomplete="off" onchange="autoSelectWidth(this)">
+                    <option value="cpu"${data.device == 'cpu' ? ' selected="true"' : ''}>cpu</option>
+                    <option value="cuda"${data.device == 'cuda' ? ' selected="true"' : ''}>cuda</option>
+                    <option value="mps"${data.device == 'mps' ? ' selected="true"' : ''}>mps</option>
+                </select>
+            </div>
+            <div class="auto-input auto-text-box auto-input-flex auto-input-flex-wide">
+                <label><span class="auto-input-name">Model Cache</span></label>
+                <textarea class="auto-text translate translate-no-text" id="iopaint_model_cache_path" rows="1" placeholder="" data-name="Model Cache" autocomplete="off">${escapeHtmlNoBr(data.model_cache_path || '')}</textarea>
+            </div>
+            <div class="backend-last-used-time">Python: <code>${escapeHtml(data.python_path)}</code></div>
+            <div class="backend-last-used-time">Executable: <code>${escapeHtml(data.exe_path)}</code></div>
+            <div class="backend-last-used-time">Status: <code>${escapeHtml(data.detail || '')}</code></div>
+        </div>
+    </div>`;
+    getRequiredElementById('iopaint-save-button').addEventListener('click', () => {
+        genericRequest('SaveIOPaintServiceSettings', {
+            enabled: getRequiredElementById('iopaint_enabled').checked,
+            bootstrap_python: getRequiredElementById('iopaint_bootstrap_python').value,
+            venv_path: getRequiredElementById('iopaint_venv_path').value,
+            device: getRequiredElementById('iopaint_device').value,
+            model_cache_path: getRequiredElementById('iopaint_model_cache_path').value
+        }, data => {
+            addIOPaintServiceCard(data);
+        });
+    });
+    getRequiredElementById('iopaint-install-button').addEventListener('click', () => {
+        genericRequest('InstallIOPaintService', {
+            reinstall: iopaintServiceStatus.installed
+        }, data => {
+            addIOPaintServiceCard(data);
+        });
+    });
+    getRequiredElementById('iopaint-new-button').addEventListener('click', () => {
+        genericRequest('CreateNewIOPaintServiceInstall', {}, data => {
+            addIOPaintServiceCard(data);
+        });
+    });
+    getRequiredElementById('iopaint-uninstall-button').addEventListener('click', () => {
+        if (!confirm('Are you sure you want to uninstall the current managed IOPaint environment?')) {
+            return;
+        }
+        genericRequest('UninstallIOPaintService', {}, data => {
+            addIOPaintServiceCard(data);
+        });
+    });
+}
+
+function loadIOPaintServiceCard() {
+    genericRequest('GetIOPaintServiceStatus', {}, data => {
+        addIOPaintServiceCard(data);
+    });
+}
+
 function clearBackendsList() {
     for (let oldBack of Object.values(backends_loaded)) {
         let spot = document.getElementById(`backend-wrapper-spot-${oldBack.id}`);
@@ -207,6 +308,7 @@ function clearBackendsList() {
 function loadBackendsList() {
     reviseStatusBar();
     genericRequest('ListBackends', {}, data => {
+        loadIOPaintServiceCard();
         hasLoadedBackends = true;
         for (let oldBack of Object.values(backends_loaded)) {
             let spot = document.getElementById(`backend-wrapper-spot-${oldBack.id}`);
@@ -247,7 +349,11 @@ function loadBackendsList() {
 
 function toggleShowAdvancedBackends() {
     let showAdvanced = document.getElementById('backends_show_advanced').checked;
-    for (let button of document.querySelectorAll('#backend_add_buttons button')) {
+    let addButtonsSection = document.getElementById('backend_add_buttons');
+    if (!(addButtonsSection instanceof Element)) {
+        return;
+    }
+    for (let button of addButtonsSection.getElementsByTagName('button')) {
         if (button.dataset.isStandard == 'false') {
             button.style.display = showAdvanced ? 'inline-block' : 'none';
         }

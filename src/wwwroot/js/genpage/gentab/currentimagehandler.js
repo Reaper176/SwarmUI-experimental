@@ -1450,6 +1450,7 @@ let imageEditingPausedGenerateEditor = false;
 let imageEditingLeftSidebarWidth = parseInt(localStorage.getItem('barspot_imageediting_leftSidebar') || `${convertRemToPixels(28)}`);
 let imageEditingRightSidebarWidth = parseInt(localStorage.getItem('barspot_imageediting_rightSidebar') || `${convertRemToPixels(16)}`);
 let imageEditingToolsCollapsed = localStorage.getItem('imageediting_toolsCollapsed') == 'true';
+let imageEditingPenOptionsCollapsed = localStorage.getItem('imageediting_penOptionsCollapsed') == 'true';
 let imageEditingActionsCollapsed = localStorage.getItem('imageediting_actionsCollapsed') == 'true';
 let imageEditingLayerOptionsCollapsed = localStorage.getItem('imageediting_layerOptionsCollapsed') == 'true';
 let imageEditingImageOptionsCollapsed = localStorage.getItem('imageediting_imageOptionsCollapsed') == 'true';
@@ -1530,6 +1531,18 @@ function imageEditingGetOptionButtonsArea() {
     return document.getElementById('imageediting_option_buttons');
 }
 
+function imageEditingGetPenOptionsBody() {
+    return document.getElementById('imageediting_pen_options_body');
+}
+
+function imageEditingGetPenOptionsMount() {
+    return document.getElementById('imageediting_pen_options_mount');
+}
+
+function imageEditingGetPenOptionsEmpty() {
+    return document.getElementById('imageediting_pen_options_empty');
+}
+
 /**
  * Gets the Image Editing tools section header.
  */
@@ -1542,6 +1555,10 @@ function imageEditingGetToolsHeader() {
  */
 function imageEditingGetActionsHeader() {
     return document.getElementById('imageediting_actions_header');
+}
+
+function imageEditingGetPenOptionsHeader() {
+    return document.getElementById('imageediting_pen_options_header');
 }
 
 /**
@@ -1578,6 +1595,10 @@ function imageEditingGetToolsToggleState() {
  */
 function imageEditingGetActionsToggleState() {
     return document.getElementById('imageediting_actions_toggle_state');
+}
+
+function imageEditingGetPenOptionsToggleState() {
+    return document.getElementById('imageediting_pen_options_toggle_state');
 }
 
 /**
@@ -1622,6 +1643,27 @@ function imageEditingGetSelectionCropBody() {
 
 function imageEditingGetEffectsPresetsBody() {
     return document.getElementById('imageediting_effects_presets_body');
+}
+
+function imageEditingEnsurePenOptionsSectionExists() {
+    if (imageEditingGetPenOptionsBody()) {
+        return;
+    }
+    let toolsArea = imageEditingGetToolButtonsArea();
+    if (!toolsArea || !toolsArea.parentElement) {
+        return;
+    }
+    let group = document.createElement('div');
+    group.className = 'imageediting_input_group';
+    group.innerHTML = `<div class="imageediting_section_header" id="imageediting_pen_options_header" onclick="imageEditingToggleInputSection('pen_options')">
+            <span class="imageediting_section_header_title translate">Pen Options</span>
+            <span class="imageediting_section_header_state" id="imageediting_pen_options_toggle_state">-</span>
+        </div>
+        <div class="imageediting_layer_options_body imageediting_pen_options_body" id="imageediting_pen_options_body">
+            <div class="imageediting_pen_options_empty translate" id="imageediting_pen_options_empty">Select the brush or eraser to edit pen options.</div>
+            <div class="imageediting_pen_options_mount" id="imageediting_pen_options_mount"></div>
+        </div>`;
+    toolsArea.parentElement.insertAdjacentElement('afterend', group);
 }
 
 /**
@@ -1944,6 +1986,61 @@ function imageEditingRefreshToolButtons() {
     if (imageEditingTabEditor.activeTool && typeof imageEditingTabEditor.activeTool.color == 'string' && imageEditingTabEditor.activeTool.color != imageEditingColor) {
         imageEditingSetColor(imageEditingTabEditor.activeTool.color);
     }
+    imageEditingRefreshPenOptions();
+}
+
+function imageEditingSetupPenOptions() {
+    if (!imageEditingTabEditor) {
+        return;
+    }
+    for (let toolId of ['brush', 'eraser']) {
+        let tool = imageEditingTabEditor.tools[toolId];
+        if (!tool || !tool.configDiv) {
+            continue;
+        }
+        let presetBlock = tool.configDiv.querySelector('.id-preset-block');
+        let presetButtonsBlock = tool.configDiv.querySelector('.id-preset-buttons-block');
+        let pressureBlocks = tool.configDiv.querySelectorAll('.id-pressure-min-block, .id-pressure-curve-block');
+        let pressureToggleBlock = tool.configDiv.querySelector('.id-pressure-size');
+        let spotHealBlock = tool.configDiv.querySelector('.id-spotheal-block');
+        if (!presetBlock && !presetButtonsBlock && (!pressureBlocks || pressureBlocks.length <= 0) && !pressureToggleBlock && !spotHealBlock) {
+            continue;
+        }
+        let wrapper = document.createElement('div');
+        wrapper.className = 'imageediting_pen_options_tool';
+        let toggleBlock = pressureToggleBlock ? pressureToggleBlock.closest('.image-editor-tool-block') : null;
+        if (toggleBlock) {
+            wrapper.appendChild(toggleBlock);
+        }
+        for (let block of pressureBlocks) {
+            wrapper.appendChild(block);
+        }
+        if (presetBlock) {
+            wrapper.appendChild(presetBlock);
+        }
+        if (presetButtonsBlock) {
+            wrapper.appendChild(presetButtonsBlock);
+        }
+        if (spotHealBlock) {
+            wrapper.appendChild(spotHealBlock);
+        }
+        tool.penOptionsDiv = wrapper;
+    }
+}
+
+function imageEditingRefreshPenOptions() {
+    let mount = imageEditingGetPenOptionsMount();
+    let empty = imageEditingGetPenOptionsEmpty();
+    if (!mount || !empty) {
+        return;
+    }
+    mount.innerHTML = '';
+    if (!imageEditingTabEditor || !imageEditingTabEditor.activeTool || !imageEditingTabEditor.activeTool.penOptionsDiv) {
+        empty.style.display = '';
+        return;
+    }
+    empty.style.display = 'none';
+    mount.appendChild(imageEditingTabEditor.activeTool.penOptionsDiv);
 }
 
 /**
@@ -2972,6 +3069,13 @@ function imageEditingSetInputSectionCollapsed(section, collapsed, save = true) {
         header = imageEditingGetToolsHeader();
         marker = imageEditingGetToolsToggleState();
     }
+    else if (section == 'pen_options') {
+        imageEditingPenOptionsCollapsed = collapsed;
+        key = 'imageediting_penOptionsCollapsed';
+        body = imageEditingGetPenOptionsBody();
+        header = imageEditingGetPenOptionsHeader();
+        marker = imageEditingGetPenOptionsToggleState();
+    }
     else if (section == 'actions') {
         imageEditingActionsCollapsed = collapsed;
         key = 'imageediting_actionsCollapsed';
@@ -3029,6 +3133,7 @@ function imageEditingSetInputSectionCollapsed(section, collapsed, save = true) {
  */
 function imageEditingApplyInputSectionState() {
     imageEditingSetInputSectionCollapsed('tools', imageEditingToolsCollapsed, false);
+    imageEditingSetInputSectionCollapsed('pen_options', imageEditingPenOptionsCollapsed, false);
     imageEditingSetInputSectionCollapsed('actions', imageEditingActionsCollapsed, false);
     imageEditingSetInputSectionCollapsed('layer_options', imageEditingLayerOptionsCollapsed, false);
     imageEditingSetInputSectionCollapsed('image_options', imageEditingImageOptionsCollapsed, false);
@@ -3042,6 +3147,9 @@ function imageEditingApplyInputSectionState() {
 function imageEditingToggleInputSection(section) {
     if (section == 'tools') {
         imageEditingSetInputSectionCollapsed(section, !imageEditingToolsCollapsed);
+    }
+    else if (section == 'pen_options') {
+        imageEditingSetInputSectionCollapsed(section, !imageEditingPenOptionsCollapsed);
     }
     else if (section == 'actions') {
         imageEditingSetInputSectionCollapsed(section, !imageEditingActionsCollapsed);
@@ -3274,6 +3382,8 @@ function imageEditingEnsureEditorReady() {
     imageEditingBuildToolButtons();
     imageEditingBuildSelectionToolButtons();
     imageEditingBuildOptionButtons();
+    imageEditingSetupPenOptions();
+    imageEditingRefreshPenOptions();
     imageEditingRefreshLayerOpacityControl();
     imageEditingApplyRightSidebarWidth();
     let initialCanvas = document.createElement('canvas');
@@ -3301,6 +3411,7 @@ function imageEditingEnsureEditorReady() {
  */
 function imageEditingEnsureUiReady() {
     imageEditingEnsureColorSelectorWired();
+    imageEditingEnsurePenOptionsSectionExists();
     imageEditingEnsureEditorReady();
     imageEditingEnsureLayerOptionsWired();
     imageEditingEnsureSelectionEffectsControlsWired();

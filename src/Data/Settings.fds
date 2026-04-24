@@ -647,6 +647,7 @@ Performance:
 #Settings related to local Krita round-trip integration.
 KritaBridge:
 	#Optional full path to the Krita executable for local launch integration.
+	#Environment-variable and home-directory markers such as '%ProgramFiles%', '$HOME', or '~' are expanded.
 	#If empty, SwarmUI will attempt simple OS-default executable names.
 	#Defaults to empty.
 	KritaExecutablePath: \x

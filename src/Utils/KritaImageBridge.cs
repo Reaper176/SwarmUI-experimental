@@ -4,6 +4,7 @@ using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.IO;
 using System.Runtime.InteropServices;
+using System.Text.RegularExpressions;
 
 namespace SwarmUI.Utils;
 
@@ -39,7 +40,7 @@ public static class KritaImageBridge
         string configured = Program.ServerSettings.KritaBridge.KritaExecutablePath.Trim();
         if (!string.IsNullOrWhiteSpace(configured))
         {
-            return configured;
+            return ExpandPathVariables(configured);
         }
         if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
         {
@@ -50,6 +51,38 @@ public static class KritaImageBridge
             return "/Applications/Krita.app/Contents/MacOS/krita";
         }
         return "krita";
+    }
+
+    /// <summary>Expands environment-variable and home-directory tokens within a configured path.</summary>
+    public static string ExpandPathVariables(string path)
+    {
+        string expanded = Environment.ExpandEnvironmentVariables(path);
+        if (expanded.StartsWith("~"))
+        {
+            string home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+            if (!string.IsNullOrWhiteSpace(home))
+            {
+                if (expanded == "~")
+                {
+                    expanded = home;
+                }
+                else if (expanded.StartsWith("~/") || expanded.StartsWith("~\\"))
+                {
+                    expanded = Path.Combine(home, expanded[2..]);
+                }
+            }
+        }
+        expanded = Regex.Replace(expanded, @"\$\{([A-Za-z_][A-Za-z0-9_]*)\}", match =>
+        {
+            string value = Environment.GetEnvironmentVariable(match.Groups[1].Value);
+            return value ?? match.Value;
+        });
+        expanded = Regex.Replace(expanded, @"\$([A-Za-z_][A-Za-z0-9_]*)", match =>
+        {
+            string value = Environment.GetEnvironmentVariable(match.Groups[1].Value);
+            return value ?? match.Value;
+        });
+        return expanded;
     }
 
     /// <summary>Starts Krita with the given local image path.</summary>
