@@ -1343,6 +1343,28 @@ class ImageEditorToolBrush extends ImageEditorToolWithColor {
         this.cursor = 'none';
         this.radius = 10;
         this.opacity = 1;
+        this.presetId = isEraser ? 'eraser_soft' : 'hard_round';
+        this.brushMode = isEraser ? 'soft_round' : 'hard_round';
+        this.pressureAffectsSize = true;
+        this.pressureAffectsOpacity = false;
+        this.pressureMin = 0.2;
+        this.pressureCurve = 1;
+        this.lastDrawPressure = 1;
+        this.healingSourceLayerX = 0;
+        this.healingSourceLayerY = 0;
+        this.healingHasSource = false;
+        this.healingOffsetX = 0;
+        this.healingOffsetY = 0;
+        this.healingSampleCanvas = null;
+        this.healingSampleCtx = null;
+        this.spotHealSearchRadius = 24;
+        this.spotHealBlendSoftness = 0.75;
+        this.classicInpaintBackend = 'lama';
+        this.classicInpaintFeather = 8;
+        this.classicInpaintExpandMask = 4;
+        this.classicInpaintRunning = false;
+        this.classicInpaintStatusWrap = null;
+        this.classicInpaintStatusText = null;
         this.brushing = false;
         this.isEraser = isEraser;
         let radiusHtml = `<div class="image-editor-tool-block id-rad-block">
@@ -1359,22 +1381,166 @@ class ImageEditorToolBrush extends ImageEditorToolWithColor {
                     <input type="range" style="flex-grow: 2" class="auto-slider-range id-opac2" min="1" max="100" step="1" value="100" oninput="updateRangeStyle(arguments[0])" onchange="updateRangeStyle(arguments[0])">
                 </div>
             </div>`;
+        let presetHtml = `<div class="image-editor-tool-block tool-block-nogrow id-preset-block">
+                <label>Brush:&nbsp;</label>
+                <div class="image-editor-brush-preset-active id-brush-preset-active">Hard Round</div>
+            </div>
+            <div class="image-editor-tool-block tool-block-nogrow id-preset-buttons-block">
+                <div class="image-editor-brush-preset-grid id-brush-preset-grid"></div>
+            </div>`;
+        let pressureHtml = `<div class="image-editor-tool-block tool-block-nogrow">
+                <label><input type="checkbox" class="id-pressure-size" checked> Pen Size</label>
+                <label style="margin-left: 10px;"><input type="checkbox" class="id-pressure-opacity"> Pen Opacity</label>
+            </div>
+            <div class="image-editor-tool-block id-pressure-min-block">
+                <label>Pen Min:&nbsp;</label>
+                <input type="number" style="width: 48px;" class="auto-number id-pressure-min1" min="0" max="100" step="1" value="20">
+                <div class="auto-slider-range-wrapper" style="${getRangeStyle(20, 0, 100)}">
+                    <input type="range" style="flex-grow: 2" class="auto-slider-range id-pressure-min2" min="0" max="100" step="1" value="20" oninput="updateRangeStyle(arguments[0])" onchange="updateRangeStyle(arguments[0])">
+                </div>
+            </div>
+            <div class="image-editor-tool-block id-pressure-curve-block">
+                <label>Pen Curve:&nbsp;</label>
+                <input type="number" style="width: 48px;" class="auto-number id-pressure-curve1" min="0.2" max="3" step="0.1" value="1.0">
+                <div class="auto-slider-range-wrapper" style="${getRangeStyle(1, 0.2, 3)}">
+                    <input type="range" style="flex-grow: 2" class="auto-slider-range id-pressure-curve2" min="0.2" max="3" step="0.1" value="1.0" oninput="updateRangeStyle(arguments[0])" onchange="updateRangeStyle(arguments[0])">
+                </div>
+            </div>
+            <div class="image-editor-tool-block id-spotheal-block" style="display:none;">
+                <label>Heal Range:&nbsp;</label>
+                <input type="number" style="width: 48px;" class="auto-number id-spotheal1" min="4" max="128" step="1" value="24">
+                <div class="auto-slider-range-wrapper" style="${getRangeStyle(24, 4, 128)}">
+                    <input type="range" style="flex-grow: 2" class="auto-slider-range id-spotheal2" min="4" max="128" step="1" value="24" oninput="updateRangeStyle(arguments[0])" onchange="updateRangeStyle(arguments[0])">
+                </div>
+            </div>
+            <div class="image-editor-tool-block id-spotheal-softness-block" style="display:none;">
+                <label>Blend Softness:&nbsp;</label>
+                <input type="number" style="width: 48px;" class="auto-number id-spotheal-soft1" min="10" max="100" step="1" value="75">
+                <div class="auto-slider-range-wrapper" style="${getRangeStyle(75, 10, 100)}">
+                    <input type="range" style="flex-grow: 2" class="auto-slider-range id-spotheal-soft2" min="10" max="100" step="1" value="75" oninput="updateRangeStyle(arguments[0])" onchange="updateRangeStyle(arguments[0])">
+                </div>
+            </div>
+            <div class="image-editor-tool-block id-classic-inpaint-backend-block" style="display:none;">
+                <label>Backend:&nbsp;</label>
+                <select class="auto-dropdown id-classic-inpaint-backend" style="flex-grow: 1;"></select>
+            </div>
+            <div class="image-editor-tool-block id-classic-inpaint-feather-block" style="display:none;">
+                <label>Feather:&nbsp;</label>
+                <input type="number" style="width: 48px;" class="auto-number id-classic-inpaint-feather1" min="0" max="64" step="1" value="8">
+                <div class="auto-slider-range-wrapper" style="${getRangeStyle(8, 0, 64)}">
+                    <input type="range" style="flex-grow: 2" class="auto-slider-range id-classic-inpaint-feather2" min="0" max="64" step="1" value="8" oninput="updateRangeStyle(arguments[0])" onchange="updateRangeStyle(arguments[0])">
+                </div>
+            </div>
+            <div class="image-editor-tool-block id-classic-inpaint-expand-block" style="display:none;">
+                <label>Expand Mask:&nbsp;</label>
+                <input type="number" style="width: 48px;" class="auto-number id-classic-inpaint-expand1" min="0" max="64" step="1" value="4">
+                <div class="auto-slider-range-wrapper" style="${getRangeStyle(4, 0, 64)}">
+                    <input type="range" style="flex-grow: 2" class="auto-slider-range id-classic-inpaint-expand2" min="0" max="64" step="1" value="4" oninput="updateRangeStyle(arguments[0])" onchange="updateRangeStyle(arguments[0])">
+                </div>
+            </div>
+            <div class="image-editor-tool-block id-classic-inpaint-status-block" style="display:none;">
+                <div class="image-editor-classic-inpaint-status">
+                    <span class="image-editor-classic-inpaint-spinner"></span>
+                    <span class="id-classic-inpaint-status-text">Inpainting...</span>
+                </div>
+            </div>`;
         if (isEraser) {
-            this.configDiv.innerHTML = radiusHtml + opacityHtml;
+            this.configDiv.innerHTML = presetHtml + radiusHtml + opacityHtml + pressureHtml;
         }
         else {
-            this.configDiv.innerHTML = this.getColorControlsHTML() + radiusHtml + opacityHtml;
+            this.configDiv.innerHTML = this.getColorControlsHTML() + presetHtml + radiusHtml + opacityHtml + pressureHtml;
             this.wireColorControls();
         }
         enableSliderForBox(this.configDiv.querySelector('.id-rad-block'));
         enableSliderForBox(this.configDiv.querySelector('.id-opac-block'));
+        enableSliderForBox(this.configDiv.querySelector('.id-pressure-min-block'));
+        enableSliderForBox(this.configDiv.querySelector('.id-pressure-curve-block'));
+        enableSliderForBox(this.configDiv.querySelector('.id-spotheal-block'));
+        enableSliderForBox(this.configDiv.querySelector('.id-spotheal-softness-block'));
+        enableSliderForBox(this.configDiv.querySelector('.id-classic-inpaint-feather-block'));
+        enableSliderForBox(this.configDiv.querySelector('.id-classic-inpaint-expand-block'));
+        this.presetActiveLabel = this.configDiv.querySelector('.id-brush-preset-active');
+        this.presetGrid = this.configDiv.querySelector('.id-brush-preset-grid');
         this.radiusNumber = this.configDiv.querySelector('.id-rad1');
         this.radiusSelector = this.configDiv.querySelector('.id-rad2');
         this.opacityNumber = this.configDiv.querySelector('.id-opac1');
         this.opacitySelector = this.configDiv.querySelector('.id-opac2');
+        this.pressureSizeCheckbox = this.configDiv.querySelector('.id-pressure-size');
+        this.pressureOpacityCheckbox = this.configDiv.querySelector('.id-pressure-opacity');
+        this.pressureMinNumber = this.configDiv.querySelector('.id-pressure-min1');
+        this.pressureMinSelector = this.configDiv.querySelector('.id-pressure-min2');
+        this.pressureCurveNumber = this.configDiv.querySelector('.id-pressure-curve1');
+        this.pressureCurveSelector = this.configDiv.querySelector('.id-pressure-curve2');
+        this.spotHealBlock = this.configDiv.querySelector('.id-spotheal-block');
+        this.spotHealNumber = this.configDiv.querySelector('.id-spotheal1');
+        this.spotHealSelector = this.configDiv.querySelector('.id-spotheal2');
+        this.spotHealSoftnessBlock = this.configDiv.querySelector('.id-spotheal-softness-block');
+        this.spotHealSoftnessNumber = this.configDiv.querySelector('.id-spotheal-soft1');
+        this.spotHealSoftnessSelector = this.configDiv.querySelector('.id-spotheal-soft2');
+        this.classicInpaintBackendBlock = this.configDiv.querySelector('.id-classic-inpaint-backend-block');
+        this.classicInpaintBackendSelector = this.configDiv.querySelector('.id-classic-inpaint-backend');
+        this.classicInpaintFeatherBlock = this.configDiv.querySelector('.id-classic-inpaint-feather-block');
+        this.classicInpaintFeatherNumber = this.configDiv.querySelector('.id-classic-inpaint-feather1');
+        this.classicInpaintFeatherSelector = this.configDiv.querySelector('.id-classic-inpaint-feather2');
+        this.classicInpaintExpandBlock = this.configDiv.querySelector('.id-classic-inpaint-expand-block');
+        this.classicInpaintExpandNumber = this.configDiv.querySelector('.id-classic-inpaint-expand1');
+        this.classicInpaintExpandSelector = this.configDiv.querySelector('.id-classic-inpaint-expand2');
+        this.classicInpaintStatusWrap = this.configDiv.querySelector('.id-classic-inpaint-status-block');
+        this.classicInpaintStatusText = this.configDiv.querySelector('.id-classic-inpaint-status-text');
+        this.presetButtons = {};
+        for (let [presetId, preset] of Object.entries(ImageEditorToolBrush.PRESETS)) {
+            if (preset.eraserOnly && !this.isEraser) {
+                continue;
+            }
+            if (preset.paintOnly && this.isEraser) {
+                continue;
+            }
+            let button = document.createElement('button');
+            button.type = 'button';
+            button.className = 'basic-button image-editor-brush-preset-button';
+            button.title = preset.name;
+            button.setAttribute('aria-label', preset.name);
+            button.innerHTML = `<span class="image-editor-brush-preset-stroke image-editor-brush-preset-stroke-${preset.mode}"></span>`;
+            button.addEventListener('click', () => {
+                this.applyPreset(presetId);
+            });
+            this.presetGrid.appendChild(button);
+            this.presetButtons[presetId] = button;
+        }
         this.radiusNumber.addEventListener('change', () => { this.onConfigChange(); });
         this.opacityNumber.addEventListener('change', () => { this.onConfigChange(); });
+        this.pressureSizeCheckbox.addEventListener('change', () => { this.onConfigChange(); });
+        this.pressureOpacityCheckbox.addEventListener('change', () => { this.onConfigChange(); });
+        this.pressureMinNumber.addEventListener('change', () => { this.onConfigChange(); });
+        this.pressureCurveNumber.addEventListener('change', () => { this.onConfigChange(); });
+        this.spotHealNumber.addEventListener('change', () => { this.onConfigChange(); });
+        this.spotHealSoftnessNumber.addEventListener('change', () => { this.onConfigChange(); });
+        this.classicInpaintBackendSelector.addEventListener('change', () => { this.onConfigChange(); });
+        this.classicInpaintFeatherNumber.addEventListener('change', () => { this.onConfigChange(); });
+        this.classicInpaintExpandNumber.addEventListener('change', () => { this.onConfigChange(); });
         this.targetLayer = null;
+        this.applyPreset(this.presetId);
+        this.loadClassicInpaintBackends();
+    }
+
+    loadClassicInpaintBackends() {
+        genericRequest('GetClassicInpaintBackends', {}, (data) => {
+            let backends = data.backends || ['lama', 'mat'];
+            this.classicInpaintBackendSelector.innerHTML = backends.map((backend) => {
+                let label = backend == 'lama' ? 'LaMa' : backend.toUpperCase();
+                return `<option value="${backend}">${label}</option>`;
+            }).join('');
+            if (!backends.includes(this.classicInpaintBackend)) {
+                this.classicInpaintBackend = backends[0] || 'lama';
+            }
+            this.syncBrushConfigInputs();
+        }, 0, () => {
+            this.classicInpaintBackendSelector.innerHTML = '<option value="lama">LaMa</option><option value="mat">MAT</option>';
+            if (this.classicInpaintBackend != 'lama' && this.classicInpaintBackend != 'mat') {
+                this.classicInpaintBackend = 'lama';
+            }
+            this.syncBrushConfigInputs();
+        });
     }
 
     onConfigChange() {
@@ -1383,59 +1549,647 @@ class ImageEditorToolBrush extends ImageEditorToolWithColor {
         }
         this.radius = parseInt(this.radiusNumber.value);
         this.opacity = parseInt(this.opacityNumber.value) / 100;
+        this.pressureAffectsSize = this.pressureSizeCheckbox.checked;
+        this.pressureAffectsOpacity = this.pressureOpacityCheckbox.checked;
+        this.pressureMin = parseFloat(this.pressureMinNumber.value) / 100;
+        this.pressureCurve = parseFloat(this.pressureCurveNumber.value);
+        this.spotHealSearchRadius = parseInt(this.spotHealNumber.value);
+        this.spotHealBlendSoftness = parseInt(this.spotHealSoftnessNumber.value) / 100;
+        this.classicInpaintBackend = this.classicInpaintBackendSelector.value;
+        this.classicInpaintFeather = parseInt(this.classicInpaintFeatherNumber.value);
+        this.classicInpaintExpandMask = parseInt(this.classicInpaintExpandNumber.value);
+        this.pressureMin = Math.max(0, Math.min(1, this.pressureMin));
+        this.pressureCurve = Math.max(0.2, Math.min(3, this.pressureCurve));
+        this.spotHealSearchRadius = Math.max(4, Math.min(128, this.spotHealSearchRadius));
+        this.spotHealBlendSoftness = Math.max(0.1, Math.min(1, this.spotHealBlendSoftness));
+        this.classicInpaintFeather = Math.max(0, Math.min(64, this.classicInpaintFeather));
+        this.classicInpaintExpandMask = Math.max(0, Math.min(64, this.classicInpaintExpandMask));
+        this.editor.queueOverlayRedraw();
+    }
+
+    syncBrushConfigInputs() {
+        this.presetActiveLabel.innerText = ImageEditorToolBrush.PRESETS[this.presetId].name;
+        for (let [presetId, button] of Object.entries(this.presetButtons)) {
+            button.classList.toggle('image-editor-brush-preset-button-active', presetId == this.presetId);
+        }
+        this.radiusNumber.value = this.radius;
+        this.radiusSelector.value = this.radius;
+        this.opacityNumber.value = Math.round(this.opacity * 100);
+        this.opacitySelector.value = Math.round(this.opacity * 100);
+        this.pressureSizeCheckbox.checked = this.pressureAffectsSize;
+        this.pressureOpacityCheckbox.checked = this.pressureAffectsOpacity;
+        this.pressureMinNumber.value = Math.round(this.pressureMin * 100);
+        this.pressureMinSelector.value = Math.round(this.pressureMin * 100);
+        this.pressureCurveNumber.value = this.pressureCurve.toFixed(1);
+        this.pressureCurveSelector.value = this.pressureCurve;
+        this.spotHealNumber.value = this.spotHealSearchRadius;
+        this.spotHealSelector.value = this.spotHealSearchRadius;
+        this.spotHealSoftnessNumber.value = Math.round(this.spotHealBlendSoftness * 100);
+        this.spotHealSoftnessSelector.value = Math.round(this.spotHealBlendSoftness * 100);
+        this.classicInpaintBackendSelector.value = this.classicInpaintBackend;
+        this.classicInpaintFeatherNumber.value = this.classicInpaintFeather;
+        this.classicInpaintFeatherSelector.value = this.classicInpaintFeather;
+        this.classicInpaintExpandNumber.value = this.classicInpaintExpandMask;
+        this.classicInpaintExpandSelector.value = this.classicInpaintExpandMask;
+        this.spotHealBlock.style.display = this.brushMode == 'spot_heal' ? 'flex' : 'none';
+        this.spotHealSoftnessBlock.style.display = this.brushMode == 'spot_heal' ? 'flex' : 'none';
+        this.classicInpaintBackendBlock.style.display = this.brushMode == 'classic_inpaint' ? 'flex' : 'none';
+        this.classicInpaintFeatherBlock.style.display = this.brushMode == 'classic_inpaint' ? 'flex' : 'none';
+        this.classicInpaintExpandBlock.style.display = this.brushMode == 'classic_inpaint' ? 'flex' : 'none';
+        this.classicInpaintStatusWrap.style.display = this.brushMode == 'classic_inpaint' && this.classicInpaintRunning ? 'flex' : 'none';
+        updateRangeStyle(this.radiusSelector);
+        updateRangeStyle(this.opacitySelector);
+        updateRangeStyle(this.pressureMinSelector);
+        updateRangeStyle(this.pressureCurveSelector);
+        updateRangeStyle(this.spotHealSelector);
+        updateRangeStyle(this.spotHealSoftnessSelector);
+        updateRangeStyle(this.classicInpaintFeatherSelector);
+        updateRangeStyle(this.classicInpaintExpandSelector);
+    }
+
+    applyPreset(presetId) {
+        let preset = ImageEditorToolBrush.PRESETS[presetId];
+        if (!preset) {
+            return;
+        }
+        this.presetId = presetId;
+        this.brushMode = preset.mode;
+        this.radius = preset.radius;
+        this.opacity = preset.opacity;
+        this.pressureAffectsSize = preset.pressureAffectsSize;
+        this.pressureAffectsOpacity = preset.pressureAffectsOpacity;
+        this.pressureMin = preset.pressureMin;
+        this.pressureCurve = preset.pressureCurve;
+        this.spotHealSearchRadius = preset.spotHealSearchRadius || this.spotHealSearchRadius;
+        this.spotHealBlendSoftness = preset.spotHealBlendSoftness || this.spotHealBlendSoftness;
+        this.classicInpaintBackend = preset.classicInpaintBackend || this.classicInpaintBackend;
+        this.classicInpaintFeather = preset.classicInpaintFeather || this.classicInpaintFeather;
+        this.classicInpaintExpandMask = preset.classicInpaintExpandMask || this.classicInpaintExpandMask;
+        this.syncBrushConfigInputs();
         this.editor.queueOverlayRedraw();
     }
 
     draw() {
-        this.drawCircleBrush(this.editor.mouseX, this.editor.mouseY, this.radius * this.editor.zoomLevel);
+        if (!(this.brushMode == 'classic_inpaint' && this.classicInpaintRunning)) {
+            let previewRadius = this.radius * this.editor.zoomLevel;
+            if (this.editor.mouseDown && this.pressureAffectsSize) {
+                previewRadius *= this.lastDrawPressure;
+            }
+            this.drawCircleBrush(this.editor.mouseX, this.editor.mouseY, previewRadius);
+        }
+        this.drawClassicInpaintOverlay();
+        if (this.brushMode == 'healing' && this.healingHasSource && this.targetLayer) {
+            let [sourceCanvasX, sourceCanvasY] = this.targetLayer.layerCoordToCanvasCoord(this.healingSourceLayerX, this.healingSourceLayerY);
+            this.editor.ctx.strokeStyle = '#00ffaa';
+            this.editor.ctx.lineWidth = 1;
+            this.editor.ctx.beginPath();
+            this.editor.ctx.arc(sourceCanvasX, sourceCanvasY, 6, 0, 2 * Math.PI);
+            this.editor.ctx.stroke();
+            this.editor.ctx.beginPath();
+            this.editor.ctx.moveTo(sourceCanvasX - 8, sourceCanvasY);
+            this.editor.ctx.lineTo(sourceCanvasX + 8, sourceCanvasY);
+            this.editor.ctx.moveTo(sourceCanvasX, sourceCanvasY - 8);
+            this.editor.ctx.lineTo(sourceCanvasX, sourceCanvasY + 8);
+            this.editor.ctx.stroke();
+            if (this.brushing) {
+                this.editor.ctx.beginPath();
+                this.editor.ctx.moveTo(sourceCanvasX, sourceCanvasY);
+                this.editor.ctx.lineTo(this.editor.mouseX, this.editor.mouseY);
+                this.editor.ctx.stroke();
+            }
+        }
     }
 
-    brush(force = 1) {
+    drawClassicInpaintOverlay() {
+        if (this.brushMode != 'classic_inpaint' || !this.strokeLayer || !this.targetLayer) {
+            return;
+        }
+        let maskCanvas = document.createElement('canvas');
+        maskCanvas.width = this.strokeLayer.canvas.width;
+        maskCanvas.height = this.strokeLayer.canvas.height;
+        let maskCtx = maskCanvas.getContext('2d');
+        maskCtx.drawImage(this.strokeLayer.canvas, 0, 0);
+        maskCtx.globalCompositeOperation = 'source-in';
+        maskCtx.fillStyle = this.classicInpaintRunning ? 'rgba(0, 255, 170, 0.38)' : 'rgba(0, 255, 170, 0.24)';
+        maskCtx.fillRect(0, 0, maskCanvas.width, maskCanvas.height);
+        let maskLayer = new ImageEditorLayer(this.editor, maskCanvas.width, maskCanvas.height);
+        maskLayer.ctx.drawImage(maskCanvas, 0, 0);
+        maskLayer.copyVisualStateFrom(this.targetLayer);
+        this.editor.ctx.save();
+        maskLayer.drawToBackDirect(this.editor.ctx, this.editor.offsetX, this.editor.offsetY, this.editor.zoomLevel);
+        this.editor.ctx.restore();
+        if (this.classicInpaintRunning) {
+            this.editor.ctx.save();
+            this.editor.ctx.font = '600 12px sans-serif';
+            this.editor.ctx.textAlign = 'left';
+            this.editor.ctx.textBaseline = 'middle';
+            let label = 'Classic Inpaint running';
+            let width = this.editor.ctx.measureText(label).width + 22;
+            let x = 14;
+            let y = 18;
+            this.editor.ctx.fillStyle = 'rgba(0, 0, 0, 0.72)';
+            this.editor.ctx.strokeStyle = 'rgba(0, 255, 170, 0.65)';
+            this.editor.ctx.lineWidth = 1;
+            this.editor.ctx.beginPath();
+            this.editor.ctx.roundRect(x, y, width, 24, 8);
+            this.editor.ctx.fill();
+            this.editor.ctx.stroke();
+            this.editor.ctx.fillStyle = '#00ffaa';
+            this.editor.ctx.beginPath();
+            this.editor.ctx.arc(x + 11, y + 12, 4, 0, Math.PI * 2);
+            this.editor.ctx.fill();
+            this.editor.ctx.fillStyle = '#ffffff';
+            this.editor.ctx.fillText(label, x + 20, y + 12);
+            this.editor.ctx.restore();
+        }
+    }
+
+    drawHardRoundSegment(ctx, x1, y1, x2, y2, radius, color) {
+        this.strokeLayer.drawFilledCircle(x1, y1, radius, color);
+        this.strokeLayer.drawFilledCircleStrokeBetween(x1, y1, x2, y2, radius, color);
+        this.strokeLayer.drawFilledCircle(x2, y2, radius, color);
+    }
+
+    drawSoftRoundSegment(ctx, x1, y1, x2, y2, radius, color, alpha) {
+        let gradient = ctx.createLinearGradient(x1, y1, x2, y2);
+        gradient.addColorStop(0, color);
+        gradient.addColorStop(1, color);
+        ctx.save();
+        ctx.strokeStyle = gradient;
+        ctx.lineCap = 'round';
+        ctx.lineJoin = 'round';
+        ctx.lineWidth = radius * 2;
+        ctx.globalAlpha = alpha;
+        ctx.beginPath();
+        ctx.moveTo(x1, y1);
+        ctx.lineTo(x2, y2);
+        ctx.stroke();
+        ctx.restore();
+    }
+
+    drawAirbrushDabs(ctx, x1, y1, x2, y2, radius, color, alpha) {
+        let distance = Math.hypot(x2 - x1, y2 - y1);
+        let steps = Math.max(1, Math.ceil(distance / Math.max(1, radius * 0.35)));
+        for (let i = 0; i <= steps; i++) {
+            let t = i / steps;
+            let x = x1 + (x2 - x1) * t;
+            let y = y1 + (y2 - y1) * t;
+            ctx.save();
+            ctx.globalAlpha = alpha * 0.22;
+            let innerRadius = Math.max(0.5, radius * (0.3 + Math.random() * 0.7));
+            this.strokeLayer.drawFilledCircle(x + (Math.random() - 0.5) * radius * 0.7, y + (Math.random() - 0.5) * radius * 0.7, innerRadius, color);
+            ctx.restore();
+        }
+    }
+
+    drawPixelSegment(ctx, x1, y1, x2, y2, radius, color) {
+        ctx.save();
+        ctx.imageSmoothingEnabled = false;
+        ctx.fillStyle = color;
+        let distance = Math.hypot(x2 - x1, y2 - y1);
+        let steps = Math.max(1, Math.ceil(distance));
+        let size = Math.max(1, Math.round(radius * 2));
+        for (let i = 0; i <= steps; i++) {
+            let t = i / steps;
+            let x = Math.round(x1 + (x2 - x1) * t);
+            let y = Math.round(y1 + (y2 - y1) * t);
+            ctx.fillRect(x - Math.floor(size / 2), y - Math.floor(size / 2), size, size);
+        }
+        ctx.restore();
+    }
+
+    drawMarkerSegment(ctx, x1, y1, x2, y2, radius, color) {
+        ctx.save();
+        ctx.strokeStyle = color;
+        ctx.lineCap = 'butt';
+        ctx.lineJoin = 'round';
+        ctx.lineWidth = Math.max(1, radius * 1.7);
+        ctx.globalAlpha = 0.55;
+        ctx.beginPath();
+        ctx.moveTo(x1, y1);
+        ctx.lineTo(x2, y2);
+        ctx.stroke();
+        ctx.restore();
+    }
+
+    drawInkSegment(ctx, x1, y1, x2, y2, radius, color) {
+        ctx.save();
+        ctx.strokeStyle = color;
+        ctx.lineCap = 'round';
+        ctx.lineJoin = 'round';
+        ctx.lineWidth = Math.max(1, radius * 1.2);
+        ctx.beginPath();
+        ctx.moveTo(x1, y1);
+        ctx.lineTo(x2, y2);
+        ctx.stroke();
+        ctx.restore();
+    }
+
+    drawChalkSegment(ctx, x1, y1, x2, y2, radius, color) {
+        let distance = Math.hypot(x2 - x1, y2 - y1);
+        let steps = Math.max(1, Math.ceil(distance / Math.max(1, radius * 0.25)));
+        for (let i = 0; i <= steps; i++) {
+            let t = i / steps;
+            let x = x1 + (x2 - x1) * t;
+            let y = y1 + (y2 - y1) * t;
+            let grainRadius = Math.max(0.5, radius * (0.2 + Math.random() * 0.25));
+            ctx.save();
+            ctx.globalAlpha = 0.12 + Math.random() * 0.2;
+            this.strokeLayer.drawFilledCircle(x + (Math.random() - 0.5) * radius, y + (Math.random() - 0.5) * radius, grainRadius, color);
+            ctx.restore();
+        }
+    }
+
+    setHealingSourceAtMouse() {
+        if (!this.editor.activeLayer) {
+            return;
+        }
+        this.targetLayer = this.editor.activeLayer;
+        let [layerX, layerY] = this.targetLayer.canvasCoordToLayerCoord(this.editor.mouseX, this.editor.mouseY);
+        this.healingSourceLayerX = Math.round(layerX);
+        this.healingSourceLayerY = Math.round(layerY);
+        this.healingHasSource = true;
+        this.editor.queueOverlayRedraw();
+    }
+
+    ensureHealingSampleCanvas() {
+        if (!this.targetLayer) {
+            return;
+        }
+        this.healingSampleCanvas = document.createElement('canvas');
+        this.healingSampleCanvas.width = this.targetLayer.canvas.width;
+        this.healingSampleCanvas.height = this.targetLayer.canvas.height;
+        this.healingSampleCtx = this.healingSampleCanvas.getContext('2d');
+        this.healingSampleCtx.drawImage(this.targetLayer.canvas, 0, 0);
+    }
+
+    drawHealingAt(x, y) {
+        if (!this.healingSampleCtx || !this.strokeLayer || !this.targetLayer) {
+            return;
+        }
+        let radius = Math.max(1, Math.round(this.radius));
+        let sampleX = Math.round(x + this.healingOffsetX);
+        let sampleY = Math.round(y + this.healingOffsetY);
+        this.strokeLayer.ctx.save();
+        this.strokeLayer.ctx.clearRect(0, 0, this.strokeLayer.canvas.width, this.strokeLayer.canvas.height);
+        this.strokeLayer.ctx.beginPath();
+        this.strokeLayer.ctx.arc(x, y, radius, 0, 2 * Math.PI);
+        this.strokeLayer.ctx.closePath();
+        this.strokeLayer.ctx.clip();
+        this.strokeLayer.ctx.globalAlpha = this.opacity;
+        this.strokeLayer.ctx.filter = `blur(${Math.max(0.5, radius * 0.08)}px)`;
+        this.strokeLayer.ctx.drawImage(this.healingSampleCanvas, sampleX - radius, sampleY - radius, radius * 2, radius * 2, x - radius, y - radius, radius * 2, radius * 2);
+        this.strokeLayer.ctx.restore();
+    }
+
+    getMaskBoundsFromStrokeLayer() {
+        let imageData = this.strokeLayer.ctx.getImageData(0, 0, this.strokeLayer.canvas.width, this.strokeLayer.canvas.height).data;
+        let minX = this.strokeLayer.canvas.width;
+        let minY = this.strokeLayer.canvas.height;
+        let maxX = -1;
+        let maxY = -1;
+        for (let y = 0; y < this.strokeLayer.canvas.height; y++) {
+            for (let x = 0; x < this.strokeLayer.canvas.width; x++) {
+                if (imageData[(y * this.strokeLayer.canvas.width + x) * 4 + 3] <= 0) {
+                    continue;
+                }
+                minX = Math.min(minX, x);
+                minY = Math.min(minY, y);
+                maxX = Math.max(maxX, x);
+                maxY = Math.max(maxY, y);
+            }
+        }
+        if (maxX < minX || maxY < minY) {
+            return null;
+        }
+        return { minX, minY, maxX, maxY, imageData };
+    }
+
+    getSpotHealRingStats(bounds, offsetX, offsetY = 0) {
+        let width = this.healingSampleCanvas.width;
+        let height = this.healingSampleCanvas.height;
+        let src = this.healingSampleCtx.getImageData(0, 0, width, height).data;
+        let totalR = 0;
+        let totalG = 0;
+        let totalB = 0;
+        let count = 0;
+        for (let y = Math.max(1, bounds.minY - 1); y <= Math.min(height - 2, bounds.maxY + 1); y++) {
+            for (let x = Math.max(1, bounds.minX - 1); x <= Math.min(width - 2, bounds.maxX + 1); x++) {
+                let index = (y * width + x) * 4;
+                if (bounds.imageData[index + 3] > 0) {
+                    continue;
+                }
+                let neighborMasked = bounds.imageData[((y - 1) * width + x) * 4 + 3] > 0
+                    || bounds.imageData[((y + 1) * width + x) * 4 + 3] > 0
+                    || bounds.imageData[(y * width + (x - 1)) * 4 + 3] > 0
+                    || bounds.imageData[(y * width + (x + 1)) * 4 + 3] > 0;
+                if (!neighborMasked) {
+                    continue;
+                }
+                let sx = x + offsetX;
+                let sy = y + offsetY;
+                if (sx < 0 || sy < 0 || sx >= width || sy >= height) {
+                    continue;
+                }
+                let sampleIndex = (sy * width + sx) * 4;
+                totalR += src[sampleIndex];
+                totalG += src[sampleIndex + 1];
+                totalB += src[sampleIndex + 2];
+                count++;
+            }
+        }
+        if (count <= 0) {
+            return null;
+        }
+        return {
+            r: totalR / count,
+            g: totalG / count,
+            b: totalB / count,
+            count
+        };
+    }
+
+    scoreSpotHealOffset(bounds, offsetX, offsetY) {
+        let width = this.healingSampleCanvas.width;
+        let height = this.healingSampleCanvas.height;
+        let src = this.healingSampleCtx.getImageData(0, 0, width, height).data;
+        let score = 0;
+        let samples = 0;
+        for (let y = Math.max(1, bounds.minY - 1); y <= Math.min(height - 2, bounds.maxY + 1); y += 2) {
+            for (let x = Math.max(1, bounds.minX - 1); x <= Math.min(width - 2, bounds.maxX + 1); x += 2) {
+                let maskAlpha = bounds.imageData[(y * width + x) * 4 + 3];
+                if (maskAlpha > 0) {
+                    continue;
+                }
+                let sx = x + offsetX;
+                let sy = y + offsetY;
+                if (sx < 0 || sy < 0 || sx >= width || sy >= height) {
+                    return Number.POSITIVE_INFINITY;
+                }
+                let baseIndex = (y * width + x) * 4;
+                let sampleIndex = (sy * width + sx) * 4;
+                let targetLum = 0.299 * src[baseIndex] + 0.587 * src[baseIndex + 1] + 0.114 * src[baseIndex + 2];
+                let sampleLum = 0.299 * src[sampleIndex] + 0.587 * src[sampleIndex + 1] + 0.114 * src[sampleIndex + 2];
+                score += Math.abs(src[baseIndex] - src[sampleIndex]);
+                score += Math.abs(src[baseIndex + 1] - src[sampleIndex + 1]);
+                score += Math.abs(src[baseIndex + 2] - src[sampleIndex + 2]);
+                if (x + 1 < width && sx + 1 < width) {
+                    let targetNeighbor = (y * width + (x + 1)) * 4;
+                    let sampleNeighbor = (sy * width + (sx + 1)) * 4;
+                    let targetGrad = Math.abs(targetLum - (0.299 * src[targetNeighbor] + 0.587 * src[targetNeighbor + 1] + 0.114 * src[targetNeighbor + 2]));
+                    let sampleGrad = Math.abs(sampleLum - (0.299 * src[sampleNeighbor] + 0.587 * src[sampleNeighbor + 1] + 0.114 * src[sampleNeighbor + 2]));
+                    score += Math.abs(targetGrad - sampleGrad) * 1.5;
+                }
+                samples++;
+            }
+        }
+        return samples > 0 ? score / samples : Number.POSITIVE_INFINITY;
+    }
+
+    applySpotHeal() {
+        let bounds = this.getMaskBoundsFromStrokeLayer();
+        if (!bounds) {
+            return;
+        }
+        this.ensureHealingSampleCanvas();
+        let maskWidth = bounds.maxX - bounds.minX + 1;
+        let maskHeight = bounds.maxY - bounds.minY + 1;
+        let minOffsetDistance = Math.max(3, Math.round(Math.max(maskWidth, maskHeight) * 0.45));
+        let targetRingStats = this.getSpotHealRingStats(bounds, 0, 0);
+        let bestOffsetX = 0;
+        let bestOffsetY = 0;
+        let bestScore = Number.POSITIVE_INFINITY;
+        for (let offY = -this.spotHealSearchRadius; offY <= this.spotHealSearchRadius; offY += 2) {
+            for (let offX = -this.spotHealSearchRadius; offX <= this.spotHealSearchRadius; offX += 2) {
+                if (offX == 0 && offY == 0) {
+                    continue;
+                }
+                if (Math.hypot(offX, offY) < minOffsetDistance) {
+                    continue;
+                }
+                let score = this.scoreSpotHealOffset(bounds, offX, offY);
+                if (score < bestScore) {
+                    bestScore = score;
+                    bestOffsetX = offX;
+                    bestOffsetY = offY;
+                }
+            }
+        }
+        if (!isFinite(bestScore)) {
+            return;
+        }
+        let width = this.strokeLayer.canvas.width;
+        let height = this.strokeLayer.canvas.height;
+        let sourceImage = this.healingSampleCtx.getImageData(0, 0, width, height);
+        let resultImage = this.bufferLayer.ctx.getImageData(0, 0, width, height);
+        let sourceRingStats = this.getSpotHealRingStats(bounds, bestOffsetX, bestOffsetY);
+        let adjustR = 0;
+        let adjustG = 0;
+        let adjustB = 0;
+        if (targetRingStats && sourceRingStats) {
+            adjustR = targetRingStats.r - sourceRingStats.r;
+            adjustG = targetRingStats.g - sourceRingStats.g;
+            adjustB = targetRingStats.b - sourceRingStats.b;
+        }
+        let featherRadius = Math.max(1, Math.round(Math.min(maskWidth, maskHeight) * (0.2 + this.spotHealBlendSoftness * 0.4)));
+        for (let y = bounds.minY; y <= bounds.maxY; y++) {
+            for (let x = bounds.minX; x <= bounds.maxX; x++) {
+                let index = (y * width + x) * 4;
+                let alpha = bounds.imageData[index + 3] / 255;
+                if (alpha <= 0) {
+                    continue;
+                }
+                let sx = Math.max(0, Math.min(width - 1, x + bestOffsetX));
+                let sy = Math.max(0, Math.min(height - 1, y + bestOffsetY));
+                let sampleIndex = (sy * width + sx) * 4;
+                let edgeDistance = Math.min(x - bounds.minX, bounds.maxX - x, y - bounds.minY, bounds.maxY - y);
+                let feather = Math.max(0, Math.min(1, edgeDistance / featherRadius));
+                let blend = alpha * this.opacity * (0.82 + 0.18 * feather);
+                let healedR = Math.max(0, Math.min(255, sourceImage.data[sampleIndex] + adjustR));
+                let healedG = Math.max(0, Math.min(255, sourceImage.data[sampleIndex + 1] + adjustG));
+                let healedB = Math.max(0, Math.min(255, sourceImage.data[sampleIndex + 2] + adjustB));
+                resultImage.data[index] = Math.round(resultImage.data[index] * (1 - blend) + healedR * blend);
+                resultImage.data[index + 1] = Math.round(resultImage.data[index + 1] * (1 - blend) + healedG * blend);
+                resultImage.data[index + 2] = Math.round(resultImage.data[index + 2] * (1 - blend) + healedB * blend);
+                resultImage.data[index + 3] = 255;
+            }
+        }
+        this.bufferLayer.ctx.putImageData(resultImage, 0, 0);
+        this.bufferLayer.markContentChanged();
+    }
+
+    commitBufferToTarget() {
+        if (!this.targetLayer || !this.bufferLayer) {
+            return;
+        }
+        this.targetLayer.saveBeforeEdit();
+        this.targetLayer.ctx.clearRect(0, 0, this.targetLayer.canvas.width, this.targetLayer.canvas.height);
+        this.targetLayer.ctx.drawImage(this.bufferLayer.canvas, 0, 0);
+        this.targetLayer.hasAnyContent = true;
+        this.editor.markLayerContentChanged(this.targetLayer);
+    }
+
+    clearBrushState() {
+        this.classicInpaintRunning = false;
+        this.editor.clearPreviewState();
+        this.bufferLayer = null;
+        this.strokeLayer = null;
+        this.targetLayer = null;
+        this.healingSampleCanvas = null;
+        this.healingSampleCtx = null;
+        this.lastDrawPressure = 1;
+        this.brushing = false;
+        this.syncBrushConfigInputs();
+        this.editor.queueOverlayRedraw();
+    }
+
+    runClassicInpaint() {
+        if (!this.bufferLayer || !this.strokeLayer || !this.targetLayer) {
+            this.clearBrushState();
+            return;
+        }
+        this.classicInpaintRunning = true;
+        this.syncBrushConfigInputs();
+        this.editor.queueOverlayRedraw();
+        let imageData = this.bufferLayer.canvas.toDataURL('image/png');
+        let maskData = this.strokeLayer.canvas.toDataURL('image/png');
+        genericRequest('ClassicInpaint', {
+            imageData: imageData,
+            maskData: maskData,
+            backend: this.classicInpaintBackend,
+            feather: this.classicInpaintFeather,
+            expandMask: this.classicInpaintExpandMask
+        }, (data) => {
+            let result = new Image();
+            result.onload = () => {
+                if (!this.bufferLayer) {
+                    return;
+                }
+                this.bufferLayer.ctx.clearRect(0, 0, this.bufferLayer.canvas.width, this.bufferLayer.canvas.height);
+                this.bufferLayer.ctx.drawImage(result, 0, 0);
+                this.bufferLayer.markContentChanged();
+                this.commitBufferToTarget();
+                this.clearBrushState();
+            };
+            result.onerror = () => {
+                this.clearBrushState();
+                showError('Classic Inpaint returned an invalid image.');
+            };
+            result.src = data.image;
+        }, 0, (error) => {
+            this.clearBrushState();
+            showError(describeRequestFailure(error));
+        });
+    }
+
+    brush(sizeForce = 1, opacityForce = 1) {
         if (!this.targetLayer || !this.bufferLayer || !this.strokeLayer) {
             return;
         }
         let [lastX, lastY] = this.targetLayer.canvasCoordToLayerCoord(this.editor.lastMouseX, this.editor.lastMouseY);
         let [x, y] = this.targetLayer.canvasCoordToLayerCoord(this.editor.mouseX, this.editor.mouseY);
-        this.strokeLayer.ctx.clearRect(0, 0, this.strokeLayer.canvas.width, this.strokeLayer.canvas.height);
+        if (this.brushMode != 'spot_heal' && this.brushMode != 'classic_inpaint') {
+            this.strokeLayer.ctx.clearRect(0, 0, this.strokeLayer.canvas.width, this.strokeLayer.canvas.height);
+        }
+        let ctx = this.strokeLayer.ctx;
         let drawColor = this.isEraser ? '#ffffff' : this.color;
-        this.strokeLayer.drawFilledCircle(lastX, lastY, this.radius * force, drawColor);
-        this.strokeLayer.drawFilledCircleStrokeBetween(lastX, lastY, x, y, this.radius * force, drawColor);
-        this.strokeLayer.drawFilledCircle(x, y, this.radius * force, drawColor);
+        let effectiveRadius = Math.max(0.5, this.radius * sizeForce);
+        this.lastDrawPressure = sizeForce;
+        if (this.brushMode == 'healing') {
+            this.drawHealingAt(x, y);
+        }
+        else if (this.brushMode == 'spot_heal' || this.brushMode == 'classic_inpaint') {
+            this.drawHardRoundSegment(ctx, lastX, lastY, x, y, effectiveRadius, '#ffffff');
+        }
+        else if (this.brushMode == 'soft_round') {
+            this.drawSoftRoundSegment(ctx, lastX, lastY, x, y, effectiveRadius, drawColor, 0.3);
+        }
+        else if (this.brushMode == 'airbrush') {
+            this.drawAirbrushDabs(ctx, lastX, lastY, x, y, effectiveRadius, drawColor, opacityForce);
+        }
+        else if (this.brushMode == 'pixel') {
+            this.drawPixelSegment(ctx, lastX, lastY, x, y, effectiveRadius, drawColor);
+        }
+        else if (this.brushMode == 'marker') {
+            this.drawMarkerSegment(ctx, lastX, lastY, x, y, effectiveRadius, drawColor);
+        }
+        else if (this.brushMode == 'ink') {
+            this.drawInkSegment(ctx, lastX, lastY, x, y, effectiveRadius, drawColor);
+        }
+        else if (this.brushMode == 'chalk') {
+            this.drawChalkSegment(ctx, lastX, lastY, x, y, effectiveRadius, drawColor);
+        }
+        else {
+            this.drawHardRoundSegment(ctx, lastX, lastY, x, y, effectiveRadius, drawColor);
+        }
         this.applySelectionClip(this.strokeLayer.ctx, this.targetLayer);
+        if (this.brushMode == 'spot_heal' || this.brushMode == 'classic_inpaint') {
+            return;
+        }
         this.bufferLayer.ctx.save();
-        this.bufferLayer.ctx.globalAlpha = this.opacity;
+        this.bufferLayer.ctx.globalAlpha = this.opacity * opacityForce;
         this.bufferLayer.ctx.globalCompositeOperation = this.isEraser ? 'destination-out' : 'source-over';
         this.bufferLayer.ctx.drawImage(this.strokeLayer.canvas, 0, 0);
         this.bufferLayer.ctx.restore();
         this.bufferLayer.markContentChanged();
     }
 
-    getForceFrom(e) {
-        if (e.pointerType && e.pointerType != 'mouse' && typeof e.pressure == 'number' && e.pressure > 0) {
-            return e.pressure;
+    getPressureFrom(e) {
+        if (e.pointerType != 'pen' || typeof e.pressure != 'number' || e.pressure <= 0) {
+            return 1;
         }
-        return 1;
+        let pressure = Math.max(0, Math.min(1, e.pressure));
+        pressure = Math.pow(pressure, this.pressureCurve);
+        return Math.max(this.pressureMin, pressure);
+    }
+
+    getBrushForces(e) {
+        let pressure = this.getPressureFrom(e);
+        return {
+            size: this.pressureAffectsSize ? pressure : 1,
+            opacity: this.pressureAffectsOpacity ? pressure : 1
+        };
     }
 
     onMouseDown(e) {
-        if (this.brushing) {
+        if (this.brushing || this.classicInpaintRunning) {
             return;
         }
         let target = this.editor.activeLayer;
         if (!target) {
             return;
         }
+        if (this.brushMode == 'healing' && e.ctrlKey) {
+            this.setHealingSourceAtMouse();
+            return;
+        }
+        if (this.brushMode == 'healing' && !this.healingHasSource) {
+            return;
+        }
         this.brushing = true;
         this.targetLayer = target;
         this.bufferLayer = target.cloneLayerData();
         this.strokeLayer = new ImageEditorLayer(this.editor, target.canvas.width, target.canvas.height);
+        if (this.brushMode == 'spot_heal' || this.brushMode == 'classic_inpaint') {
+            this.strokeLayer.ctx.clearRect(0, 0, this.strokeLayer.canvas.width, this.strokeLayer.canvas.height);
+        }
         this.editor.setPreviewState(target, this.bufferLayer, { syncVisualStateFromTarget: true });
-        this.brush(this.getForceFrom(e));
+        if (this.brushMode == 'healing' || this.brushMode == 'spot_heal' || this.brushMode == 'classic_inpaint') {
+            let [startX, startY] = this.targetLayer.canvasCoordToLayerCoord(this.editor.mouseX, this.editor.mouseY);
+            this.ensureHealingSampleCanvas();
+            if (this.brushMode == 'healing') {
+                this.healingOffsetX = this.healingSourceLayerX - startX;
+                this.healingOffsetY = this.healingSourceLayerY - startY;
+            }
+        }
+        let forces = this.getBrushForces(e);
+        this.brush(forces.size, forces.opacity);
     }
 
     onMouseMove(e) {
         if (this.brushing) {
-            this.brush(this.getForceFrom(e));
+            let forces = this.getBrushForces(e);
+            this.brush(forces.size, forces.opacity);
         }
     }
 
@@ -1454,21 +2208,39 @@ class ImageEditorToolBrush extends ImageEditorToolWithColor {
 
     onGlobalMouseUp(e) {
         if (this.brushing) {
-            this.targetLayer.saveBeforeEdit();
-            this.targetLayer.ctx.clearRect(0, 0, this.targetLayer.canvas.width, this.targetLayer.canvas.height);
-            this.targetLayer.ctx.drawImage(this.bufferLayer.canvas, 0, 0);
-            this.targetLayer.hasAnyContent = true;
-            this.editor.markLayerContentChanged(this.targetLayer);
-            this.editor.clearPreviewState();
-            this.bufferLayer = null;
-            this.strokeLayer = null;
-            this.targetLayer = null;
-            this.brushing = false;
+            if (this.brushMode == 'spot_heal') {
+                this.applySelectionClip(this.strokeLayer.ctx, this.targetLayer);
+                this.applySpotHeal();
+            }
+            else if (this.brushMode == 'classic_inpaint') {
+                this.applySelectionClip(this.strokeLayer.ctx, this.targetLayer);
+                this.brushing = false;
+                this.runClassicInpaint();
+                return true;
+            }
+            this.commitBufferToTarget();
+            this.clearBrushState();
             return true;
         }
         return false;
     }
 }
+
+ImageEditorToolBrush.PRESETS = {
+    hard_round: { name: 'Hard Round', mode: 'hard_round', radius: 10, opacity: 1, pressureAffectsSize: true, pressureAffectsOpacity: false, pressureMin: 0.2, pressureCurve: 1, paintOnly: true },
+    soft_round: { name: 'Soft Round', mode: 'soft_round', radius: 18, opacity: 0.7, pressureAffectsSize: true, pressureAffectsOpacity: true, pressureMin: 0.15, pressureCurve: 1.2, paintOnly: true },
+    airbrush: { name: 'Airbrush', mode: 'airbrush', radius: 26, opacity: 0.14, pressureAffectsSize: false, pressureAffectsOpacity: true, pressureMin: 0.08, pressureCurve: 1.6, paintOnly: true },
+    pixel: { name: 'Pixel', mode: 'pixel', radius: 1, opacity: 1, pressureAffectsSize: false, pressureAffectsOpacity: false, pressureMin: 1, pressureCurve: 1, paintOnly: true },
+    ink_fine: { name: 'Ink Fine', mode: 'ink', radius: 3, opacity: 1, pressureAffectsSize: true, pressureAffectsOpacity: false, pressureMin: 0.1, pressureCurve: 0.85, paintOnly: true },
+    ink_thick: { name: 'Ink Thick', mode: 'ink', radius: 8, opacity: 1, pressureAffectsSize: true, pressureAffectsOpacity: false, pressureMin: 0.12, pressureCurve: 0.9, paintOnly: true },
+    marker: { name: 'Marker', mode: 'marker', radius: 20, opacity: 0.45, pressureAffectsSize: false, pressureAffectsOpacity: false, pressureMin: 1, pressureCurve: 1, paintOnly: true },
+    chalk: { name: 'Chalk', mode: 'chalk', radius: 14, opacity: 0.55, pressureAffectsSize: true, pressureAffectsOpacity: true, pressureMin: 0.18, pressureCurve: 1.1, paintOnly: true },
+    smudge_soft: { name: 'Smudge-like Soft', mode: 'soft_round', radius: 22, opacity: 0.24, pressureAffectsSize: true, pressureAffectsOpacity: true, pressureMin: 0.1, pressureCurve: 1.4, paintOnly: true },
+    healing: { name: 'Healing', mode: 'healing', radius: 18, opacity: 0.7, pressureAffectsSize: true, pressureAffectsOpacity: false, pressureMin: 0.2, pressureCurve: 1, paintOnly: true },
+    spot_heal: { name: 'Spot Heal', mode: 'spot_heal', radius: 16, opacity: 0.85, pressureAffectsSize: true, pressureAffectsOpacity: false, pressureMin: 0.2, pressureCurve: 1, spotHealSearchRadius: 24, spotHealBlendSoftness: 0.75, paintOnly: true },
+    classic_inpaint: { name: 'Classic Inpaint', mode: 'classic_inpaint', radius: 18, opacity: 1, pressureAffectsSize: true, pressureAffectsOpacity: false, pressureMin: 0.2, pressureCurve: 1, classicInpaintBackend: 'lama', classicInpaintFeather: 8, classicInpaintExpandMask: 4, paintOnly: true },
+    eraser_soft: { name: 'Eraser Soft', mode: 'soft_round', radius: 24, opacity: 0.45, pressureAffectsSize: true, pressureAffectsOpacity: true, pressureMin: 0.18, pressureCurve: 1.2, eraserOnly: true }
+};
 
 
 /**

@@ -644,3 +644,13 @@ Performance:
 	#Past this count, the list will simply be cut off.
 	#Use sub-folder organization to prevent issues.
 	ModelListSanityCap: 5000
+#Settings related to local Krita round-trip integration.
+KritaBridge:
+	#Optional full path to the Krita executable for local launch integration.
+	#Environment-variable and home-directory markers such as '%ProgramFiles%', '$HOME', or '~' are expanded.
+	#If empty, SwarmUI will attempt simple OS-default executable names.
+	#Defaults to empty.
+	KritaExecutablePath: \x
+	#Relative path under the Data directory for temporary Swarm-to-Krita image exports.
+	#Defaults to 'Temp/KritaBridge'.
+	TempPath: Temp/KritaBridge

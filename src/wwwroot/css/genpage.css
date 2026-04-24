@@ -299,6 +299,13 @@ body {
 #ImageEditing #imageediting_image_options_header:hover {
     background-color: color-mix(in srgb, var(--button-background-hover) 72%, var(--green)) !important;
 }
+#ImageEditing #imageediting_pen_options_header {
+    background-color: color-mix(in srgb, var(--button-background) 72%, var(--green)) !important;
+    border-color: color-mix(in srgb, var(--light-border) 55%, var(--green)) !important;
+}
+#ImageEditing #imageediting_pen_options_header:hover {
+    background-color: color-mix(in srgb, var(--button-background-hover) 72%, var(--green)) !important;
+}
 #ImageEditing #imageediting_selection_crop_header,
 #ImageEditing #imageediting_effects_presets_header {
     background-color: color-mix(in srgb, var(--button-background) 72%, var(--green)) !important;
@@ -349,6 +356,147 @@ body {
     color: var(--text-soft);
     font-size: 0.85rem;
     white-space: normal;
+}
+#ImageEditing .imageediting_pen_options_body {
+    display: flex;
+    flex-direction: column;
+    gap: 0.45rem;
+}
+#ImageEditing .imageediting_pen_options_mount,
+#ImageEditing .imageediting_pen_options_tool {
+    display: flex;
+    flex-direction: column;
+    gap: 0.45rem;
+}
+#ImageEditing .imageediting_pen_options_empty {
+    color: var(--text-soft);
+    font-size: 0.9rem;
+}
+#ImageEditing .imageediting_pen_options_body .image-editor-tool-block {
+    width: 100%;
+}
+#ImageEditing .imageediting_pen_options_body .id-preset-block,
+#ImageEditing .imageediting_pen_options_body .id-preset-buttons-block {
+    height: auto;
+    min-height: 32px;
+    align-items: flex-start;
+    padding: 0.35rem 0.45rem;
+}
+#ImageEditing .image-editor-brush-preset-active {
+    font-size: 0.9rem;
+    font-weight: 600;
+    color: var(--text);
+}
+#ImageEditing .image-editor-brush-preset-grid {
+    display: grid;
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+    gap: 0.35rem;
+    width: 100%;
+}
+#ImageEditing .image-editor-brush-preset-button {
+    min-height: 2.1rem;
+    padding: 0.2rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+#ImageEditing .image-editor-brush-preset-button-active {
+    background-color: var(--danger-button-background-hover);
+}
+#ImageEditing .image-editor-brush-preset-stroke {
+    width: 100%;
+    height: 1.1rem;
+    display: block;
+    position: relative;
+}
+#ImageEditing .image-editor-brush-preset-stroke::before {
+    content: '';
+    position: absolute;
+    left: 10%;
+    right: 10%;
+    top: 50%;
+    transform: translateY(-50%);
+    background: var(--text);
+}
+#ImageEditing .image-editor-brush-preset-stroke-hard_round::before {
+    height: 0.34rem;
+    border-radius: 999px;
+}
+#ImageEditing .image-editor-brush-preset-stroke-soft_round::before {
+    height: 0.5rem;
+    border-radius: 999px;
+    filter: blur(2px);
+    opacity: 0.8;
+}
+#ImageEditing .image-editor-brush-preset-stroke-airbrush::before {
+    height: 0.7rem;
+    border-radius: 999px;
+    filter: blur(4px);
+    opacity: 0.45;
+}
+#ImageEditing .image-editor-brush-preset-stroke-pixel::before {
+    height: 0.28rem;
+    border-radius: 0;
+    image-rendering: pixelated;
+}
+#ImageEditing .image-editor-brush-preset-stroke-ink::before {
+    height: 0.2rem;
+    border-radius: 999px;
+}
+#ImageEditing .image-editor-brush-preset-stroke-marker::before {
+    height: 0.55rem;
+    border-radius: 0.1rem;
+    opacity: 0.65;
+}
+#ImageEditing .image-editor-brush-preset-stroke-chalk::before {
+    height: 0.45rem;
+    border-radius: 999px;
+    opacity: 0.55;
+    background: repeating-linear-gradient(90deg, var(--text) 0 8%, transparent 8% 14%);
+}
+#ImageEditing .image-editor-brush-preset-stroke-healing::before {
+    height: 0.34rem;
+    border-radius: 999px;
+    background: linear-gradient(90deg, var(--text) 0 35%, #00ffaa 35% 65%, var(--text) 65% 100%);
+}
+#ImageEditing .image-editor-brush-preset-stroke-spot_heal::before {
+    height: 0.34rem;
+    border-radius: 999px;
+    background: radial-gradient(circle at 50% 50%, #00ffaa 0 24%, var(--text) 24% 60%, transparent 60%);
+}
+#ImageEditing .image-editor-brush-preset-stroke-classic_inpaint::before {
+    height: 0.52rem;
+    border-radius: 0.16rem;
+    background:
+        linear-gradient(90deg, var(--text) 0 18%, transparent 18% 28%, #00ffaa 28% 72%, transparent 72% 82%, var(--text) 82% 100%);
+}
+#ImageEditing .image-editor-classic-inpaint-status {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.45rem;
+    padding: 0.3rem 0.55rem;
+    border-radius: 999px;
+    border: 1px solid color-mix(in srgb, var(--light-border) 55%, #00ffaa);
+    background: color-mix(in srgb, var(--background) 82%, #00ffaa);
+    color: var(--text);
+    font-size: 0.9rem;
+    font-weight: 600;
+}
+#ImageEditing .image-editor-classic-inpaint-spinner {
+    width: 0.85rem;
+    height: 0.85rem;
+    border-radius: 999px;
+    border: 2px solid color-mix(in srgb, #00ffaa 35%, transparent);
+    border-top-color: #00ffaa;
+    animation: image-editor-classic-inpaint-spin 0.85s linear infinite;
+}
+@keyframes image-editor-classic-inpaint-spin {
+    from {
+        transform: rotate(0deg);
+    }
+    to {
+        transform: rotate(360deg);
+    }
 }
 #ImageEditing .imageediting_tone_balance_group {
     margin-top: 0.6rem;

@@ -110,6 +110,23 @@ authTokenHelpers = new AuthTokenHelper();
 
 apiHelpers = {};
 
+function populateUserSessionId() {
+    let sessionInput = document.getElementById('user_session_id');
+    if (sessionInput) {
+        sessionInput.value = session_id || '';
+    }
+}
+
+function copySessionIdToClipboard() {
+    if (!session_id) {
+        return;
+    }
+    copyText(session_id);
+    doNoticePopover('Copied!', 'notice-pop-green');
+}
+
+window.copySessionIdToClipboard = copySessionIdToClipboard;
+
 class APIKeyHelper {
     constructor(keyType, prefix) {
         this.keyType = keyType;
@@ -557,5 +574,6 @@ function initUserTab() {
 function refreshUserTab() {
     authTokenHelpers.getElems();
     rebuildUserApiHelpers();
+    populateUserSessionId();
     refreshUserTabSecurityState();
 }

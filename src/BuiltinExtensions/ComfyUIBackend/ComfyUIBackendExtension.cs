@@ -68,7 +68,9 @@ public class ComfyUIBackendExtension : Extension
         ["TeaCache"] = "teacache",
         ["TeaCacheForVidGen"] = "teacache",
         ["TeaCacheForImgGen"] = "teacache_oldvers",
-        ["OverrideCLIPDevice"] = "set_clip_device"
+        ["OverrideCLIPDevice"] = "set_clip_device",
+        ["INPAINT_LoadInpaintModel"] = "inpaintnodes",
+        ["INPAINT_InpaintWithModel"] = "inpaintnodes"
     };
 
     /// <inheritdoc/>
@@ -125,6 +127,11 @@ public class ComfyUIBackendExtension : Extension
         {
             FeaturesSupported.UnionWith(["teacache"]);
             FeaturesDiscardIfNotFound.UnionWith(["teacache"]);
+        }
+        if (Directory.Exists($"{FilePath}DLNodes/comfyui-inpaint-nodes"))
+        {
+            FeaturesSupported.UnionWith(["inpaintnodes"]);
+            FeaturesDiscardIfNotFound.UnionWith(["inpaintnodes"]);
         }
         T2IParamTypes.ConcatDropdownValsClean(ref UpscalerModels, InternalListModelsFor("upscale_models", true).Select(u => $"model-{u}///Model: {u}"));
         T2IParamTypes.ConcatDropdownValsClean(ref UpscalerModels, InternalListModelsFor("latent_upscale_models", true).Select(u => $"latentmodel-{u}///Latent Model: {u}"));

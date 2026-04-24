@@ -67,6 +67,12 @@ public class Settings : AutoConfiguration
     [ConfigComment("Settings related to server performance.")]
     public PerformanceData Performance = new();
 
+    [ConfigComment("Settings related to the local Krita round-trip integration.")]
+    public KritaBridgeData KritaBridge = new();
+
+    [ConfigComment("Settings related to the managed IOPaint repair service used by image editor inpainting tools.")]
+    public IOPaintServiceData IOPaint = new();
+
     [ConfigComment("List of disabled extension folder names.\nDisabled extensions remain installed on disk, but are not loaded at server startup.")]
     [SettingHidden]
     public List<string> DisabledExtensions = [];
@@ -163,6 +169,26 @@ public class Settings : AutoConfiguration
         public OAuthData OAuth = new();
     }
 
+    /// <summary>Settings related to the managed IOPaint service.</summary>
+    public class IOPaintServiceData : AutoConfiguration
+    {
+        [ConfigComment("If true, enable the managed IOPaint service for editor repair tools.")]
+        public bool Enabled = false;
+
+        [ConfigComment("Python interpreter used to create the dedicated IOPaint virtual environment.\nDefaults to `python3` on Linux/macOS and `python` on Windows.")]
+        public string BootstrapPython = "";
+
+        [ConfigComment("Path to the dedicated IOPaint virtual environment.\nDefaults to `(Data)/tools/iopaint/venv`.")]
+        public string VenvPath = "";
+
+        [ConfigComment("Preferred execution device for IOPaint.\nUse `cpu`, `cuda`, or `mps` depending on your system.")]
+        [ManualSettingsOptions(Impl = null, Vals = ["cpu", "cuda", "mps"])]
+        public string Device = "cpu";
+
+        [ConfigComment("Optional model cache directory for IOPaint.\nIf empty, IOPaint will use its default cache location.")]
+        public string ModelCachePath = "";
+    }
+
     /// <summary>Settings related to logging.</summary>
     public class LogsData : AutoConfiguration
     {
@@ -194,6 +220,16 @@ public class Settings : AutoConfiguration
 
         [ConfigComment("How many models can be loaded in a model list at once.\nPast this count, the list will simply be cut off.\nUse sub-folder organization to prevent issues.")]
         public int ModelListSanityCap = 5000;
+    }
+
+    /// <summary>Settings related to local Krita integration.</summary>
+    public class KritaBridgeData : AutoConfiguration
+    {
+        [ConfigComment("Optional full path to the Krita executable for local launch integration.\nEnvironment-variable and home-directory markers such as '%ProgramFiles%', '$HOME', or '~' are expanded.\nIf empty, SwarmUI will attempt simple OS-default executable names.\nDefaults to empty.")]
+        public string KritaExecutablePath = "";
+
+        [ConfigComment("Relative path under the Data directory for temporary Swarm-to-Krita image exports.\nDefaults to 'Temp/KritaBridge'.")]
+        public string TempPath = "Temp/KritaBridge";
     }
 
     /// <summary>Settings related to backends.</summary>

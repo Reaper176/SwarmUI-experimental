@@ -8,9 +8,15 @@ let imageHistoryAutoRetryTimer = null;
 let imageHistoryNextLoadIsRetry = false;
 let imageHistoryStartupStage = 'pending';
 let imageHistoryLoadToken = 0;
+let imageHistoryBackgroundLoadToken = 0;
+let imageHistoryBackgroundRetryCount = 0;
+let imageHistoryBackgroundRequestKey = null;
+let imageHistoryBackgroundWatchdog = null;
 const IMAGE_HISTORY_METADATA_CACHE_LIMIT = 1024;
 const IMAGE_HISTORY_AUTO_RETRY_DELAY_MS = 1500;
 const IMAGE_HISTORY_FAST_FIRST_LIMIT = 128;
+const IMAGE_HISTORY_BACKGROUND_WATCHDOG_DELAY_MS = 10000;
+const IMAGE_HISTORY_BACKGROUND_MAX_RETRIES = 2;
 let IMAGE_HISTORY_UNLOAD_ROW_BUFFER = 10;
 let IMAGE_HISTORY_MIN_MEDIA_ROWS_TO_UNLOAD = 2;
 const imageHistoryMetadataCache = new Map();
@@ -194,6 +200,43 @@ function clearImageHistoryAutoRetry() {
         imageHistoryAutoRetryTimer = null;
     }
     imageHistoryNextLoadIsRetry = false;
+}
+
+function clearImageHistoryBackgroundWatchdog() {
+    if (imageHistoryBackgroundWatchdog) {
+        clearTimeout(imageHistoryBackgroundWatchdog);
+        imageHistoryBackgroundWatchdog = null;
+    }
+}
+
+function getImageHistoryRequestKey(path, depth, sortBy, reverse, showHidden) {
+    return JSON.stringify({ path, depth, sortBy, reverse, showHidden });
+}
+
+function isImageHistoryBackgroundRequestStillRelevant(path, requestKey, backgroundToken) {
+    if (!imageHistoryBrowser || imageHistoryBrowser.folder != path) {
+        return false;
+    }
+    if (backgroundToken != imageHistoryBackgroundLoadToken) {
+        return false;
+    }
+    return requestKey == imageHistoryBackgroundRequestKey;
+}
+
+function scheduleImageHistoryBackgroundWatchdog(path, depth, sortBy, reverse, showHidden, requestKey, backgroundToken) {
+    clearImageHistoryBackgroundWatchdog();
+    imageHistoryBackgroundWatchdog = setTimeout(() => {
+        if (!isImageHistoryBackgroundRequestStillRelevant(path, requestKey, backgroundToken) || imageHistoryStartupStage != 'recent_loaded') {
+            return;
+        }
+        if (imageHistoryBackgroundRetryCount >= IMAGE_HISTORY_BACKGROUND_MAX_RETRIES) {
+            setImageHistoryRequestStatus('error', 'History is taking too long to fully load. Retry when ready.');
+            return;
+        }
+        imageHistoryBackgroundRetryCount++;
+        setImageHistoryRequestStatus('loading', 'Still loading older history...');
+        queueFullImageHistoryLoad(path, depth, sortBy, reverse, showHidden);
+    }, IMAGE_HISTORY_BACKGROUND_WATCHDOG_DELAY_MS);
 }
 
 function retryImageHistoryManually() {
@@ -388,7 +431,37 @@ function pruneImageHistorySelectionToCurrentFiles() {
     }
 }
 
+function getCheckedImageHistoryPaths() {
+    let selected = [];
+    for (let entry of getImageHistoryEntries()) {
+        let checkbox = entry.querySelector('.browser-entry-checkbox');
+        if (checkbox?.checked && entry.dataset?.name) {
+            selected.push(entry.dataset.name);
+        }
+    }
+    return selected;
+}
+
+function syncImageHistorySelectionFromDOM() {
+    let checkedPaths = getCheckedImageHistoryPaths();
+    if (checkedPaths.length == 0) {
+        if (imageHistorySelected.size == 0) {
+            return;
+        }
+        imageHistorySelected.clear();
+        for (let entry of getImageHistoryEntries()) {
+            entry.classList.remove('browser-entry-selected');
+        }
+        return;
+    }
+    imageHistorySelected = new Set(checkedPaths);
+    for (let entry of getImageHistoryEntries()) {
+        entry.classList.toggle('browser-entry-selected', imageHistorySelected.has(entry.dataset.name));
+    }
+}
+
 function updateImageHistoryBulkControls() {
+    syncImageHistorySelectionFromDOM();
     let controls = document.getElementById('image_history_bulk_controls');
     if (!controls) {
         return;
@@ -462,6 +535,29 @@ function clearImageHistorySelection() {
     updateImageHistoryBulkControls();
 }
 
+function selectAllImageHistory() {
+    for (let entry of getImageHistoryEntries()) {
+        setImageHistorySelection(entry.dataset.name, true, entry);
+    }
+    updateImageHistoryBulkControls();
+}
+
+function clearSelectedImageHistory() {
+    clearImageHistorySelection();
+}
+
+function hideSelectedImageHistory() {
+    setSelectedHistoryImagesHidden(true);
+}
+
+function unhideSelectedImageHistory() {
+    setSelectedHistoryImagesHidden(false);
+}
+
+function deleteSelectedImageHistory() {
+    deleteSelectedHistoryImages();
+}
+
 function ensureImageHistoryBulkControlsReady() {
     let controls = document.getElementById('image_history_bulk_controls');
     if (!controls || controls.dataset.ready) {
@@ -469,24 +565,26 @@ function ensureImageHistoryBulkControlsReady() {
         return;
     }
     controls.dataset.ready = 'true';
-    getRequiredElementById('image_history_select_all').addEventListener('click', () => {
-        for (let entry of getImageHistoryEntries()) {
-            setImageHistorySelection(entry.dataset.name, true, entry);
-        }
-        updateImageHistoryBulkControls();
-    });
-    getRequiredElementById('image_history_clear_selection').addEventListener('click', () => {
-        clearImageHistorySelection();
-    });
-    getRequiredElementById('image_history_hide_selected').addEventListener('click', () => {
-        setSelectedHistoryImagesHidden(true);
-    });
-    getRequiredElementById('image_history_unhide_selected').addEventListener('click', () => {
-        setSelectedHistoryImagesHidden(false);
-    });
-    getRequiredElementById('image_history_delete_selected').addEventListener('click', () => {
-        deleteSelectedHistoryImages();
-    });
+    getRequiredElementById('image_history_select_all').onclick = (e) => {
+        e.preventDefault();
+        selectAllImageHistory();
+    };
+    getRequiredElementById('image_history_clear_selection').onclick = (e) => {
+        e.preventDefault();
+        clearSelectedImageHistory();
+    };
+    getRequiredElementById('image_history_hide_selected').onclick = (e) => {
+        e.preventDefault();
+        hideSelectedImageHistory();
+    };
+    getRequiredElementById('image_history_unhide_selected').onclick = (e) => {
+        e.preventDefault();
+        unhideSelectedImageHistory();
+    };
+    getRequiredElementById('image_history_delete_selected').onclick = (e) => {
+        e.preventDefault();
+        deleteSelectedImageHistory();
+    };
     updateImageHistoryBulkControls();
 }
 
@@ -581,6 +679,7 @@ async function setSelectedHistoryImagesHidden(targetHidden) {
     if (imageHistoryBulkActionRunning) {
         return;
     }
+    syncImageHistorySelectionFromDOM();
     let selected = [...imageHistorySelected];
     if (selected.length == 0) {
         return;
@@ -624,6 +723,7 @@ async function deleteSelectedHistoryImages() {
     if (imageHistoryBulkActionRunning) {
         return;
     }
+    syncImageHistorySelectionFromDOM();
     let selected = [...imageHistorySelected];
     if (selected.length == 0) {
         return;
@@ -678,6 +778,9 @@ function listOutputHistoryFolderAndFiles(path, isRefresh, callback, depth, onErr
     imageHistoryNextLoadIsRetry = false;
     let loadToken = ++imageHistoryLoadToken;
     let useFastFirst = imageHistoryStartupStage == 'pending' && path == '' && !isRefresh;
+    if (useFastFirst || path != '' || isRefresh) {
+        clearImageHistoryBackgroundWatchdog();
+    }
     let request = { 'path': path, 'depth': depth, 'sortBy': sortBy, 'sortReverse': reverse, 'includeHidden': showHidden };
     if (useFastFirst) {
         request.fastFirst = true;
@@ -693,10 +796,13 @@ function listOutputHistoryFolderAndFiles(path, isRefresh, callback, depth, onErr
         callback(folders, mapped);
         if (useFastFirst) {
             imageHistoryStartupStage = 'recent_loaded';
-            queueFullImageHistoryLoad(path, depth, sortBy, reverse, showHidden, loadToken);
+            imageHistoryBackgroundRetryCount = 0;
+            imageHistoryBackgroundRequestKey = getImageHistoryRequestKey(path, depth, sortBy, reverse, showHidden);
+            queueFullImageHistoryLoad(path, depth, sortBy, reverse, showHidden);
             return;
         }
         imageHistoryStartupStage = 'complete';
+        clearImageHistoryBackgroundWatchdog();
         setImageHistoryRequestStatus('idle');
     }, 0, error => {
         showError(error);
@@ -712,24 +818,37 @@ function listOutputHistoryFolderAndFiles(path, isRefresh, callback, depth, onErr
     });
 }
 
-function queueFullImageHistoryLoad(path, depth, sortBy, reverse, showHidden, loadToken) {
+function queueFullImageHistoryLoad(path, depth, sortBy, reverse, showHidden) {
+    let requestKey = getImageHistoryRequestKey(path, depth, sortBy, reverse, showHidden);
+    let backgroundToken = ++imageHistoryBackgroundLoadToken;
+    imageHistoryBackgroundRequestKey = requestKey;
+    scheduleImageHistoryBackgroundWatchdog(path, depth, sortBy, reverse, showHidden, requestKey, backgroundToken);
     setTimeout(() => {
         genericRequest('ListImages', { 'path': path, 'depth': depth, 'sortBy': sortBy, 'sortReverse': reverse, 'includeHidden': showHidden }, data => {
-            if (loadToken != imageHistoryLoadToken || !imageHistoryBrowser || imageHistoryBrowser.folder != path) {
+            if (!isImageHistoryBackgroundRequestStillRelevant(path, requestKey, backgroundToken)) {
                 return;
             }
             let prefix = path == '' ? '' : (path.endsWith('/') ? path : `${path}/`);
             let folders = data.folders.sort((a, b) => b.toLowerCase().localeCompare(a.toLowerCase()));
             let mapped = mapHistoryFiles(prefix, orderHistoryFilesForDisplay(data.files));
             imageHistoryStartupStage = 'complete';
+            imageHistoryBackgroundRetryCount = 0;
+            clearImageHistoryBackgroundWatchdog();
             replaceHistoryBrowserContents(path, folders, mapped);
             setImageHistoryRequestStatus('idle');
         }, 0, error => {
-            if (loadToken != imageHistoryLoadToken || !imageHistoryBrowser || imageHistoryBrowser.folder != path) {
+            if (!isImageHistoryBackgroundRequestStillRelevant(path, requestKey, backgroundToken)) {
                 return;
             }
             console.log(`Background history fill failed: ${error}`);
-            setImageHistoryRequestStatus('error', `History failed to load fully: ${error}`);
+            clearImageHistoryBackgroundWatchdog();
+            if (imageHistoryBackgroundRetryCount >= IMAGE_HISTORY_BACKGROUND_MAX_RETRIES) {
+                setImageHistoryRequestStatus('error', `History failed to load fully: ${error}`);
+                return;
+            }
+            imageHistoryBackgroundRetryCount++;
+            setImageHistoryRequestStatus('loading', 'Retrying older history...');
+            queueFullImageHistoryLoad(path, depth, sortBy, reverse, showHidden);
         });
     }, 0);
 }
@@ -937,7 +1056,7 @@ function selectOutputInHistory(image, div) {
 }
 
 let imageHistoryBrowser = new GenPageBrowserClass('image_history', listOutputHistoryFolderAndFiles, 'imagehistorybrowser', 'Thumbnails', describeOutputFile, selectOutputInHistory,
-    `<label for="image_history_sort_by">Sort:</label> <select id="image_history_sort_by"><option>Name</option><option>Date</option></select> <input type="checkbox" id="image_history_sort_reverse"> <label for="image_history_sort_reverse">Reverse</label> &emsp; <input type="checkbox" id="image_history_allow_anims" checked autocomplete="off"> <label for="image_history_allow_anims">Allow Animation</label> &emsp; <input type="checkbox" id="image_history_show_hidden" autocomplete="off"> <label for="image_history_show_hidden">Show Hidden</label> <span id="image_history_bulk_controls" class="image-history-bulk-controls"><span id="image_history_selected_count" class="image-history-selected-count">0 selected</span> <button id="image_history_select_all" class="refresh-button">Select All</button> <button id="image_history_clear_selection" class="refresh-button">Clear</button> <button id="image_history_hide_selected" class="refresh-button">Hide Selected</button> <button id="image_history_unhide_selected" class="refresh-button">Unhide Selected</button> <button id="image_history_delete_selected" class="interrupt-button">Delete Selected</button></span> <span id="image_history_request_status" class="image-history-request-status" data-state="idle"><span id="image_history_request_status_text" class="image-history-request-status-text"></span> <button id="image_history_retry_button" class="refresh-button" style="display:none;">Retry</button></span>`);
+    `<label for="image_history_sort_by">Sort:</label> <select id="image_history_sort_by"><option>Name</option><option>Date</option></select> <input type="checkbox" id="image_history_sort_reverse"> <label for="image_history_sort_reverse">Reverse</label> &emsp; <input type="checkbox" id="image_history_allow_anims" checked autocomplete="off"> <label for="image_history_allow_anims">Allow Animation</label> &emsp; <input type="checkbox" id="image_history_show_hidden" autocomplete="off"> <label for="image_history_show_hidden">Show Hidden</label> <span id="image_history_bulk_controls" class="image-history-bulk-controls"><span id="image_history_selected_count" class="image-history-selected-count">0 selected</span> <button type="button" id="image_history_select_all" class="refresh-button" onclick="selectAllImageHistory()">Select All</button> <button type="button" id="image_history_clear_selection" class="refresh-button" onclick="clearSelectedImageHistory()">Clear</button> <button type="button" id="image_history_hide_selected" class="refresh-button" onclick="hideSelectedImageHistory()">Hide Selected</button> <button type="button" id="image_history_unhide_selected" class="refresh-button" onclick="unhideSelectedImageHistory()">Unhide Selected</button> <button type="button" id="image_history_delete_selected" class="interrupt-button" onclick="deleteSelectedImageHistory()">Delete Selected</button></span> <span id="image_history_request_status" class="image-history-request-status" data-state="idle"><span id="image_history_request_status_text" class="image-history-request-status-text"></span> <button type="button" id="image_history_retry_button" class="refresh-button" style="display:none;">Retry</button></span>`);
 imageHistoryBrowser.folderSelectedEvent = () => {
     clearImageHistorySelection();
 };

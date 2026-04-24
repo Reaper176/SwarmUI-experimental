@@ -20,6 +20,7 @@ Directory.Build.props
 /Models
 /src/BuiltinExtensions/ComfyUIBackend/models/
 tmp/
+.worktrees/
 /src/Extensions
 /dlbackend
 *.debug
