@@ -500,6 +500,7 @@ class ImageFullViewHelper {
         }
         if (geometry.wrap.style.textAlign == 'center') {
             let img = this.getImgOrContainer();
+            img.style.position = 'absolute';
             img.style.left = `${geometry.fittedLeft}px`;
             img.style.top = `${geometry.fittedTop}px`;
             img.style.height = `${geometry.fittedHeightPercent}%`;
@@ -629,6 +630,8 @@ class ImageFullViewHelper {
         if (!findParentOfClass(e.target, 'imageview_modal_imagewrap') || e.ctrlKey || e.shiftKey) {
             return;
         }
+        e.preventDefault();
+        e.stopPropagation();
         this.pendingWheelSteps += -e.deltaY / 100;
         this.pendingWheelMouseX = e.clientX;
         this.pendingWheelMouseY = e.clientY;

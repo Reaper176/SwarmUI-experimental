@@ -1349,6 +1349,7 @@ mark.model-search-highlight {
     height: calc(100vh - 7rem);
     max-width: 95vw;
     overflow: hidden;
+    position: relative;
 }
 .imageview_popup_modal_img {
     height: 100%;
