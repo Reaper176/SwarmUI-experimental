@@ -213,6 +213,27 @@ class GenerateHandler {
         return null;
     }
 
+    /** Removes duplicate finished cards for a request from the batch strip, keeping the first occurrence of each source. */
+    dedupeFinishedBatchCards() {
+        let batchContainer = document.getElementById('current_image_batch');
+        if (!batchContainer) {
+            return;
+        }
+        let seen = new Set();
+        let cards = [...batchContainer.querySelectorAll('.image-block')];
+        for (let card of cards) {
+            if (card.dataset.is_generating == 'true') {
+                continue;
+            }
+            let src = card.dataset.src ?? '';
+            if (seen.has(src)) {
+                card.remove();
+                continue;
+            }
+            seen.add(src);
+        }
+    }
+
     internalHandleData(data, images, discardable, timeLastGenHit, actualInput, socketId, socket, isPreview, batch_id) {
         if ('socket_intention' in data && data.socket_intention == 'close' && socket) {
             this.debugTrack('socket-close', {
@@ -258,6 +279,7 @@ class GenerateHandler {
                 }
                 delete images[index];
             }
+            this.dedupeFinishedBatchCards();
             playCompletionAudio();
             return;
         }

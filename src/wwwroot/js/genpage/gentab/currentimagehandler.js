@@ -4263,8 +4263,33 @@ function appendImage(container, imageSrc, batchId, textPreview, metadata = '', t
 
 function gotImageResult(image, metadata, batchId) {
     let batchContainer = getPreferredBatchContainer(batchId);
-    let existing = batchContainer.querySelector(`.image-block[data-batch_id="${batchId}"][data-src="${CSS.escape(image)}"]`);
+    let requestId = batchId.includes('_') ? batchId.split('_')[0] : null;
+    let existing = null;
+    if (requestId) {
+        existing = batchContainer.querySelector(`.image-block[data-request_id="${requestId}"][data-src="${CSS.escape(image)}"]`);
+    }
+    else {
+        existing = batchContainer.querySelector(`.image-block[data-src="${CSS.escape(image)}"]`);
+    }
     if (existing) {
+        let imgElem = existing.querySelector('img');
+        let spinner = existing.querySelector('.loading-spinner-parent');
+        let progressBars = existing.querySelector('.image-preview-progress-wrapper');
+        if (spinner) {
+            spinner.remove();
+        }
+        if (progressBars) {
+            progressBars.remove();
+        }
+        if (imgElem) {
+            delete imgElem.dataset.previewGrow;
+            imgElem.src = image;
+        }
+        existing.dataset.metadata = metadata;
+        if (requestId) {
+            existing.dataset.request_id = requestId;
+        }
+        delete existing.dataset.is_generating;
         return existing;
     }
     updateGenCount();
