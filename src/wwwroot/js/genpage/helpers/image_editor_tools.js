@@ -1444,7 +1444,42 @@ class ImageEditorToolBrush extends ImageEditorToolWithColor {
                     <span class="id-classic-inpaint-status-text">Inpainting...</span>
                 </div>
             </div>`;
-        if (isEraser) {
+        let settingsHtml = `<details class="image-editor-tool-settings-dropdown">
+                <summary class="basic-button image-editor-tool-settings-summary">Pen Settings</summary>
+                <div class="image-editor-tool-settings-panel">
+                    ${radiusHtml}
+                    ${opacityHtml}
+                    ${pressureHtml}
+                </div>
+            </details>`;
+        let useToolPresetPopout = this.editor.inputDiv && this.editor.inputDiv.id == 'image_editor_input';
+        this.presetPopoutDiv = null;
+        if (useToolPresetPopout) {
+            this.configDiv.innerHTML = isEraser ? settingsHtml : this.getColorControlsHTML() + settingsHtml;
+            if (!isEraser) {
+                this.wireColorControls();
+            }
+            this.presetPopoutDiv = createDiv(null, 'image-editor-tool-preset-popout');
+            this.presetPopoutDiv.style.display = 'none';
+            this.presetPopoutDiv.innerHTML = presetHtml;
+            this.editor.leftBar.appendChild(this.presetPopoutDiv);
+            this.div.addEventListener('contextmenu', (e) => {
+                e.preventDefault();
+                for (let tool of Object.values(this.editor.tools)) {
+                    if (tool != this && tool.presetPopoutDiv) {
+                        tool.presetPopoutDiv.style.display = 'none';
+                    }
+                }
+                this.presetPopoutDiv.style.top = `${this.div.offsetTop + this.div.offsetHeight + 2}px`;
+                this.presetPopoutDiv.style.display = this.presetPopoutDiv.style.display == 'none' ? '' : 'none';
+            });
+            this.presetPopoutDiv.addEventListener('click', (e) => {
+                if (e.target.closest('.image-editor-brush-preset-button')) {
+                    this.presetPopoutDiv.style.display = 'none';
+                }
+            });
+        }
+        else if (isEraser) {
             this.configDiv.innerHTML = presetHtml + radiusHtml + opacityHtml + pressureHtml;
         }
         else {
@@ -1459,8 +1494,9 @@ class ImageEditorToolBrush extends ImageEditorToolWithColor {
         enableSliderForBox(this.configDiv.querySelector('.id-spotheal-softness-block'));
         enableSliderForBox(this.configDiv.querySelector('.id-classic-inpaint-feather-block'));
         enableSliderForBox(this.configDiv.querySelector('.id-classic-inpaint-expand-block'));
-        this.presetActiveLabel = this.configDiv.querySelector('.id-brush-preset-active');
-        this.presetGrid = this.configDiv.querySelector('.id-brush-preset-grid');
+        let presetRoot = this.presetPopoutDiv || this.configDiv;
+        this.presetActiveLabel = presetRoot.querySelector('.id-brush-preset-active');
+        this.presetGrid = presetRoot.querySelector('.id-brush-preset-grid');
         this.radiusNumber = this.configDiv.querySelector('.id-rad1');
         this.radiusSelector = this.configDiv.querySelector('.id-rad2');
         this.opacityNumber = this.configDiv.querySelector('.id-opac1');
@@ -1521,6 +1557,13 @@ class ImageEditorToolBrush extends ImageEditorToolWithColor {
         this.targetLayer = null;
         this.applyPreset(this.presetId);
         this.loadClassicInpaintBackends();
+    }
+
+    setInactive() {
+        super.setInactive();
+        if (this.presetPopoutDiv) {
+            this.presetPopoutDiv.style.display = 'none';
+        }
     }
 
     loadClassicInpaintBackends() {

@@ -1870,6 +1870,7 @@ mark.model-search-highlight {
     margin: 0;
     display: inline-block;
     vertical-align: top;
+    position: relative;
     width: 52px;
     height: calc(100% - 52px);
 }
@@ -1935,6 +1936,27 @@ mark.model-search-highlight {
 .image-editor-tool-selected:hover {
     background-color: var(--danger-button-background-hover);
 }
+.image-editor-tool-preset-popout {
+    position: absolute;
+    left: 6px;
+    z-index: 25;
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+    width: 240px;
+    padding: 0.45rem;
+    border: 1px solid var(--light-border);
+    border-radius: 0.4rem;
+    background-color: var(--background-panel);
+    box-shadow: 0 0.5rem 1.2rem rgba(0, 0, 0, 0.35);
+}
+.image-editor-tool-preset-popout .id-preset-block,
+.image-editor-tool-preset-popout .id-preset-buttons-block {
+    height: auto;
+    min-height: 32px;
+    align-items: flex-start;
+    padding: 0.35rem 0.45rem;
+}
 .image-editor-info-bubble-title {
     font-weight: bold;
 }
@@ -1958,6 +1980,131 @@ mark.model-search-highlight {
     align-items: center;
     border: 1px solid var(--light-border);
     height: 32px;
+}
+.image-editor-tool-settings-dropdown {
+    position: relative;
+    flex-grow: 2;
+    min-width: 170px;
+    height: 32px;
+}
+.image-editor-tool-settings-summary {
+    height: 32px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    list-style: none;
+    cursor: pointer;
+}
+.image-editor-tool-settings-summary::-webkit-details-marker {
+    display: none;
+}
+.image-editor-tool-settings-panel {
+    position: absolute;
+    left: 0;
+    bottom: 36px;
+    z-index: 20;
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+    width: min(420px, 90vw);
+    padding: 0.45rem;
+    border: 1px solid var(--light-border);
+    border-radius: 0.4rem;
+    background-color: var(--background-panel);
+    box-shadow: 0 0.5rem 1.2rem rgba(0, 0, 0, 0.35);
+}
+.image-editor-tool-settings-panel .image-editor-tool-block {
+    width: 100%;
+    min-height: 32px;
+}
+.image-editor-brush-preset-active {
+    font-size: 0.9rem;
+    font-weight: 600;
+    color: var(--text);
+}
+.image-editor-brush-preset-grid {
+    display: grid;
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+    gap: 0.35rem;
+    width: 100%;
+}
+.image-editor-brush-preset-button {
+    min-height: 2.1rem;
+    padding: 0.2rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+.image-editor-brush-preset-button-active {
+    background-color: var(--danger-button-background-hover);
+}
+.image-editor-brush-preset-stroke {
+    width: 100%;
+    height: 1.1rem;
+    display: block;
+    position: relative;
+}
+.image-editor-brush-preset-stroke::before {
+    content: '';
+    position: absolute;
+    left: 10%;
+    right: 10%;
+    top: 50%;
+    transform: translateY(-50%);
+    background: var(--text);
+}
+.image-editor-brush-preset-stroke-hard_round::before {
+    height: 0.34rem;
+    border-radius: 999px;
+}
+.image-editor-brush-preset-stroke-soft_round::before {
+    height: 0.5rem;
+    border-radius: 999px;
+    filter: blur(2px);
+    opacity: 0.8;
+}
+.image-editor-brush-preset-stroke-airbrush::before {
+    height: 0.7rem;
+    border-radius: 999px;
+    filter: blur(4px);
+    opacity: 0.45;
+}
+.image-editor-brush-preset-stroke-pixel::before {
+    height: 0.28rem;
+    border-radius: 0;
+    image-rendering: pixelated;
+}
+.image-editor-brush-preset-stroke-ink::before {
+    height: 0.2rem;
+    border-radius: 999px;
+}
+.image-editor-brush-preset-stroke-marker::before {
+    height: 0.55rem;
+    border-radius: 0.1rem;
+    opacity: 0.65;
+}
+.image-editor-brush-preset-stroke-chalk::before {
+    height: 0.45rem;
+    border-radius: 999px;
+    opacity: 0.55;
+    background: repeating-linear-gradient(90deg, var(--text) 0 8%, transparent 8% 14%);
+}
+.image-editor-brush-preset-stroke-healing::before {
+    height: 0.34rem;
+    border-radius: 999px;
+    background: linear-gradient(90deg, var(--text) 0 35%, #00ffaa 35% 65%, var(--text) 65% 100%);
+}
+.image-editor-brush-preset-stroke-spot_heal::before {
+    height: 0.34rem;
+    border-radius: 999px;
+    background: radial-gradient(circle at 50% 50%, #00ffaa 0 24%, var(--text) 24% 60%, transparent 60%);
+}
+.image-editor-brush-preset-stroke-classic_inpaint::before {
+    height: 0.52rem;
+    border-radius: 0.16rem;
+    background:
+        linear-gradient(90deg, transparent 0 20%, #00ffaa 20% 34%, transparent 34% 48%, #00ffaa 48% 62%, transparent 62% 100%),
+        var(--text);
 }
 .color-picker-swatch-inline {
     width: 1.6rem;
