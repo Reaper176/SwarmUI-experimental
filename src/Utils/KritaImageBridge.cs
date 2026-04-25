@@ -1,6 +1,7 @@
 using Newtonsoft.Json.Linq;
 using SwarmUI.Core;
 using System.Collections.Concurrent;
+using System.ComponentModel;
 using System.Diagnostics;
 using System.IO;
 using System.Runtime.InteropServices;
@@ -90,11 +91,56 @@ public static class KritaImageBridge
     {
         string fullPath = Path.GetFullPath(imagePath);
         string executable = ResolveKritaExecutable();
-        ProcessStartInfo start = new(executable, $"\"{fullPath}\"")
+        try
         {
-            UseShellExecute = true
+            ProcessStartInfo start = new(executable, $"\"{fullPath}\"")
+            {
+                UseShellExecute = false
+            };
+            Process.Start(start);
+        }
+        catch (Win32Exception)
+        {
+            if (RuntimeInformation.IsOSPlatform(OSPlatform.Linux))
+            {
+                string appImagePath = FindKritaAppImage();
+                if (!string.IsNullOrWhiteSpace(appImagePath))
+                {
+                    ProcessStartInfo start = new(appImagePath, $"\"{fullPath}\"")
+                    {
+                        UseShellExecute = false
+                    };
+                    Process.Start(start);
+                    return;
+                }
+            }
+            throw;
+        }
+    }
+
+    /// <summary>Finds a Krita AppImage in common locations on Linux.</summary>
+    private static string FindKritaAppImage()
+    {
+        string[] searchDirs = new[]
+        {
+            Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "Applications"),
+            Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".local", "bin"),
+            "/opt",
+            "/usr/local/bin",
+            "/usr/bin"
         };
-        Process.Start(start);
+        foreach (string dir in searchDirs)
+        {
+            if (Directory.Exists(dir))
+            {
+                string[] files = Directory.GetFiles(dir, "krita*.AppImage");
+                if (files.Length > 0)
+                {
+                    return files[0];
+                }
+            }
+        }
+        return null;
     }
 
     /// <summary>Stores a pending image import for a target session.</summary>

@@ -301,11 +301,12 @@ public abstract class ComfyUIAPIAbstractBackend : AbstractT2IBackend
         }
         int nodesDone = 0;
         float curPercent = 0;
+        bool hasReceivedLiveOutputs = false;
         void yieldProgressUpdate()
         {
             JObject toSend = new()
             {
-                ["batch_index"] = batchId,
+                ["batch_index"] = 0,
                 ["request_id"] = $"{user_input.UserRequestId}",
                 ["overall_percent"] = (nodesDone + curPercent) / (float)expectedNodes,
                 ["current_percent"] = curPercent
@@ -516,13 +517,14 @@ public abstract class ComfyUIAPIAbstractBackend : AbstractT2IBackend
                                     ["comfy_index"] = index
                                 };
                             }
+                            hasReceivedLiveOutputs = true;
                             takeOutput(new T2IEngine.ImageOutput() { File = new Image(output[preBytes..], mediaType), IsReal = isReal, GenTimeMS = firstStep == 0 ? -1 : (Environment.TickCount64 - firstStep) });
                         }
                         else
                         {
                             takeOutput(new JObject()
                             {
-                                ["batch_index"] = index == 0 || !int.TryParse(batchId, out int batchInt) ? batchId : batchInt + index,
+                                ["batch_index"] = index,
                                 ["request_id"] = $"{user_input.UserRequestId}",
                                 ["preview"] = $"data:{mediaType.MimeType};base64,{Convert.ToBase64String(output, preBytes, output.Length - preBytes)}",
                                 ["overall_percent"] = (nodesDone + curPercent) / (float)expectedNodes,
@@ -537,23 +539,28 @@ public abstract class ComfyUIAPIAbstractBackend : AbstractT2IBackend
                 }
             }
         endloop:
-            JObject historyOut = await SendGet<JObject>($"history/{promptId}");
-            if (!historyOut.Properties().IsEmpty())
+            // If we already received outputs via the websocket live stream, don't re-load history
+            // (Comfy can return the same images in history, which would duplicate final outputs).
+            if (!hasReceivedLiveOutputs)
             {
-                foreach (MediaFile file in await GetAllImagesForHistory(historyOut[promptId], user_input, interrupt))
+                JObject historyOut = await SendGet<JObject>($"history/{promptId}");
+                if (!historyOut.Properties().IsEmpty())
                 {
-                    if (Program.ServerSettings.AddDebugData)
+                    foreach (MediaFile file in await GetAllImagesForHistory(historyOut[promptId], user_input, interrupt))
                     {
-                        user_input.ExtraMeta["debug_backend"] = new JObject()
+                        if (Program.ServerSettings.AddDebugData)
                         {
-                            ["backend_type"] = BackendData.BackType.Name,
-                            ["backend_id"] = BackendData.ID,
-                            ["debug_internal_prompt"] = user_input.Get(T2IParamTypes.Prompt),
-                            ["backend_usages"] = BackendData.Usages,
-                            ["comfy_output_history_prompt_id"] = promptId
-                        };
+                            user_input.ExtraMeta["debug_backend"] = new JObject()
+                            {
+                                ["backend_type"] = BackendData.BackType.Name,
+                                ["backend_id"] = BackendData.ID,
+                                ["debug_internal_prompt"] = user_input.Get(T2IParamTypes.Prompt),
+                                ["backend_usages"] = BackendData.Usages,
+                                ["comfy_output_history_prompt_id"] = promptId
+                            };
+                        }
+                        takeOutput(new T2IEngine.ImageOutput() { File = file, IsReal = true, GenTimeMS = firstStep == 0 ? -1 : (Environment.TickCount64 - firstStep) });
                     }
-                    takeOutput(new T2IEngine.ImageOutput() { File = file, IsReal = true, GenTimeMS = firstStep == 0 ? -1 : (Environment.TickCount64 - firstStep) });
                 }
             }
             if (!user_input.Get(T2IParamTypes.NoInternalSpecialHandling, false))

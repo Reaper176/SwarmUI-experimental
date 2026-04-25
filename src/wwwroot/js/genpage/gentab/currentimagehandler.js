@@ -4262,10 +4262,15 @@ function appendImage(container, imageSrc, batchId, textPreview, metadata = '', t
 }
 
 function gotImageResult(image, metadata, batchId) {
+    let batchContainer = getPreferredBatchContainer(batchId);
+    let existing = batchContainer.querySelector(`.image-block[data-batch_id="${batchId}"][data-src="${CSS.escape(image)}"]`);
+    if (existing) {
+        return existing;
+    }
     updateGenCount();
     let src = image;
     let fname = src && src.includes('/') ? src.substring(src.lastIndexOf('/') + 1) : src;
-    let batch_div = appendImage(getPreferredBatchContainer(batchId), src, batchId, fname, metadata, 'batch');
+    let batch_div = appendImage(batchContainer, src, batchId, fname, metadata, 'batch');
     if (batch_div.dataset.request_id) {
         let insertAfter = null;
         for (let c of batch_div.parentElement.children) {

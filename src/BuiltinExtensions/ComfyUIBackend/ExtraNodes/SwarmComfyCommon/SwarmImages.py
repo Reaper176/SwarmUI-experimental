@@ -221,7 +221,11 @@ class SwarmImageCompositeMaskedColorCorrecting:
     def composite(self, destination, source, x, y, mask, correction_method):
         destination = destination.clone().movedim(-1, 1)
         source = source.clone().movedim(-1, 1).to(destination.device)
-        source = comfy.utils.repeat_to_batch_size(source, destination.shape[0])
+
+        # Ensure both destination and source have the same batch size
+        max_batch = max(destination.shape[0], source.shape[0])
+        destination = comfy.utils.repeat_to_batch_size(destination, max_batch)
+        source = comfy.utils.repeat_to_batch_size(source, max_batch)
 
         x = max(-source.shape[3], min(x, destination.shape[3]))
         y = max(-source.shape[2], min(y, destination.shape[2]))
@@ -230,8 +234,13 @@ class SwarmImageCompositeMaskedColorCorrecting:
         right, bottom = (left + source.shape[3], top + source.shape[2],)
 
         mask = mask.to(destination.device, copy=True)
-        mask = torch.nn.functional.interpolate(mask.reshape((-1, 1, mask.shape[-2], mask.shape[-1])), size=(source.shape[2], source.shape[3]), mode="bilinear")
-        mask = comfy.utils.repeat_to_batch_size(mask, source.shape[0])
+        # Ensure mask is 4D (batch, channels, height, width) for interpolation
+        if mask.dim() == 3:
+            mask = mask.unsqueeze(1)  # (batch, height, width) -> (batch, 1, height, width)
+        mask = torch.nn.functional.interpolate(mask, size=(source.shape[2], source.shape[3]), mode="bilinear")
+        # Ensure mask has the correct batch size
+        if mask.shape[0] != max_batch:
+            mask = comfy.utils.repeat_to_batch_size(mask, max_batch)
 
         visible_width, visible_height = (destination.shape[3] - left + min(0, x), destination.shape[2] - top + min(0, y),)
 

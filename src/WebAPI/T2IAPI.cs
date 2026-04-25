@@ -1129,6 +1129,11 @@ public static class T2IAPI
         {
             return KritaImageBridge.Error("No image was provided.");
         }
+        string ip = session.OriginAddress;
+        if (ip != "127.0.0.1" && ip != "::1" && ip != "::ffff:127.0.0.1")
+        {
+            return KritaImageBridge.Error("This feature is only available from local loopback connections.");
+        }
         try
         {
             ImageFile image = ImageFile.FromDataString(imageData).ForceToPng();
@@ -1160,8 +1165,7 @@ public static class T2IAPI
         }
         try
         {
-            byte[] bytes = Convert.FromBase64String(imageBase64);
-            ImageFile image = new Image(bytes, MediaType.ImagePng).ForceToPng();
+            ImageFile image = ImageFile.FromBase64(imageBase64, MediaType.ImagePng);
             KritaImageBridge.StorePendingImport(targetSession, image.AsDataString());
             return new JObject() { ["success"] = true };
         }
