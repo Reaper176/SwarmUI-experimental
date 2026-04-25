@@ -1061,6 +1061,9 @@ function copy_current_image_params() {
         metadata.aspectratio = 'Custom';
     }
     let exclude = getUserSetting('reuseparamexcludelist', '').split(',').map(s => cleanParamName(s));
+    if (getUserSetting('defaultdonotsave', false)) {
+        exclude.push('donotsave');
+    }
     let resetExclude = [...exclude, ...Object.keys(metadata), ...Object.keys(extra).map(e => e.endsWith('_filename') ? e.substring(0, e.length - '_filename'.length) : null).filter(e => e != null)];
     resetParamsToDefault(resetExclude, false);
     for (let param of gen_param_types) {

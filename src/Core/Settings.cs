@@ -567,6 +567,9 @@ public class Settings : AutoConfiguration
         [ConfigComment("If enabled, batch size will be reset to 1 when parameters are loaded.\nThis can prevent accidents that might thrash your GPU or cause compatibility issues, especially for example when importing a comfy workflow.\nYou can still set the batch size at will in the GUI.")]
         public bool ResetBatchSizeToOne = false;
 
+        [ConfigComment("If enabled, the Generate tab's 'Do Not Save' parameter defaults to enabled and is preserved when using Reuse Parameters.")]
+        public bool DefaultDoNotSave = false;
+
         public enum HintFormatOptions
         {
             BUTTON, HOVER, HOVER_DELAY, NONE

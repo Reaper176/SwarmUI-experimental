@@ -231,6 +231,12 @@ function loadSettingsEditor() {
             inputBatchSize.value = 1;
             triggerChangeFor(inputBatchSize);
         }
+        let inputDoNotSave = document.getElementById('input_donotsave');
+        let shouldDefaultDoNotSave = getUserSetting('defaultdonotsave', false);
+        if (inputDoNotSave && shouldDefaultDoNotSave) {
+            inputDoNotSave.checked = true;
+            triggerChangeFor(inputDoNotSave);
+        }
         genInputs(true);
     });
 }
