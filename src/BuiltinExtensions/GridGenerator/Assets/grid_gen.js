@@ -406,7 +406,7 @@ class GridGenClass {
         let images = {};
         let discardable = {};
         makeWSRequestT2I('GridGenRun', inData, data => {
-            mainGenHandler.internalHandleData(data, images, discardable, timeLastGenHit, inData.baseParams, null, null, false);
+            mainGenHandler.internalHandleData(data, images, discardable, timeLastGenHit, inData.baseParams, null, null, false, batch_id);
             if (data.image) {
                 generatedCount++;
                 let timeProgress = Math.round((Date.now() - startTime) / 1000);

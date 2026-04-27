@@ -216,11 +216,11 @@ class GenerateHandler {
     /** Removes duplicate finished cards for a request from the batch strip, keeping the first occurrence of each source. */
     dedupeFinishedBatchCards() {
         let batchContainer = document.getElementById('current_image_batch');
-        if (!batchContainer) {
+        if (!batchContainer || !batchContainer.children) {
             return;
         }
         let seen = new Set();
-        let cards = [...batchContainer.querySelectorAll('.image-block')];
+        let cards = [...batchContainer.children].filter(card => card?.classList?.contains('image-block'));
         for (let card of cards) {
             if (card.dataset.is_generating == 'true') {
                 continue;
@@ -285,77 +285,44 @@ class GenerateHandler {
         }
         if (isPreview) {
             if (data.image) {
+                // Also append a preview card into the batch area so grid/image-preview generators
+                // show thumbnails in the batch even when running in preview mode.
+                try {
+                    let previewBatchId = `${data.request_id}_${data.batch_index}`;
+                    this.gotImagePreview(data.image, data.metadata, previewBatchId);
+                }
+                catch (e) {
+                    // ignore append failures, still try to set the main preview
+                }
                 this.setCurrentImage(data.image, data.metadata, `${data.request_id}_${data.batch_index}`, false, true);
             }
             return;
         }
         if (data.image) {
+            let bidx = String(data.batch_index);
             this.debugTrack('final-image', {
                 request_id: data.request_id,
                 batch_index: data.batch_index,
                 trackedKeysBefore: Object.keys(images),
                 completedKeysBefore: Object.keys(discardable),
-                hadTrackedEntry: !!images[data.batch_index],
+                hadTrackedEntry: !!images[bidx],
                 imageSnippet: `${data.image}`.substring(0, 160)
             });
             let timeNow = Date.now();
             let timeDiff = timeNow - timeLastGenHit[0];
             timeLastGenHit[0] = timeNow;
             this.appendGenTimeFrom(timeDiff / 1000);
-            let imgHolder = images[data.batch_index];
-            let div = imgHolder ? this.getDiv(imgHolder) : null;
-            if (!div) {
-                let batch_div = this.gotImageResult(data.image, data.metadata, `${data.request_id}_${data.batch_index}`);
+            // Always append a finalized card for the completed image instead of replacing an existing preview.
+            try {
+                let finalBatchId = `${data.request_id}_${bidx}`;
+                let batch_div = this.gotImageResult(data.image, data.metadata, finalBatchId);
                 if (batch_div) {
-                    images[data.batch_index] = {div: batch_div, image: data.image, metadata: data.metadata, overall_percent: 0, current_percent: 0};
+                    // Store finalized output in discardable so downstream cleanup can find it by index if needed.
+                    discardable[bidx] = {div: batch_div, image: data.image, metadata: data.metadata, overall_percent: 0, current_percent: 0};
                 }
             }
-            else {
-                this.gotTrackedImageResult(data.image, data.metadata, `${data.request_id}_${data.batch_index}`, div);
-                let imgElem = div.querySelector('img');
-                let spinner = div.querySelector('.loading-spinner-parent');
-                let progress_bars = div.querySelector('.image-preview-progress-wrapper');
-                let isPreviewSwapToCompleted = imgElem.dataset.previewGrow || progress_bars || spinner;
-                this.setImageFor(imgHolder, data.image);
-                if (spinner) {
-                    spinner.remove();
-                }
-                delete imgElem.dataset.previewGrow;
-                div.dataset.metadata = data.metadata;
-                div.dataset.request_id = data.request_id;
-                if (progress_bars) {
-                    progress_bars.remove();
-                }
-                delete div.dataset.is_generating;
-                this.gotProgress(-1, -1, `${data.request_id}_${data.batch_index}`);
-                if (isPreviewSwapToCompleted && div.parentElement) {
-                    if (data.request_id) {
-                        let insertBefore = null;
-                        for (let c of div.parentElement.children) {
-                            if (c.dataset.is_generating == 'true') {
-                                continue;
-                            }
-                            if (c.dataset.request_id == data.request_id) {
-                                insertBefore = c;
-                                break;
-                            }
-                        }
-                        if (insertBefore && insertBefore != div) {
-                            div.parentElement.insertBefore(div, insertBefore);
-                        }
-                    }
-                    else if (div.parentElement.firstElementChild != div) {
-                        div.parentElement.prepend(div);
-                    }
-                }
-            }
-            if (data.batch_index in images) {
-                images[data.batch_index].image = data.image;
-                if (data.metadata) {
-                    images[data.batch_index].metadata = data.metadata;
-                }
-                discardable[data.batch_index] = images[data.batch_index];
-                delete images[data.batch_index];
+            catch (e) {
+                // If creating a finalized card fails, ignore and continue.
             }
         }
         if (data.gen_progress) {
@@ -368,13 +335,14 @@ class GenerateHandler {
                 overall_percent: data.gen_progress.overall_percent,
                 current_percent: data.gen_progress.current_percent
             });
-            let thisBatchId = `${data.gen_progress.request_id}_${data.gen_progress.batch_index}`;
+            let gpidx = String(data.gen_progress.batch_index);
+            let thisBatchId = `${data.gen_progress.request_id}_${gpidx}`;
             let metadataRaw = data.gen_progress.metadata ?? '{}';
-            if (!(data.gen_progress.batch_index in images)) {
+            if (!(gpidx in images)) {
                 let metadataParsed = JSON.parse(metadataRaw);
                 let batch_div = this.gotImagePreview(data.gen_progress.preview ?? `DOPLACEHOLDER:${metadataParsed.sui_image_params?.model || actualInput.model || ''}`, metadataRaw, thisBatchId);
                 if (batch_div) {
-                    images[data.gen_progress.batch_index] = {div: batch_div, image: null, metadata: metadataRaw, overall_percent: 0, current_percent: 0};
+                    images[gpidx] = {div: batch_div, image: null, metadata: metadataRaw, overall_percent: 0, current_percent: 0};
                     let progress_bars = createDiv(null, 'image-preview-progress-wrapper', this.progressBarHtml);
                     batch_div.prepend(progress_bars);
                 }
@@ -382,8 +350,8 @@ class GenerateHandler {
             else if (data.gen_progress.preview) {
                 this.gotTrackedImagePreview(data.gen_progress.preview, metadataRaw, thisBatchId);
             }
-            if (data.gen_progress.batch_index in images) {
-                let imgHolder = images[data.gen_progress.batch_index];
+            if (gpidx in images) {
+                let imgHolder = images[gpidx];
                 let div = this.getDiv(imgHolder);
                 let overall = div ? div.querySelector('.image-preview-progress-overall') : null;
                 if (overall && data.gen_progress.overall_percent) {

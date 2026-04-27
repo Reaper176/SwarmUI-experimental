@@ -3774,6 +3774,19 @@ function normalizeCurrentImageMetadata(metadata) {
     return interpretMetadata(metadata);
 }
 
+/** Gets the actual displayed resolution for the current image element. */
+function getCurrentImageResolutionText(img) {
+    if (!img) {
+        return '';
+    }
+    let width = img.naturalWidth || img.videoWidth || img.clientWidth || 0;
+    let height = img.naturalHeight || img.videoHeight || img.clientHeight || 0;
+    if (!width || !height) {
+        return '';
+    }
+    return `${width}x${height}`;
+}
+
 function setCurrentImage(src, metadata = '', batchId = '', previewGrow = false, smoothAdd = false, canReparse = true, isPlaceholder = false) {
     currentImgSrc = src;
     if (metadata) {
@@ -4134,6 +4147,13 @@ function setCurrentImage(src, metadata = '', batchId = '', previewGrow = false, 
     extrasWrapper.appendChild(buttons);
     let data = createDiv(null, 'current-image-data');
     data.innerHTML = formatMetadata(metadata);
+    let currentResolution = getCurrentImageResolutionText(img);
+    if (currentResolution) {
+        if (data.innerHTML) {
+            data.innerHTML += '<br>';
+        }
+        data.innerHTML += `<span class="param_view_block tag-text tag-type-0"><span class="param_view_name">Current Resolution</span>: <span class="param_view tag-text-soft tag-type-0">${escapeHtml(currentResolution)}</span></span>`;
+    }
     extrasWrapper.appendChild(data);
     if (!isReuse) {
         curImg.appendChild(container);
@@ -4308,12 +4328,39 @@ function gotImageResult(image, metadata, batchId) {
             batch_div.parentElement.insertBefore(batch_div, insertAfter.nextSibling);
         }
     }
-    if (!currentImageHelper.getCurrentImage() || autoLoadImagesElem.checked) {
+    let _curImg_for_auto = currentImageHelper.getCurrentImage();
+    let _curImg_for_auto_empty = !_curImg_for_auto || !_curImg_for_auto.getAttribute('src');
+    if (_curImg_for_auto_empty || autoLoadImagesElem.checked) {
         setCurrentImage(src, metadata, batchId, false, true);
     }
     if ((internalSiteJsGetUserSetting('AutoSwapImagesIncludesFullView', false) || imageFullView.currentBatchId == batchId) && imageFullView.isOpen()) {
         imageFullView.showImage(src, metadata, batchId);
     }
+
+    // Cleanup any lingering preview placeholders for this request to avoid leaving spinners.
+    try {
+        if (requestId) {
+            for (let other of batchContainer.querySelectorAll(`.image-block[data-request_id="${requestId}"]`)) {
+                if (other === batch_div) continue;
+                if (other.dataset.is_generating == 'true') {
+                    let spinner = other.querySelector('.loading-spinner-parent');
+                    if (spinner) spinner.remove();
+                    let progressBars = other.querySelector('.image-preview-progress-wrapper');
+                    if (progressBars) progressBars.remove();
+                    if (other.classList.contains('image-block-placeholder') || !other.dataset.src || other.dataset.src !== src) {
+                        other.remove();
+                    }
+                    else {
+                        delete other.dataset.is_generating;
+                    }
+                }
+            }
+        }
+    }
+    catch (e) {
+        // ignore cleanup errors
+    }
+
     return batch_div;
 }
 
@@ -4329,9 +4376,12 @@ function gotImagePreview(image, metadata, batchId) {
         batch_div.appendChild(spinnerDiv);
         uiImprover.runLoadSpinner(spinnerDiv);
     }
-    if ((!currentImageHelper.getCurrentImage() || autoLoadPreviewsElem.checked) && !image.startsWith('DOPLACEHOLDER:')) {
+    let _curImg_for_preview = currentImageHelper.getCurrentImage();
+    let _curImg_for_preview_empty = !_curImg_for_preview || !_curImg_for_preview.getAttribute('src');
+    if ((_curImg_for_preview_empty || autoLoadPreviewsElem.checked) && !image.startsWith('DOPLACEHOLDER:')) {
         setCurrentImage(src, metadata, batchId, true);
     }
+
     return batch_div;
 }
 

@@ -234,9 +234,14 @@ class SwarmImageCompositeMaskedColorCorrecting:
         right, bottom = (left + source.shape[3], top + source.shape[2],)
 
         mask = mask.to(destination.device, copy=True)
-        # Ensure mask is 4D (batch, channels, height, width) for interpolation
-        if mask.dim() == 3:
+        # Ensure mask is 4D (batch, channels, height, width) for interpolation.
+        # Comfy masks commonly arrive as (H, W) or (B, H, W).
+        if mask.dim() == 2:
+            mask = mask.unsqueeze(0).unsqueeze(0)
+        elif mask.dim() == 3:
             mask = mask.unsqueeze(1)  # (batch, height, width) -> (batch, 1, height, width)
+        elif mask.dim() != 4:
+            raise ValueError(f"Unexpected mask dimensions for SwarmImageCompositeMaskedColorCorrecting: {mask.shape}")
         mask = torch.nn.functional.interpolate(mask, size=(source.shape[2], source.shape[3]), mode="bilinear")
         # Ensure mask has the correct batch size
         if mask.shape[0] != max_batch:

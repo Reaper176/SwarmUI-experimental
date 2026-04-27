@@ -325,7 +325,10 @@ public abstract class ComfyUIAPIAbstractBackend : AbstractT2IBackend
             {
                 Logs.Verbose($"Will use workflow: {JObject.Parse(workflow).ToDenseDebugString()}");
             }
+            Logs.Verbose($"Posting prompt for batch {batchId} requestId={user_input.UserRequestId}");
+            long postPromptTime = Environment.TickCount64;
             JObject promptResult = await HttpClient.PostJSONString($"{APIAddress}/prompt", workflow, interrupt);
+            Logs.Verbose($"Posted prompt (elapsed ms since post call start: {Environment.TickCount64 - postPromptTime}) and received response.");
             if (Logs.MinimumLevel <= Logs.LogLevel.Verbose)
             {
                 Logs.Verbose($"ComfyUI prompt said: {promptResult.ToDenseDebugString()}");
@@ -402,6 +405,11 @@ public abstract class ComfyUIAPIAbstractBackend : AbstractT2IBackend
                         {
                             if (type == "execution_start")
                             {
+                                try
+                                {
+                                    Logs.Verbose($"Received websocket message 'execution_start' for prompt_id={json["data"]["prompt_id"]} (expecting {promptId})");
+                                }
+                                catch { }
                                 if ($"{json["data"]["prompt_id"]}" == promptId)
                                 {
                                     isMe = true;

@@ -729,6 +729,11 @@ function genInputs(delay_final = false) {
             inputBatchSize.value = 1;
             triggerChangeFor(inputBatchSize);
         }
+        let inputDoNotSave = document.getElementById('input_donotsave');
+        if (inputDoNotSave && getUserSetting('defaultdonotsave', false)) {
+            inputDoNotSave.checked = true;
+            triggerChangeFor(inputDoNotSave);
+        }
         let inputInterpolator1 = document.getElementById('input_videoframeinterpolationmethod');
         if (inputInterpolator1) {
             inputInterpolator1.addEventListener('change', () => {
@@ -1030,13 +1035,18 @@ function getGenInput(input_overrides = {}, input_preoverrides = {}) {
         }
         if (type.id == 'prompt') {
             let container = findParentOfClass(elem, 'auto-input');
-            let addedImageArea = container.querySelector('.added-image-area');
-            if (addedImageArea) {
-                addedImageArea.style.display = '';
-                let imgs = [...addedImageArea.querySelectorAll('.alt-prompt-image')].filter(c => c.tagName == "IMG");
-                if (imgs.length > 0) {
-                    input["promptimages"] = imgs.map(img => img.dataset.filedata);
+            try {
+                let addedImageArea = container.querySelector('.added-image-area');
+                if (addedImageArea && addedImageArea.querySelectorAll) {
+                    addedImageArea.style.display = '';
+                    let imgs = [...addedImageArea.querySelectorAll('.alt-prompt-image')].filter(c => c.tagName == "IMG");
+                    if (imgs.length > 0) {
+                        input["promptimages"] = imgs.map(img => img.dataset.filedata);
+                    }
                 }
+            }
+            catch (e) {
+                console.log(`Skipping prompt image area scan: ${e}`);
             }
         }
     }
@@ -1056,10 +1066,15 @@ function getGenInput(input_overrides = {}, input_preoverrides = {}) {
         input['automaticvae'] = true;
         delete input['vae'];
     }
-    let revisionImageArea = getRequiredElementById('alt_prompt_image_area');
-    let revisionImages = [...revisionImageArea.querySelectorAll('.alt-prompt-image')].filter(c => c.tagName == "IMG");
-    if (revisionImages.length > 0) {
-        input["promptimages"] = revisionImages.map(img => img.dataset.filedata);
+    try {
+        let revisionImageArea = getRequiredElementById('alt_prompt_image_area');
+        let revisionImages = revisionImageArea && revisionImageArea.querySelectorAll ? [...revisionImageArea.querySelectorAll('.alt-prompt-image')].filter(c => c.tagName == "IMG") : [];
+        if (revisionImages.length > 0) {
+            input["promptimages"] = revisionImages.map(img => img.dataset.filedata);
+        }
+    }
+    catch (e) {
+        console.log(`Skipping revision image area scan: ${e}`);
     }
     if (window.imageEditor && imageEditor.active) {
         extraMetadata["used_image_editor"] = "true";
@@ -1216,14 +1231,20 @@ function setDirectParamValue(param, value, paramElem = null, forceDropdowns = fa
         return;
     }
     else if (paramElem.tagName == "SELECT") {
-        if (![...paramElem.querySelectorAll('option')].map(o => o.value).includes(value)) {
-            if (!forceDropdowns) {
-                paramElem.dataset.wantsValue = value;
-                return;
+        try {
+            if (![...paramElem.querySelectorAll('option')].map(o => o.value).includes(value)) {
+                if (!forceDropdowns) {
+                    paramElem.dataset.wantsValue = value;
+                    return;
+                }
+                paramElem.add(new Option(`${value} (Invalid)`, value, false, false));
             }
-            paramElem.add(new Option(`${value} (Invalid)`, value, false, false));
+            paramElem.value = value;
         }
-        paramElem.value = value;
+        catch (e) {
+            console.log(`Skipping select option scan: ${e}`);
+            paramElem.value = value;
+        }
     }
     else if (param.type == "integer" || param.type == "decimal") {
         paramElem.value = value;

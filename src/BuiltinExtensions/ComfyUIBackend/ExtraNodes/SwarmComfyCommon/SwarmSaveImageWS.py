@@ -41,18 +41,27 @@ class SwarmSaveImageWS:
         pbar = comfy.utils.ProgressBar(SPECIAL_ID)
         step = 0
         for image in images:
+            # Ensure numpy array is HWC (height, width, channels). Comfy tensors may be CHW or HWC.
+            arr = image.cpu().numpy()
+            # If tensor has channel-first shape like (C, H, W), move channels to last axis.
+            if arr.ndim == 3 and arr.shape[0] in (1, 3, 4) and (arr.shape[2] not in (1, 3, 4)):
+                arr = np.moveaxis(arr, 0, -1)
+            # If single-channel with shape (H, W), leave as-is; Pillow will handle it.
+            # Convert float [0,1] to desired integer range below.
             if bit_depth == "raw":
-                i = 255.0 * image.cpu().numpy()
+                i = 255.0 * arr
                 img = Image.fromarray(np.clip(i, 0, 255).astype(np.uint8))
                 def do_save(out):
                     img.save(out, format='BMP')
                 send_image_to_server_raw(1, do_save, SPECIAL_ID, event_type=10)
             elif bit_depth == "16bit":
-                i = 65535.0 * image.cpu().numpy()
+                arr16 = arr
+                # convert floats to 16-bit range
+                i = 65535.0 * arr16
                 img = self.convert_img_16bit(np.clip(i, 0, 65535).astype(np.uint16))
                 send_image_to_server_raw(2, lambda out: out.write(img), SPECIAL_ID)
             else:
-                i = 255.0 * image.cpu().numpy()
+                i = 255.0 * arr
                 img = Image.fromarray(np.clip(i, 0, 255).astype(np.uint8))
                 def do_save(out):
                     img.save(out, format='PNG')
@@ -106,7 +115,10 @@ class SwarmSaveAnimatedWebpWS:
         method = self.methods.get(method)
         pil_images = []
         for image in images:
-            i = 255. * image.cpu().numpy()
+            arr = image.cpu().numpy()
+            if arr.ndim == 3 and arr.shape[0] in (1, 3, 4) and (arr.shape[2] not in (1, 3, 4)):
+                arr = np.moveaxis(arr, 0, -1)
+            i = 255. * arr
             img = Image.fromarray(np.clip(i, 0, 255).astype(np.uint8))
             pil_images.append(img)
 

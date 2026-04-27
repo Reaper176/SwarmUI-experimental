@@ -16,6 +16,8 @@
 
 Set `KritaBridge.KritaExecutablePath` in server settings if Krita is not on the default OS path. Environment-variable and home-directory markers such as `%ProgramFiles%`, `$HOME`, or `~` are supported.
 
+On Linux, if Krita is not found in the default path, SwarmUI will automatically search for a Krita AppImage in common locations (e.g., `~/Applications`, `~/.local/bin`, `/opt`, etc.).
+
 ## Krita plugin install
 
 Copy the contents of `tools/krita_plugin/` into Krita's Python plugin directory, then enable `Swarm Krita Bridge` in Krita's plugin manager.

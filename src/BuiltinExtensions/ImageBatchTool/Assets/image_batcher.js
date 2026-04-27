@@ -18,7 +18,7 @@ class ImageBatcherClass {
         let images = {};
         let discardable = {};
         makeWSRequestT2I('ImageBatchRun', inData, data => {
-            mainGenHandler.internalHandleData(data, images, discardable, timeLastGenHit, inData.baseParams, null, null, false);
+            mainGenHandler.internalHandleData(data, images, discardable, timeLastGenHit, inData.baseParams, null, null, false, batch_id);
         });
     }
 
