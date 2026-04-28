@@ -9,7 +9,16 @@
             <button class="basic-button translate" onclick="promptLab.deletePrompt()">Delete</button>
         </div>
         <input class="auto-text prompt-lab-search" id="prompt_lab_search" placeholder="Search prompts" oninput="promptLab.renderPromptList()" />
+        <div class="prompt-lab-section-title translate">Saved Prompts</div>
         <div id="prompt_lab_prompt_list" class="prompt-lab-list"></div>
+        <div class="prompt-lab-section-title translate">Wildcard Sets</div>
+        <div class="prompt-lab-toolbar">
+            <button class="basic-button translate" onclick="promptLab.newWildcardSet()">New</button>
+            <button class="basic-button translate" onclick="promptLab.saveWildcardSet()">Save</button>
+            <button class="basic-button translate" onclick="promptLab.deleteWildcardSet()">Delete</button>
+        </div>
+        <input class="auto-text prompt-lab-search" id="prompt_lab_wildcard_search" placeholder="Search wildcards" oninput="promptLab.renderWildcardList()" />
+        <div id="prompt_lab_wildcard_list" class="prompt-lab-list"></div>
     </div>
     <div class="prompt-lab-column prompt-lab-editor">
         <input class="auto-text prompt-lab-title" id="prompt_lab_name" placeholder="Prompt name" />
@@ -17,11 +26,26 @@
         <textarea class="auto-text prompt-lab-textarea" id="prompt_lab_negative" placeholder="Negative prompt" oninput="promptLab.refreshPreview()"></textarea>
         <input class="auto-text" id="prompt_lab_tags" placeholder="Tags, comma-separated" />
         <textarea class="auto-text prompt-lab-notes" id="prompt_lab_notes" placeholder="Notes"></textarea>
+        <div class="prompt-lab-section-title translate">Wildcard Set Editor</div>
+        <input class="auto-text prompt-lab-title" id="prompt_lab_wildcard_name" placeholder="Wildcard name" />
+        <textarea class="auto-text prompt-lab-wildcard-values" id="prompt_lab_wildcard_values" placeholder="Wildcard values, one per line"></textarea>
+        <input class="auto-text" id="prompt_lab_wildcard_tags" placeholder="Wildcard tags, comma-separated" />
+        <button class="basic-button translate" onclick="promptLab.insertSelectedWildcard()">Insert Token</button>
     </div>
     <div class="prompt-lab-column prompt-lab-preview">
         <div class="prompt-lab-toolbar">
             <button class="basic-button translate" onclick="promptLab.sendToGenerate()">Send to Generate</button>
             <button class="basic-button translate" onclick="promptLab.previewWildcards()">Preview Wildcards</button>
+        </div>
+        <div class="prompt-lab-wildcard-controls">
+            <select class="auto-dropdown" id="prompt_lab_wildcard_mode">
+                <option value="all">All Combinations</option>
+                <option value="random_single">Random Single</option>
+                <option value="random_batch">Random Batch</option>
+                <option value="sample">Sample N</option>
+            </select>
+            <input class="auto-text prompt-lab-small-input" id="prompt_lab_sample_count" type="number" min="1" value="25" />
+            <input class="auto-text prompt-lab-small-input" id="prompt_lab_max_combinations" type="number" min="1" value="1000" />
         </div>
         <div class="prompt-lab-section-title translate">Detected Wildcards</div>
         <div id="prompt_lab_wildcards" class="prompt-lab-output"></div>
