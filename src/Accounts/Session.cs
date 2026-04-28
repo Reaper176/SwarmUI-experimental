@@ -1,6 +1,7 @@
 using FreneticUtilities.FreneticExtensions;
 using FreneticUtilities.FreneticToolkit;
 using LiteDB;
+using Newtonsoft.Json.Linq;
 using SwarmUI.Core;
 using SwarmUI.Media;
 using SwarmUI.Text2Image;
@@ -170,7 +171,20 @@ public class Session : IEquatable<Session>
                 user_input.Set(T2IParamTypes.Seed, user_input.Get(T2IParamTypes.Seed) + numImagesGenned);
             }
         }
-        string metadata = user_input.GenRawMetadata();
+        JObject metadataObj = user_input.GenFullMetadataObject();
+        if (file is ImageFile metadataImage)
+        {
+            (int finalWidth, int finalHeight) = metadataImage.GetResolution();
+            JObject extraData = metadataObj["sui_extra_data"] as JObject;
+            if (extraData is null)
+            {
+                extraData = new JObject();
+                metadataObj["sui_extra_data"] = extraData;
+            }
+            extraData["final_width"] = finalWidth;
+            extraData["final_height"] = finalHeight;
+        }
+        string metadata = T2IParamInput.MetadataToString(metadataObj);
         Task<MediaFile> resultImg = Task.FromResult(file);
         if (file is ImageFile img && (!maySkipConversion || !user_input.Get(T2IParamTypes.DoNotSave, false) || user_input.SourceSession.User.Settings.FileFormat.ReformatTransientImages))
         {

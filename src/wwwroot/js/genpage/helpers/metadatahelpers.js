@@ -232,7 +232,7 @@ function parseMetadata(data, callback) {
 let metadataKeyFormatCleaners = [];
 let promptCidMatcher = new RegExp('\<(.*?)//cid=\\d+>', 'g');
 
-function formatMetadata(metadata) {
+function formatMetadata(metadata, finalResolution = null) {
     if (!metadata) {
         return '';
     }
@@ -337,8 +337,10 @@ function formatMetadata(metadata) {
         delete data.sui_image_params['lorasectionconfinement'];
         data.sui_image_params['loras'] = simpleLoras;
     }
+    let generationResolution = null;
     if ('width' in data.sui_image_params && 'height' in data.sui_image_params) {
         let res = `${data.sui_image_params.width}x${data.sui_image_params.height}`;
+        generationResolution = res;
         if ('aspectratio' in data.sui_image_params && 'sidelength' in data.sui_image_params) {
             res += ` (${data.sui_image_params.aspectratio} @ ${data.sui_image_params.sidelength})`;
         }
@@ -351,7 +353,15 @@ function formatMetadata(metadata) {
         delete data.sui_image_params.sidelength;
         data.sui_image_params['Resolution'] = res;
     }
-    let explicitTopKeys = ['prompt', 'negativeprompt', 'model', 'images', 'Resolution'];
+    if ('sui_extra_data' in data && 'final_width' in data.sui_extra_data && 'final_height' in data.sui_extra_data) {
+        finalResolution = `${data.sui_extra_data.final_width}x${data.sui_extra_data.final_height}`;
+        delete data.sui_extra_data.final_width;
+        delete data.sui_extra_data.final_height;
+    }
+    if (finalResolution && finalResolution != generationResolution) {
+        data.sui_image_params['Final Resolution'] = finalResolution;
+    }
+    let explicitTopKeys = ['prompt', 'negativeprompt', 'model', 'images', 'Resolution', 'Final Resolution'];
     let paramMap = {};
     for (let key of explicitTopKeys) {
         if (key in data.sui_image_params) {

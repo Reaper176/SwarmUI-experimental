@@ -150,6 +150,15 @@ function getUserSetting(id, def = 'require') {
     }
 }
 
+function applyDefaultDoNotSaveSetting() {
+    let inputDoNotSave = document.getElementById('input_donotsave');
+    let shouldDefaultDoNotSave = getUserSetting('defaultdonotsave', false);
+    if (inputDoNotSave && shouldDefaultDoNotSave) {
+        inputDoNotSave.checked = true;
+        triggerChangeFor(inputDoNotSave);
+    }
+}
+
 function aggressivelySetTheme(them_id) {
     let themeSelectorElement = getRequiredElementById('usersettings_theme');
     themeSelectorElement.value = them_id;
@@ -231,13 +240,8 @@ function loadSettingsEditor() {
             inputBatchSize.value = 1;
             triggerChangeFor(inputBatchSize);
         }
-        let inputDoNotSave = document.getElementById('input_donotsave');
-        let shouldDefaultDoNotSave = getUserSetting('defaultdonotsave', false);
-        if (inputDoNotSave && shouldDefaultDoNotSave) {
-            inputDoNotSave.checked = true;
-            triggerChangeFor(inputDoNotSave);
-        }
         genInputs(true);
+        applyDefaultDoNotSaveSetting();
     });
 }
 

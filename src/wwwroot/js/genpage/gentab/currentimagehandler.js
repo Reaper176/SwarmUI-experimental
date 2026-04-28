@@ -1107,6 +1107,7 @@ function copy_current_image_params() {
             }
         }
     }
+    applyDefaultDoNotSaveSetting();
     hideUnsupportableParams();
 }
 
@@ -3879,6 +3880,14 @@ function setCurrentImage(src, metadata = '', batchId = '', previewGrow = false, 
             return [img.naturalWidth, img.naturalHeight];
         }
     }
+    let data = null;
+    function currentImageFinalResolution() {
+        if (mediaType != 'image') {
+            return null;
+        }
+        let [width, height] = naturalDim();
+        return width > 0 && height > 0 ? `${width}x${height}` : null;
+    }
     img.onload = () => {
         let [width, height] = naturalDim();
         if (previewGrow || internalSiteJsGetUserSetting('centerimagealwaysgrow', false)) {
@@ -3887,6 +3896,9 @@ function setCurrentImage(src, metadata = '', batchId = '', previewGrow = false, 
             img.dataset.previewGrow = 'true';
         }
         alignImageDataFormat();
+        if (data) {
+            data.innerHTML = formatMetadata(metadata, currentImageFinalResolution());
+        }
     };
     if (mediaType == 'video' || mediaType == 'audio') {
         img.addEventListener('loadeddata', function() {
@@ -4146,8 +4158,8 @@ function setCurrentImage(src, metadata = '', batchId = '', previewGrow = false, 
         new AdvancedPopover('image_more_popover', subButtons, false, rect.x, rect.y + button.offsetHeight + 6, document.body, null);
     });
     extrasWrapper.appendChild(buttons);
-    let data = createDiv(null, 'current-image-data');
-    data.innerHTML = formatMetadata(metadata);
+    data = createDiv(null, 'current-image-data');
+    data.innerHTML = formatMetadata(metadata, currentImageFinalResolution());
     extrasWrapper.appendChild(data);
     if (!isReuse) {
         curImg.appendChild(container);
