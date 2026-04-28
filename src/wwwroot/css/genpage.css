@@ -1324,6 +1324,12 @@ mark.model-search-highlight {
 .image-history-compare-body {
     height: calc(100vh - 3.25rem);
     padding: 0.4rem;
+    display: grid;
+    grid-template-rows: minmax(0, 1fr);
+    gap: 0.4rem;
+}
+.image-history-compare-metadata-active .image-history-compare-body {
+    grid-template-rows: minmax(0, 1fr) minmax(8rem, 28vh);
 }
 .image-history-compare-viewport {
     height: 100%;
@@ -1368,6 +1374,39 @@ mark.model-search-highlight {
 }
 .image-history-compare-diff-active .image-history-compare-diff-canvas {
     display: block;
+}
+.image-history-compare-metadata-panel {
+    display: none;
+    overflow: auto;
+    border: 1px solid var(--border-color);
+    background: var(--background);
+}
+.image-history-compare-metadata-active .image-history-compare-metadata-panel {
+    display: block;
+}
+.image-history-compare-metadata-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 90%;
+}
+.image-history-compare-metadata-table th,
+.image-history-compare-metadata-table td {
+    border-bottom: 1px solid var(--border-color);
+    padding: 0.25rem 0.4rem;
+    vertical-align: top;
+}
+.image-history-compare-metadata-table th {
+    position: sticky;
+    top: 0;
+    background: var(--background);
+    z-index: 1;
+}
+.image-history-compare-metadata-different td:first-child {
+    color: color-mix(in srgb, var(--text) 55%, var(--red));
+    font-weight: bold;
+}
+.image-history-compare-metadata-same {
+    opacity: 0.7;
 }
 .image-history-compare-divider {
     position: absolute;

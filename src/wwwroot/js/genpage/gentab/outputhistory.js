@@ -1,5 +1,6 @@
 let imageHistorySelected = new Set();
 let imageHistoryBulkActionRunning = false;
+let imageHistoryCompareFiles = null;
 let imageHistoryShowHidden = localStorage.getItem('image_history_show_hidden') == 'true';
 let imageHistoryRefreshQueued = false;
 let imageHistoryHasLoadedOnce = false;
@@ -532,6 +533,7 @@ function ensureImageHistoryCompareModal() {
             <label for="image_history_compare_zoom">Zoom</label>
             <input id="image_history_compare_zoom" class="image-history-compare-zoom" type="range" min="25" max="200" value="100">
             <label for="image_history_compare_diff"><input id="image_history_compare_diff" type="checkbox" autocomplete="off"> Diff</label>
+            <label for="image_history_compare_metadata"><input id="image_history_compare_metadata" type="checkbox" autocomplete="off"> Metadata</label>
             <button type="button" class="basic-button translate" id="image_history_compare_fit">Fit</button>
             <button type="button" class="basic-button translate" id="image_history_compare_close">Close</button>
         </div>
@@ -544,6 +546,7 @@ function ensureImageHistoryCompareModal() {
                     <div id="image_history_compare_divider" class="image-history-compare-divider"></div>
                 </div>
             </div>
+            <div id="image_history_compare_metadata_panel" class="image-history-compare-metadata-panel"></div>
         </div>`;
     document.body.appendChild(modal);
     getRequiredElementById('image_history_compare_close').onclick = () => {
@@ -558,10 +561,73 @@ function ensureImageHistoryCompareModal() {
     getRequiredElementById('image_history_compare_diff').addEventListener('change', e => {
         setImageHistoryCompareDiffMode(e.target.checked);
     });
+    getRequiredElementById('image_history_compare_metadata').addEventListener('change', e => {
+        setImageHistoryCompareMetadataMode(e.target.checked);
+    });
     let stage = modal.querySelector('.image-history-compare-stage');
     stage.addEventListener('pointermove', updateImageHistoryCompareRevealFromPointer);
     stage.addEventListener('pointerdown', updateImageHistoryCompareRevealFromPointer);
     return modal;
+}
+
+/**
+ * Returns focused generation metadata fields for comparison.
+ */
+function getImageHistoryCompareMetadataFields(file) {
+    let metadata = parseHistoryMetadata(file?.data?.metadata);
+    let params = metadata.sui_image_params || {};
+    let extra = metadata.sui_extra_data || {};
+    let resolution = params.width && params.height ? `${params.width}x${params.height}` : '';
+    let finalResolution = extra.final_width && extra.final_height ? `${extra.final_width}x${extra.final_height}` : '';
+    return {
+        Prompt: params.prompt || extra.original_prompt || '',
+        Negative: params.negativeprompt || extra.original_negativeprompt || '',
+        Model: params.model || '',
+        LoRAs: imageHistoryValueToSearchText(params.loras),
+        VAE: params.vae || '',
+        Sampler: params.sampler || '',
+        Scheduler: params.scheduler || '',
+        Seed: params.seed || '',
+        CFG: params.cfgscale || params.cfg || '',
+        Steps: params.steps || '',
+        Resolution: resolution,
+        'Final Resolution': finalResolution,
+        'Prompt Lab': extra.prompt_lab_id || extra.prompt_lab_prompt_id || '',
+        Wildcards: extra.prompt_lab_wildcard_values || ''
+    };
+}
+
+/**
+ * Enables or disables metadata compare mode.
+ */
+function setImageHistoryCompareMetadataMode(enabled) {
+    let modal = getRequiredElementById('image_history_compare_modal');
+    modal.classList.toggle('image-history-compare-metadata-active', !!enabled);
+    if (enabled) {
+        renderImageHistoryCompareMetadata();
+    }
+}
+
+/**
+ * Renders metadata differences for the two compared images.
+ */
+function renderImageHistoryCompareMetadata() {
+    let panel = getRequiredElementById('image_history_compare_metadata_panel');
+    if (!imageHistoryCompareFiles) {
+        panel.innerHTML = '';
+        return;
+    }
+    let firstFields = getImageHistoryCompareMetadataFields(imageHistoryCompareFiles.first);
+    let secondFields = getImageHistoryCompareMetadataFields(imageHistoryCompareFiles.second);
+    let html = '<table class="image-history-compare-metadata-table"><thead><tr><th>Field</th><th>A</th><th>B</th></tr></thead><tbody>';
+    for (let key of Object.keys(firstFields)) {
+        let firstValue = imageHistoryValueToSearchText(firstFields[key]);
+        let secondValue = imageHistoryValueToSearchText(secondFields[key]);
+        let className = firstValue == secondValue ? 'image-history-compare-metadata-same' : 'image-history-compare-metadata-different';
+        html += `<tr class="${className}"><td>${escapeHtml(key)}</td><td>${escapeHtml(firstValue)}</td><td>${escapeHtml(secondValue)}</td></tr>`;
+    }
+    html += '</tbody></table>';
+    panel.innerHTML = html;
 }
 
 /**
@@ -725,8 +791,11 @@ function showImageHistoryCompare(paths) {
     getRequiredElementById('image_history_compare_title').innerText = `${first.data.name || first.name} / ${second.data.name || second.name}`;
     getRequiredElementById('image_history_compare_img_a').src = first.data.src;
     getRequiredElementById('image_history_compare_img_b').src = second.data.src;
+    imageHistoryCompareFiles = { first, second };
     getRequiredElementById('image_history_compare_diff').checked = false;
+    getRequiredElementById('image_history_compare_metadata').checked = false;
     setImageHistoryCompareDiffMode(false);
+    setImageHistoryCompareMetadataMode(false);
     setImageHistoryCompareZoom(100);
     setImageHistoryCompareReveal(50);
     openImageHistoryCompareModal();
