@@ -360,14 +360,19 @@ class PromptLab {
     }
 
     /** Requests wildcard expansion preview from the backend. */
-    previewWildcards() {
-        let request = {
+    getWildcardExpansionRequest(modeOverride = null) {
+        return {
             positive: getRequiredElementById('prompt_lab_positive').value,
             negative: getRequiredElementById('prompt_lab_negative').value,
-            mode: getRequiredElementById('prompt_lab_wildcard_mode').value,
+            mode: modeOverride || getRequiredElementById('prompt_lab_wildcard_mode').value,
             sample_count: parseInt(getRequiredElementById('prompt_lab_sample_count').value) || 25,
             max_combinations: parseInt(getRequiredElementById('prompt_lab_max_combinations').value) || 1000
         };
+    }
+
+    /** Requests wildcard expansion preview from the backend. */
+    previewWildcards() {
+        let request = this.getWildcardExpansionRequest();
         genericRequest('PromptLabExpandWildcards', request, data => {
             let wildcardBox = getRequiredElementById('prompt_lab_wildcards');
             let previewBox = getRequiredElementById('prompt_lab_preview');
@@ -381,6 +386,41 @@ class PromptLab {
             let diagnostics = this.getPromptDiagnostics();
             let warnings = diagnostics.warnings.concat(data.warnings || []);
             warningBox.innerHTML = this.renderWarnings(warnings);
+        });
+    }
+
+    /** Generates all currently expanded wildcard combinations with normal Generate settings. */
+    generateWildcardCombinations() {
+        let request = this.getWildcardExpansionRequest('all');
+        genericRequest('PromptLabExpandWildcards', request, data => {
+            if (!data.prompts || data.prompts.length == 0) {
+                showError('No wildcard combinations to generate.');
+                return;
+            }
+            if (data.returned_combinations < data.total_possible_combinations) {
+                showError(`Wildcard combinations exceed the max limit. Increase max combinations to generate all ${data.total_possible_combinations}.`);
+                return;
+            }
+            if (data.total_possible_combinations > 1000 && !confirm(`This will create ${data.total_possible_combinations} generation jobs. Continue?`)) {
+                return;
+            }
+            for (let prompt of data.prompts) {
+                this.generateExpandedPrompt(prompt);
+            }
+            openGenPageTab('text2imagetabbutton');
+        });
+    }
+
+    /** Queues one expanded prompt for generation. */
+    generateExpandedPrompt(prompt) {
+        let overrides = {
+            prompt: prompt.positive,
+            negativeprompt: prompt.negative
+        };
+        mainGenHandler.doGenerate(overrides, {}, actualInput => {
+            actualInput.extra_metadata = actualInput.extra_metadata || {};
+            actualInput.extra_metadata.prompt_lab_id = this.currentPromptId || '';
+            actualInput.extra_metadata.prompt_lab_wildcard_values = JSON.stringify(prompt.wildcard_values || {});
         });
     }
 
