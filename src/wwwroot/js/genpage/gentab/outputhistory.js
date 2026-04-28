@@ -570,24 +570,36 @@ function ensureImageHistoryCompareModal() {
 function closeImageHistoryCompareModal() {
     let modal = getRequiredElementById('image_history_compare_modal');
     if (window.bootstrap?.Modal) {
+        modal.addEventListener('hidden.bs.modal', () => {
+            cleanupImageHistoryCompareModal();
+            showGenerateTabAfterImageHistoryCompareClose();
+        }, { once: true });
         bootstrap.Modal.getOrCreateInstance(modal).hide();
     }
     else if (window.jQuery) {
         $('#image_history_compare_modal').modal('hide');
+        cleanupImageHistoryCompareModal();
+        showGenerateTabAfterImageHistoryCompareClose();
     }
     else {
         modal.classList.remove('show');
         modal.style.display = 'none';
-    }
-    setTimeout(() => {
-        modal.classList.remove('show');
-        modal.style.display = 'none';
-        document.body.classList.remove('modal-open');
-        for (let backdrop of document.querySelectorAll('.modal-backdrop')) {
-            backdrop.remove();
-        }
+        cleanupImageHistoryCompareModal();
         showGenerateTabAfterImageHistoryCompareClose();
-    }, 120);
+    }
+}
+
+/**
+ * Clears any leftover compare modal state.
+ */
+function cleanupImageHistoryCompareModal() {
+    let modal = getRequiredElementById('image_history_compare_modal');
+    modal.classList.remove('show');
+    modal.style.display = '';
+    document.body.classList.remove('modal-open');
+    for (let backdrop of document.querySelectorAll('.modal-backdrop')) {
+        backdrop.remove();
+    }
 }
 
 /**
@@ -609,7 +621,9 @@ function showGenerateTabAfterImageHistoryCompareClose() {
  */
 function openImageHistoryCompareModal() {
     let modal = getRequiredElementById('image_history_compare_modal');
+    cleanupImageHistoryCompareModal();
     if (window.bootstrap?.Modal) {
+        bootstrap.Modal.getInstance(modal)?.dispose();
         bootstrap.Modal.getOrCreateInstance(modal).show();
     }
     else if (window.jQuery) {
