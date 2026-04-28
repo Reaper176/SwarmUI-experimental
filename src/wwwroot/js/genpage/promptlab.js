@@ -623,6 +623,32 @@ class PromptLab {
         });
     }
 
+    /** Exports all expanded wildcard combinations. */
+    exportWildcardCombinations(format) {
+        let request = this.getWildcardExpansionRequest('all');
+        genericRequest('PromptLabExpandWildcards', request, data => {
+            if (!data.prompts || data.prompts.length == 0) {
+                showError('No wildcard combinations to export.');
+                return;
+            }
+            if (data.returned_combinations < data.total_possible_combinations) {
+                showError(`Wildcard combinations exceed the max limit. Increase max combinations to export all ${data.total_possible_combinations}.`);
+                return;
+            }
+            let stamp = new Date().toISOString().replaceAll(':', '-').replaceAll('.', '-');
+            if (format == 'json') {
+                downloadPlainText(`prompt-lab-combinations-${stamp}.json`, JSON.stringify(data.prompts, null, 2));
+                return;
+            }
+            let text = '';
+            for (let i = 0; i < data.prompts.length; i++) {
+                let prompt = data.prompts[i];
+                text += `# ${i + 1}\nPositive: ${prompt.positive}\nNegative: ${prompt.negative || ''}\n\n`;
+            }
+            downloadPlainText(`prompt-lab-combinations-${stamp}.txt`, text);
+        });
+    }
+
     /** Runs the next queued wildcard generation after the normal generation socket is usable. */
     runNextWildcardGeneration() {
         if (this.pendingWildcardGenerations.length == 0) {
