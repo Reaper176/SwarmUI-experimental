@@ -1,5 +1,6 @@
 let imageHistorySelected = new Set();
 let imageHistoryBulkActionRunning = false;
+let imageHistoryCompareScrollSyncing = false;
 let imageHistoryShowHidden = localStorage.getItem('image_history_show_hidden') == 'true';
 let imageHistoryRefreshQueued = false;
 let imageHistoryHasLoadedOnce = false;
@@ -509,6 +510,109 @@ function updateImageHistoryFilterHint() {
 }
 
 /**
+ * Gets a loaded history file by relative path.
+ */
+function getImageHistoryFile(path) {
+    return imageHistoryBrowser?.lastFilesMap?.get(path) || null;
+}
+
+/**
+ * Ensures the image history compare modal exists.
+ */
+function ensureImageHistoryCompareModal() {
+    let modal = document.getElementById('image_history_compare_modal');
+    if (modal) {
+        return modal;
+    }
+    modal = createDiv('image_history_compare_modal', 'modal modal-fullscreen image-history-compare-modal');
+    modal.tabIndex = -1;
+    modal.setAttribute('role', 'dialog');
+    modal.innerHTML = `
+        <div class="image-history-compare-toolbar">
+            <span id="image_history_compare_title" class="image-history-compare-title"></span>
+            <label for="image_history_compare_zoom">Zoom</label>
+            <input id="image_history_compare_zoom" class="image-history-compare-zoom" type="range" min="25" max="200" value="100">
+            <button type="button" class="basic-button translate" id="image_history_compare_fit">Fit</button>
+            <button type="button" class="basic-button translate" id="image_history_compare_close">Close</button>
+        </div>
+        <div class="image-history-compare-body">
+            <div class="image-history-compare-pane">
+                <div id="image_history_compare_name_a" class="image-history-compare-name"></div>
+                <div id="image_history_compare_scroll_a" class="image-history-compare-scroll"><img id="image_history_compare_img_a" class="image-history-compare-img"></div>
+            </div>
+            <div class="image-history-compare-pane">
+                <div id="image_history_compare_name_b" class="image-history-compare-name"></div>
+                <div id="image_history_compare_scroll_b" class="image-history-compare-scroll"><img id="image_history_compare_img_b" class="image-history-compare-img"></div>
+            </div>
+        </div>`;
+    document.body.appendChild(modal);
+    getRequiredElementById('image_history_compare_close').onclick = () => {
+        $('#image_history_compare_modal').modal('hide');
+    };
+    getRequiredElementById('image_history_compare_fit').onclick = () => {
+        setImageHistoryCompareZoom(100);
+    };
+    getRequiredElementById('image_history_compare_zoom').addEventListener('input', e => {
+        setImageHistoryCompareZoom(e.target.value);
+    });
+    let scrollA = getRequiredElementById('image_history_compare_scroll_a');
+    let scrollB = getRequiredElementById('image_history_compare_scroll_b');
+    scrollA.addEventListener('scroll', () => syncImageHistoryCompareScroll(scrollA, scrollB));
+    scrollB.addEventListener('scroll', () => syncImageHistoryCompareScroll(scrollB, scrollA));
+    return modal;
+}
+
+/**
+ * Synchronizes side-by-side compare panel scrolling.
+ */
+function syncImageHistoryCompareScroll(source, target) {
+    if (imageHistoryCompareScrollSyncing) {
+        return;
+    }
+    imageHistoryCompareScrollSyncing = true;
+    target.scrollLeft = source.scrollLeft;
+    target.scrollTop = source.scrollTop;
+    imageHistoryCompareScrollSyncing = false;
+}
+
+/**
+ * Sets both compare images to the same zoom.
+ */
+function setImageHistoryCompareZoom(value) {
+    let zoom = Math.max(25, Math.min(200, parseInt(value) || 100));
+    getRequiredElementById('image_history_compare_zoom').value = zoom;
+    for (let id of ['image_history_compare_img_a', 'image_history_compare_img_b']) {
+        let img = getRequiredElementById(id);
+        img.style.width = `${zoom}%`;
+        img.style.maxWidth = zoom == 100 ? '100%' : 'none';
+    }
+}
+
+/**
+ * Opens the side-by-side compare viewer for two selected history images.
+ */
+function showImageHistoryCompare(paths) {
+    if (paths.length != 2) {
+        showError('Select exactly two images to compare.');
+        return;
+    }
+    let first = getImageHistoryFile(paths[0]);
+    let second = getImageHistoryFile(paths[1]);
+    if (!first || !second) {
+        showError('Selected images are not loaded in history.');
+        return;
+    }
+    ensureImageHistoryCompareModal();
+    getRequiredElementById('image_history_compare_title').innerText = 'Compare Images';
+    getRequiredElementById('image_history_compare_name_a').innerText = first.data.name || first.name;
+    getRequiredElementById('image_history_compare_name_b').innerText = second.data.name || second.name;
+    getRequiredElementById('image_history_compare_img_a').src = first.data.src;
+    getRequiredElementById('image_history_compare_img_b').src = second.data.src;
+    setImageHistoryCompareZoom(100);
+    $('#image_history_compare_modal').modal('show');
+}
+
+/**
  * Interpret history metadata when possible, but never let a bad blob abort the list render.
  */
 function safeInterpretHistoryMetadata(metadata, fullsrc = '') {
@@ -620,8 +724,9 @@ function updateImageHistoryBulkControls() {
     }
     let canHide = permissions.hasPermission('view_image_history');
     let canDelete = permissions.hasPermission('user_delete_image');
-    controls.style.display = canDelete || canHide ? '' : 'none';
-    if (!canDelete && !canHide) {
+    let canCompare = true;
+    controls.style.display = canDelete || canHide || canCompare ? '' : 'none';
+    if (!canDelete && !canHide && !canCompare) {
         return;
     }
     let count = imageHistorySelected.size;
@@ -634,6 +739,7 @@ function updateImageHistoryBulkControls() {
     let hideButton = document.getElementById('image_history_hide_selected');
     let unhideButton = document.getElementById('image_history_unhide_selected');
     let deleteButton = document.getElementById('image_history_delete_selected');
+    let compareButton = document.getElementById('image_history_compare_selected');
     let anyEntries = getImageHistoryEntries().length > 0;
     if (selectAllButton) {
         selectAllButton.disabled = !anyEntries || imageHistoryBulkActionRunning;
@@ -652,6 +758,9 @@ function updateImageHistoryBulkControls() {
     if (deleteButton) {
         deleteButton.style.display = canDelete ? '' : 'none';
         deleteButton.disabled = count == 0 || imageHistoryBulkActionRunning;
+    }
+    if (compareButton) {
+        compareButton.disabled = count != 2 || imageHistoryBulkActionRunning;
     }
 }
 
@@ -710,6 +819,10 @@ function deleteSelectedImageHistory() {
     deleteSelectedHistoryImages();
 }
 
+function compareSelectedImageHistory() {
+    showImageHistoryCompare([...imageHistorySelected]);
+}
+
 function ensureImageHistoryBulkControlsReady() {
     let controls = document.getElementById('image_history_bulk_controls');
     if (!controls || controls.dataset.ready) {
@@ -736,6 +849,10 @@ function ensureImageHistoryBulkControlsReady() {
     getRequiredElementById('image_history_delete_selected').onclick = (e) => {
         e.preventDefault();
         deleteSelectedImageHistory();
+    };
+    getRequiredElementById('image_history_compare_selected').onclick = (e) => {
+        e.preventDefault();
+        compareSelectedImageHistory();
     };
     updateImageHistoryBulkControls();
 }
@@ -1208,7 +1325,7 @@ function selectOutputInHistory(image, div) {
 }
 
 let imageHistoryBrowser = new GenPageBrowserClass('image_history', listOutputHistoryFolderAndFiles, 'imagehistorybrowser', 'Thumbnails', describeOutputFile, selectOutputInHistory,
-    `<label for="image_history_sort_by">Sort:</label> <select id="image_history_sort_by"><option>Name</option><option>Date</option></select> <input type="checkbox" id="image_history_sort_reverse"> <label for="image_history_sort_reverse">Reverse</label> &emsp; <input type="checkbox" id="image_history_allow_anims" checked autocomplete="off"> <label for="image_history_allow_anims">Allow Animation</label> &emsp; <input type="checkbox" id="image_history_show_hidden" autocomplete="off"> <label for="image_history_show_hidden">Show Hidden</label> <span id="image_history_bulk_controls" class="image-history-bulk-controls"><span id="image_history_selected_count" class="image-history-selected-count">0 selected</span> <button type="button" id="image_history_select_all" class="refresh-button" onclick="selectAllImageHistory()">Select All</button> <button type="button" id="image_history_clear_selection" class="refresh-button" onclick="clearSelectedImageHistory()">Clear</button> <button type="button" id="image_history_hide_selected" class="refresh-button" onclick="hideSelectedImageHistory()">Hide Selected</button> <button type="button" id="image_history_unhide_selected" class="refresh-button" onclick="unhideSelectedImageHistory()">Unhide Selected</button> <button type="button" id="image_history_delete_selected" class="interrupt-button" onclick="deleteSelectedImageHistory()">Delete Selected</button></span> <span id="image_history_request_status" class="image-history-request-status" data-state="idle"><span id="image_history_request_status_text" class="image-history-request-status-text"></span> <button type="button" id="image_history_retry_button" class="refresh-button" style="display:none;">Retry</button></span>`);
+    `<label for="image_history_sort_by">Sort:</label> <select id="image_history_sort_by"><option>Name</option><option>Date</option></select> <input type="checkbox" id="image_history_sort_reverse"> <label for="image_history_sort_reverse">Reverse</label> &emsp; <input type="checkbox" id="image_history_allow_anims" checked autocomplete="off"> <label for="image_history_allow_anims">Allow Animation</label> &emsp; <input type="checkbox" id="image_history_show_hidden" autocomplete="off"> <label for="image_history_show_hidden">Show Hidden</label> <span id="image_history_bulk_controls" class="image-history-bulk-controls"><span id="image_history_selected_count" class="image-history-selected-count">0 selected</span> <button type="button" id="image_history_select_all" class="refresh-button" onclick="selectAllImageHistory()">Select All</button> <button type="button" id="image_history_clear_selection" class="refresh-button" onclick="clearSelectedImageHistory()">Clear</button> <button type="button" id="image_history_compare_selected" class="refresh-button" onclick="compareSelectedImageHistory()">Compare</button> <button type="button" id="image_history_hide_selected" class="refresh-button" onclick="hideSelectedImageHistory()">Hide Selected</button> <button type="button" id="image_history_unhide_selected" class="refresh-button" onclick="unhideSelectedImageHistory()">Unhide Selected</button> <button type="button" id="image_history_delete_selected" class="interrupt-button" onclick="deleteSelectedImageHistory()">Delete Selected</button></span> <span id="image_history_request_status" class="image-history-request-status" data-state="idle"><span id="image_history_request_status_text" class="image-history-request-status-text"></span> <button type="button" id="image_history_retry_button" class="refresh-button" style="display:none;">Retry</button></span>`);
 imageHistoryBrowser.filterMatcher = imageHistoryFilterMatches;
 imageHistoryBrowser.folderSelectedEvent = () => {
     clearImageHistorySelection();
