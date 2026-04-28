@@ -1,7 +1,7 @@
 class PromptLab {
     /** Builds the Prompt Lab helper. */
     constructor() {
-        this.data = { prompts: [], fragments: [], wildcards: [] };
+        this.data = { prompts: [], fragments: [], wildcards: [], history: [] };
         this.currentPromptId = null;
         this.currentParentId = null;
         this.currentFragmentId = null;
@@ -26,6 +26,7 @@ class PromptLab {
             this.renderPromptList();
             this.renderFragmentList();
             this.renderWildcardList();
+            this.renderHistoryList();
             this.renderCompareSelect();
             this.refreshPreview();
         });
@@ -446,6 +447,58 @@ class PromptLab {
         list.innerHTML = html || '<div class="prompt-lab-empty translate">No saved wildcards.</div>';
     }
 
+    /** Saves a recent Prompt Lab action. */
+    addHistory(kind, positive, negative) {
+        let item = {
+            name: kind,
+            positive: positive,
+            negative: negative,
+            source_prompt_id: this.currentPromptId || '',
+            created_at: Date.now()
+        };
+        genericRequest('PromptLabSave', { collection: 'history', item: item }, data => {
+            this.data.history.unshift(data.item);
+            if (this.data.history.length > 25) {
+                this.data.history = this.data.history.slice(0, 25);
+            }
+            this.renderHistoryList();
+        });
+    }
+
+    /** Renders recent Prompt Lab history. */
+    renderHistoryList() {
+        let list = document.getElementById('prompt_lab_history_list');
+        if (!list) {
+            return;
+        }
+        let history = (this.data.history || []).slice().sort((a, b) => (b.created_at || 0) - (a.created_at || 0)).slice(0, 25);
+        let html = '';
+        for (let item of history) {
+            let title = item.name || 'Recent Prompt';
+            let preview = (item.positive || '').substring(0, 60);
+            html += `<button class="prompt-lab-list-item" onclick="promptLab.loadHistoryPrompt('${escapeHtmlNoBr(escapeJsString(item.id))}')">${escapeHtml(title)} <span class="prompt-lab-history-preview">${escapeHtml(preview)}</span></button>`;
+        }
+        list.innerHTML = html || '<div class="prompt-lab-empty translate">No recent prompts.</div>';
+    }
+
+    /** Loads a history prompt into the editor. */
+    loadHistoryPrompt(id) {
+        let item = (this.data.history || []).find(h => h.id == id);
+        if (!item) {
+            return;
+        }
+        this.currentPromptId = null;
+        this.currentParentId = item.source_prompt_id || null;
+        getRequiredElementById('prompt_lab_name').value = item.name || 'Recent Prompt';
+        getRequiredElementById('prompt_lab_positive').value = item.positive || '';
+        getRequiredElementById('prompt_lab_negative').value = item.negative || '';
+        getRequiredElementById('prompt_lab_tags').value = '';
+        getRequiredElementById('prompt_lab_notes').value = '';
+        this.renderPromptList();
+        this.renderCompareSelect();
+        this.refreshPreview();
+    }
+
     /** Inserts the selected wildcard token into the positive prompt. */
     insertSelectedWildcard() {
         let name = getRequiredElementById('prompt_lab_wildcard_name').value.trim();
@@ -684,6 +737,7 @@ class PromptLab {
             if (data.total_possible_combinations > 1000 && !confirm(`This will create ${data.total_possible_combinations} generation jobs. Continue?`)) {
                 return;
             }
+            this.addHistory('Generated Combinations', getRequiredElementById('prompt_lab_positive').value, getRequiredElementById('prompt_lab_negative').value);
             this.pendingWildcardGenerations = data.prompts.slice();
             this.runNextWildcardGeneration();
             openGenPageTab('text2imagetabbutton');
@@ -764,6 +818,7 @@ class PromptLab {
         if (negativeParam) {
             setDirectParamValue(negativeParam, getRequiredElementById('prompt_lab_negative').value);
         }
+        this.addHistory('Sent to Generate', getRequiredElementById('prompt_lab_positive').value, getRequiredElementById('prompt_lab_negative').value);
         openGenPageTab('text2imagetabbutton');
     }
 }

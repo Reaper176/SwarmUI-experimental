@@ -18,7 +18,8 @@ public static class PromptLabStore
     {
         ["prompts"] = "prompts.json",
         ["fragments"] = "fragments.json",
-        ["wildcards"] = "wildcards.json"
+        ["wildcards"] = "wildcards.json",
+        ["history"] = "history.json"
     };
 
     /// <summary>Gets the Prompt Lab root folder for a user.</summary>
