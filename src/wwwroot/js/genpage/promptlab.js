@@ -4,6 +4,7 @@ class PromptLab {
         this.data = { prompts: [], fragments: [], wildcards: [] };
         this.currentPromptId = null;
         this.currentParentId = null;
+        this.currentFragmentId = null;
         this.currentWildcardId = null;
         this.hasLoaded = false;
         this.pendingWildcardGenerations = [];
@@ -23,6 +24,7 @@ class PromptLab {
             this.data = data.data || this.data;
             this.hasLoaded = true;
             this.renderPromptList();
+            this.renderFragmentList();
             this.renderWildcardList();
             this.renderCompareSelect();
             this.refreshPreview();
@@ -167,6 +169,123 @@ class PromptLab {
             html += `<option value="${escapeHtmlNoBr(escapeJsString(prompt.id))}"${selected}>${escapeHtml(prompt.name || 'Untitled Prompt')}</option>`;
         }
         select.innerHTML = html;
+    }
+
+    /** Starts a blank fragment. */
+    newFragment() {
+        this.currentFragmentId = null;
+        getRequiredElementById('prompt_lab_fragment_name').value = '';
+        getRequiredElementById('prompt_lab_fragment_text').value = '';
+        getRequiredElementById('prompt_lab_fragment_category').value = '';
+        getRequiredElementById('prompt_lab_fragment_tags').value = '';
+        this.renderFragmentList();
+    }
+
+    /** Returns the fragment editor contents as a Prompt Lab fragment object. */
+    currentFragmentObject() {
+        let tags = getRequiredElementById('prompt_lab_fragment_tags').value.split(',').map(t => t.trim()).filter(t => t);
+        let item = {
+            id: this.currentFragmentId,
+            name: getRequiredElementById('prompt_lab_fragment_name').value.trim() || 'Untitled Fragment',
+            text: getRequiredElementById('prompt_lab_fragment_text').value,
+            category: getRequiredElementById('prompt_lab_fragment_category').value.trim(),
+            tags: tags,
+            favorite: false
+        };
+        return item;
+    }
+
+    /** Saves the current fragment. */
+    saveFragment() {
+        let item = this.currentFragmentObject();
+        if (!item.text.trim()) {
+            return;
+        }
+        genericRequest('PromptLabSave', { collection: 'fragments', item: item }, data => {
+            let saved = data.item;
+            this.currentFragmentId = saved.id;
+            let existing = this.data.fragments.findIndex(f => f.id == saved.id);
+            if (existing == -1) {
+                this.data.fragments.push(saved);
+            }
+            else {
+                this.data.fragments[existing] = saved;
+            }
+            this.renderFragmentList();
+        });
+    }
+
+    /** Loads a fragment into the editor. */
+    loadFragment(id) {
+        let fragment = this.data.fragments.find(f => f.id == id);
+        if (!fragment) {
+            return;
+        }
+        this.currentFragmentId = fragment.id;
+        getRequiredElementById('prompt_lab_fragment_name').value = fragment.name || '';
+        getRequiredElementById('prompt_lab_fragment_text').value = fragment.text || '';
+        getRequiredElementById('prompt_lab_fragment_category').value = fragment.category || '';
+        getRequiredElementById('prompt_lab_fragment_tags').value = (fragment.tags || []).join(', ');
+        this.renderFragmentList();
+    }
+
+    /** Deletes the selected fragment. */
+    deleteFragment() {
+        if (!this.currentFragmentId) {
+            return;
+        }
+        let deleting = this.currentFragmentId;
+        genericRequest('PromptLabDelete', { collection: 'fragments', id: deleting }, data => {
+            this.data.fragments = this.data.fragments.filter(f => f.id != deleting);
+            this.newFragment();
+            this.renderFragmentList();
+        });
+    }
+
+    /** Renders the saved fragment list. */
+    renderFragmentList() {
+        let list = document.getElementById('prompt_lab_fragment_list');
+        if (!list) {
+            return;
+        }
+        let search = (document.getElementById('prompt_lab_fragment_search')?.value || '').toLowerCase();
+        let html = '';
+        for (let fragment of this.data.fragments) {
+            let text = `${fragment.name || ''} ${fragment.category || ''} ${(fragment.tags || []).join(' ')}`.toLowerCase();
+            if (search && !text.includes(search)) {
+                continue;
+            }
+            let selected = fragment.id == this.currentFragmentId ? ' prompt-lab-list-item-selected' : '';
+            let category = fragment.category ? ` <span class="prompt-lab-count">${escapeHtml(fragment.category)}</span>` : '';
+            html += `<button class="prompt-lab-list-item${selected}" onclick="promptLab.loadFragment('${escapeHtmlNoBr(escapeJsString(fragment.id))}')">${escapeHtml(fragment.name || 'Untitled Fragment')}${category}</button>`;
+        }
+        list.innerHTML = html || '<div class="prompt-lab-empty translate">No saved fragments.</div>';
+    }
+
+    /** Inserts the selected fragment into the positive prompt. */
+    insertSelectedFragment() {
+        let text = getRequiredElementById('prompt_lab_fragment_text').value.trim();
+        if (!text) {
+            return;
+        }
+        this.insertTextIntoPositivePrompt(text);
+    }
+
+    /** Inserts text into the positive prompt at cursor position. */
+    insertTextIntoPositivePrompt(insertText) {
+        let box = getRequiredElementById('prompt_lab_positive');
+        let range = getTextSelRange(box);
+        let text = getTextContent(box);
+        let prefix = text.substring(0, range[0]).trimEnd();
+        let suffix = text.substring(range[1]).trimStart();
+        let separatorBefore = prefix ? ', ' : '';
+        let separatorAfter = suffix ? ', ' : '';
+        let result = `${prefix}${separatorBefore}${insertText}${separatorAfter}${suffix}`;
+        setTextContent(box, result);
+        let cursor = prefix.length + separatorBefore.length + insertText.length;
+        setTextSelRange(box, cursor, cursor);
+        box.focus();
+        this.refreshPreview();
     }
 
     /** Starts a blank wildcard set. */

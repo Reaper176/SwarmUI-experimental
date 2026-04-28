@@ -12,6 +12,14 @@
         <input class="auto-text prompt-lab-search" id="prompt_lab_search" placeholder="Search prompts" oninput="promptLab.renderPromptList()" />
         <div class="prompt-lab-section-title translate">Saved Prompts</div>
         <div id="prompt_lab_prompt_list" class="prompt-lab-list"></div>
+        <div class="prompt-lab-section-title translate">Fragments</div>
+        <div class="prompt-lab-toolbar">
+            <button class="basic-button translate" onclick="promptLab.newFragment()">New</button>
+            <button class="basic-button translate" onclick="promptLab.saveFragment()">Save</button>
+            <button class="basic-button translate" onclick="promptLab.deleteFragment()">Delete</button>
+        </div>
+        <input class="auto-text prompt-lab-search" id="prompt_lab_fragment_search" placeholder="Search fragments" oninput="promptLab.renderFragmentList()" />
+        <div id="prompt_lab_fragment_list" class="prompt-lab-list"></div>
         <div class="prompt-lab-section-title translate">Wildcard Sets</div>
         <div class="prompt-lab-toolbar">
             <button class="basic-button translate" onclick="promptLab.newWildcardSet()">New</button>
@@ -32,6 +40,12 @@
         <textarea class="auto-text prompt-lab-wildcard-values" id="prompt_lab_wildcard_values" placeholder="Wildcard values, one per line"></textarea>
         <input class="auto-text" id="prompt_lab_wildcard_tags" placeholder="Wildcard tags, comma-separated" />
         <button class="basic-button translate" onclick="promptLab.insertSelectedWildcard()">Insert Token</button>
+        <div class="prompt-lab-section-title translate">Fragment Editor</div>
+        <input class="auto-text prompt-lab-title" id="prompt_lab_fragment_name" placeholder="Fragment name" />
+        <textarea class="auto-text prompt-lab-fragment-text" id="prompt_lab_fragment_text" placeholder="Fragment text"></textarea>
+        <input class="auto-text" id="prompt_lab_fragment_category" placeholder="Fragment category" />
+        <input class="auto-text" id="prompt_lab_fragment_tags" placeholder="Fragment tags, comma-separated" />
+        <button class="basic-button translate" onclick="promptLab.insertSelectedFragment()">Insert Fragment</button>
     </div>
     <div class="prompt-lab-column prompt-lab-preview">
         <div class="prompt-lab-toolbar">

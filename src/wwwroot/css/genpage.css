@@ -209,6 +209,13 @@ body {
     resize: vertical;
 }
 
+.prompt-lab-fragment-text {
+    width: 100%;
+    min-height: 6rem;
+    margin-bottom: 0.5rem;
+    resize: vertical;
+}
+
 .prompt-lab-list {
     display: flex;
     flex-direction: column;
