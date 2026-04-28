@@ -248,6 +248,12 @@ body {
     white-space: nowrap;
 }
 
+.prompt-lab-favorite-marker {
+    color: var(--emphasis);
+    font-size: 0.8rem;
+    text-transform: uppercase;
+}
+
 .prompt-lab-section-title {
     font-weight: bold;
     margin: 0.5rem 0 0.25rem;

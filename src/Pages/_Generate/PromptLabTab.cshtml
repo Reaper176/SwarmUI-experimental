@@ -8,6 +8,7 @@
             <button class="basic-button translate" onclick="promptLab.savePromptVariant()">Save Variant</button>
             <button class="basic-button translate" onclick="promptLab.duplicatePrompt()">Duplicate</button>
             <button class="basic-button translate" onclick="promptLab.deletePrompt()">Delete</button>
+            <button class="basic-button translate" onclick="promptLab.togglePromptFavorite()">Favorite</button>
             <button class="basic-button translate" onclick="promptLab.exportLibrary()">Export Library</button>
             <button class="basic-button translate" onclick="promptLab.openImportPicker()">Import</button>
             <input id="prompt_lab_import_file" type="file" accept="application/json,.json" class="prompt-lab-hidden-file" onchange="promptLab.importLibraryFile(this)" />
@@ -20,6 +21,7 @@
             <button class="basic-button translate" onclick="promptLab.newFragment()">New</button>
             <button class="basic-button translate" onclick="promptLab.saveFragment()">Save</button>
             <button class="basic-button translate" onclick="promptLab.deleteFragment()">Delete</button>
+            <button class="basic-button translate" onclick="promptLab.toggleFragmentFavorite()">Favorite</button>
         </div>
         <input class="auto-text prompt-lab-search" id="prompt_lab_fragment_search" placeholder="Search fragments" oninput="promptLab.renderFragmentList()" />
         <div id="prompt_lab_fragment_list" class="prompt-lab-list"></div>
@@ -28,6 +30,7 @@
             <button class="basic-button translate" onclick="promptLab.newWildcardSet()">New</button>
             <button class="basic-button translate" onclick="promptLab.saveWildcardSet()">Save</button>
             <button class="basic-button translate" onclick="promptLab.deleteWildcardSet()">Delete</button>
+            <button class="basic-button translate" onclick="promptLab.toggleWildcardFavorite()">Favorite</button>
         </div>
         <input class="auto-text prompt-lab-search" id="prompt_lab_wildcard_search" placeholder="Search wildcards" oninput="promptLab.renderWildcardList()" />
         <div id="prompt_lab_wildcard_list" class="prompt-lab-list"></div>

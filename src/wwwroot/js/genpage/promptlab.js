@@ -48,6 +48,7 @@ class PromptLab {
     /** Returns the editor contents as a Prompt Lab prompt object. */
     currentPromptObject() {
         let tags = getRequiredElementById('prompt_lab_tags').value.split(',').map(t => t.trim()).filter(t => t);
+        let existing = this.data.prompts.find(p => p.id == this.currentPromptId);
         let item = {
             id: this.currentPromptId,
             name: getRequiredElementById('prompt_lab_name').value || 'Untitled Prompt',
@@ -56,7 +57,7 @@ class PromptLab {
             tags: tags,
             notes: getRequiredElementById('prompt_lab_notes').value,
             parent_id: this.currentParentId,
-            favorite: false
+            favorite: existing?.favorite || false
         };
         return item;
     }
@@ -134,6 +135,31 @@ class PromptLab {
         });
     }
 
+    /** Toggles favorite for the current prompt. */
+    togglePromptFavorite() {
+        this.toggleFavorite('prompts', this.currentPromptId, () => this.renderPromptList());
+    }
+
+    /** Toggles favorite for an item in a Prompt Lab collection. */
+    toggleFavorite(collection, id, callback) {
+        if (!id) {
+            return;
+        }
+        let item = this.data[collection].find(i => i.id == id);
+        if (!item) {
+            return;
+        }
+        item.favorite = !item.favorite;
+        genericRequest('PromptLabSave', { collection: collection, item: item }, data => {
+            let saved = data.item;
+            let existing = this.data[collection].findIndex(i => i.id == saved.id);
+            if (existing != -1) {
+                this.data[collection][existing] = saved;
+            }
+            callback();
+        });
+    }
+
     /** Renders the saved prompt list. */
     renderPromptList() {
         let list = document.getElementById('prompt_lab_prompt_list');
@@ -142,16 +168,23 @@ class PromptLab {
         }
         let search = (document.getElementById('prompt_lab_search')?.value || '').toLowerCase();
         let html = '';
-        for (let prompt of this.data.prompts) {
+        let prompts = this.sortedWithFavorites(this.data.prompts);
+        for (let prompt of prompts) {
             let text = `${prompt.name || ''} ${(prompt.tags || []).join(' ')}`.toLowerCase();
             if (search && !text.includes(search)) {
                 continue;
             }
             let selected = prompt.id == this.currentPromptId ? ' prompt-lab-list-item-selected' : '';
+            let favorite = prompt.favorite ? '<span class="prompt-lab-favorite-marker">Favorite</span> ' : '';
             let variant = prompt.parent_id ? ' <span class="prompt-lab-count">variant</span>' : '';
-            html += `<button class="prompt-lab-list-item${selected}" onclick="promptLab.loadPrompt('${escapeHtmlNoBr(escapeJsString(prompt.id))}')">${escapeHtml(prompt.name || 'Untitled Prompt')}${variant}</button>`;
+            html += `<button class="prompt-lab-list-item${selected}" onclick="promptLab.loadPrompt('${escapeHtmlNoBr(escapeJsString(prompt.id))}')">${favorite}${escapeHtml(prompt.name || 'Untitled Prompt')}${variant}</button>`;
         }
         list.innerHTML = html || '<div class="prompt-lab-empty translate">No saved prompts.</div>';
+    }
+
+    /** Sorts Prompt Lab items with favorites first. */
+    sortedWithFavorites(items) {
+        return (items || []).slice().sort((a, b) => Number(b.favorite || false) - Number(a.favorite || false) || (a.name || '').localeCompare(b.name || ''));
     }
 
     /** Renders the prompt compare selector. */
@@ -252,13 +285,14 @@ class PromptLab {
     /** Returns the fragment editor contents as a Prompt Lab fragment object. */
     currentFragmentObject() {
         let tags = getRequiredElementById('prompt_lab_fragment_tags').value.split(',').map(t => t.trim()).filter(t => t);
+        let existing = this.data.fragments.find(f => f.id == this.currentFragmentId);
         let item = {
             id: this.currentFragmentId,
             name: getRequiredElementById('prompt_lab_fragment_name').value.trim() || 'Untitled Fragment',
             text: getRequiredElementById('prompt_lab_fragment_text').value,
             category: getRequiredElementById('prompt_lab_fragment_category').value.trim(),
             tags: tags,
-            favorite: false
+            favorite: existing?.favorite || false
         };
         return item;
     }
@@ -310,6 +344,11 @@ class PromptLab {
         });
     }
 
+    /** Toggles favorite for the current fragment. */
+    toggleFragmentFavorite() {
+        this.toggleFavorite('fragments', this.currentFragmentId, () => this.renderFragmentList());
+    }
+
     /** Renders the saved fragment list. */
     renderFragmentList() {
         let list = document.getElementById('prompt_lab_fragment_list');
@@ -318,14 +357,16 @@ class PromptLab {
         }
         let search = (document.getElementById('prompt_lab_fragment_search')?.value || '').toLowerCase();
         let html = '';
-        for (let fragment of this.data.fragments) {
+        let fragments = this.sortedWithFavorites(this.data.fragments);
+        for (let fragment of fragments) {
             let text = `${fragment.name || ''} ${fragment.category || ''} ${(fragment.tags || []).join(' ')}`.toLowerCase();
             if (search && !text.includes(search)) {
                 continue;
             }
             let selected = fragment.id == this.currentFragmentId ? ' prompt-lab-list-item-selected' : '';
+            let favorite = fragment.favorite ? '<span class="prompt-lab-favorite-marker">Favorite</span> ' : '';
             let category = fragment.category ? ` <span class="prompt-lab-count">${escapeHtml(fragment.category)}</span>` : '';
-            html += `<button class="prompt-lab-list-item${selected}" onclick="promptLab.loadFragment('${escapeHtmlNoBr(escapeJsString(fragment.id))}')">${escapeHtml(fragment.name || 'Untitled Fragment')}${category}</button>`;
+            html += `<button class="prompt-lab-list-item${selected}" onclick="promptLab.loadFragment('${escapeHtmlNoBr(escapeJsString(fragment.id))}')">${favorite}${escapeHtml(fragment.name || 'Untitled Fragment')}${category}</button>`;
         }
         list.innerHTML = html || '<div class="prompt-lab-empty translate">No saved fragments.</div>';
     }
@@ -370,11 +411,13 @@ class PromptLab {
     currentWildcardObject() {
         let tags = getRequiredElementById('prompt_lab_wildcard_tags').value.split(',').map(t => t.trim()).filter(t => t);
         let values = getRequiredElementById('prompt_lab_wildcard_values').value.split('\n').map(t => t.trim()).filter(t => t);
+        let existing = this.data.wildcards.find(w => w.id == this.currentWildcardId);
         let item = {
             id: this.currentWildcardId,
             name: getRequiredElementById('prompt_lab_wildcard_name').value.trim(),
             values: values,
-            tags: tags
+            tags: tags,
+            favorite: existing?.favorite || false
         };
         return item;
     }
@@ -427,6 +470,11 @@ class PromptLab {
         });
     }
 
+    /** Toggles favorite for the current wildcard set. */
+    toggleWildcardFavorite() {
+        this.toggleFavorite('wildcards', this.currentWildcardId, () => this.renderWildcardList());
+    }
+
     /** Renders the saved wildcard set list. */
     renderWildcardList() {
         let list = document.getElementById('prompt_lab_wildcard_list');
@@ -435,14 +483,16 @@ class PromptLab {
         }
         let search = (document.getElementById('prompt_lab_wildcard_search')?.value || '').toLowerCase();
         let html = '';
-        for (let wildcard of this.data.wildcards) {
+        let wildcards = this.sortedWithFavorites(this.data.wildcards);
+        for (let wildcard of wildcards) {
             let text = `${wildcard.name || ''} ${(wildcard.tags || []).join(' ')}`.toLowerCase();
             if (search && !text.includes(search)) {
                 continue;
             }
             let selected = wildcard.id == this.currentWildcardId ? ' prompt-lab-list-item-selected' : '';
+            let favorite = wildcard.favorite ? '<span class="prompt-lab-favorite-marker">Favorite</span> ' : '';
             let count = (wildcard.values || []).length;
-            html += `<button class="prompt-lab-list-item${selected}" onclick="promptLab.loadWildcardSet('${escapeHtmlNoBr(escapeJsString(wildcard.id))}')">${escapeHtml(wildcard.name || 'Untitled Wildcard')} <span class="prompt-lab-count">${count}</span></button>`;
+            html += `<button class="prompt-lab-list-item${selected}" onclick="promptLab.loadWildcardSet('${escapeHtmlNoBr(escapeJsString(wildcard.id))}')">${favorite}${escapeHtml(wildcard.name || 'Untitled Wildcard')} <span class="prompt-lab-count">${count}</span></button>`;
         }
         list.innerHTML = html || '<div class="prompt-lab-empty translate">No saved wildcards.</div>';
     }
