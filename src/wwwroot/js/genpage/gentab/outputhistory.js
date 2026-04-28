@@ -531,8 +531,7 @@ function ensureImageHistoryCompareModal() {
             <span id="image_history_compare_title" class="image-history-compare-title"></span>
             <label for="image_history_compare_zoom">Zoom</label>
             <input id="image_history_compare_zoom" class="image-history-compare-zoom" type="range" min="25" max="200" value="100">
-            <label for="image_history_compare_reveal">Reveal</label>
-            <input id="image_history_compare_reveal" class="image-history-compare-reveal" type="range" min="0" max="100" value="50">
+            <label for="image_history_compare_diff"><input id="image_history_compare_diff" type="checkbox" autocomplete="off"> Diff</label>
             <button type="button" class="basic-button translate" id="image_history_compare_fit">Fit</button>
             <button type="button" class="basic-button translate" id="image_history_compare_close">Close</button>
         </div>
@@ -541,13 +540,14 @@ function ensureImageHistoryCompareModal() {
                 <div class="image-history-compare-stage">
                     <img id="image_history_compare_img_a" class="image-history-compare-img image-history-compare-img-base">
                     <img id="image_history_compare_img_b" class="image-history-compare-img image-history-compare-img-top">
+                    <canvas id="image_history_compare_diff_canvas" class="image-history-compare-diff-canvas"></canvas>
                     <div id="image_history_compare_divider" class="image-history-compare-divider"></div>
                 </div>
             </div>
         </div>`;
     document.body.appendChild(modal);
     getRequiredElementById('image_history_compare_close').onclick = () => {
-        $('#image_history_compare_modal').modal('hide');
+        closeImageHistoryCompareModal();
     };
     getRequiredElementById('image_history_compare_fit').onclick = () => {
         setImageHistoryCompareZoom(100);
@@ -555,20 +555,121 @@ function ensureImageHistoryCompareModal() {
     getRequiredElementById('image_history_compare_zoom').addEventListener('input', e => {
         setImageHistoryCompareZoom(e.target.value);
     });
-    getRequiredElementById('image_history_compare_reveal').addEventListener('input', e => {
-        setImageHistoryCompareReveal(e.target.value);
+    getRequiredElementById('image_history_compare_diff').addEventListener('change', e => {
+        setImageHistoryCompareDiffMode(e.target.checked);
     });
+    let stage = modal.querySelector('.image-history-compare-stage');
+    stage.addEventListener('pointermove', updateImageHistoryCompareRevealFromPointer);
+    stage.addEventListener('pointerdown', updateImageHistoryCompareRevealFromPointer);
     return modal;
+}
+
+/**
+ * Closes the image history compare modal.
+ */
+function closeImageHistoryCompareModal() {
+    let modal = getRequiredElementById('image_history_compare_modal');
+    if (window.bootstrap?.Modal) {
+        bootstrap.Modal.getOrCreateInstance(modal).hide();
+    }
+    else if (window.jQuery) {
+        $('#image_history_compare_modal').modal('hide');
+    }
+    else {
+        modal.classList.remove('show');
+        modal.style.display = 'none';
+    }
+}
+
+/**
+ * Shows the image history compare modal.
+ */
+function openImageHistoryCompareModal() {
+    let modal = getRequiredElementById('image_history_compare_modal');
+    if (window.bootstrap?.Modal) {
+        bootstrap.Modal.getOrCreateInstance(modal).show();
+    }
+    else if (window.jQuery) {
+        $('#image_history_compare_modal').modal('show');
+    }
+    else {
+        modal.classList.add('show');
+        modal.style.display = 'block';
+    }
+}
+
+/**
+ * Updates reveal from mouse or pointer position over the image.
+ */
+function updateImageHistoryCompareRevealFromPointer(e) {
+    let base = getRequiredElementById('image_history_compare_img_a');
+    let rect = base.getBoundingClientRect();
+    if (rect.width <= 0) {
+        return;
+    }
+    let reveal = ((e.clientX - rect.left) / rect.width) * 100;
+    setImageHistoryCompareReveal(reveal);
 }
 
 /**
  * Sets the overlay reveal split.
  */
 function setImageHistoryCompareReveal(value) {
-    let reveal = Math.max(0, Math.min(100, parseInt(value) || 0));
-    getRequiredElementById('image_history_compare_reveal').value = reveal;
+    let reveal = Math.max(0, Math.min(100, parseFloat(value) || 0));
     getRequiredElementById('image_history_compare_img_b').style.clipPath = `inset(0 ${100 - reveal}% 0 0)`;
     getRequiredElementById('image_history_compare_divider').style.left = `${reveal}%`;
+}
+
+/**
+ * Enables or disables highlighted pixel diff mode.
+ */
+function setImageHistoryCompareDiffMode(enabled) {
+    let modal = getRequiredElementById('image_history_compare_modal');
+    modal.classList.toggle('image-history-compare-diff-active', !!enabled);
+    if (enabled) {
+        renderImageHistoryCompareDiff();
+    }
+}
+
+/**
+ * Renders a red-pink diff overlay from image A to image B.
+ */
+function renderImageHistoryCompareDiff() {
+    let imgA = getRequiredElementById('image_history_compare_img_a');
+    let imgB = getRequiredElementById('image_history_compare_img_b');
+    if (!imgA.complete || !imgB.complete || imgA.naturalWidth == 0 || imgB.naturalWidth == 0) {
+        setTimeout(renderImageHistoryCompareDiff, 80);
+        return;
+    }
+    let width = imgA.naturalWidth;
+    let height = imgA.naturalHeight;
+    let canvasA = document.createElement('canvas');
+    let canvasB = document.createElement('canvas');
+    let diffCanvas = getRequiredElementById('image_history_compare_diff_canvas');
+    canvasA.width = width;
+    canvasA.height = height;
+    canvasB.width = width;
+    canvasB.height = height;
+    diffCanvas.width = width;
+    diffCanvas.height = height;
+    let ctxA = canvasA.getContext('2d');
+    let ctxB = canvasB.getContext('2d');
+    let diffCtx = diffCanvas.getContext('2d');
+    ctxA.drawImage(imgA, 0, 0, width, height);
+    ctxB.drawImage(imgB, 0, 0, width, height);
+    let dataA = ctxA.getImageData(0, 0, width, height);
+    let dataB = ctxB.getImageData(0, 0, width, height);
+    let diffData = diffCtx.createImageData(width, height);
+    for (let i = 0; i < dataA.data.length; i += 4) {
+        let delta = Math.abs(dataB.data[i] - dataA.data[i]) + Math.abs(dataB.data[i + 1] - dataA.data[i + 1]) + Math.abs(dataB.data[i + 2] - dataA.data[i + 2]);
+        if (delta > 30) {
+            diffData.data[i] = 255;
+            diffData.data[i + 1] = 45;
+            diffData.data[i + 2] = 120;
+            diffData.data[i + 3] = Math.min(230, 80 + delta / 2);
+        }
+    }
+    diffCtx.putImageData(diffData, 0, 0);
 }
 
 /**
@@ -577,7 +678,7 @@ function setImageHistoryCompareReveal(value) {
 function setImageHistoryCompareZoom(value) {
     let zoom = Math.max(25, Math.min(200, parseInt(value) || 100));
     getRequiredElementById('image_history_compare_zoom').value = zoom;
-    for (let id of ['image_history_compare_img_a', 'image_history_compare_img_b']) {
+    for (let id of ['image_history_compare_img_a', 'image_history_compare_img_b', 'image_history_compare_diff_canvas']) {
         let img = getRequiredElementById(id);
         img.style.width = `${zoom}%`;
         img.style.maxWidth = zoom <= 100 ? '100%' : 'none';
@@ -602,9 +703,11 @@ function showImageHistoryCompare(paths) {
     getRequiredElementById('image_history_compare_title').innerText = `${first.data.name || first.name} / ${second.data.name || second.name}`;
     getRequiredElementById('image_history_compare_img_a').src = first.data.src;
     getRequiredElementById('image_history_compare_img_b').src = second.data.src;
+    getRequiredElementById('image_history_compare_diff').checked = false;
+    setImageHistoryCompareDiffMode(false);
     setImageHistoryCompareZoom(100);
     setImageHistoryCompareReveal(50);
-    $('#image_history_compare_modal').modal('show');
+    openImageHistoryCompareModal();
 }
 
 /**

@@ -1321,9 +1321,6 @@ mark.model-search-highlight {
 .image-history-compare-zoom {
     width: 10rem;
 }
-.image-history-compare-reveal {
-    width: 14rem;
-}
 .image-history-compare-body {
     height: calc(100vh - 3.25rem);
     padding: 0.4rem;
@@ -1340,8 +1337,10 @@ mark.model-search-highlight {
 }
 .image-history-compare-stage {
     position: relative;
-    width: 100%;
+    width: fit-content;
+    max-width: 100%;
     text-align: center;
+    cursor: ew-resize;
 }
 .image-history-compare-img {
     display: block;
@@ -1354,6 +1353,21 @@ mark.model-search-highlight {
     inset: 0;
     max-width: none;
     clip-path: inset(0 50% 0 0);
+}
+.image-history-compare-diff-canvas {
+    position: absolute;
+    inset: 0;
+    display: none;
+    height: auto;
+    margin: auto;
+    pointer-events: none;
+}
+.image-history-compare-diff-active .image-history-compare-img-top,
+.image-history-compare-diff-active .image-history-compare-divider {
+    display: none;
+}
+.image-history-compare-diff-active .image-history-compare-diff-canvas {
+    display: block;
 }
 .image-history-compare-divider {
     position: absolute;
