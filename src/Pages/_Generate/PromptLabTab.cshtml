@@ -5,6 +5,7 @@
         <div class="prompt-lab-toolbar">
             <button class="basic-button translate" onclick="promptLab.newPrompt()">New</button>
             <button class="basic-button translate" onclick="promptLab.savePrompt()">Save</button>
+            <button class="basic-button translate" onclick="promptLab.savePromptVariant()">Save Variant</button>
             <button class="basic-button translate" onclick="promptLab.duplicatePrompt()">Duplicate</button>
             <button class="basic-button translate" onclick="promptLab.deletePrompt()">Delete</button>
         </div>
@@ -54,5 +55,8 @@
         <div id="prompt_lab_preview" class="prompt-lab-output"></div>
         <div class="prompt-lab-section-title translate">Warnings</div>
         <div id="prompt_lab_warnings" class="prompt-lab-output"></div>
+        <div class="prompt-lab-section-title translate">Diff</div>
+        <select class="auto-dropdown prompt-lab-compare-select" id="prompt_lab_compare_select" onchange="promptLab.refreshPreview()"></select>
+        <div id="prompt_lab_diff" class="prompt-lab-output"></div>
     </div>
 </div>

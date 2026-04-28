@@ -263,6 +263,23 @@ body {
     min-width: 0;
 }
 
+.prompt-lab-compare-select {
+    width: 100%;
+    margin-bottom: 0.4rem;
+}
+
+.prompt-lab-diff-added {
+    color: #62d98e;
+}
+
+.prompt-lab-diff-removed {
+    color: #ff7a7a;
+}
+
+.prompt-lab-diff-same {
+    color: var(--text-soft);
+}
+
 @media (max-width: 900px) {
     .prompt-lab-wrapper {
         grid-template-columns: 1fr;

@@ -3,6 +3,7 @@ class PromptLab {
     constructor() {
         this.data = { prompts: [], fragments: [], wildcards: [] };
         this.currentPromptId = null;
+        this.currentParentId = null;
         this.currentWildcardId = null;
         this.hasLoaded = false;
         this.pendingWildcardGenerations = [];
@@ -23,6 +24,7 @@ class PromptLab {
             this.hasLoaded = true;
             this.renderPromptList();
             this.renderWildcardList();
+            this.renderCompareSelect();
             this.refreshPreview();
         });
     }
@@ -30,11 +32,13 @@ class PromptLab {
     /** Starts a blank prompt. */
     newPrompt() {
         this.currentPromptId = null;
+        this.currentParentId = null;
         getRequiredElementById('prompt_lab_name').value = '';
         getRequiredElementById('prompt_lab_positive').value = '';
         getRequiredElementById('prompt_lab_negative').value = '';
         getRequiredElementById('prompt_lab_tags').value = '';
         getRequiredElementById('prompt_lab_notes').value = '';
+        this.renderCompareSelect();
         this.refreshPreview();
     }
 
@@ -48,6 +52,7 @@ class PromptLab {
             negative: getRequiredElementById('prompt_lab_negative').value,
             tags: tags,
             notes: getRequiredElementById('prompt_lab_notes').value,
+            parent_id: this.currentParentId,
             favorite: false
         };
         return item;
@@ -66,6 +71,21 @@ class PromptLab {
                 this.data.prompts[existing] = saved;
             }
             this.renderPromptList();
+            this.renderCompareSelect();
+        });
+    }
+
+    /** Saves the current prompt as a child variant. */
+    savePromptVariant() {
+        let parentId = this.currentPromptId || this.currentParentId;
+        let item = this.currentPromptObject();
+        item.id = null;
+        item.parent_id = parentId;
+        item.name = `${item.name} Variant`;
+        genericRequest('PromptLabSave', { collection: 'prompts', item: item }, data => {
+            let saved = data.item;
+            this.data.prompts.push(saved);
+            this.loadPrompt(saved.id);
         });
     }
 
@@ -76,13 +96,15 @@ class PromptLab {
             return;
         }
         this.currentPromptId = prompt.id;
+        this.currentParentId = prompt.parent_id || null;
         getRequiredElementById('prompt_lab_name').value = prompt.name || '';
         getRequiredElementById('prompt_lab_positive').value = prompt.positive || '';
         getRequiredElementById('prompt_lab_negative').value = prompt.negative || '';
         getRequiredElementById('prompt_lab_tags').value = (prompt.tags || []).join(', ');
         getRequiredElementById('prompt_lab_notes').value = prompt.notes || '';
-        this.refreshPreview();
         this.renderPromptList();
+        this.renderCompareSelect();
+        this.refreshPreview();
     }
 
     /** Duplicates the selected prompt. */
@@ -123,9 +145,28 @@ class PromptLab {
                 continue;
             }
             let selected = prompt.id == this.currentPromptId ? ' prompt-lab-list-item-selected' : '';
-            html += `<button class="prompt-lab-list-item${selected}" onclick="promptLab.loadPrompt('${escapeHtmlNoBr(escapeJsString(prompt.id))}')">${escapeHtml(prompt.name || 'Untitled Prompt')}</button>`;
+            let variant = prompt.parent_id ? ' <span class="prompt-lab-count">variant</span>' : '';
+            html += `<button class="prompt-lab-list-item${selected}" onclick="promptLab.loadPrompt('${escapeHtmlNoBr(escapeJsString(prompt.id))}')">${escapeHtml(prompt.name || 'Untitled Prompt')}${variant}</button>`;
         }
         list.innerHTML = html || '<div class="prompt-lab-empty translate">No saved prompts.</div>';
+    }
+
+    /** Renders the prompt compare selector. */
+    renderCompareSelect() {
+        let select = document.getElementById('prompt_lab_compare_select');
+        if (!select) {
+            return;
+        }
+        let preferred = select.value || this.currentParentId || '';
+        let html = '<option value="">Select prompt to compare</option>';
+        for (let prompt of this.data.prompts) {
+            if (prompt.id == this.currentPromptId) {
+                continue;
+            }
+            let selected = prompt.id == preferred ? ' selected' : '';
+            html += `<option value="${escapeHtmlNoBr(escapeJsString(prompt.id))}"${selected}>${escapeHtml(prompt.name || 'Untitled Prompt')}</option>`;
+        }
+        select.innerHTML = html;
     }
 
     /** Starts a blank wildcard set. */
@@ -359,7 +400,8 @@ class PromptLab {
         let wildcardBox = document.getElementById('prompt_lab_wildcards');
         let previewBox = document.getElementById('prompt_lab_preview');
         let warningBox = document.getElementById('prompt_lab_warnings');
-        if (!wildcardBox || !previewBox || !warningBox) {
+        let diffBox = document.getElementById('prompt_lab_diff');
+        if (!wildcardBox || !previewBox || !warningBox || !diffBox) {
             return;
         }
         let tokens = this.detectWildcardTokens();
@@ -369,6 +411,46 @@ class PromptLab {
         let negative = escapeHtml(getRequiredElementById('prompt_lab_negative').value || '');
         previewBox.innerHTML = `<div>Positive chars: ${diagnostics.positive_chars} | Negative chars: ${diagnostics.negative_chars}</div><br><b>Positive</b><br>${positive}<br><br><b>Negative</b><br>${negative}`;
         warningBox.innerHTML = this.renderWarnings(diagnostics.warnings);
+        diffBox.innerHTML = this.renderCurrentDiff();
+    }
+
+    /** Renders a diff between the current editor prompt and selected compare prompt. */
+    renderCurrentDiff() {
+        let select = document.getElementById('prompt_lab_compare_select');
+        let compareId = select?.value || this.currentParentId;
+        if (!compareId) {
+            return '<span class="translate">Select a prompt to compare.</span>';
+        }
+        let compare = this.data.prompts.find(p => p.id == compareId);
+        if (!compare) {
+            return '<span class="translate">Compare prompt not found.</span>';
+        }
+        let current = this.currentPromptObject();
+        return `<b>Positive</b>${this.renderTextDiff(compare.positive || '', current.positive || '')}<br><b>Negative</b>${this.renderTextDiff(compare.negative || '', current.negative || '')}`;
+    }
+
+    /** Renders added/removed comma-separated prompt terms. */
+    renderTextDiff(before, after) {
+        let beforeParts = this.splitPromptForDiff(before);
+        let afterParts = this.splitPromptForDiff(after);
+        let removed = beforeParts.filter(part => !afterParts.includes(part));
+        let added = afterParts.filter(part => !beforeParts.includes(part));
+        if (removed.length == 0 && added.length == 0) {
+            return '<div class="prompt-lab-diff-same translate">No changes.</div>';
+        }
+        let html = '';
+        for (let part of removed) {
+            html += `<div class="prompt-lab-diff-removed">- ${escapeHtml(part)}</div>`;
+        }
+        for (let part of added) {
+            html += `<div class="prompt-lab-diff-added">+ ${escapeHtml(part)}</div>`;
+        }
+        return html;
+    }
+
+    /** Splits a prompt into stable diff terms. */
+    splitPromptForDiff(text) {
+        return text.split(',').map(part => part.trim()).filter(part => part);
     }
 
     /** Requests wildcard expansion preview from the backend. */
