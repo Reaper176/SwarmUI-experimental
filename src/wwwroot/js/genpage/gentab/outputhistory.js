@@ -1,6 +1,5 @@
 let imageHistorySelected = new Set();
 let imageHistoryBulkActionRunning = false;
-let imageHistoryCompareScrollSyncing = false;
 let imageHistoryShowHidden = localStorage.getItem('image_history_show_hidden') == 'true';
 let imageHistoryRefreshQueued = false;
 let imageHistoryHasLoadedOnce = false;
@@ -532,17 +531,18 @@ function ensureImageHistoryCompareModal() {
             <span id="image_history_compare_title" class="image-history-compare-title"></span>
             <label for="image_history_compare_zoom">Zoom</label>
             <input id="image_history_compare_zoom" class="image-history-compare-zoom" type="range" min="25" max="200" value="100">
+            <label for="image_history_compare_reveal">Reveal</label>
+            <input id="image_history_compare_reveal" class="image-history-compare-reveal" type="range" min="0" max="100" value="50">
             <button type="button" class="basic-button translate" id="image_history_compare_fit">Fit</button>
             <button type="button" class="basic-button translate" id="image_history_compare_close">Close</button>
         </div>
         <div class="image-history-compare-body">
-            <div class="image-history-compare-pane">
-                <div id="image_history_compare_name_a" class="image-history-compare-name"></div>
-                <div id="image_history_compare_scroll_a" class="image-history-compare-scroll"><img id="image_history_compare_img_a" class="image-history-compare-img"></div>
-            </div>
-            <div class="image-history-compare-pane">
-                <div id="image_history_compare_name_b" class="image-history-compare-name"></div>
-                <div id="image_history_compare_scroll_b" class="image-history-compare-scroll"><img id="image_history_compare_img_b" class="image-history-compare-img"></div>
+            <div class="image-history-compare-viewport">
+                <div class="image-history-compare-stage">
+                    <img id="image_history_compare_img_a" class="image-history-compare-img image-history-compare-img-base">
+                    <img id="image_history_compare_img_b" class="image-history-compare-img image-history-compare-img-top">
+                    <div id="image_history_compare_divider" class="image-history-compare-divider"></div>
+                </div>
             </div>
         </div>`;
     document.body.appendChild(modal);
@@ -555,24 +555,20 @@ function ensureImageHistoryCompareModal() {
     getRequiredElementById('image_history_compare_zoom').addEventListener('input', e => {
         setImageHistoryCompareZoom(e.target.value);
     });
-    let scrollA = getRequiredElementById('image_history_compare_scroll_a');
-    let scrollB = getRequiredElementById('image_history_compare_scroll_b');
-    scrollA.addEventListener('scroll', () => syncImageHistoryCompareScroll(scrollA, scrollB));
-    scrollB.addEventListener('scroll', () => syncImageHistoryCompareScroll(scrollB, scrollA));
+    getRequiredElementById('image_history_compare_reveal').addEventListener('input', e => {
+        setImageHistoryCompareReveal(e.target.value);
+    });
     return modal;
 }
 
 /**
- * Synchronizes side-by-side compare panel scrolling.
+ * Sets the overlay reveal split.
  */
-function syncImageHistoryCompareScroll(source, target) {
-    if (imageHistoryCompareScrollSyncing) {
-        return;
-    }
-    imageHistoryCompareScrollSyncing = true;
-    target.scrollLeft = source.scrollLeft;
-    target.scrollTop = source.scrollTop;
-    imageHistoryCompareScrollSyncing = false;
+function setImageHistoryCompareReveal(value) {
+    let reveal = Math.max(0, Math.min(100, parseInt(value) || 0));
+    getRequiredElementById('image_history_compare_reveal').value = reveal;
+    getRequiredElementById('image_history_compare_img_b').style.clipPath = `inset(0 ${100 - reveal}% 0 0)`;
+    getRequiredElementById('image_history_compare_divider').style.left = `${reveal}%`;
 }
 
 /**
@@ -584,7 +580,7 @@ function setImageHistoryCompareZoom(value) {
     for (let id of ['image_history_compare_img_a', 'image_history_compare_img_b']) {
         let img = getRequiredElementById(id);
         img.style.width = `${zoom}%`;
-        img.style.maxWidth = zoom == 100 ? '100%' : 'none';
+        img.style.maxWidth = zoom <= 100 ? '100%' : 'none';
     }
 }
 
@@ -603,12 +599,11 @@ function showImageHistoryCompare(paths) {
         return;
     }
     ensureImageHistoryCompareModal();
-    getRequiredElementById('image_history_compare_title').innerText = 'Compare Images';
-    getRequiredElementById('image_history_compare_name_a').innerText = first.data.name || first.name;
-    getRequiredElementById('image_history_compare_name_b').innerText = second.data.name || second.name;
+    getRequiredElementById('image_history_compare_title').innerText = `${first.data.name || first.name} / ${second.data.name || second.name}`;
     getRequiredElementById('image_history_compare_img_a').src = first.data.src;
     getRequiredElementById('image_history_compare_img_b').src = second.data.src;
     setImageHistoryCompareZoom(100);
+    setImageHistoryCompareReveal(50);
     $('#image_history_compare_modal').modal('show');
 }
 
