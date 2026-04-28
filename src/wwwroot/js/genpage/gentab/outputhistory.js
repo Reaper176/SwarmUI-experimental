@@ -568,25 +568,8 @@ function ensureImageHistoryCompareModal() {
  * Closes the image history compare modal.
  */
 function closeImageHistoryCompareModal() {
-    let modal = getRequiredElementById('image_history_compare_modal');
-    if (window.bootstrap?.Modal) {
-        modal.addEventListener('hidden.bs.modal', () => {
-            cleanupImageHistoryCompareModal();
-            showGenerateTabAfterImageHistoryCompareClose();
-        }, { once: true });
-        bootstrap.Modal.getOrCreateInstance(modal).hide();
-    }
-    else if (window.jQuery) {
-        $('#image_history_compare_modal').modal('hide');
-        cleanupImageHistoryCompareModal();
-        showGenerateTabAfterImageHistoryCompareClose();
-    }
-    else {
-        modal.classList.remove('show');
-        modal.style.display = 'none';
-        cleanupImageHistoryCompareModal();
-        showGenerateTabAfterImageHistoryCompareClose();
-    }
+    cleanupImageHistoryCompareModal();
+    showGenerateTabAfterImageHistoryCompareClose();
 }
 
 /**
@@ -594,8 +577,14 @@ function closeImageHistoryCompareModal() {
  */
 function cleanupImageHistoryCompareModal() {
     let modal = getRequiredElementById('image_history_compare_modal');
+    if (window.bootstrap?.Modal) {
+        bootstrap.Modal.getInstance(modal)?.dispose();
+    }
     modal.classList.remove('show');
-    modal.style.display = '';
+    modal.style.display = 'none';
+    modal.setAttribute('aria-hidden', 'true');
+    modal.removeAttribute('aria-modal');
+    modal.removeAttribute('role');
     document.body.classList.remove('modal-open');
     for (let backdrop of document.querySelectorAll('.modal-backdrop')) {
         backdrop.remove();
@@ -622,17 +611,12 @@ function showGenerateTabAfterImageHistoryCompareClose() {
 function openImageHistoryCompareModal() {
     let modal = getRequiredElementById('image_history_compare_modal');
     cleanupImageHistoryCompareModal();
-    if (window.bootstrap?.Modal) {
-        bootstrap.Modal.getInstance(modal)?.dispose();
-        bootstrap.Modal.getOrCreateInstance(modal).show();
-    }
-    else if (window.jQuery) {
-        $('#image_history_compare_modal').modal('show');
-    }
-    else {
-        modal.classList.add('show');
-        modal.style.display = 'block';
-    }
+    modal.classList.add('show');
+    modal.style.display = 'block';
+    modal.setAttribute('aria-modal', 'true');
+    modal.setAttribute('role', 'dialog');
+    modal.removeAttribute('aria-hidden');
+    document.body.classList.add('modal-open');
 }
 
 /**
