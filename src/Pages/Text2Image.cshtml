@@ -85,6 +85,9 @@
     <li class="nav-item" role="presentation">
         <a class="nav-link active translate" data-bs-toggle="tab" href="#Text2Image" id="text2imagetabbutton" aria-selected="true" role="tab">Generate</a>
     </li>
+    <li class="nav-item" role="presentation" data-requiredpermission="read_user_settings">
+        <a class="nav-link translate" data-bs-toggle="tab" href="#PromptLab" id="promptlabtabbutton" aria-selected="false" tabindex="-1" role="tab">Prompt Lab</a>
+    </li>
     <li class="nav-item" role="presentation">
         <a class="nav-link translate" data-bs-toggle="tab" href="#ImageEditing" id="imageeditingtabbutton" aria-selected="false" tabindex="-1" role="tab">Image Editing</a>
     </li>
@@ -108,6 +111,9 @@
     </div>
     <div class="tab-pane show active" style="line-height:0" id="Text2Image" role="tabpanel">
         @await Html.PartialAsync("_Generate/GenerateTab.cshtml", pageModel)
+    </div>
+    <div class="tab-pane tab-pane-vw" id="PromptLab" role="tabpanel">
+        @await Html.PartialAsync("_Generate/PromptLabTab.cshtml", pageModel)
     </div>
     <div class="tab-pane tab-pane-vw tab-no-scroll" id="@lazyTabs[0].TabId" role="tabpanel">
         <div class="tab-loading-shell">@lazyTabs[0].LoadingText</div>
@@ -143,6 +149,7 @@
     <script src="js/genpage/gentab/outputhistory.js?vary=@Utilities.VaryID"></script>
     <script src="js/genpage/gentab/notes.js?vary=@Utilities.VaryID"></script>
     <script src="js/genpage/main.js?vary=@Utilities.VaryID"></script>
+    <script src="js/genpage/promptlab.js?vary=@Utilities.VaryID"></script>
     <script src="js/genpage/helpers/settings_editor.js?vary=@Utilities.VaryID"></script>
     <script src="js/genpage/helpers/ui_improvements.js?vary=@Utilities.VaryID"></script>
     <script src="js/genpage/helpers/mediacontrols.js?vary=@Utilities.VaryID"></script>

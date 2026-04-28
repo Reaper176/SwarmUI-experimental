@@ -62,6 +62,7 @@ public static class BasicAPIFeatures
         BackendAPI.Register();
         AdminAPI.Register();
         UtilAPI.Register();
+        PromptLabAPI.Register();
     }
 
     /// <summary>Rate limiter for <see cref="Login(HttpContext, string, string)"/> to prevent spamming it, limited by IP address.</summary>
