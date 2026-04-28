@@ -184,6 +184,10 @@ body {
     margin-bottom: 0.5rem;
 }
 
+.prompt-lab-hidden-file {
+    display: none;
+}
+
 .prompt-lab-search,
 .prompt-lab-title {
     width: 100%;

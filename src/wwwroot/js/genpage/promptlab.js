@@ -171,6 +171,73 @@ class PromptLab {
         select.innerHTML = html;
     }
 
+    /** Exports the full Prompt Lab library as JSON. */
+    exportLibrary() {
+        let stamp = new Date().toISOString().replaceAll(':', '-').replaceAll('.', '-');
+        let data = {
+            prompts: this.data.prompts || [],
+            fragments: this.data.fragments || [],
+            wildcards: this.data.wildcards || []
+        };
+        downloadPlainText(`prompt-lab-library-${stamp}.json`, JSON.stringify(data, null, 2));
+    }
+
+    /** Opens the Prompt Lab import file picker. */
+    openImportPicker() {
+        getRequiredElementById('prompt_lab_import_file').click();
+    }
+
+    /** Imports a Prompt Lab JSON file. */
+    importLibraryFile(input) {
+        if (!input.files || input.files.length == 0) {
+            return;
+        }
+        let file = input.files[0];
+        let reader = new FileReader();
+        reader.onload = () => {
+            input.value = '';
+            this.importLibraryText(reader.result);
+        };
+        reader.readAsText(file);
+    }
+
+    /** Imports Prompt Lab JSON text. */
+    importLibraryText(text) {
+        let parsed;
+        try {
+            parsed = JSON.parse(text);
+        }
+        catch (err) {
+            showError(`Failed to import Prompt Lab JSON: ${err}`);
+            return;
+        }
+        this.importCollection('prompts', parsed.prompts || [], () => {
+            this.importCollection('fragments', parsed.fragments || [], () => {
+                this.importCollection('wildcards', parsed.wildcards || [], () => this.load());
+            });
+        });
+    }
+
+    /** Imports one Prompt Lab collection through the normal save API. */
+    importCollection(collection, items, callback) {
+        if (!Array.isArray(items) || items.length == 0) {
+            callback();
+            return;
+        }
+        let index = 0;
+        let next = () => {
+            if (index >= items.length) {
+                callback();
+                return;
+            }
+            let item = JSON.parse(JSON.stringify(items[index]));
+            item.id = null;
+            index++;
+            genericRequest('PromptLabSave', { collection: collection, item: item }, () => next());
+        };
+        next();
+    }
+
     /** Starts a blank fragment. */
     newFragment() {
         this.currentFragmentId = null;

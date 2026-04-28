@@ -8,6 +8,9 @@
             <button class="basic-button translate" onclick="promptLab.savePromptVariant()">Save Variant</button>
             <button class="basic-button translate" onclick="promptLab.duplicatePrompt()">Duplicate</button>
             <button class="basic-button translate" onclick="promptLab.deletePrompt()">Delete</button>
+            <button class="basic-button translate" onclick="promptLab.exportLibrary()">Export Library</button>
+            <button class="basic-button translate" onclick="promptLab.openImportPicker()">Import</button>
+            <input id="prompt_lab_import_file" type="file" accept="application/json,.json" class="prompt-lab-hidden-file" onchange="promptLab.importLibraryFile(this)" />
         </div>
         <input class="auto-text prompt-lab-search" id="prompt_lab_search" placeholder="Search prompts" oninput="promptLab.renderPromptList()" />
         <div class="prompt-lab-section-title translate">Saved Prompts</div>
