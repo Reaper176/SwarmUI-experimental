@@ -1251,7 +1251,22 @@ class GenPageBrowserClass {
                 }
                 this.filterUpdateTimeout = setTimeout(() => {
                     this.filterUpdateTimeout = null;
-                    this.update();
+                    let hadFocus = document.activeElement == filterInput;
+                    let selectionStart = filterInput.selectionStart;
+                    let selectionEnd = filterInput.selectionEnd;
+                    this.update(false, () => {
+                        if (!hadFocus) {
+                            return;
+                        }
+                        let newFilterInput = document.getElementById(`${this.id}_filter_input`);
+                        if (!newFilterInput) {
+                            return;
+                        }
+                        newFilterInput.focus({ preventScroll: true });
+                        if (selectionStart != null && selectionEnd != null) {
+                            newFilterInput.setSelectionRange(selectionStart, selectionEnd);
+                        }
+                    });
                 }, delayMs);
             });
             if (!this.showFilter) {
