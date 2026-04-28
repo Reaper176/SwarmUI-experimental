@@ -127,7 +127,8 @@ public static partial class WildcardExpansionHelper
     /// <summary>Parses comma-separated inline random values.</summary>
     public static List<string> ParseRandomValues(string data)
     {
-        return [.. data.Split(',').Select(part => part.Trim()).Where(part => !string.IsNullOrWhiteSpace(part))];
+        char splitChar = data.Contains('|') ? '|' : ',';
+        return [.. data.Split(splitChar).Select(part => part.Trim()).Where(part => !string.IsNullOrWhiteSpace(part))];
     }
 
     /// <summary>Builds the API result object.</summary>

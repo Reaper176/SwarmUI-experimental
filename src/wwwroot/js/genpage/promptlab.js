@@ -238,7 +238,9 @@ class PromptLab {
     /** Gets the Prompt Lab value count for a wildcard token. */
     getPromptLabWildcardCount(token) {
         if (token.toLowerCase().startsWith('random:')) {
-            return token.substring('random:'.length).split(',').map(v => v.trim()).filter(v => v).length;
+            let values = token.substring('random:'.length);
+            let splitChar = values.includes('|') ? '|' : ',';
+            return values.split(splitChar).map(v => v.trim()).filter(v => v).length;
         }
         let wildcard = this.data.wildcards.find(w => (w.name || '').toLowerCase() == token.toLowerCase());
         if (!wildcard) {
