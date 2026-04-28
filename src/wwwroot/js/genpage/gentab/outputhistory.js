@@ -579,6 +579,29 @@ function closeImageHistoryCompareModal() {
         modal.classList.remove('show');
         modal.style.display = 'none';
     }
+    setTimeout(() => {
+        modal.classList.remove('show');
+        modal.style.display = 'none';
+        document.body.classList.remove('modal-open');
+        for (let backdrop of document.querySelectorAll('.modal-backdrop')) {
+            backdrop.remove();
+        }
+        showGenerateTabAfterImageHistoryCompareClose();
+    }, 120);
+}
+
+/**
+ * Returns the UI to the normal Generate image view after compare closes.
+ */
+function showGenerateTabAfterImageHistoryCompareClose() {
+    let generateTab = document.getElementById('text2imagetabbutton');
+    if (generateTab && window.bootstrap?.Tab) {
+        bootstrap.Tab.getOrCreateInstance(generateTab).show();
+    }
+    let imageTab = document.querySelector('[href="#Image-Result-Tab"]');
+    if (imageTab && window.bootstrap?.Tab) {
+        bootstrap.Tab.getOrCreateInstance(imageTab).show();
+    }
 }
 
 /**
