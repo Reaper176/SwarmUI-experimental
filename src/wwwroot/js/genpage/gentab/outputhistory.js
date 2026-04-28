@@ -357,6 +357,158 @@ function parseHistoryMetadata(metadata) {
 }
 
 /**
+ * Converts a metadata value into searchable text.
+ */
+function imageHistoryValueToSearchText(value) {
+    if (value == null) {
+        return '';
+    }
+    if (Array.isArray(value)) {
+        return value.map(v => imageHistoryValueToSearchText(v)).join(' ');
+    }
+    if (typeof value == 'object') {
+        return Object.values(value).map(v => imageHistoryValueToSearchText(v)).join(' ');
+    }
+    return `${value}`;
+}
+
+/**
+ * Builds field-specific searchable metadata for the image history filter.
+ */
+function getImageHistorySearchFields(image, parsedMeta) {
+    let params = parsedMeta.sui_image_params || {};
+    let extra = parsedMeta.sui_extra_data || {};
+    let name = image.data.name || '';
+    let fullsrc = image.data.fullsrc || '';
+    let folder = fullsrc.includes('/') ? fullsrc.substring(0, fullsrc.lastIndexOf('/')) : '';
+    let rawMetadata = typeof image.data.metadata == 'string' ? image.data.metadata : imageHistoryValueToSearchText(image.data.metadata);
+    let generationResolution = params.width && params.height ? `${params.width}x${params.height}` : '';
+    let finalResolution = extra.final_width && extra.final_height ? `${extra.final_width}x${extra.final_height}` : generationResolution;
+    let favoriteText = parsedMeta.is_starred ? 'true yes starred favorite' : 'false no unstarred';
+    let fields = {
+        name: name,
+        path: fullsrc,
+        folder: folder,
+        date: fullsrc,
+        metadata: `${rawMetadata} ${imageHistoryValueToSearchText(parsedMeta)}`,
+        prompt: `${params.prompt || ''} ${extra.original_prompt || ''}`,
+        negative: params.negativeprompt || '',
+        model: params.model || '',
+        lora: `${imageHistoryValueToSearchText(params.loras)} ${imageHistoryValueToSearchText(params.loraweights)}`,
+        vae: params.vae || '',
+        sampler: params.sampler || '',
+        scheduler: params.scheduler || '',
+        seed: params.seed || '',
+        resolution: `${generationResolution} ${finalResolution}`,
+        rating: parsedMeta.rating || extra.rating || '',
+        favorite: favoriteText,
+        tags: `${imageHistoryValueToSearchText(parsedMeta.tags)} ${imageHistoryValueToSearchText(extra.tags)}`,
+        session: `${params.session_id || ''} ${extra.session_id || ''}`,
+        wildcard: `${extra.prompt_lab_wildcard_values || ''} ${imageHistoryValueToSearchText(extra.prompt_lab_wildcards)}`,
+        promptlab: `${extra.prompt_lab_id || ''} ${extra.prompt_lab_prompt_id || ''}`
+    };
+    fields.allFields = Object.values(fields).join(' ');
+    return fields;
+}
+
+/**
+ * Splits a search query into terms while preserving quoted text.
+ */
+function splitImageHistoryFilterQuery(filter) {
+    let terms = [];
+    let current = '';
+    let quote = null;
+    for (let i = 0; i < filter.length; i++) {
+        let char = filter[i];
+        if ((char == '"' || char == "'") && (quote == null || quote == char)) {
+            quote = quote == char ? null : char;
+            continue;
+        }
+        if (!quote && /\s/.test(char)) {
+            if (current.trim()) {
+                terms.push(current.trim());
+            }
+            current = '';
+            continue;
+        }
+        current += char;
+    }
+    if (current.trim()) {
+        terms.push(current.trim());
+    }
+    return terms;
+}
+
+/**
+ * Normalizes aliases for image history structured search fields.
+ */
+function normalizeImageHistoryFilterField(field) {
+    let aliases = {
+        fav: 'favorite',
+        starred: 'favorite',
+        tag: 'tags',
+        neg: 'negative',
+        negativeprompt: 'negative',
+        loras: 'lora',
+        res: 'resolution',
+        size: 'resolution',
+        prompt_lab: 'promptlab',
+        prompt_lab_id: 'promptlab',
+        wildcard_values: 'wildcard'
+    };
+    return aliases[field] || field;
+}
+
+/**
+ * Matches image history entries against text and field:value search terms.
+ */
+function imageHistoryFilterMatches(desc, filter) {
+    if (!filter) {
+        return true;
+    }
+    let searchable = desc.searchable || {};
+    let allFields = `${searchable.allFields || ''}`.toLowerCase();
+    let terms = splitImageHistoryFilterQuery(filter);
+    for (let term of terms) {
+        let fieldSplit = term.indexOf(':');
+        if (fieldSplit > 0) {
+            let field = normalizeImageHistoryFilterField(term.substring(0, fieldSplit).toLowerCase());
+            let value = term.substring(fieldSplit + 1).toLowerCase();
+            if (!value) {
+                continue;
+            }
+            let fieldText = searchable[field];
+            if (fieldText == null) {
+                if (!allFields.includes(term.toLowerCase())) {
+                    return false;
+                }
+                continue;
+            }
+            if (!`${fieldText}`.toLowerCase().includes(value)) {
+                return false;
+            }
+        }
+        else if (!allFields.includes(term.toLowerCase())) {
+            return false;
+        }
+    }
+    return true;
+}
+
+/**
+ * Updates the history filter input hint after the browser builds its header.
+ */
+function updateImageHistoryFilterHint() {
+    let filterInput = document.getElementById('imagehistorybrowser_filter_input');
+    if (!filterInput || filterInput.dataset.historyFilterHint == 'true') {
+        return;
+    }
+    filterInput.dataset.historyFilterHint = 'true';
+    filterInput.placeholder = 'Search prompt/model/metadata...';
+    filterInput.title = 'Search text, or use field:value terms like model:sdxl seed:123 res:1024x1024 wildcard:dragon.';
+}
+
+/**
  * Interpret history metadata when possible, but never let a bad blob abort the list render.
  */
 function safeInterpretHistoryMetadata(metadata, fullsrc = '') {
@@ -1013,7 +1165,7 @@ function describeOutputFile(image) {
     }
     let dragImage = forceImage ?? `${image.data.src}`;
     let imageSrc = forcePreview ?? `${image.data.src}?preview=true${allowAnimToggle}`;
-    let searchable = `${image.data.name}, ${image.data.metadata}, ${image.data.fullsrc}`;
+    let searchable = getImageHistorySearchFields(image, parsedMeta);
     let detailMetadata = formattedMetadata ? formattedMetadata.replaceAll('<br>', '&emsp;') : escapeHtml(metadataPreview);
     let detail_list = [escapeHtml(image.data.name), detailMetadata];
     let aspectRatio = parsedMeta.sui_image_params?.width && parsedMeta.sui_image_params?.height ? parsedMeta.sui_image_params.width / parsedMeta.sui_image_params.height : null;
@@ -1057,10 +1209,12 @@ function selectOutputInHistory(image, div) {
 
 let imageHistoryBrowser = new GenPageBrowserClass('image_history', listOutputHistoryFolderAndFiles, 'imagehistorybrowser', 'Thumbnails', describeOutputFile, selectOutputInHistory,
     `<label for="image_history_sort_by">Sort:</label> <select id="image_history_sort_by"><option>Name</option><option>Date</option></select> <input type="checkbox" id="image_history_sort_reverse"> <label for="image_history_sort_reverse">Reverse</label> &emsp; <input type="checkbox" id="image_history_allow_anims" checked autocomplete="off"> <label for="image_history_allow_anims">Allow Animation</label> &emsp; <input type="checkbox" id="image_history_show_hidden" autocomplete="off"> <label for="image_history_show_hidden">Show Hidden</label> <span id="image_history_bulk_controls" class="image-history-bulk-controls"><span id="image_history_selected_count" class="image-history-selected-count">0 selected</span> <button type="button" id="image_history_select_all" class="refresh-button" onclick="selectAllImageHistory()">Select All</button> <button type="button" id="image_history_clear_selection" class="refresh-button" onclick="clearSelectedImageHistory()">Clear</button> <button type="button" id="image_history_hide_selected" class="refresh-button" onclick="hideSelectedImageHistory()">Hide Selected</button> <button type="button" id="image_history_unhide_selected" class="refresh-button" onclick="unhideSelectedImageHistory()">Unhide Selected</button> <button type="button" id="image_history_delete_selected" class="interrupt-button" onclick="deleteSelectedImageHistory()">Delete Selected</button></span> <span id="image_history_request_status" class="image-history-request-status" data-state="idle"><span id="image_history_request_status_text" class="image-history-request-status-text"></span> <button type="button" id="image_history_retry_button" class="refresh-button" style="display:none;">Retry</button></span>`);
+imageHistoryBrowser.filterMatcher = imageHistoryFilterMatches;
 imageHistoryBrowser.folderSelectedEvent = () => {
     clearImageHistorySelection();
 };
 imageHistoryBrowser.builtEvent = () => {
+    updateImageHistoryFilterHint();
     ensureImageHistoryStatusReady();
     pruneImageHistorySelectionToCurrentFiles();
     updateImageHistoryBulkControls();
