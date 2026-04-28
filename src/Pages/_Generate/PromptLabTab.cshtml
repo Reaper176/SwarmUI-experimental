@@ -13,7 +13,7 @@
             <button class="basic-button translate" onclick="promptLab.openImportPicker()">Import</button>
             <input id="prompt_lab_import_file" type="file" accept="application/json,.json" class="prompt-lab-hidden-file" onchange="promptLab.importLibraryFile(this)" />
         </div>
-        <input class="auto-text prompt-lab-search" id="prompt_lab_search" placeholder="Search prompts" oninput="promptLab.renderPromptList()" />
+        <input class="auto-text prompt-lab-search" id="prompt_lab_search" placeholder="Search prompts" oninput="promptLab.scheduleSearchRender('prompts')" />
         <div class="prompt-lab-section-title translate">Saved Prompts</div>
         <div id="prompt_lab_prompt_list" class="prompt-lab-list"></div>
         <div class="prompt-lab-section-title translate">Fragments</div>
@@ -23,7 +23,7 @@
             <button class="basic-button translate" onclick="promptLab.deleteFragment()">Delete</button>
             <button class="basic-button translate" onclick="promptLab.toggleFragmentFavorite()">Favorite</button>
         </div>
-        <input class="auto-text prompt-lab-search" id="prompt_lab_fragment_search" placeholder="Search fragments" oninput="promptLab.renderFragmentList()" />
+        <input class="auto-text prompt-lab-search" id="prompt_lab_fragment_search" placeholder="Search fragments" oninput="promptLab.scheduleSearchRender('fragments')" />
         <div id="prompt_lab_fragment_list" class="prompt-lab-list"></div>
         <div class="prompt-lab-section-title translate">Wildcard Sets</div>
         <div class="prompt-lab-toolbar">
@@ -32,7 +32,7 @@
             <button class="basic-button translate" onclick="promptLab.deleteWildcardSet()">Delete</button>
             <button class="basic-button translate" onclick="promptLab.toggleWildcardFavorite()">Favorite</button>
         </div>
-        <input class="auto-text prompt-lab-search" id="prompt_lab_wildcard_search" placeholder="Search wildcards" oninput="promptLab.renderWildcardList()" />
+        <input class="auto-text prompt-lab-search" id="prompt_lab_wildcard_search" placeholder="Search wildcards" oninput="promptLab.scheduleSearchRender('wildcards')" />
         <div id="prompt_lab_wildcard_list" class="prompt-lab-list"></div>
         <div class="prompt-lab-section-title translate">Recent Prompts</div>
         <div id="prompt_lab_history_list" class="prompt-lab-list"></div>

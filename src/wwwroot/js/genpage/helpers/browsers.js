@@ -280,7 +280,7 @@ class GenPageBrowserClass {
         this.filterMatcher = null;
         this.filterSorter = null;
         this.filterUpdateTimeout = null;
-        this.filterUpdateDelayMs = 120;
+        this.filterUpdateDelayMs = 250;
         this.lastFiles = [];
         this.lastFilesMap = new Map();
         this.describeCache = new Map();
@@ -1247,7 +1247,7 @@ class GenPageBrowserClass {
                 }
                 let delayMs = this.filterUpdateDelayMs;
                 if ((this.lastFiles?.length || 0) > 1000) {
-                    delayMs = Math.max(delayMs, 220);
+                    delayMs = Math.max(delayMs, 450);
                 }
                 this.filterUpdateTimeout = setTimeout(() => {
                     this.filterUpdateTimeout = null;

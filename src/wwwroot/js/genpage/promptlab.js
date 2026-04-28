@@ -9,6 +9,7 @@ class PromptLab {
         this.hasLoaded = false;
         this.pendingWildcardGenerations = [];
         this.isStartingWildcardGenerationSocket = false;
+        this.searchRenderTimeouts = {};
     }
 
     /** Initializes Prompt Lab once the page is ready. */
@@ -30,6 +31,25 @@ class PromptLab {
             this.renderCompareSelect();
             this.refreshPreview();
         });
+    }
+
+    /** Schedules a filtered list render without rebuilding on every keystroke. */
+    scheduleSearchRender(kind) {
+        if (this.searchRenderTimeouts[kind]) {
+            clearTimeout(this.searchRenderTimeouts[kind]);
+        }
+        this.searchRenderTimeouts[kind] = setTimeout(() => {
+            this.searchRenderTimeouts[kind] = null;
+            if (kind == 'prompts') {
+                this.renderPromptList();
+            }
+            else if (kind == 'fragments') {
+                this.renderFragmentList();
+            }
+            else if (kind == 'wildcards') {
+                this.renderWildcardList();
+            }
+        }, 250);
     }
 
     /** Starts a blank prompt. */
