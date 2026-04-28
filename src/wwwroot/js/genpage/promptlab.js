@@ -237,6 +237,9 @@ class PromptLab {
 
     /** Gets the Prompt Lab value count for a wildcard token. */
     getPromptLabWildcardCount(token) {
+        if (token.toLowerCase().startsWith('random:')) {
+            return token.substring('random:'.length).split(',').map(v => v.trim()).filter(v => v).length;
+        }
         let wildcard = this.data.wildcards.find(w => (w.name || '').toLowerCase() == token.toLowerCase());
         if (!wildcard) {
             return null;
@@ -248,12 +251,16 @@ class PromptLab {
     detectWildcardTokens() {
         let positive = getRequiredElementById('prompt_lab_positive').value;
         let negative = getRequiredElementById('prompt_lab_negative').value;
-        let matcher = /<wildcard:([^>]+)>/gi;
+        let matcher = /<(wildcard|random):([^>]+)>/gi;
         let tokens = [];
         for (let text of [positive, negative]) {
             let match;
             while ((match = matcher.exec(text)) != null) {
-                let token = match[1].trim();
+                let type = match[1].trim().toLowerCase();
+                let token = match[2].trim();
+                if (type == 'random') {
+                    token = `random:${token}`;
+                }
                 if (token && !tokens.some(t => t.toLowerCase() == token.toLowerCase())) {
                     tokens.push(token);
                 }
@@ -271,7 +278,8 @@ class PromptLab {
         for (let token of tokens) {
             let count = this.getPromptLabWildcardCount(token);
             let countText = count == null ? '' : ` <span class="prompt-lab-count">${count}</span>`;
-            html += `<div>&lt;wildcard:${escapeHtml(token)}&gt;${countText}</div>`;
+            let label = token.toLowerCase().startsWith('random:') ? `&lt;${escapeHtml(token)}&gt;` : `&lt;wildcard:${escapeHtml(token)}&gt;`;
+            html += `<div>${label}${countText}</div>`;
         }
         return html;
     }

@@ -4,11 +4,11 @@ using System.Text.RegularExpressions;
 
 namespace SwarmUI.Utils;
 
-/// <summary>Expands prompt wildcard tokens such as <c>&lt;wildcard:species&gt;</c>.</summary>
+/// <summary>Expands prompt wildcard tokens such as <c>&lt;wildcard:species&gt;</c> or <c>&lt;random:cat,dog&gt;</c>.</summary>
 public static partial class WildcardExpansionHelper
 {
-    /// <summary>Compiled matcher for <c>&lt;wildcard:name&gt;</c> wildcard tokens.</summary>
-    [GeneratedRegex("<wildcard:([^>]+)>", RegexOptions.IgnoreCase)]
+    /// <summary>Compiled matcher for wildcard-like prompt tokens.</summary>
+    [GeneratedRegex("<(wildcard|random):([^>]+)>", RegexOptions.IgnoreCase)]
     public static partial Regex WildcardTokenRegex();
 
     /// <summary>Detects wildcard tokens in prompt order, de-duplicated case-insensitively.</summary>
@@ -23,7 +23,7 @@ public static partial class WildcardExpansionHelper
             }
             foreach (Match match in WildcardTokenRegex().Matches(prompt))
             {
-                string token = match.Groups[1].Value.Trim();
+                string token = TokenIdFor(match);
                 if (!tokens.Any(existing => existing.ToLowerFast() == token.ToLowerFast()))
                 {
                     tokens.Add(token);
@@ -46,7 +46,12 @@ public static partial class WildcardExpansionHelper
         List<List<string>> valueLists = [];
         foreach (string token in tokens)
         {
-            if (!wildcardSets.TryGetValue(token.ToLowerFast(), out List<string> values))
+            List<string> values;
+            if (token.StartsWith("random:", StringComparison.OrdinalIgnoreCase))
+            {
+                values = ParseRandomValues(token["random:".Length..]);
+            }
+            else if (!wildcardSets.TryGetValue(token.ToLowerFast(), out values))
             {
                 WildcardsHelper.Wildcard existingWildcard = WildcardsHelper.GetWildcard(token);
                 values = existingWildcard?.Options?.ToList();
@@ -111,6 +116,20 @@ public static partial class WildcardExpansionHelper
         return BuildResult(tokens, total, outputs, warnings);
     }
 
+    /// <summary>Gets a stable token ID for a regex match.</summary>
+    public static string TokenIdFor(Match match)
+    {
+        string type = match.Groups[1].Value.Trim().ToLowerFast();
+        string data = match.Groups[2].Value.Trim();
+        return type == "random" ? $"random:{data}" : data;
+    }
+
+    /// <summary>Parses comma-separated inline random values.</summary>
+    public static List<string> ParseRandomValues(string data)
+    {
+        return [.. data.Split(',').Select(part => part.Trim()).Where(part => !string.IsNullOrWhiteSpace(part))];
+    }
+
     /// <summary>Builds the API result object.</summary>
     public static JObject BuildResult(List<string> tokens, long total, JArray prompts, List<string> warnings)
     {
@@ -129,7 +148,7 @@ public static partial class WildcardExpansionHelper
     {
         return WildcardTokenRegex().Replace(prompt, match =>
         {
-            string token = match.Groups[1].Value.Trim();
+            string token = TokenIdFor(match);
             return choices.TryGetValue(token, out string value) ? value : match.Value;
         });
     }
