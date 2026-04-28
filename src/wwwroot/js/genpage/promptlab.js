@@ -5,6 +5,8 @@ class PromptLab {
         this.currentPromptId = null;
         this.currentWildcardId = null;
         this.hasLoaded = false;
+        this.pendingWildcardGenerations = [];
+        this.isStartingWildcardGenerationSocket = false;
     }
 
     /** Initializes Prompt Lab once the page is ready. */
@@ -404,11 +406,35 @@ class PromptLab {
             if (data.total_possible_combinations > 1000 && !confirm(`This will create ${data.total_possible_combinations} generation jobs. Continue?`)) {
                 return;
             }
-            for (let prompt of data.prompts) {
-                this.generateExpandedPrompt(prompt);
-            }
+            this.pendingWildcardGenerations = data.prompts.slice();
+            this.runNextWildcardGeneration();
             openGenPageTab('text2imagetabbutton');
         });
+    }
+
+    /** Runs the next queued wildcard generation after the normal generation socket is usable. */
+    runNextWildcardGeneration() {
+        if (this.pendingWildcardGenerations.length == 0) {
+            return;
+        }
+        let socket = mainGenHandler.sockets.normal;
+        if (socket && socket.readyState == WebSocket.CONNECTING) {
+            setTimeout(() => this.runNextWildcardGeneration(), 50);
+            return;
+        }
+        if (!socket && this.isStartingWildcardGenerationSocket) {
+            setTimeout(() => this.runNextWildcardGeneration(), 50);
+            return;
+        }
+        if (socket && socket.readyState == WebSocket.OPEN) {
+            this.isStartingWildcardGenerationSocket = false;
+        }
+        let prompt = this.pendingWildcardGenerations.shift();
+        if (!socket) {
+            this.isStartingWildcardGenerationSocket = true;
+        }
+        this.generateExpandedPrompt(prompt);
+        setTimeout(() => this.runNextWildcardGeneration(), 0);
     }
 
     /** Queues one expanded prompt for generation. */
