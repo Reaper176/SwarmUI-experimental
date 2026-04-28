@@ -529,9 +529,24 @@ class ImageFullViewHelper {
         };
     }
 
-    /** Keep pointer-relative anchor math inside the rendered media even when the pointer is in empty margins. */
-    clampMediaRatio(value) {
-        return Math.min(1, Math.max(0, value));
+    /** Gets the pointer anchor to zoom around, falling back to the media center outside the rendered media. */
+    getZoomAnchor(pointerX, pointerY, rect) {
+        let mediaX = (pointerX - rect.left) / rect.width;
+        let mediaY = (pointerY - rect.top) / rect.height;
+        if (mediaX < 0 || mediaX > 1) {
+            mediaX = 0.5;
+            pointerX = rect.left + rect.width * 0.5;
+        }
+        if (mediaY < 0 || mediaY > 1) {
+            mediaY = 0.5;
+            pointerY = rect.top + rect.height * 0.5;
+        }
+        return {
+            pointerX,
+            pointerY,
+            mediaX,
+            mediaY
+        };
     }
 
     shouldShowMetadata(targetHeightPercent, fitPercent) {
@@ -610,13 +625,12 @@ class ImageFullViewHelper {
         let wrapRect = rect.geometry.wrap.getBoundingClientRect();
         let pointerX = clientX - wrapRect.left;
         let pointerY = clientY - wrapRect.top;
-        let mediaX = this.clampMediaRatio((pointerX - rect.left) / rect.width);
-        let mediaY = this.clampMediaRatio((pointerY - rect.top) / rect.height);
+        let anchor = this.getZoomAnchor(pointerX, pointerY, rect);
         let scale = targetHeightPercent / rect.geometry.fittedHeightPercent;
         let targetWidth = rect.geometry.fittedWidth * scale;
         let targetHeight = rect.geometry.fittedHeight * scale;
-        let targetLeft = pointerX - mediaX * targetWidth;
-        let targetTop = pointerY - mediaY * targetHeight;
+        let targetLeft = anchor.pointerX - anchor.mediaX * targetWidth;
+        let targetTop = anchor.pointerY - anchor.mediaY * targetHeight;
         let resolved = this.resolveZoomPosition(targetLeft, targetTop, targetWidth, targetHeight, rect.geometry, targetHeightPercent, targetHeightPercent < rect.heightPercent);
         container.style.height = `${resolved.heightPercent}%`;
         container.style.left = `${resolved.left}px`;
