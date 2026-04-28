@@ -638,6 +638,7 @@ function updateImageHistoryCompareRevealFromPointer(e) {
 function setImageHistoryCompareReveal(value) {
     let reveal = Math.max(0, Math.min(100, parseFloat(value) || 0));
     getRequiredElementById('image_history_compare_img_b').style.clipPath = `inset(0 ${100 - reveal}% 0 0)`;
+    getRequiredElementById('image_history_compare_diff_canvas').style.clipPath = `inset(0 ${100 - reveal}% 0 0)`;
     getRequiredElementById('image_history_compare_divider').style.left = `${reveal}%`;
 }
 

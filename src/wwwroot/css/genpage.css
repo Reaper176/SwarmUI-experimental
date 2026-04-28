@@ -1361,9 +1361,9 @@ mark.model-search-highlight {
     height: auto;
     margin: auto;
     pointer-events: none;
+    clip-path: inset(0 50% 0 0);
 }
-.image-history-compare-diff-active .image-history-compare-img-top,
-.image-history-compare-diff-active .image-history-compare-divider {
+.image-history-compare-diff-active .image-history-compare-img-top {
     display: none;
 }
 .image-history-compare-diff-active .image-history-compare-diff-canvas {
