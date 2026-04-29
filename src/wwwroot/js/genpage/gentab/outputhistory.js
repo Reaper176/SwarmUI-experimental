@@ -2049,7 +2049,7 @@ function describeOutputFile(image) {
     let detail_list = [escapeHtml(image.data.name), detailMetadata];
     let userDetails = [];
     if (parsedMeta.rating != null && `${parsedMeta.rating}` != '') {
-        userDetails.push(`Rating: ${escapeHtml(parsedMeta.rating)}`);
+        userDetails.push(`Rating: ${escapeHtml(`${parsedMeta.rating}`)}`);
     }
     let tagText = imageHistoryValueToSearchText(parsedMeta.tags);
     if (tagText) {
