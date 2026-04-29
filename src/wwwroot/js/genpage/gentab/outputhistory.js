@@ -1035,7 +1035,8 @@ function updateImageHistoryBulkControls() {
         deleteButton.disabled = count == 0 || imageHistoryBulkActionRunning;
     }
     if (compareButton) {
-        compareButton.disabled = count != 2 || imageHistoryBulkActionRunning;
+        compareButton.disabled = count < 2 || imageHistoryBulkActionRunning;
+        compareButton.innerText = count > 2 ? 'Compare First Two' : 'Compare';
     }
     if (exportMetadataButton) {
         exportMetadataButton.disabled = count == 0 || imageHistoryBulkActionRunning;
@@ -1114,7 +1115,7 @@ function unstarSelectedImageHistory() {
 }
 
 function compareSelectedImageHistory() {
-    showImageHistoryCompare([...imageHistorySelected]);
+    showImageHistoryCompare([...imageHistorySelected].slice(0, 2));
 }
 
 function exportSelectedImageHistoryMetadata() {
