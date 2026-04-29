@@ -19,6 +19,7 @@ class PromptLab {
         if (window.userFeatureToggles?.promptLab == false || !document.getElementById('prompt_lab_positive')) {
             return;
         }
+        getRequiredElementById('prompt_lab_max_combinations').value = window.userFeatureToggles?.promptLabWildcardHardLimit || 10000;
         promptTabComplete.enableFor(getRequiredElementById('prompt_lab_positive'));
         promptTabComplete.enableFor(getRequiredElementById('prompt_lab_negative'));
         this.enablePromptDrop(getRequiredElementById('prompt_lab_positive'));
@@ -842,7 +843,7 @@ class PromptLab {
             negative: getRequiredElementById('prompt_lab_negative').value,
             mode: modeOverride || getRequiredElementById('prompt_lab_wildcard_mode').value,
             sample_count: parseInt(getRequiredElementById('prompt_lab_sample_count').value) || 25,
-            max_combinations: parseInt(getRequiredElementById('prompt_lab_max_combinations').value) || 1000
+            max_combinations: Math.min(parseInt(getRequiredElementById('prompt_lab_max_combinations').value) || 1000, window.userFeatureToggles?.promptLabWildcardHardLimit || 10000)
         };
     }
 
@@ -877,7 +878,8 @@ class PromptLab {
                 showError(`Wildcard combinations exceed the max limit. Increase max combinations to generate all ${data.total_possible_combinations}.`);
                 return;
             }
-            if (data.total_possible_combinations > 1000 && !confirm(`This will create ${data.total_possible_combinations} generation jobs. Continue?`)) {
+            let warningLimit = window.userFeatureToggles?.promptLabWildcardWarningLimit || 1000;
+            if (data.total_possible_combinations > warningLimit && !confirm(`This will create ${data.total_possible_combinations} generation jobs. Continue?`)) {
                 return;
             }
             this.addHistory('Generated Combinations', getRequiredElementById('prompt_lab_positive').value, getRequiredElementById('prompt_lab_negative').value);

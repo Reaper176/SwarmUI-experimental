@@ -585,6 +585,12 @@ public class Settings : AutoConfiguration
         [ConfigComment("If enabled, Image History compare opens in pixel diff mode.")]
         public bool ImageHistoryCompareDiffDefault = false;
 
+        [ConfigComment("Prompt Lab wildcard combinations above this count require confirmation before queueing.")]
+        public int PromptLabWildcardCombinationWarningLimit = 1000;
+
+        [ConfigComment("Prompt Lab wildcard expansions cannot return more combinations than this hard limit.")]
+        public int PromptLabWildcardCombinationHardLimit = 10000;
+
         public enum HintFormatOptions
         {
             BUTTON, HOVER, HOVER_DELAY, NONE

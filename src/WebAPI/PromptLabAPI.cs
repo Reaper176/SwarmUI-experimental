@@ -92,6 +92,8 @@ public static class PromptLabAPI
         string mode = rawInput.Value<string>("mode") ?? "all";
         int sampleCount = rawInput.Value<int?>("sample_count") ?? 1;
         int maxCombinations = rawInput.Value<int?>("max_combinations") ?? 1000;
+        int hardLimit = Math.Max(1, session.User.Settings.PromptLabWildcardCombinationHardLimit);
+        maxCombinations = Math.Max(1, Math.Min(maxCombinations, hardLimit));
         bool shuffleResults = rawInput.Value<bool?>("shuffle_results") ?? false;
         Dictionary<string, List<string>> wildcardSets = PromptLabStore.GetWildcardMap(session.User);
         if (rawInput["wildcard_sets"] is JObject rawSets)
