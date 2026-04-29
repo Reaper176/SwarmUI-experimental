@@ -31,6 +31,7 @@ public static class T2IAPI
         API.RegisterAPICall(GenerateText2ImageWS, true, Permissions.BasicImageGeneration);
         API.RegisterAPICall(AddImageToHistory, true, Permissions.BasicImageGeneration);
         API.RegisterAPICall(ListImages, false, Permissions.ViewImageHistory);
+        API.RegisterAPICall(RescanImageMetadata, true, Permissions.ViewImageHistory);
         API.RegisterAPICall(ToggleImageStarred, true, Permissions.UserStarImages);
         API.RegisterAPICall(ToggleImageHidden, true, Permissions.ViewImageHistory);
         API.RegisterAPICall(SetImageRating, true, Permissions.ViewImageHistory);
@@ -1137,6 +1138,59 @@ public static class T2IAPI
         }
         string root = Utilities.CombinePathWithAbsolute(Environment.CurrentDirectory, session.User.OutputDirectory);
         return GetListAPIInternal(session, path, root, HistoryExtensions, f => true, depth, sortMode, sortReverse, includeHidden, fastFirst, fastFirstLimit);
+    }
+
+    [API.APIDescription("Rescan cached image history metadata for a folder.", "{ \"success\": true, \"indexed\": 10, \"skipped\": 0 }")]
+    public static async Task<JObject> RescanImageMetadata(Session session,
+        [API.APIParameter("The folder path to rescan. Use an empty string for root.")] string path,
+        [API.APIParameter("If true, clear cached metadata for each file before rereading.")] bool rebuild)
+    {
+        string root = Utilities.CombinePathWithAbsolute(Environment.CurrentDirectory, session.User.OutputDirectory);
+        (string checkedPath, string consoleError, string userError) = WebServer.CheckFilePath(root, path);
+        if (consoleError is not null)
+        {
+            Logs.Error(consoleError);
+            return new JObject() { ["error"] = userError };
+        }
+        checkedPath = UserImageHistoryHelper.GetRealPathFor(session.User, checkedPath, root: root);
+        if (!Directory.Exists(checkedPath))
+        {
+            return new JObject() { ["error"] = "That folder does not exist." };
+        }
+        int indexed = 0;
+        int skipped = 0;
+        bool starNoFolders = session.User.Settings.StarNoFolders;
+        try
+        {
+            foreach (string rawFile in Directory.EnumerateFiles(checkedPath, "*", SearchOption.AllDirectories))
+            {
+                string file = rawFile.Replace('\\', '/');
+                string filename = file.AfterLast('/');
+                string ext = file.AfterLast('.').ToLowerFast();
+                if (filename.StartsWithFast('.') || !HistoryExtensions.Contains(ext) || file.EndsWith(".swarmpreview.jpg") || file.EndsWith(".swarmpreview.webp"))
+                {
+                    skipped++;
+                    continue;
+                }
+                if (rebuild)
+                {
+                    OutputMetadataTracker.RemoveMetadataFor(file);
+                }
+                OutputMetadataTracker.OutputMetadataEntry metadata = OutputMetadataTracker.GetMetadataFor(file, root, starNoFolders);
+                if (metadata is null)
+                {
+                    skipped++;
+                    continue;
+                }
+                indexed++;
+            }
+        }
+        catch (Exception ex)
+        {
+            Logs.Warning($"Error rescanning image history metadata for '{path}': {ex.ReadableString()}");
+            return new JObject() { ["error"] = "Error rescanning image history metadata." };
+        }
+        return new JObject() { ["success"] = true, ["indexed"] = indexed, ["skipped"] = skipped };
     }
 
     [API.APIDescription("Open an image folder in the file explorer. Used for local users directly.", "\"success\": true")]
