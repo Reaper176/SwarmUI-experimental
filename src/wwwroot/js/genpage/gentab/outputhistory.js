@@ -428,6 +428,8 @@ function getImageHistorySearchFields(image, parsedMeta) {
     let extension = name.includes('.') ? name.split('.').pop().toLowerCase() : '';
     let rawMetadata = typeof image.data.metadata == 'string' ? image.data.metadata : imageHistoryValueToSearchText(image.data.metadata);
     let fileSize = Number.parseInt(image.data.file_size || 0) || 0;
+    let fileTime = Number.parseInt(image.data.file_time || 0) || 0;
+    let fileDate = fileTime ? new Date(fileTime * 1000).toISOString() : '';
     let hasMetadataText = rawMetadata ? 'true yes metadata' : 'false no none';
     let generationResolution = params.width && params.height ? `${params.width}x${params.height}` : '';
     let finalResolution = extra.final_width && extra.final_height ? `${extra.final_width}x${extra.final_height}` : generationResolution;
@@ -444,7 +446,7 @@ function getImageHistorySearchFields(image, parsedMeta) {
         filetype: extension,
         filesize: fileSize ? `${fileSize} ${largeCountStringify(fileSize)}` : '',
         has: hasMetadataText,
-        date: fullsrc,
+        date: `${fileDate} ${fileDate.substring(0, 10)} ${fullsrc}`,
         metadata: `${rawMetadata} ${imageHistoryValueToSearchText(parsedMeta)}`,
         prompt: `${params.prompt || ''} ${extra.original_prompt || ''}`,
         negative: params.negativeprompt || '',
@@ -551,6 +553,31 @@ function imageHistoryNumericFilterMatches(fieldText, value) {
     return actual == expected;
 }
 
+function imageHistoryDateFilterMatches(fieldText, value) {
+    let match = value.match(/^(>=|<=|>|<|=)(\d{4}-\d{2}-\d{2}(?:T[^ ]*)?)$/);
+    if (!match) {
+        return null;
+    }
+    let actual = Date.parse(`${fieldText}`.split(' ')[0]);
+    let expected = Date.parse(match[2]);
+    if (!Number.isFinite(actual) || !Number.isFinite(expected)) {
+        return false;
+    }
+    if (match[1] == '>=') {
+        return actual >= expected;
+    }
+    if (match[1] == '<=') {
+        return actual <= expected;
+    }
+    if (match[1] == '>') {
+        return actual > expected;
+    }
+    if (match[1] == '<') {
+        return actual < expected;
+    }
+    return actual == expected;
+}
+
 /**
  * Matches image history entries against text and field:value search terms.
  */
@@ -583,6 +610,13 @@ function imageHistoryFilterMatches(desc, filter) {
                 }
                 continue;
             }
+            let dateMatch = imageHistoryDateFilterMatches(fieldText, value);
+            if (dateMatch != null) {
+                if (!dateMatch) {
+                    return false;
+                }
+                continue;
+            }
             if (!`${fieldText}`.toLowerCase().includes(value)) {
                 return false;
             }
@@ -604,7 +638,7 @@ function updateImageHistoryFilterHint() {
     }
     filterInput.dataset.historyFilterHint = 'true';
     filterInput.placeholder = 'Search prompt/model/metadata...';
-    filterInput.title = 'Search text, or use field:value terms like model:sdxl seed:123 res:1024x1024 rating:>=4 width:>=1024 wildcard:dragon.';
+    filterInput.title = 'Search text, or use field:value terms like model:sdxl seed:123 date:>=2026-04-01 rating:>=4 width:>=1024 wildcard:dragon.';
 }
 
 /**
@@ -1097,7 +1131,7 @@ function orderHistoryFilesForDisplay(files) {
 function mapHistoryFiles(prefix, files) {
     return files.map(file => {
         let fullSrc = `${prefix}${file.src}`;
-        return { 'name': fullSrc, 'data': { 'src': getHistoryImageSrc(fullSrc), 'fullsrc': fullSrc, 'name': file.src, 'metadata': safeInterpretHistoryMetadata(file.metadata, fullSrc), 'file_size': file.file_size || 0 } };
+        return { 'name': fullSrc, 'data': { 'src': getHistoryImageSrc(fullSrc), 'fullsrc': fullSrc, 'name': file.src, 'metadata': safeInterpretHistoryMetadata(file.metadata, fullSrc), 'file_size': file.file_size || 0, 'file_time': file.file_time || 0 } };
     });
 }
 

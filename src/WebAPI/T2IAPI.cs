@@ -1109,7 +1109,7 @@ public static class T2IAPI
             return new JObject()
             {
                 ["folders"] = JToken.FromObject(dirs.Union(finalDirs.Keys).ToList()),
-                ["files"] = JToken.FromObject(files.Take(maxInHistory).Select(f => new JObject() { ["src"] = f.Name, ["metadata"] = f.Metadata.Metadata, ["file_size"] = f.FileSize }).ToList())
+                ["files"] = JToken.FromObject(files.Take(maxInHistory).Select(f => new JObject() { ["src"] = f.Name, ["metadata"] = f.Metadata.Metadata, ["file_size"] = f.FileSize, ["file_time"] = f.Metadata.FileTime }).ToList())
             };
         }
         catch (Exception ex)
