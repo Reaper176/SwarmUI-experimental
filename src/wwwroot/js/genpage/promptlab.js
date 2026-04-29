@@ -388,7 +388,7 @@ class PromptLab {
         let html = '';
         let fragments = this.sortedWithFavorites(this.data.fragments);
         for (let fragment of fragments) {
-            let text = `${fragment.name || ''} ${fragment.category || ''} ${(fragment.tags || []).join(' ')}`.toLowerCase();
+            let text = `${fragment.name || ''} ${fragment.category || ''} ${(fragment.tags || []).join(' ')} ${fragment.text || ''}`.toLowerCase();
             if (search && !text.includes(search)) {
                 continue;
             }
@@ -514,7 +514,7 @@ class PromptLab {
         let html = '';
         let wildcards = this.sortedWithFavorites(this.data.wildcards);
         for (let wildcard of wildcards) {
-            let text = `${wildcard.name || ''} ${(wildcard.tags || []).join(' ')}`.toLowerCase();
+            let text = `${wildcard.name || ''} ${(wildcard.tags || []).join(' ')} ${(wildcard.values || []).join(' ')}`.toLowerCase();
             if (search && !text.includes(search)) {
                 continue;
             }
