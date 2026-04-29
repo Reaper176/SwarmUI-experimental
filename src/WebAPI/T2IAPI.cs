@@ -753,7 +753,7 @@ public static class T2IAPI
         "mp3", "aac", "wav", "flac" // audio
     ];
 
-    public enum ImageHistorySortMode { Name, Date }
+    public enum ImageHistorySortMode { Name, Date, Rating }
 
     private static bool MetadataIsHidden(OutputMetadataTracker.OutputMetadataEntry metadata)
     {
@@ -769,6 +769,23 @@ public static class T2IAPI
         catch (Exception)
         {
             return false;
+        }
+    }
+
+    private static double MetadataRating(OutputMetadataTracker.OutputMetadataEntry metadata)
+    {
+        if (metadata is null || string.IsNullOrWhiteSpace(metadata.Metadata) || !metadata.Metadata.Contains("\"rating\""))
+        {
+            return 0;
+        }
+        try
+        {
+            JToken rating = metadata.Metadata.ParseToJson()["rating"];
+            return rating is null ? 0 : rating.Value<double>();
+        }
+        catch (Exception)
+        {
+            return 0;
         }
     }
 
@@ -815,6 +832,10 @@ public static class T2IAPI
                 else if (sortBy == ImageHistorySortMode.Date)
                 {
                     list.Sort((a, b) => b.Metadata.FileTime.CompareTo(a.Metadata.FileTime));
+                }
+                else if (sortBy == ImageHistorySortMode.Rating)
+                {
+                    list.Sort((a, b) => MetadataRating(b.Metadata).CompareTo(MetadataRating(a.Metadata)));
                 }
                 if (sortReverse)
                 {
