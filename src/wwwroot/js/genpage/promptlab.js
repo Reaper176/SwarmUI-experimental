@@ -656,12 +656,21 @@ class PromptLab {
     }
 
     /** Builds local prompt warnings and counts. */
-    getPromptDiagnostics() {
+    getPromptDiagnostics(tokens = null) {
         let positive = getRequiredElementById('prompt_lab_positive').value || '';
         let negative = getRequiredElementById('prompt_lab_negative').value || '';
         let warnings = [];
         this.addPromptTextWarnings(warnings, positive, 'Positive');
         this.addPromptTextWarnings(warnings, negative, 'Negative');
+        for (let token of tokens || this.detectWildcardTokens()) {
+            let count = this.getPromptLabWildcardCount(token);
+            if (count == null) {
+                warnings.push(`Wildcard missing: ${token}.`);
+            }
+            else if (count == 0) {
+                warnings.push(`Wildcard has no values: ${token}.`);
+            }
+        }
         return {
             positive_chars: positive.length,
             negative_chars: negative.length,
@@ -733,7 +742,7 @@ class PromptLab {
             return;
         }
         let tokens = this.detectWildcardTokens();
-        let diagnostics = this.getPromptDiagnostics();
+        let diagnostics = this.getPromptDiagnostics(tokens);
         wildcardBox.innerHTML = this.renderDetectedWildcards(tokens);
         let positive = escapeHtml(getRequiredElementById('prompt_lab_positive').value || '');
         let negative = escapeHtml(getRequiredElementById('prompt_lab_negative').value || '');
