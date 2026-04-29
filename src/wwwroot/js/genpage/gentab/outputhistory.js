@@ -382,7 +382,9 @@ function getImageHistorySearchFields(image, parsedMeta) {
     let name = image.data.name || '';
     let fullsrc = image.data.fullsrc || '';
     let folder = fullsrc.includes('/') ? fullsrc.substring(0, fullsrc.lastIndexOf('/')) : '';
+    let extension = name.includes('.') ? name.split('.').pop().toLowerCase() : '';
     let rawMetadata = typeof image.data.metadata == 'string' ? image.data.metadata : imageHistoryValueToSearchText(image.data.metadata);
+    let hasMetadataText = rawMetadata ? 'true yes metadata' : 'false no none';
     let generationResolution = params.width && params.height ? `${params.width}x${params.height}` : '';
     let finalResolution = extra.final_width && extra.final_height ? `${extra.final_width}x${extra.final_height}` : generationResolution;
     let favoriteText = parsedMeta.is_starred ? 'true yes starred favorite' : 'false no unstarred';
@@ -390,6 +392,9 @@ function getImageHistorySearchFields(image, parsedMeta) {
         name: name,
         path: fullsrc,
         folder: folder,
+        type: extension,
+        filetype: extension,
+        has: hasMetadataText,
         date: fullsrc,
         metadata: `${rawMetadata} ${imageHistoryValueToSearchText(parsedMeta)}`,
         prompt: `${params.prompt || ''} ${extra.original_prompt || ''}`,
@@ -455,6 +460,9 @@ function normalizeImageHistoryFilterField(field) {
         size: 'resolution',
         prompt_lab: 'promptlab',
         prompt_lab_id: 'promptlab',
+        ext: 'filetype',
+        file_type: 'filetype',
+        has_metadata: 'has',
         wildcard_values: 'wildcard'
     };
     return aliases[field] || field;
