@@ -576,6 +576,17 @@ public class Settings : AutoConfiguration
         [ConfigComment("If enabled, advanced Image History organization tools are available.")]
         public bool EnableImageHistoryAdvancedTools = true;
 
+        [ConfigComment("Default Image History sort mode when the browser has no saved local preference.")]
+        [ManualSettingsOptions(Vals = ["Name", "Date", "Rating", "Resolution", "Model", "Seed", "FileSize"], ManualNames = ["Name", "Date", "Rating", "Resolution", "Model", "Seed", "File Size"])]
+        public string DefaultImageHistorySort = "Name";
+
+        [ConfigComment("Default Image History view mode when the browser has no saved local preference.")]
+        [ManualSettingsOptions(Vals = ["Thumbnails", "Small Thumbnails", "Big Thumbnails", "Giant Thumbnails", "List", "Details List"], ManualNames = ["Thumbnails", "Small Thumbnails", "Big Thumbnails", "Giant Thumbnails", "List", "Details List"])]
+        public string DefaultImageHistoryView = "Thumbnails";
+
+        [ConfigComment("If enabled, Image History shows hidden images by default when the browser has no saved local preference.")]
+        public bool ImageHistoryShowHiddenDefault = false;
+
         [ConfigComment("If enabled, Image History compare tools are available.")]
         public bool EnableImageHistoryCompare = true;
 
