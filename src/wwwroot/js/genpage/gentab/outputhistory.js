@@ -538,6 +538,8 @@ function ensureImageHistoryCompareModal() {
             <button type="button" class="basic-button translate" id="image_history_compare_swap">Swap</button>
             <button type="button" class="basic-button translate" id="image_history_compare_reuse_a">A Settings</button>
             <button type="button" class="basic-button translate" id="image_history_compare_reuse_b">B Settings</button>
+            <button type="button" class="basic-button translate" id="image_history_compare_star_a">A Star</button>
+            <button type="button" class="basic-button translate" id="image_history_compare_star_b">B Star</button>
             <button type="button" class="basic-button translate" id="image_history_compare_close">Close</button>
         </div>
         <div class="image-history-compare-body">
@@ -566,6 +568,12 @@ function ensureImageHistoryCompareModal() {
     };
     getRequiredElementById('image_history_compare_reuse_b').onclick = () => {
         reuseImageHistoryCompareSettings('second');
+    };
+    getRequiredElementById('image_history_compare_star_a').onclick = () => {
+        starImageHistoryCompareImage('first');
+    };
+    getRequiredElementById('image_history_compare_star_b').onclick = () => {
+        starImageHistoryCompareImage('second');
     };
     getRequiredElementById('image_history_compare_zoom').addEventListener('input', e => {
         setImageHistoryCompareZoom(e.target.value);
@@ -597,6 +605,20 @@ function reuseImageHistoryCompareSettings(side) {
     setCurrentImage(file.data.src, file.data.metadata, 'history');
     copy_current_image_params();
     closeImageHistoryCompareModal();
+}
+
+/**
+ * Toggles starred state for one compared image.
+ */
+function starImageHistoryCompareImage(side) {
+    if (!imageHistoryCompareFiles) {
+        return;
+    }
+    let file = imageHistoryCompareFiles[side];
+    if (!file?.data?.fullsrc || !file?.data?.src) {
+        return;
+    }
+    toggleStar(file.data.fullsrc, file.data.src);
 }
 
 /**
