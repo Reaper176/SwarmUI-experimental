@@ -853,6 +853,7 @@ function getImageHistoryCompareMetadataFields(file) {
         'Final Resolution': finalResolution,
         Rating: metadata.rating || '',
         Tags: imageHistoryValueToSearchText(metadata.tags || extra.tags),
+        Notes: metadata.notes || extra.notes || '',
         'Prompt Lab': extra.prompt_lab_id || extra.prompt_lab_prompt_id || '',
         Wildcards: extra.prompt_lab_wildcard_values || ''
     };
