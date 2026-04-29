@@ -10,6 +10,7 @@ class PromptLab {
         this.pendingWildcardGenerations = [];
         this.isStartingWildcardGenerationSocket = false;
         this.searchRenderTimeouts = {};
+        this.pendingGenerateMetadata = null;
     }
 
     /** Initializes Prompt Lab once the page is ready. */
@@ -915,6 +916,17 @@ class PromptLab {
         });
     }
 
+    /** Adds pending Prompt Lab metadata to the next normal generation. */
+    applyPendingGenerateMetadata(actualInput) {
+        if (!this.pendingGenerateMetadata) {
+            return;
+        }
+        actualInput.extra_metadata = actualInput.extra_metadata || {};
+        actualInput.extra_metadata.prompt_lab_id = this.pendingGenerateMetadata.id || '';
+        actualInput.extra_metadata.prompt_lab_name = this.pendingGenerateMetadata.name || '';
+        this.pendingGenerateMetadata = null;
+    }
+
     /** Sends the editor prompt pair to the Generate tab. */
     sendToGenerate() {
         let promptParam = getParamById('prompt');
@@ -925,6 +937,10 @@ class PromptLab {
         if (negativeParam) {
             setDirectParamValue(negativeParam, getRequiredElementById('prompt_lab_negative').value);
         }
+        this.pendingGenerateMetadata = {
+            id: this.currentPromptId || '',
+            name: getRequiredElementById('prompt_lab_name').value || ''
+        };
         this.addHistory('Sent to Generate', getRequiredElementById('prompt_lab_positive').value, getRequiredElementById('prompt_lab_negative').value);
         openGenPageTab('text2imagetabbutton');
     }

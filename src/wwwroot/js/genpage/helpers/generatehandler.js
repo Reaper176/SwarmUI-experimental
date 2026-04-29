@@ -467,6 +467,9 @@ class GenerateHandler {
                 }
                 this.hadError(e);
             };
+            if (window.promptLab?.applyPendingGenerateMetadata) {
+                promptLab.applyPendingGenerateMetadata(actualInput);
+            }
             if (postCollectRun) {
                 postCollectRun(actualInput);
             }
