@@ -1484,6 +1484,9 @@ function exportSelectedImageHistoryMetadata() {
         exported.push({
             path: fullsrc,
             name: file.data.name,
+            file_size: file.data.file_size || 0,
+            file_time: file.data.file_time || 0,
+            file_date: file.data.file_time ? new Date(file.data.file_time * 1000).toISOString() : '',
             metadata: parseHistoryMetadata(file.data.metadata),
             raw_metadata: file.data.metadata
         });
