@@ -1216,7 +1216,7 @@ public static class T2IAPI
 
     [API.APIDescription("Copy or move selected images to another output subfolder.", "\"success\": true")]
     public static async Task<JObject> BulkMoveImages(Session session,
-        [API.APIParameter("Image paths to copy or move.")] JArray paths,
+        [API.APIParameter("Image paths to copy or move.")] string[] paths,
         [API.APIParameter("Output subfolder to copy or move into.")] string targetFolder,
         [API.APIParameter("Either copy or move.")] string mode)
     {
@@ -1238,9 +1238,9 @@ public static class T2IAPI
         Directory.CreateDirectory(targetRoot);
         int changed = 0;
         int failed = 0;
-        foreach (JToken pathToken in paths ?? new JArray())
+        foreach (string pathToken in paths ?? [])
         {
-            string rawPath = $"{pathToken}".Replace('\\', '/').Trim('/');
+            string rawPath = pathToken.Replace('\\', '/').Trim('/');
             (string sourcePath, string pathConsoleError, _) = WebServer.CheckFilePath(root, rawPath);
             if (pathConsoleError is not null)
             {
