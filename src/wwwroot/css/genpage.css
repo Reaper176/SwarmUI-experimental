@@ -1346,7 +1346,11 @@ mark.model-search-highlight {
     width: fit-content;
     max-width: 100%;
     text-align: center;
-    cursor: ew-resize;
+    cursor: grab;
+    touch-action: none;
+}
+.image-history-compare-stage:active {
+    cursor: grabbing;
 }
 .image-history-compare-img {
     display: block;

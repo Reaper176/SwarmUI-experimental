@@ -1,6 +1,7 @@
 let imageHistorySelected = new Set();
 let imageHistoryBulkActionRunning = false;
 let imageHistoryCompareFiles = null;
+let imageHistoryComparePan = { x: 0, y: 0, active: false, startX: 0, startY: 0, baseX: 0, baseY: 0 };
 let imageHistoryShowHidden = localStorage.getItem('image_history_show_hidden') == 'true';
 let imageHistoryRefreshQueued = false;
 let imageHistoryHasLoadedOnce = false;
@@ -598,7 +599,9 @@ function ensureImageHistoryCompareModal() {
     });
     let stage = modal.querySelector('.image-history-compare-stage');
     stage.addEventListener('pointermove', updateImageHistoryCompareRevealFromPointer);
-    stage.addEventListener('pointerdown', updateImageHistoryCompareRevealFromPointer);
+    stage.addEventListener('pointerdown', startImageHistoryComparePan);
+    stage.addEventListener('pointerup', endImageHistoryComparePan);
+    stage.addEventListener('pointercancel', endImageHistoryComparePan);
     return modal;
 }
 
@@ -787,6 +790,12 @@ function openImageHistoryCompareModal() {
  * Updates reveal from mouse or pointer position over the image.
  */
 function updateImageHistoryCompareRevealFromPointer(e) {
+    if (imageHistoryComparePan.active) {
+        imageHistoryComparePan.x = imageHistoryComparePan.baseX + e.clientX - imageHistoryComparePan.startX;
+        imageHistoryComparePan.y = imageHistoryComparePan.baseY + e.clientY - imageHistoryComparePan.startY;
+        applyImageHistoryComparePan();
+        return;
+    }
     let base = getRequiredElementById('image_history_compare_img_a');
     let rect = base.getBoundingClientRect();
     if (rect.width <= 0) {
@@ -794,6 +803,33 @@ function updateImageHistoryCompareRevealFromPointer(e) {
     }
     let reveal = ((e.clientX - rect.left) / rect.width) * 100;
     setImageHistoryCompareReveal(reveal);
+}
+
+function startImageHistoryComparePan(e) {
+    updateImageHistoryCompareRevealFromPointer(e);
+    if (e.button != 0) {
+        return;
+    }
+    imageHistoryComparePan.active = true;
+    imageHistoryComparePan.startX = e.clientX;
+    imageHistoryComparePan.startY = e.clientY;
+    imageHistoryComparePan.baseX = imageHistoryComparePan.x;
+    imageHistoryComparePan.baseY = imageHistoryComparePan.y;
+    e.currentTarget.setPointerCapture(e.pointerId);
+}
+
+function endImageHistoryComparePan(e) {
+    imageHistoryComparePan.active = false;
+    if (e.currentTarget.hasPointerCapture(e.pointerId)) {
+        e.currentTarget.releasePointerCapture(e.pointerId);
+    }
+}
+
+function applyImageHistoryComparePan() {
+    let stage = document.querySelector('#image_history_compare_modal .image-history-compare-stage');
+    if (stage) {
+        stage.style.transform = `translate(${imageHistoryComparePan.x}px, ${imageHistoryComparePan.y}px)`;
+    }
 }
 
 /**
@@ -869,6 +905,11 @@ function setImageHistoryCompareZoom(value) {
         img.style.width = `${zoom}%`;
         img.style.maxWidth = zoom <= 100 ? '100%' : 'none';
     }
+    if (zoom <= 100) {
+        imageHistoryComparePan.x = 0;
+        imageHistoryComparePan.y = 0;
+        applyImageHistoryComparePan();
+    }
 }
 
 /**
@@ -893,6 +934,8 @@ function showImageHistoryCompare(paths) {
     setImageHistoryCompareDiffMode(false);
     setImageHistoryCompareMetadataMode(false);
     setImageHistoryCompareZoom(100);
+    imageHistoryComparePan = { x: 0, y: 0, active: false, startX: 0, startY: 0, baseX: 0, baseY: 0 };
+    applyImageHistoryComparePan();
     setImageHistoryCompareReveal(50);
     openImageHistoryCompareModal();
 }
