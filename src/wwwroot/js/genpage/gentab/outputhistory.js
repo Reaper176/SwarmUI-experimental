@@ -602,6 +602,10 @@ function ensureImageHistoryCompareModal() {
     stage.addEventListener('pointerdown', startImageHistoryComparePan);
     stage.addEventListener('pointerup', endImageHistoryComparePan);
     stage.addEventListener('pointercancel', endImageHistoryComparePan);
+    getRequiredElementById('image_history_compare_img_a').draggable = false;
+    getRequiredElementById('image_history_compare_img_b').draggable = false;
+    getRequiredElementById('image_history_compare_img_a').addEventListener('dragstart', e => e.preventDefault());
+    getRequiredElementById('image_history_compare_img_b').addEventListener('dragstart', e => e.preventDefault());
     return modal;
 }
 

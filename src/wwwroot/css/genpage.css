@@ -1357,6 +1357,8 @@ mark.model-search-highlight {
     max-width: 100%;
     height: auto;
     margin: auto;
+    user-select: none;
+    -webkit-user-drag: none;
 }
 .image-history-compare-img-top {
     position: absolute;
