@@ -1023,6 +1023,7 @@ function updateImageHistoryBulkControls() {
     let exportMetadataButton = document.getElementById('image_history_export_metadata_selected');
     let sendPromptLabButton = document.getElementById('image_history_send_prompt_lab_selected');
     let copyPathsButton = document.getElementById('image_history_copy_paths_selected');
+    let contactSheetButton = document.getElementById('image_history_contact_sheet_selected');
     let starButton = document.getElementById('image_history_star_selected');
     let unstarButton = document.getElementById('image_history_unstar_selected');
     let anyEntries = getImageHistoryEntries().length > 0;
@@ -1056,6 +1057,9 @@ function updateImageHistoryBulkControls() {
     }
     if (copyPathsButton) {
         copyPathsButton.disabled = count == 0 || imageHistoryBulkActionRunning;
+    }
+    if (contactSheetButton) {
+        contactSheetButton.disabled = count == 0 || imageHistoryBulkActionRunning;
     }
     if (starButton) {
         starButton.style.display = canStar ? '' : 'none';
@@ -1165,6 +1169,85 @@ function copySelectedImageHistoryPaths() {
     }
     copyText(selected.join('\n'));
     doNoticePopover(`Copied ${selected.length} path${selected.length == 1 ? '' : 's'}.`, 'notice-pop-green');
+}
+
+function loadImageHistoryContactSheetImage(src) {
+    return new Promise(resolve => {
+        let image = new Image();
+        image.onload = () => resolve(image);
+        image.onerror = () => resolve(null);
+        image.src = src;
+    });
+}
+
+async function createSelectedImageHistoryContactSheet() {
+    if (imageHistoryBulkActionRunning) {
+        return;
+    }
+    syncImageHistorySelectionFromDOM();
+    let selected = [...imageHistorySelected];
+    if (selected.length == 0) {
+        return;
+    }
+    imageHistoryBulkActionRunning = true;
+    updateImageHistoryBulkControls();
+    let entries = [];
+    for (let fullsrc of selected.slice(0, 200)) {
+        let file = getImageHistoryFile(fullsrc);
+        if (!file || getMediaType(file.data.src) != 'image') {
+            continue;
+        }
+        let image = await loadImageHistoryContactSheetImage(file.data.src);
+        if (!image) {
+            continue;
+        }
+        entries.push({ image: image, label: file.data.name || file.name || fullsrc });
+    }
+    imageHistoryBulkActionRunning = false;
+    updateImageHistoryBulkControls();
+    if (entries.length == 0) {
+        showError('No selected still images could be loaded for a contact sheet.');
+        return;
+    }
+    let thumbSize = 220;
+    let labelHeight = 26;
+    let gap = 10;
+    let columns = Math.ceil(Math.sqrt(entries.length));
+    let rows = Math.ceil(entries.length / columns);
+    let canvas = document.createElement('canvas');
+    canvas.width = columns * (thumbSize + gap) + gap;
+    canvas.height = rows * (thumbSize + labelHeight + gap) + gap;
+    let ctx = canvas.getContext('2d');
+    ctx.fillStyle = '#1f1f1f';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.font = '13px sans-serif';
+    ctx.textBaseline = 'top';
+    for (let i = 0; i < entries.length; i++) {
+        let entry = entries[i];
+        let col = i % columns;
+        let row = Math.floor(i / columns);
+        let x = gap + col * (thumbSize + gap);
+        let y = gap + row * (thumbSize + labelHeight + gap);
+        let scale = Math.min(thumbSize / entry.image.naturalWidth, thumbSize / entry.image.naturalHeight);
+        let width = Math.max(1, Math.round(entry.image.naturalWidth * scale));
+        let height = Math.max(1, Math.round(entry.image.naturalHeight * scale));
+        let drawX = x + Math.floor((thumbSize - width) / 2);
+        let drawY = y + Math.floor((thumbSize - height) / 2);
+        ctx.fillStyle = '#111';
+        ctx.fillRect(x, y, thumbSize, thumbSize);
+        ctx.drawImage(entry.image, drawX, drawY, width, height);
+        ctx.fillStyle = '#eee';
+        ctx.fillText(entry.label, x, y + thumbSize + 6, thumbSize);
+    }
+    canvas.toBlob(blob => {
+        let url = URL.createObjectURL(blob);
+        let link = document.createElement('a');
+        link.href = url;
+        link.download = `image-history-contact-sheet-${new Date().toISOString().replaceAll(':', '-').replaceAll('.', '-')}.png`;
+        link.click();
+        URL.revokeObjectURL(url);
+    }, 'image/png');
+    doNoticePopover(`Created contact sheet with ${entries.length} image${entries.length == 1 ? '' : 's'}.`, 'notice-pop-green');
 }
 
 /**
@@ -1333,6 +1416,10 @@ function ensureImageHistoryBulkControlsReady() {
     getRequiredElementById('image_history_copy_paths_selected').onclick = (e) => {
         e.preventDefault();
         copySelectedImageHistoryPaths();
+    };
+    getRequiredElementById('image_history_contact_sheet_selected').onclick = (e) => {
+        e.preventDefault();
+        createSelectedImageHistoryContactSheet();
     };
     updateImageHistoryBulkControls();
 }
@@ -1805,7 +1892,7 @@ function selectOutputInHistory(image, div) {
 }
 
 let imageHistoryBrowser = new GenPageBrowserClass('image_history', listOutputHistoryFolderAndFiles, 'imagehistorybrowser', 'Thumbnails', describeOutputFile, selectOutputInHistory,
-    `<label for="image_history_sort_by">Sort:</label> <select id="image_history_sort_by"><option>Name</option><option>Date</option></select> <input type="checkbox" id="image_history_sort_reverse"> <label for="image_history_sort_reverse">Reverse</label> &emsp; <input type="checkbox" id="image_history_allow_anims" checked autocomplete="off"> <label for="image_history_allow_anims">Allow Animation</label> &emsp; <input type="checkbox" id="image_history_show_hidden" autocomplete="off"> <label for="image_history_show_hidden">Show Hidden</label> <span id="image_history_bulk_controls" class="image-history-bulk-controls"><span id="image_history_selected_count" class="image-history-selected-count">0 selected</span> <button type="button" id="image_history_select_all" class="refresh-button" onclick="selectAllImageHistory()">Select All</button> <button type="button" id="image_history_clear_selection" class="refresh-button" onclick="clearSelectedImageHistory()">Clear</button> <button type="button" id="image_history_compare_selected" class="refresh-button" onclick="compareSelectedImageHistory()">Compare</button> <button type="button" id="image_history_copy_paths_selected" class="refresh-button" onclick="copySelectedImageHistoryPaths()">Copy Paths</button> <button type="button" id="image_history_export_metadata_selected" class="refresh-button" onclick="exportSelectedImageHistoryMetadata()">Export Metadata</button> <button type="button" id="image_history_send_prompt_lab_selected" class="refresh-button" onclick="sendSelectedImageHistoryToPromptLab()">Send to Prompt Lab</button> <button type="button" id="image_history_star_selected" class="refresh-button" onclick="starSelectedImageHistory()">Star Selected</button> <button type="button" id="image_history_unstar_selected" class="refresh-button" onclick="unstarSelectedImageHistory()">Unstar Selected</button> <button type="button" id="image_history_hide_selected" class="refresh-button" onclick="hideSelectedImageHistory()">Hide Selected</button> <button type="button" id="image_history_unhide_selected" class="refresh-button" onclick="unhideSelectedImageHistory()">Unhide Selected</button> <button type="button" id="image_history_delete_selected" class="interrupt-button" onclick="deleteSelectedImageHistory()">Delete Selected</button></span> <span id="image_history_request_status" class="image-history-request-status" data-state="idle"><span id="image_history_request_status_text" class="image-history-request-status-text"></span> <button type="button" id="image_history_retry_button" class="refresh-button" style="display:none;">Retry</button></span>`);
+    `<label for="image_history_sort_by">Sort:</label> <select id="image_history_sort_by"><option>Name</option><option>Date</option></select> <input type="checkbox" id="image_history_sort_reverse"> <label for="image_history_sort_reverse">Reverse</label> &emsp; <input type="checkbox" id="image_history_allow_anims" checked autocomplete="off"> <label for="image_history_allow_anims">Allow Animation</label> &emsp; <input type="checkbox" id="image_history_show_hidden" autocomplete="off"> <label for="image_history_show_hidden">Show Hidden</label> <span id="image_history_bulk_controls" class="image-history-bulk-controls"><span id="image_history_selected_count" class="image-history-selected-count">0 selected</span> <button type="button" id="image_history_select_all" class="refresh-button" onclick="selectAllImageHistory()">Select All</button> <button type="button" id="image_history_clear_selection" class="refresh-button" onclick="clearSelectedImageHistory()">Clear</button> <button type="button" id="image_history_compare_selected" class="refresh-button" onclick="compareSelectedImageHistory()">Compare</button> <button type="button" id="image_history_copy_paths_selected" class="refresh-button" onclick="copySelectedImageHistoryPaths()">Copy Paths</button> <button type="button" id="image_history_contact_sheet_selected" class="refresh-button" onclick="createSelectedImageHistoryContactSheet()">Contact Sheet</button> <button type="button" id="image_history_export_metadata_selected" class="refresh-button" onclick="exportSelectedImageHistoryMetadata()">Export Metadata</button> <button type="button" id="image_history_send_prompt_lab_selected" class="refresh-button" onclick="sendSelectedImageHistoryToPromptLab()">Send to Prompt Lab</button> <button type="button" id="image_history_star_selected" class="refresh-button" onclick="starSelectedImageHistory()">Star Selected</button> <button type="button" id="image_history_unstar_selected" class="refresh-button" onclick="unstarSelectedImageHistory()">Unstar Selected</button> <button type="button" id="image_history_hide_selected" class="refresh-button" onclick="hideSelectedImageHistory()">Hide Selected</button> <button type="button" id="image_history_unhide_selected" class="refresh-button" onclick="unhideSelectedImageHistory()">Unhide Selected</button> <button type="button" id="image_history_delete_selected" class="interrupt-button" onclick="deleteSelectedImageHistory()">Delete Selected</button></span> <span id="image_history_request_status" class="image-history-request-status" data-state="idle"><span id="image_history_request_status_text" class="image-history-request-status-text"></span> <button type="button" id="image_history_retry_button" class="refresh-button" style="display:none;">Retry</button></span>`);
 imageHistoryBrowser.filterMatcher = imageHistoryFilterMatches;
 imageHistoryBrowser.folderSelectedEvent = () => {
     clearImageHistorySelection();
