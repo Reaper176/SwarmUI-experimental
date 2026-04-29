@@ -1054,11 +1054,13 @@ function showImageHistoryCompare(paths) {
     }
     ensureImageHistoryCompareModal();
     imageHistoryCompareFiles = { first, second };
-    getRequiredElementById('image_history_compare_diff').checked = false;
-    getRequiredElementById('image_history_compare_metadata').checked = false;
+    let diffDefault = window.userFeatureToggles?.imageHistoryCompareDiffDefault == true;
+    let metadataDefault = window.userFeatureToggles?.imageHistoryCompareMetadataDefault == true;
+    getRequiredElementById('image_history_compare_diff').checked = diffDefault;
+    getRequiredElementById('image_history_compare_metadata').checked = metadataDefault;
     renderImageHistoryComparePair();
-    setImageHistoryCompareDiffMode(false);
-    setImageHistoryCompareMetadataMode(false);
+    setImageHistoryCompareDiffMode(diffDefault);
+    setImageHistoryCompareMetadataMode(metadataDefault);
     setImageHistoryCompareZoom(100);
     imageHistoryComparePan = { x: 0, y: 0, active: false, startX: 0, startY: 0, baseX: 0, baseY: 0 };
     applyImageHistoryComparePan();

@@ -579,6 +579,12 @@ public class Settings : AutoConfiguration
         [ConfigComment("If enabled, Image History compare tools are available.")]
         public bool EnableImageHistoryCompare = true;
 
+        [ConfigComment("If enabled, Image History compare opens with metadata differences visible.")]
+        public bool ImageHistoryCompareMetadataDefault = false;
+
+        [ConfigComment("If enabled, Image History compare opens in pixel diff mode.")]
+        public bool ImageHistoryCompareDiffDefault = false;
+
         public enum HintFormatOptions
         {
             BUTTON, HOVER, HOVER_DELAY, NONE

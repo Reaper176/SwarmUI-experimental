@@ -37,7 +37,9 @@
     window.userFeatureToggles = {
         promptLab: @enablePromptLab.ToString().ToLowerFast(),
         imageHistoryAdvancedTools: @((pageModel.User?.Settings.EnableImageHistoryAdvancedTools != false).ToString().ToLowerFast()),
-        imageHistoryCompare: @((pageModel.User?.Settings.EnableImageHistoryCompare != false).ToString().ToLowerFast())
+        imageHistoryCompare: @((pageModel.User?.Settings.EnableImageHistoryCompare != false).ToString().ToLowerFast()),
+        imageHistoryCompareMetadataDefault: @((pageModel.User?.Settings.ImageHistoryCompareMetadataDefault == true).ToString().ToLowerFast()),
+        imageHistoryCompareDiffDefault: @((pageModel.User?.Settings.ImageHistoryCompareDiffDefault == true).ToString().ToLowerFast())
     };
     window.checkForUpdatesAutomatically = @doCheckForUpdates;
     window.genpageLazyTabs = {
