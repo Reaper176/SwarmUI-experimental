@@ -69,6 +69,13 @@ function enableSliderForBox(div) {
 }
 
 function showError(message) {
+    if (message instanceof ProgressEvent || message?.constructor?.name == 'ProgressEvent') {
+        let type = message.type || 'error';
+        message = type == 'timeout' ? `Request timed out after ${window.swarmXhrTimeoutMs || 30000}ms.` : type == 'abort' ? 'Request was aborted before the server responded.' : 'Failed to send request to server. Did the server crash?';
+    }
+    else if (typeof message != 'string') {
+        message = `${message}`;
+    }
     let excludeErrorMessages = (typeof getUserSetting == 'function' ? getUserSetting('ui.HideErrorMessages', '') : '').split('|').map(x => x.trim());
     for (let excludeMessage of excludeErrorMessages) {
         if (excludeMessage && message.includes(excludeMessage)) {
@@ -205,7 +212,7 @@ function genericRequest(url, in_data, callback, depth = 0, errorHandle = null) {
             return;
         }
         callback(data);
-    }, errorHandle || genericServerError);
+    }, fail);
 }
 
 let lastServerVersion = null;

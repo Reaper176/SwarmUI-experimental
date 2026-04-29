@@ -858,7 +858,7 @@ class ModelBrowserWrapper {
         return aIndex - bIndex;
     }
 
-    listModelFolderAndFiles(path, isRefresh, callback, depth) {
+    listModelFolderAndFiles(path, isRefresh, callback, depth, retryCount = 0) {
         if (!starredModels) {
             setTimeout(() => {
                 this.listModelFolderAndFiles(path, isRefresh, callback, depth);
@@ -947,6 +947,12 @@ class ModelBrowserWrapper {
                 fix();
             }
         }, 0, e => {
+            if (retryCount < 1) {
+                setTimeout(() => {
+                    this.listModelFolderAndFiles(path, isRefresh, callback, depth, retryCount + 1);
+                }, 1500);
+                return;
+            }
             showError(`Failed to list models: ${e}`);
             callback([], []);
         });
