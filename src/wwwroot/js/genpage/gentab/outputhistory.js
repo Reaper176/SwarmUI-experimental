@@ -926,6 +926,53 @@ function mapHistoryFiles(prefix, files) {
     });
 }
 
+function imageHistorySortSupportedByServer(sortBy) {
+    return sortBy == 'Name' || sortBy == 'Date';
+}
+
+function getImageHistorySortNumber(file, sortBy) {
+    let metadata = parseHistoryMetadata(file?.data?.metadata);
+    let params = metadata.sui_image_params || {};
+    let extra = metadata.sui_extra_data || {};
+    if (sortBy == 'Rating') {
+        return Number.parseFloat(metadata.rating || extra.rating || 0) || 0;
+    }
+    if (sortBy == 'Resolution') {
+        let width = Number.parseInt(extra.final_width || params.width || 0) || 0;
+        let height = Number.parseInt(extra.final_height || params.height || 0) || 0;
+        return width * height;
+    }
+    if (sortBy == 'Seed') {
+        return Number.parseFloat(params.seed || 0) || 0;
+    }
+    return 0;
+}
+
+function getImageHistorySortText(file, sortBy) {
+    let metadata = parseHistoryMetadata(file?.data?.metadata);
+    let params = metadata.sui_image_params || {};
+    if (sortBy == 'Model') {
+        return `${params.model || ''}`.toLowerCase();
+    }
+    return '';
+}
+
+function applyImageHistoryClientSort(files, sortBy, reverse) {
+    if (imageHistorySortSupportedByServer(sortBy)) {
+        return files;
+    }
+    files.sort((a, b) => {
+        if (sortBy == 'Model') {
+            return getImageHistorySortText(b, sortBy).localeCompare(getImageHistorySortText(a, sortBy));
+        }
+        return getImageHistorySortNumber(b, sortBy) - getImageHistorySortNumber(a, sortBy);
+    });
+    if (reverse) {
+        files.reverse();
+    }
+    return files;
+}
+
 function replaceHistoryBrowserContents(path, folders, mapped) {
     if (!imageHistoryBrowser) {
         return;
@@ -1757,7 +1804,9 @@ function listOutputHistoryFolderAndFiles(path, isRefresh, callback, depth, onErr
     if (useFastFirst || path != '' || isRefresh) {
         clearImageHistoryBackgroundWatchdog();
     }
-    let request = { 'path': path, 'depth': depth, 'sortBy': sortBy, 'sortReverse': reverse, 'includeHidden': showHidden };
+    let serverSortBy = imageHistorySortSupportedByServer(sortBy) ? sortBy : 'Date';
+    let serverReverse = imageHistorySortSupportedByServer(sortBy) ? reverse : false;
+    let request = { 'path': path, 'depth': depth, 'sortBy': serverSortBy, 'sortReverse': serverReverse, 'includeHidden': showHidden };
     if (useFastFirst) {
         request.fastFirst = true;
         request.fastFirstLimit = IMAGE_HISTORY_FAST_FIRST_LIMIT;
@@ -1768,7 +1817,7 @@ function listOutputHistoryFolderAndFiles(path, isRefresh, callback, depth, onErr
         imageHistoryHasLoadedOnce = true;
         let prefix = path == '' ? '' : (path.endsWith('/') ? path : `${path}/`);
         let folders = data.folders.sort((a, b) => b.toLowerCase().localeCompare(a.toLowerCase()));
-        let mapped = mapHistoryFiles(prefix, orderHistoryFilesForDisplay(data.files));
+        let mapped = applyImageHistoryClientSort(mapHistoryFiles(prefix, orderHistoryFilesForDisplay(data.files)), sortBy, reverse);
         callback(folders, mapped);
         if (useFastFirst) {
             imageHistoryStartupStage = 'recent_loaded';
@@ -1796,17 +1845,19 @@ function listOutputHistoryFolderAndFiles(path, isRefresh, callback, depth, onErr
 
 function queueFullImageHistoryLoad(path, depth, sortBy, reverse, showHidden) {
     let requestKey = getImageHistoryRequestKey(path, depth, sortBy, reverse, showHidden);
+    let serverSortBy = imageHistorySortSupportedByServer(sortBy) ? sortBy : 'Date';
+    let serverReverse = imageHistorySortSupportedByServer(sortBy) ? reverse : false;
     let backgroundToken = ++imageHistoryBackgroundLoadToken;
     imageHistoryBackgroundRequestKey = requestKey;
     scheduleImageHistoryBackgroundWatchdog(path, depth, sortBy, reverse, showHidden, requestKey, backgroundToken);
     setTimeout(() => {
-        genericRequest('ListImages', { 'path': path, 'depth': depth, 'sortBy': sortBy, 'sortReverse': reverse, 'includeHidden': showHidden }, data => {
+        genericRequest('ListImages', { 'path': path, 'depth': depth, 'sortBy': serverSortBy, 'sortReverse': serverReverse, 'includeHidden': showHidden }, data => {
             if (!isImageHistoryBackgroundRequestStillRelevant(path, requestKey, backgroundToken)) {
                 return;
             }
             let prefix = path == '' ? '' : (path.endsWith('/') ? path : `${path}/`);
             let folders = data.folders.sort((a, b) => b.toLowerCase().localeCompare(a.toLowerCase()));
-            let mapped = mapHistoryFiles(prefix, orderHistoryFilesForDisplay(data.files));
+            let mapped = applyImageHistoryClientSort(mapHistoryFiles(prefix, orderHistoryFilesForDisplay(data.files)), sortBy, reverse);
             imageHistoryStartupStage = 'complete';
             imageHistoryBackgroundRetryCount = 0;
             clearImageHistoryBackgroundWatchdog();
