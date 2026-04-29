@@ -638,6 +638,8 @@ function ensureImageHistoryCompareModal() {
             <button type="button" class="basic-button translate" id="image_history_compare_reuse_b">B Settings</button>
             <button type="button" class="basic-button translate" id="image_history_compare_star_a">A Star</button>
             <button type="button" class="basic-button translate" id="image_history_compare_star_b">B Star</button>
+            <button type="button" class="basic-button translate" id="image_history_compare_rate_a">A Rating</button>
+            <button type="button" class="basic-button translate" id="image_history_compare_rate_b">B Rating</button>
             <button type="button" class="basic-button translate" id="image_history_compare_close">Close</button>
         </div>
         <div class="image-history-compare-body">
@@ -672,6 +674,12 @@ function ensureImageHistoryCompareModal() {
     };
     getRequiredElementById('image_history_compare_star_b').onclick = () => {
         starImageHistoryCompareImage('second');
+    };
+    getRequiredElementById('image_history_compare_rate_a').onclick = () => {
+        rateImageHistoryCompareImage('first');
+    };
+    getRequiredElementById('image_history_compare_rate_b').onclick = () => {
+        rateImageHistoryCompareImage('second');
     };
     getRequiredElementById('image_history_compare_zoom').addEventListener('input', e => {
         setImageHistoryCompareZoom(e.target.value);
@@ -723,6 +731,30 @@ function starImageHistoryCompareImage(side) {
         return;
     }
     toggleStar(file.data.fullsrc, file.data.src);
+}
+
+function rateImageHistoryCompareImage(side) {
+    if (!imageHistoryCompareFiles) {
+        return;
+    }
+    let file = imageHistoryCompareFiles[side];
+    if (!file?.data?.fullsrc) {
+        return;
+    }
+    let value = prompt('Rating 0-5:', '5');
+    if (value == null) {
+        return;
+    }
+    let rating = Number.parseInt(value.trim());
+    if (!Number.isFinite(rating) || rating < 0 || rating > 5) {
+        showError('Rating must be from 0 through 5.');
+        return;
+    }
+    genericRequest('SetImageRating', { path: file.data.fullsrc, rating: rating }, data => {
+        file.data.metadata = setMetadataValue(file.data.metadata ?? '{}', 'rating', data.rating);
+        requestImageHistoryRefresh();
+        doNoticePopover(`Rated ${file.data.name || file.name}.`, 'notice-pop-green');
+    });
 }
 
 /**
