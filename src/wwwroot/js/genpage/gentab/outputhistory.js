@@ -280,7 +280,7 @@ function ensureImageHistoryStatusReady() {
 function applyImageHistoryFeatureToggles() {
     let advancedEnabled = window.userFeatureToggles?.imageHistoryAdvancedTools != false;
     let compareEnabled = window.userFeatureToggles?.imageHistoryCompare != false;
-    let advancedButtons = ['image_history_contact_sheet_selected', 'image_history_set_rating_selected', 'image_history_add_tags_selected', 'image_history_remove_tags_selected', 'image_history_copy_to_selected', 'image_history_move_to_selected', 'image_history_export_metadata_selected', 'image_history_send_prompt_lab_selected', 'image_history_rescan_metadata'];
+    let advancedButtons = ['image_history_contact_sheet_selected', 'image_history_set_rating_selected', 'image_history_add_tags_selected', 'image_history_remove_tags_selected', 'image_history_set_notes_selected', 'image_history_copy_to_selected', 'image_history_move_to_selected', 'image_history_export_metadata_selected', 'image_history_send_prompt_lab_selected', 'image_history_rescan_metadata'];
     for (let id of advancedButtons) {
         let elem = document.getElementById(id);
         if (elem) {
@@ -467,6 +467,7 @@ function getImageHistorySearchFields(image, parsedMeta) {
         rating: parsedMeta.rating || extra.rating || '',
         favorite: favoriteText,
         hidden: hiddenText,
+        notes: `${parsedMeta.notes || ''} ${extra.notes || ''}`,
         tags: `${imageHistoryValueToSearchText(parsedMeta.tags)} ${imageHistoryValueToSearchText(extra.tags)}`,
         session: `${params.session_id || ''} ${extra.session_id || ''}`,
         wildcard: `${extra.prompt_lab_wildcard_values || ''} ${imageHistoryValueToSearchText(extra.prompt_lab_wildcards)}`,
@@ -1296,6 +1297,7 @@ function updateImageHistoryBulkControls() {
     let ratingButton = document.getElementById('image_history_set_rating_selected');
     let addTagsButton = document.getElementById('image_history_add_tags_selected');
     let removeTagsButton = document.getElementById('image_history_remove_tags_selected');
+    let notesButton = document.getElementById('image_history_set_notes_selected');
     let copyToButton = document.getElementById('image_history_copy_to_selected');
     let moveToButton = document.getElementById('image_history_move_to_selected');
     let starButton = document.getElementById('image_history_star_selected');
@@ -1343,6 +1345,9 @@ function updateImageHistoryBulkControls() {
     }
     if (removeTagsButton) {
         removeTagsButton.disabled = count == 0 || imageHistoryBulkActionRunning;
+    }
+    if (notesButton) {
+        notesButton.disabled = count == 0 || imageHistoryBulkActionRunning;
     }
     if (copyToButton) {
         copyToButton.disabled = count == 0 || imageHistoryBulkActionRunning;
@@ -1447,6 +1452,14 @@ function setSelectedImageHistoryTagsPrompt(mode) {
         return;
     }
     setSelectedImageHistoryTags(tags.join(','), mode);
+}
+
+function setSelectedImageHistoryNotesPrompt() {
+    let value = prompt('Set notes for selected images:', '');
+    if (value == null) {
+        return;
+    }
+    setSelectedImageHistoryNotes(value);
 }
 
 function moveSelectedImageHistoryPrompt(mode) {
@@ -1795,6 +1808,48 @@ async function setSelectedImageHistoryTags(tags, mode) {
     }
 }
 
+async function setSelectedImageHistoryNotes(notes) {
+    if (imageHistoryBulkActionRunning) {
+        return;
+    }
+    syncImageHistorySelectionFromDOM();
+    let selected = [...imageHistorySelected];
+    if (selected.length == 0) {
+        return;
+    }
+    imageHistoryBulkActionRunning = true;
+    updateImageHistoryBulkControls();
+    let changed = 0;
+    let failed = 0;
+    for (let fullsrc of selected) {
+        let file = getImageHistoryFile(fullsrc);
+        if (!file) {
+            continue;
+        }
+        let result = await new Promise(resolve => {
+            genericRequest('SetImageNotes', { path: fullsrc, notes: notes }, data => resolve(data), 0, error => resolve({ error }));
+        });
+        if (result.error) {
+            failed++;
+            console.log(`Failed to set notes for image '${fullsrc}': ${result.error}`);
+            continue;
+        }
+        changed++;
+        file.data.metadata = setMetadataValue(file.data.metadata ?? '{}', 'notes', result.notes || '');
+    }
+    imageHistoryBulkActionRunning = false;
+    updateImageHistoryBulkControls();
+    if (changed > 0) {
+        requestImageHistoryRefresh();
+    }
+    if (failed > 0) {
+        showError(`Set notes on ${changed} image(s). Failed ${failed}.`);
+    }
+    else if (changed > 0) {
+        doNoticePopover(`Set notes on ${changed} image${changed == 1 ? '' : 's'}.`, 'notice-pop-green');
+    }
+}
+
 async function moveSelectedImageHistory(folder, mode) {
     if (imageHistoryBulkActionRunning) {
         return;
@@ -1888,6 +1943,10 @@ function ensureImageHistoryBulkControlsReady() {
     getRequiredElementById('image_history_remove_tags_selected').onclick = (e) => {
         e.preventDefault();
         setSelectedImageHistoryTagsPrompt('remove');
+    };
+    getRequiredElementById('image_history_set_notes_selected').onclick = (e) => {
+        e.preventDefault();
+        setSelectedImageHistoryNotesPrompt();
     };
     getRequiredElementById('image_history_copy_to_selected').onclick = (e) => {
         e.preventDefault();
@@ -2340,6 +2399,9 @@ function describeOutputFile(image) {
     if (tagText) {
         userDetails.push(`Tags: ${escapeHtml(tagText)}`);
     }
+    if (parsedMeta.notes) {
+        userDetails.push(`Notes: ${escapeHtml(parsedMeta.notes)}`);
+    }
     if (userDetails.length > 0) {
         detail_list.splice(1, 0, userDetails.join('&emsp;'));
     }
@@ -2386,7 +2448,7 @@ function selectOutputInHistory(image, div) {
 }
 
 let imageHistoryBrowser = new GenPageBrowserClass('image_history', listOutputHistoryFolderAndFiles, 'imagehistorybrowser', window.userFeatureToggles?.imageHistoryDefaultView || 'Thumbnails', describeOutputFile, selectOutputInHistory,
-    `<label for="image_history_sort_by">Sort:</label> <select id="image_history_sort_by"><option>Name</option><option>Date</option><option>Rating</option><option>Resolution</option><option>Model</option><option>Seed</option><option value="FileSize">File Size</option></select> <input type="checkbox" id="image_history_sort_reverse"> <label for="image_history_sort_reverse">Reverse</label> &emsp; <input type="checkbox" id="image_history_allow_anims" checked autocomplete="off"> <label for="image_history_allow_anims">Allow Animation</label> &emsp; <input type="checkbox" id="image_history_show_hidden" autocomplete="off"> <label for="image_history_show_hidden">Show Hidden</label> <button type="button" id="image_history_rescan_metadata" class="refresh-button" onclick="rescanImageHistoryMetadata()">Rescan Metadata</button> <span id="image_history_bulk_controls" class="image-history-bulk-controls"><span id="image_history_selected_count" class="image-history-selected-count">0 selected</span> <button type="button" id="image_history_select_all" class="refresh-button" onclick="selectAllImageHistory()">Select All</button> <button type="button" id="image_history_clear_selection" class="refresh-button" onclick="clearSelectedImageHistory()">Clear</button> <button type="button" id="image_history_compare_selected" class="refresh-button" onclick="compareSelectedImageHistory()">Compare</button> <button type="button" id="image_history_copy_paths_selected" class="refresh-button" onclick="copySelectedImageHistoryPaths()">Copy Paths</button> <button type="button" id="image_history_contact_sheet_selected" class="refresh-button" onclick="createSelectedImageHistoryContactSheet()">Contact Sheet</button> <button type="button" id="image_history_set_rating_selected" class="refresh-button" onclick="setSelectedImageHistoryRatingPrompt()">Set Rating</button> <button type="button" id="image_history_add_tags_selected" class="refresh-button" onclick="setSelectedImageHistoryTagsPrompt('add')">Add Tags</button> <button type="button" id="image_history_remove_tags_selected" class="refresh-button" onclick="setSelectedImageHistoryTagsPrompt('remove')">Remove Tags</button> <button type="button" id="image_history_copy_to_selected" class="refresh-button" onclick="moveSelectedImageHistoryPrompt('copy')">Copy To</button> <button type="button" id="image_history_move_to_selected" class="refresh-button" onclick="moveSelectedImageHistoryPrompt('move')">Move To</button> <button type="button" id="image_history_export_metadata_selected" class="refresh-button" onclick="exportSelectedImageHistoryMetadata()">Export Metadata</button> <button type="button" id="image_history_send_prompt_lab_selected" class="refresh-button" onclick="sendSelectedImageHistoryToPromptLab()">Send to Prompt Lab</button> <button type="button" id="image_history_star_selected" class="refresh-button" onclick="starSelectedImageHistory()">Star Selected</button> <button type="button" id="image_history_unstar_selected" class="refresh-button" onclick="unstarSelectedImageHistory()">Unstar Selected</button> <button type="button" id="image_history_hide_selected" class="refresh-button" onclick="hideSelectedImageHistory()">Hide Selected</button> <button type="button" id="image_history_unhide_selected" class="refresh-button" onclick="unhideSelectedImageHistory()">Unhide Selected</button> <button type="button" id="image_history_delete_selected" class="interrupt-button" onclick="deleteSelectedImageHistory()">Delete Selected</button></span> <span id="image_history_request_status" class="image-history-request-status" data-state="idle"><span id="image_history_request_status_text" class="image-history-request-status-text"></span> <button type="button" id="image_history_retry_button" class="refresh-button" style="display:none;">Retry</button></span>`);
+    `<label for="image_history_sort_by">Sort:</label> <select id="image_history_sort_by"><option>Name</option><option>Date</option><option>Rating</option><option>Resolution</option><option>Model</option><option>Seed</option><option value="FileSize">File Size</option></select> <input type="checkbox" id="image_history_sort_reverse"> <label for="image_history_sort_reverse">Reverse</label> &emsp; <input type="checkbox" id="image_history_allow_anims" checked autocomplete="off"> <label for="image_history_allow_anims">Allow Animation</label> &emsp; <input type="checkbox" id="image_history_show_hidden" autocomplete="off"> <label for="image_history_show_hidden">Show Hidden</label> <button type="button" id="image_history_rescan_metadata" class="refresh-button" onclick="rescanImageHistoryMetadata()">Rescan Metadata</button> <span id="image_history_bulk_controls" class="image-history-bulk-controls"><span id="image_history_selected_count" class="image-history-selected-count">0 selected</span> <button type="button" id="image_history_select_all" class="refresh-button" onclick="selectAllImageHistory()">Select All</button> <button type="button" id="image_history_clear_selection" class="refresh-button" onclick="clearSelectedImageHistory()">Clear</button> <button type="button" id="image_history_compare_selected" class="refresh-button" onclick="compareSelectedImageHistory()">Compare</button> <button type="button" id="image_history_copy_paths_selected" class="refresh-button" onclick="copySelectedImageHistoryPaths()">Copy Paths</button> <button type="button" id="image_history_contact_sheet_selected" class="refresh-button" onclick="createSelectedImageHistoryContactSheet()">Contact Sheet</button> <button type="button" id="image_history_set_rating_selected" class="refresh-button" onclick="setSelectedImageHistoryRatingPrompt()">Set Rating</button> <button type="button" id="image_history_add_tags_selected" class="refresh-button" onclick="setSelectedImageHistoryTagsPrompt('add')">Add Tags</button> <button type="button" id="image_history_remove_tags_selected" class="refresh-button" onclick="setSelectedImageHistoryTagsPrompt('remove')">Remove Tags</button> <button type="button" id="image_history_set_notes_selected" class="refresh-button" onclick="setSelectedImageHistoryNotesPrompt()">Set Notes</button> <button type="button" id="image_history_copy_to_selected" class="refresh-button" onclick="moveSelectedImageHistoryPrompt('copy')">Copy To</button> <button type="button" id="image_history_move_to_selected" class="refresh-button" onclick="moveSelectedImageHistoryPrompt('move')">Move To</button> <button type="button" id="image_history_export_metadata_selected" class="refresh-button" onclick="exportSelectedImageHistoryMetadata()">Export Metadata</button> <button type="button" id="image_history_send_prompt_lab_selected" class="refresh-button" onclick="sendSelectedImageHistoryToPromptLab()">Send to Prompt Lab</button> <button type="button" id="image_history_star_selected" class="refresh-button" onclick="starSelectedImageHistory()">Star Selected</button> <button type="button" id="image_history_unstar_selected" class="refresh-button" onclick="unstarSelectedImageHistory()">Unstar Selected</button> <button type="button" id="image_history_hide_selected" class="refresh-button" onclick="hideSelectedImageHistory()">Hide Selected</button> <button type="button" id="image_history_unhide_selected" class="refresh-button" onclick="unhideSelectedImageHistory()">Unhide Selected</button> <button type="button" id="image_history_delete_selected" class="interrupt-button" onclick="deleteSelectedImageHistory()">Delete Selected</button></span> <span id="image_history_request_status" class="image-history-request-status" data-state="idle"><span id="image_history_request_status_text" class="image-history-request-status-text"></span> <button type="button" id="image_history_retry_button" class="refresh-button" style="display:none;">Retry</button></span>`);
 imageHistoryBrowser.filterMatcher = imageHistoryFilterMatches;
 imageHistoryBrowser.folderSelectedEvent = () => {
     clearImageHistorySelection();

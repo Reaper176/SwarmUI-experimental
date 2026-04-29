@@ -36,6 +36,7 @@ public static class T2IAPI
         API.RegisterAPICall(ToggleImageHidden, true, Permissions.ViewImageHistory);
         API.RegisterAPICall(SetImageRating, true, Permissions.ViewImageHistory);
         API.RegisterAPICall(SetImageTags, true, Permissions.ViewImageHistory);
+        API.RegisterAPICall(SetImageNotes, true, Permissions.ViewImageHistory);
         API.RegisterAPICall(OpenImageFolder, true, Permissions.LocalImageFolder);
         API.RegisterAPICall(DeleteImage, true, Permissions.UserDeleteImage);
         API.RegisterAPICall(BulkMoveImages, true, Permissions.UserDeleteImage);
@@ -1781,6 +1782,77 @@ public static class T2IAPI
             OutputMetadataTracker.RemoveMetadataFor(starPath.Replace('\\', '/'));
         }
         return new JObject() { ["tags"] = currentTags ?? new JArray() };
+    }
+
+    [API.APIDescription("Set user notes for an image in history.", "\"notes\": \"text\"")]
+    public static async Task<JObject> SetImageNotes(Session session,
+        [API.APIParameter("The path to the image to annotate.")] string path,
+        [API.APIParameter("Note text to save.")] string notes)
+    {
+        notes ??= "";
+        bool wasStar = false;
+        path = path.Replace('\\', '/').Trim('/');
+        if (path.StartsWith("Starred/"))
+        {
+            wasStar = true;
+            path = path["Starred/".Length..];
+        }
+        string origPath = path;
+        string root = Utilities.CombinePathWithAbsolute(Environment.CurrentDirectory, session.User.OutputDirectory);
+        (path, string consoleError, string userError) = WebServer.CheckFilePath(root, path);
+        if (consoleError is not null)
+        {
+            Logs.Error(consoleError);
+            return new JObject() { ["error"] = userError };
+        }
+        string rawPath = UserImageHistoryHelper.GetRealPathFor(session.User, path, root: root);
+        string starPath = $"Starred/{(session.User.Settings.StarNoFolders ? origPath.Replace("/", "") : origPath)}";
+        (starPath, _, _) = WebServer.CheckFilePath(root, starPath);
+        starPath = UserImageHistoryHelper.GetRealPathFor(session.User, starPath, root: root);
+        string primaryPath = wasStar ? starPath : rawPath;
+        bool rawExists = File.Exists(rawPath);
+        bool starExists = File.Exists(starPath);
+        if (!File.Exists(primaryPath) && !rawExists && !starExists)
+        {
+            Logs.Warning($"User {session.User.UserID} tried to annotate image path '{origPath}' which maps to '{primaryPath}', but cannot as the image does not exist.");
+            return new JObject() { ["error"] = "That file does not exist, cannot annotate." };
+        }
+        static void setNotes(string imagePath, bool fileExists, string newNotes)
+        {
+            if (!fileExists)
+            {
+                return;
+            }
+            string sidecarPath = $"{imagePath.BeforeLast('.')}.swarm.json";
+            JObject metadata = new();
+            if (File.Exists(sidecarPath))
+            {
+                try
+                {
+                    metadata = File.ReadAllText(sidecarPath).ParseToJson();
+                }
+                catch (Exception)
+                {
+                    metadata = new();
+                }
+            }
+            metadata["notes"] = newNotes;
+            File.WriteAllText(sidecarPath, metadata.ToString(Newtonsoft.Json.Formatting.Indented));
+        }
+        setNotes(rawPath, rawExists, notes);
+        if (rawPath != starPath)
+        {
+            setNotes(starPath, starExists, notes);
+        }
+        if (rawExists)
+        {
+            OutputMetadataTracker.RemoveMetadataFor(rawPath.Replace('\\', '/'));
+        }
+        if (starExists)
+        {
+            OutputMetadataTracker.RemoveMetadataFor(starPath.Replace('\\', '/'));
+        }
+        return new JObject() { ["notes"] = notes };
     }
 
     public static SemaphoreSlim RefreshSemaphore = new(1, 1);
