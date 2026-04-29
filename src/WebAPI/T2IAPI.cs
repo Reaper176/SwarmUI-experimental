@@ -33,6 +33,7 @@ public static class T2IAPI
         API.RegisterAPICall(ListImages, false, Permissions.ViewImageHistory);
         API.RegisterAPICall(ToggleImageStarred, true, Permissions.UserStarImages);
         API.RegisterAPICall(ToggleImageHidden, true, Permissions.ViewImageHistory);
+        API.RegisterAPICall(SetImageRating, true, Permissions.ViewImageHistory);
         API.RegisterAPICall(OpenImageFolder, true, Permissions.LocalImageFolder);
         API.RegisterAPICall(DeleteImage, true, Permissions.UserDeleteImage);
         API.RegisterAPICall(SendImageToKrita, true, Permissions.LocalKritaBridge);
@@ -1345,6 +1346,80 @@ public static class T2IAPI
         }
         Logs.Debug($"User {session.User.UserID} {(newState ? "hid" : "unhid")} image '{origPath}'");
         return new JObject() { ["new_state"] = newState };
+    }
+
+    [API.APIDescription("Set a user rating for an image in history.", "\"rating\": 5")]
+    public static async Task<JObject> SetImageRating(Session session,
+        [API.APIParameter("The path to the image to rate.")] string path,
+        [API.APIParameter("Rating value from 0 through 5.")] int rating)
+    {
+        if (rating < 0 || rating > 5)
+        {
+            return new JObject() { ["error"] = "Rating must be from 0 through 5." };
+        }
+        bool wasStar = false;
+        path = path.Replace('\\', '/').Trim('/');
+        if (path.StartsWith("Starred/"))
+        {
+            wasStar = true;
+            path = path["Starred/".Length..];
+        }
+        string origPath = path;
+        string root = Utilities.CombinePathWithAbsolute(Environment.CurrentDirectory, session.User.OutputDirectory);
+        (path, string consoleError, string userError) = WebServer.CheckFilePath(root, path);
+        if (consoleError is not null)
+        {
+            Logs.Error(consoleError);
+            return new JObject() { ["error"] = userError };
+        }
+        string rawPath = UserImageHistoryHelper.GetRealPathFor(session.User, path, root: root);
+        string starPath = $"Starred/{(session.User.Settings.StarNoFolders ? origPath.Replace("/", "") : origPath)}";
+        (starPath, _, _) = WebServer.CheckFilePath(root, starPath);
+        starPath = UserImageHistoryHelper.GetRealPathFor(session.User, starPath, root: root);
+        string primaryPath = wasStar ? starPath : rawPath;
+        bool rawExists = File.Exists(rawPath);
+        bool starExists = File.Exists(starPath);
+        if (!File.Exists(primaryPath) && !rawExists && !starExists)
+        {
+            Logs.Warning($"User {session.User.UserID} tried to rate image path '{origPath}' which maps to '{primaryPath}', but cannot as the image does not exist.");
+            return new JObject() { ["error"] = "That file does not exist, cannot rate." };
+        }
+        static void setRating(string imagePath, bool fileExists, int newRating)
+        {
+            if (!fileExists)
+            {
+                return;
+            }
+            string sidecarPath = $"{imagePath.BeforeLast('.')}.swarm.json";
+            JObject metadata = new();
+            if (File.Exists(sidecarPath))
+            {
+                try
+                {
+                    metadata = File.ReadAllText(sidecarPath).ParseToJson();
+                }
+                catch (Exception)
+                {
+                    metadata = new();
+                }
+            }
+            metadata["rating"] = newRating;
+            File.WriteAllText(sidecarPath, metadata.ToString(Newtonsoft.Json.Formatting.Indented));
+        }
+        setRating(rawPath, rawExists, rating);
+        if (rawPath != starPath)
+        {
+            setRating(starPath, starExists, rating);
+        }
+        if (rawExists)
+        {
+            OutputMetadataTracker.RemoveMetadataFor(rawPath.Replace('\\', '/'));
+        }
+        if (starExists)
+        {
+            OutputMetadataTracker.RemoveMetadataFor(starPath.Replace('\\', '/'));
+        }
+        return new JObject() { ["rating"] = rating };
     }
 
     public static SemaphoreSlim RefreshSemaphore = new(1, 1);

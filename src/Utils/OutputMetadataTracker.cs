@@ -247,6 +247,38 @@ public static class OutputMetadataTracker
         }
     }
 
+    /// <summary>Merges top-level sidecar metadata over embedded image metadata.</summary>
+    private static string MergeSidecarMetadata(string fileData, string sidecarPath)
+    {
+        if (!File.Exists(sidecarPath))
+        {
+            return fileData;
+        }
+        string sidecarData = File.ReadAllText(sidecarPath);
+        if (string.IsNullOrWhiteSpace(fileData))
+        {
+            return sidecarData;
+        }
+        if (string.IsNullOrWhiteSpace(sidecarData))
+        {
+            return fileData;
+        }
+        try
+        {
+            JObject baseData = fileData.ParseToJson();
+            JObject sidecar = sidecarData.ParseToJson();
+            foreach (JProperty property in sidecar.Properties())
+            {
+                baseData[property.Name] = property.Value.DeepClone();
+            }
+            return baseData.ToString();
+        }
+        catch (Exception)
+        {
+            return fileData;
+        }
+    }
+
     /// <summary>Deletes any tracked metadata for the given filepath.</summary>
     public static void RemoveMetadataFor(string file)
     {
@@ -516,6 +548,10 @@ public static class OutputMetadataTracker
             if (string.IsNullOrWhiteSpace(fileData) && File.Exists(altMetaPath))
             {
                 fileData = File.ReadAllText(altMetaPath);
+            }
+            else
+            {
+                fileData = MergeSidecarMetadata(fileData, altMetaPath);
             }
             string subPath = file.StartsWith(root) ? file[root.Length..] : Path.GetRelativePath(root, file);
             subPath = subPath.Replace('\\', '/').Trim('/');
