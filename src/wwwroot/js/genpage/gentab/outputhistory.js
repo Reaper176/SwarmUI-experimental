@@ -1992,6 +1992,17 @@ function describeOutputFile(image) {
     let searchable = getImageHistorySearchFields(image, parsedMeta);
     let detailMetadata = formattedMetadata ? formattedMetadata.replaceAll('<br>', '&emsp;') : escapeHtml(metadataPreview);
     let detail_list = [escapeHtml(image.data.name), detailMetadata];
+    let userDetails = [];
+    if (parsedMeta.rating != null && `${parsedMeta.rating}` != '') {
+        userDetails.push(`Rating: ${escapeHtml(parsedMeta.rating)}`);
+    }
+    let tagText = imageHistoryValueToSearchText(parsedMeta.tags);
+    if (tagText) {
+        userDetails.push(`Tags: ${escapeHtml(tagText)}`);
+    }
+    if (userDetails.length > 0) {
+        detail_list.splice(1, 0, userDetails.join('&emsp;'));
+    }
     let aspectRatio = parsedMeta.sui_image_params?.width && parsedMeta.sui_image_params?.height ? parsedMeta.sui_image_params.width / parsedMeta.sui_image_params.height : null;
     let className = parsedMeta.is_starred ? 'image-block-starred' : '';
     if (parsedMeta.is_hidden) {
