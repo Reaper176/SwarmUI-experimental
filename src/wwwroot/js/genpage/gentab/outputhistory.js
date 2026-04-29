@@ -1404,6 +1404,15 @@ async function createSelectedImageHistoryContactSheet() {
     if (selected.length == 0) {
         return;
     }
+    let autoColumns = Math.ceil(Math.sqrt(selected.length));
+    let options = prompt('Contact sheet columns, thumb size:', `${autoColumns},220`);
+    if (options == null) {
+        return;
+    }
+    let splitOptions = options.split(',').map(v => Number.parseInt(v.trim()));
+    let requestedColumns = Number.isFinite(splitOptions[0]) && splitOptions[0] > 0 ? splitOptions[0] : autoColumns;
+    let thumbSize = Number.isFinite(splitOptions[1]) && splitOptions[1] >= 64 ? splitOptions[1] : 220;
+    thumbSize = Math.min(1024, thumbSize);
     imageHistoryBulkActionRunning = true;
     updateImageHistoryBulkControls();
     let entries = [];
@@ -1424,10 +1433,9 @@ async function createSelectedImageHistoryContactSheet() {
         showError('No selected still images could be loaded for a contact sheet.');
         return;
     }
-    let thumbSize = 220;
     let labelHeight = 26;
     let gap = 10;
-    let columns = Math.ceil(Math.sqrt(entries.length));
+    let columns = Math.min(requestedColumns, entries.length);
     let rows = Math.ceil(entries.length / columns);
     let canvas = document.createElement('canvas');
     canvas.width = columns * (thumbSize + gap) + gap;
