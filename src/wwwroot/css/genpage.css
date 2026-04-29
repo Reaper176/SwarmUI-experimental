@@ -1417,7 +1417,6 @@ mark.model-search-highlight {
 .image-history-compare-divider {
     position: absolute;
     top: 0;
-    bottom: 0;
     left: 50%;
     width: 2px;
     background: var(--text);

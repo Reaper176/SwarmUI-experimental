@@ -841,9 +841,14 @@ function applyImageHistoryComparePan() {
  */
 function setImageHistoryCompareReveal(value) {
     let reveal = Math.max(0, Math.min(100, parseFloat(value) || 0));
+    let base = getRequiredElementById('image_history_compare_img_a');
+    let divider = getRequiredElementById('image_history_compare_divider');
+    let width = base.clientWidth || 0;
+    let height = base.clientHeight || 0;
     getRequiredElementById('image_history_compare_img_b').style.clipPath = `inset(0 ${100 - reveal}% 0 0)`;
     getRequiredElementById('image_history_compare_diff_canvas').style.clipPath = `inset(0 ${100 - reveal}% 0 0)`;
-    getRequiredElementById('image_history_compare_divider').style.left = `${reveal}%`;
+    divider.style.left = `${width * reveal / 100}px`;
+    divider.style.height = `${height}px`;
 }
 
 /**
