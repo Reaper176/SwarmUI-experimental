@@ -536,6 +536,8 @@ function ensureImageHistoryCompareModal() {
             <label for="image_history_compare_metadata"><input id="image_history_compare_metadata" type="checkbox" autocomplete="off"> Metadata</label>
             <button type="button" class="basic-button translate" id="image_history_compare_fit">Fit</button>
             <button type="button" class="basic-button translate" id="image_history_compare_swap">Swap</button>
+            <button type="button" class="basic-button translate" id="image_history_compare_reuse_a">A Settings</button>
+            <button type="button" class="basic-button translate" id="image_history_compare_reuse_b">B Settings</button>
             <button type="button" class="basic-button translate" id="image_history_compare_close">Close</button>
         </div>
         <div class="image-history-compare-body">
@@ -559,6 +561,12 @@ function ensureImageHistoryCompareModal() {
     getRequiredElementById('image_history_compare_swap').onclick = () => {
         swapImageHistoryCompareImages();
     };
+    getRequiredElementById('image_history_compare_reuse_a').onclick = () => {
+        reuseImageHistoryCompareSettings('first');
+    };
+    getRequiredElementById('image_history_compare_reuse_b').onclick = () => {
+        reuseImageHistoryCompareSettings('second');
+    };
     getRequiredElementById('image_history_compare_zoom').addEventListener('input', e => {
         setImageHistoryCompareZoom(e.target.value);
     });
@@ -572,6 +580,23 @@ function ensureImageHistoryCompareModal() {
     stage.addEventListener('pointermove', updateImageHistoryCompareRevealFromPointer);
     stage.addEventListener('pointerdown', updateImageHistoryCompareRevealFromPointer);
     return modal;
+}
+
+/**
+ * Sends one compared image's generation settings back to the Generate tab.
+ */
+function reuseImageHistoryCompareSettings(side) {
+    if (!imageHistoryCompareFiles) {
+        return;
+    }
+    let file = imageHistoryCompareFiles[side];
+    if (!file?.data?.metadata) {
+        showError('Selected compare image has no reusable metadata.');
+        return;
+    }
+    setCurrentImage(file.data.src, file.data.metadata, 'history');
+    copy_current_image_params();
+    closeImageHistoryCompareModal();
 }
 
 /**
