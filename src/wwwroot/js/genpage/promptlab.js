@@ -113,6 +113,15 @@ class PromptLab {
         });
     }
 
+    /** Resets the current editor fields back to the selected saved prompt. */
+    resetPrompt() {
+        if (this.currentPromptId) {
+            this.loadPrompt(this.currentPromptId);
+            return;
+        }
+        this.newPrompt();
+    }
+
     /** Loads a prompt into the editor. */
     loadPrompt(id) {
         let prompt = this.data.prompts.find(p => p.id == id);
