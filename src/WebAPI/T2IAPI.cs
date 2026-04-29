@@ -37,6 +37,7 @@ public static class T2IAPI
         API.RegisterAPICall(SetImageTags, true, Permissions.ViewImageHistory);
         API.RegisterAPICall(OpenImageFolder, true, Permissions.LocalImageFolder);
         API.RegisterAPICall(DeleteImage, true, Permissions.UserDeleteImage);
+        API.RegisterAPICall(BulkMoveImages, true, Permissions.UserDeleteImage);
         API.RegisterAPICall(SendImageToKrita, true, Permissions.LocalKritaBridge);
         API.RegisterAPICall(ImportKritaImage, true, Permissions.FundamentalGenerateTabAccess);
         API.RegisterAPICall(CheckPendingKritaImage, false, Permissions.FundamentalGenerateTabAccess);
@@ -1211,6 +1212,90 @@ public static class T2IAPI
         }
         OutputMetadataTracker.RemoveMetadataFor(path);
         return new JObject() { ["success"] = true };
+    }
+
+    [API.APIDescription("Copy or move selected images to another output subfolder.", "\"success\": true")]
+    public static async Task<JObject> BulkMoveImages(Session session,
+        [API.APIParameter("Image paths to copy or move.")] JArray paths,
+        [API.APIParameter("Output subfolder to copy or move into.")] string targetFolder,
+        [API.APIParameter("Either copy or move.")] string mode)
+    {
+        bool copyMode = mode == "copy";
+        bool moveMode = mode == "move";
+        if (!copyMode && !moveMode)
+        {
+            return new JObject() { ["error"] = "Mode must be copy or move." };
+        }
+        string root = Utilities.CombinePathWithAbsolute(Environment.CurrentDirectory, session.User.OutputDirectory);
+        targetFolder = (targetFolder ?? "").Replace('\\', '/').Trim('/');
+        (string targetRoot, string consoleError, string userError) = WebServer.CheckFilePath(root, targetFolder);
+        if (consoleError is not null)
+        {
+            Logs.Error(consoleError);
+            return new JObject() { ["error"] = userError };
+        }
+        targetRoot = UserImageHistoryHelper.GetRealPathFor(session.User, targetRoot, root: root);
+        Directory.CreateDirectory(targetRoot);
+        int changed = 0;
+        int failed = 0;
+        foreach (JToken pathToken in paths ?? new JArray())
+        {
+            string rawPath = $"{pathToken}".Replace('\\', '/').Trim('/');
+            (string sourcePath, string pathConsoleError, _) = WebServer.CheckFilePath(root, rawPath);
+            if (pathConsoleError is not null)
+            {
+                failed++;
+                continue;
+            }
+            sourcePath = UserImageHistoryHelper.GetRealPathFor(session.User, sourcePath, root: root);
+            if (!File.Exists(sourcePath))
+            {
+                failed++;
+                continue;
+            }
+            string targetPath = $"{targetRoot}/{Path.GetFileName(sourcePath)}";
+            if (File.Exists(targetPath))
+            {
+                string beforeDot = targetPath.BeforeLast('.');
+                string ext = targetPath.AfterLast('.');
+                int suffix = 1;
+                while (File.Exists($"{beforeDot}-{suffix}.{ext}"))
+                {
+                    suffix++;
+                }
+                targetPath = $"{beforeDot}-{suffix}.{ext}";
+            }
+            Directory.CreateDirectory(Path.GetDirectoryName(targetPath));
+            if (copyMode)
+            {
+                File.Copy(sourcePath, targetPath);
+            }
+            else
+            {
+                File.Move(sourcePath, targetPath);
+                OutputMetadataTracker.RemoveMetadataFor(sourcePath);
+            }
+            string sourceBase = sourcePath.BeforeLast('.');
+            string targetBase = targetPath.BeforeLast('.');
+            foreach (string ext in DeletableFileExtensions)
+            {
+                string sourceAlt = $"{sourceBase}{ext}";
+                if (!File.Exists(sourceAlt))
+                {
+                    continue;
+                }
+                if (copyMode)
+                {
+                    File.Copy(sourceAlt, $"{targetBase}{ext}", true);
+                }
+                else
+                {
+                    File.Move(sourceAlt, $"{targetBase}{ext}", true);
+                }
+            }
+            changed++;
+        }
+        return new JObject() { ["success"] = true, ["changed"] = changed, ["failed"] = failed };
     }
 
     [API.APIDescription("Export the current Swarm image to a temporary PNG and open it in the local Krita application.", "\"success\": true")]
