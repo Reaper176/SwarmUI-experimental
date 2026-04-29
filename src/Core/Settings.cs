@@ -570,6 +570,15 @@ public class Settings : AutoConfiguration
         [ConfigComment("If enabled, the Generate tab's 'Do Not Save' parameter defaults to enabled and is preserved when using Reuse Parameters.")]
         public bool DefaultDoNotSave = false;
 
+        [ConfigComment("If enabled, the Prompt Lab tab is available on the Generate page.")]
+        public bool EnablePromptLab = true;
+
+        [ConfigComment("If enabled, advanced Image History organization tools are available.")]
+        public bool EnableImageHistoryAdvancedTools = true;
+
+        [ConfigComment("If enabled, Image History compare tools are available.")]
+        public bool EnableImageHistoryCompare = true;
+
         public enum HintFormatOptions
         {
             BUTTON, HOVER, HOVER_DELAY, NONE

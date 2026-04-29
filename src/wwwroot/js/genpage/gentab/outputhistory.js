@@ -277,6 +277,26 @@ function ensureImageHistoryStatusReady() {
     });
 }
 
+function applyImageHistoryFeatureToggles() {
+    let advancedEnabled = window.userFeatureToggles?.imageHistoryAdvancedTools != false;
+    let compareEnabled = window.userFeatureToggles?.imageHistoryCompare != false;
+    let advancedButtons = ['image_history_contact_sheet_selected', 'image_history_set_rating_selected', 'image_history_add_tags_selected', 'image_history_remove_tags_selected', 'image_history_copy_to_selected', 'image_history_move_to_selected', 'image_history_export_metadata_selected', 'image_history_send_prompt_lab_selected', 'image_history_rescan_metadata'];
+    for (let id of advancedButtons) {
+        let elem = document.getElementById(id);
+        if (elem) {
+            elem.style.display = advancedEnabled ? '' : 'none';
+        }
+    }
+    let compareButton = document.getElementById('image_history_compare_selected');
+    if (compareButton) {
+        compareButton.style.display = compareEnabled ? '' : 'none';
+    }
+    let sendPromptLabButton = document.getElementById('image_history_send_prompt_lab_selected');
+    if (sendPromptLabButton && window.userFeatureToggles?.promptLab == false) {
+        sendPromptLabButton.style.display = 'none';
+    }
+}
+
 function setImageHistoryRequestStatus(state, message = '') {
     let statusElem = document.getElementById('image_history_request_status');
     let textElem = document.getElementById('image_history_request_status_text');
@@ -1321,6 +1341,9 @@ function moveSelectedImageHistoryPrompt(mode) {
 }
 
 function compareSelectedImageHistory() {
+    if (window.userFeatureToggles?.imageHistoryCompare == false) {
+        return;
+    }
     showImageHistoryCompare([...imageHistorySelected].slice(0, 2));
 }
 
@@ -1454,6 +1477,9 @@ function imageHistoryMetadataToPromptLabPrompt(file) {
 }
 
 async function sendSelectedImageHistoryToPromptLab() {
+    if (window.userFeatureToggles?.promptLab == false) {
+        return;
+    }
     if (imageHistoryBulkActionRunning) {
         return;
     }
@@ -2232,6 +2258,7 @@ imageHistoryBrowser.folderSelectedEvent = () => {
 imageHistoryBrowser.builtEvent = () => {
     updateImageHistoryFilterHint();
     ensureImageHistoryStatusReady();
+    applyImageHistoryFeatureToggles();
     pruneImageHistorySelectionToCurrentFiles();
     updateImageHistoryBulkControls();
     imageHistoryWindowManager.attach(imageHistoryBrowser.contentDiv);

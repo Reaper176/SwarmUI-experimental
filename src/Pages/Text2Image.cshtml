@@ -3,6 +3,7 @@
     ViewData["Title"] = "Page is loading...";
     GeneratePageModel pageModel = new(HttpContext);
     string doCheckForUpdates = Program.ServerSettings.Maintenance.CheckForUpdates ? "true" : "false";
+    bool enablePromptLab = pageModel.User?.Settings.EnablePromptLab != false;
     List<(string Key, string TabId, string Partial, string LoadingText)> lazyTabs = new()
     {
         ("imageediting", "ImageEditing", "_Generate/ImageEditingTab", "Loading image editor..."),
@@ -33,6 +34,11 @@
     window.alwaysRefreshOnLoad = @pageModel.AlwaysRefreshOnLoad;
     window.instanceTitle = "@pageModel.InstanceTitle";
     window.comfy_features = {};
+    window.userFeatureToggles = {
+        promptLab: @enablePromptLab.ToString().ToLowerFast(),
+        imageHistoryAdvancedTools: @((pageModel.User?.Settings.EnableImageHistoryAdvancedTools != false).ToString().ToLowerFast()),
+        imageHistoryCompare: @((pageModel.User?.Settings.EnableImageHistoryCompare != false).ToString().ToLowerFast())
+    };
     window.checkForUpdatesAutomatically = @doCheckForUpdates;
     window.genpageLazyTabs = {
 @for (int i = 0; i < lazyTabs.Count; i++)
@@ -85,9 +91,12 @@
     <li class="nav-item" role="presentation">
         <a class="nav-link active translate" data-bs-toggle="tab" href="#Text2Image" id="text2imagetabbutton" aria-selected="true" role="tab">Generate</a>
     </li>
-    <li class="nav-item" role="presentation" data-requiredpermission="read_user_settings">
-        <a class="nav-link translate" data-bs-toggle="tab" href="#PromptLab" id="promptlabtabbutton" aria-selected="false" tabindex="-1" role="tab">Prompt Lab</a>
-    </li>
+    @if (enablePromptLab)
+    {
+        <li class="nav-item" role="presentation" data-requiredpermission="read_user_settings">
+            <a class="nav-link translate" data-bs-toggle="tab" href="#PromptLab" id="promptlabtabbutton" aria-selected="false" tabindex="-1" role="tab">Prompt Lab</a>
+        </li>
+    }
     <li class="nav-item" role="presentation">
         <a class="nav-link translate" data-bs-toggle="tab" href="#ImageEditing" id="imageeditingtabbutton" aria-selected="false" tabindex="-1" role="tab">Image Editing</a>
     </li>
@@ -112,9 +121,12 @@
     <div class="tab-pane show active" style="line-height:0" id="Text2Image" role="tabpanel">
         @await Html.PartialAsync("_Generate/GenerateTab.cshtml", pageModel)
     </div>
-    <div class="tab-pane tab-pane-vw" id="PromptLab" role="tabpanel">
-        @await Html.PartialAsync("_Generate/PromptLabTab.cshtml", pageModel)
-    </div>
+    @if (enablePromptLab)
+    {
+        <div class="tab-pane tab-pane-vw" id="PromptLab" role="tabpanel">
+            @await Html.PartialAsync("_Generate/PromptLabTab.cshtml", pageModel)
+        </div>
+    }
     <div class="tab-pane tab-pane-vw tab-no-scroll" id="@lazyTabs[0].TabId" role="tabpanel">
         <div class="tab-loading-shell">@lazyTabs[0].LoadingText</div>
     </div>

@@ -16,6 +16,9 @@ class PromptLab {
 
     /** Initializes Prompt Lab once the page is ready. */
     init() {
+        if (window.userFeatureToggles?.promptLab == false || !document.getElementById('prompt_lab_positive')) {
+            return;
+        }
         promptTabComplete.enableFor(getRequiredElementById('prompt_lab_positive'));
         promptTabComplete.enableFor(getRequiredElementById('prompt_lab_negative'));
         this.enablePromptDrop(getRequiredElementById('prompt_lab_positive'));
