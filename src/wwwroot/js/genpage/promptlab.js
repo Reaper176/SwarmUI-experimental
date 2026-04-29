@@ -11,13 +11,28 @@ class PromptLab {
         this.isStartingWildcardGenerationSocket = false;
         this.searchRenderTimeouts = {};
         this.pendingGenerateMetadata = null;
+        this.autoSaveTimeout = null;
     }
 
     /** Initializes Prompt Lab once the page is ready. */
     init() {
         promptTabComplete.enableFor(getRequiredElementById('prompt_lab_positive'));
         promptTabComplete.enableFor(getRequiredElementById('prompt_lab_negative'));
+        this.enablePromptDrop(getRequiredElementById('prompt_lab_positive'));
+        this.enablePromptDrop(getRequiredElementById('prompt_lab_negative'));
         this.load();
+    }
+
+    /** Enables dropping Prompt Lab text into a prompt field. */
+    enablePromptDrop(box) {
+        box.addEventListener('dragover', e => e.preventDefault());
+        box.addEventListener('drop', e => {
+            e.preventDefault();
+            let text = e.dataTransfer.getData('text/plain');
+            if (text) {
+                this.insertTextIntoBox(box, text);
+            }
+        });
     }
 
     /** Loads Prompt Lab data from the server. */
@@ -51,6 +66,21 @@ class PromptLab {
                 this.renderWildcardList();
             }
         }, 250);
+    }
+
+    /** Schedules auto-save for the selected prompt. */
+    scheduleAutoSave() {
+        let autoSave = document.getElementById('prompt_lab_autosave');
+        if (!autoSave?.checked || !this.currentPromptId) {
+            return;
+        }
+        if (this.autoSaveTimeout) {
+            clearTimeout(this.autoSaveTimeout);
+        }
+        this.autoSaveTimeout = setTimeout(() => {
+            this.autoSaveTimeout = null;
+            this.savePrompt();
+        }, 800);
     }
 
     /** Starts a blank prompt. */
@@ -396,7 +426,7 @@ class PromptLab {
             let selected = fragment.id == this.currentFragmentId ? ' prompt-lab-list-item-selected' : '';
             let favorite = fragment.favorite ? '<span class="prompt-lab-favorite-marker">Favorite</span> ' : '';
             let category = fragment.category ? ` <span class="prompt-lab-count">${escapeHtml(fragment.category)}</span>` : '';
-            html += `<button class="prompt-lab-list-item${selected}" onclick="promptLab.loadFragment('${escapeHtmlNoBr(escapeJsString(fragment.id))}')">${favorite}${escapeHtml(fragment.name || 'Untitled Fragment')}${category}</button>`;
+            html += `<button class="prompt-lab-list-item${selected}" draggable="true" ondragstart="promptLab.dragPromptLabText(event, '${escapeHtmlNoBr(escapeJsString(fragment.text || ''))}')" onclick="promptLab.loadFragment('${escapeHtmlNoBr(escapeJsString(fragment.id))}')">${favorite}${escapeHtml(fragment.name || 'Untitled Fragment')}${category}</button>`;
         }
         list.innerHTML = html || '<div class="prompt-lab-empty translate">No saved fragments.</div>';
     }
@@ -412,7 +442,16 @@ class PromptLab {
 
     /** Inserts text into the positive prompt at cursor position. */
     insertTextIntoPositivePrompt(insertText) {
-        let box = getRequiredElementById('prompt_lab_positive');
+        this.insertTextIntoBox(getRequiredElementById('prompt_lab_positive'), insertText);
+    }
+
+    /** Starts dragging Prompt Lab text. */
+    dragPromptLabText(e, text) {
+        e.dataTransfer.setData('text/plain', text);
+    }
+
+    /** Inserts text into a prompt box at cursor position. */
+    insertTextIntoBox(box, insertText) {
         let range = getTextSelRange(box);
         let text = getTextContent(box);
         let prefix = text.substring(0, range[0]).trimEnd();
@@ -425,6 +464,7 @@ class PromptLab {
         setTextSelRange(box, cursor, cursor);
         box.focus();
         this.refreshPreview();
+        this.scheduleAutoSave();
     }
 
     /** Starts a blank wildcard set. */
@@ -522,7 +562,8 @@ class PromptLab {
             let selected = wildcard.id == this.currentWildcardId ? ' prompt-lab-list-item-selected' : '';
             let favorite = wildcard.favorite ? '<span class="prompt-lab-favorite-marker">Favorite</span> ' : '';
             let count = (wildcard.values || []).length;
-            html += `<button class="prompt-lab-list-item${selected}" onclick="promptLab.loadWildcardSet('${escapeHtmlNoBr(escapeJsString(wildcard.id))}')">${favorite}${escapeHtml(wildcard.name || 'Untitled Wildcard')} <span class="prompt-lab-count">${count}</span></button>`;
+            let token = `<wildcard:${wildcard.name || ''}>`;
+            html += `<button class="prompt-lab-list-item${selected}" draggable="true" ondragstart="promptLab.dragPromptLabText(event, '${escapeHtmlNoBr(escapeJsString(token))}')" onclick="promptLab.loadWildcardSet('${escapeHtmlNoBr(escapeJsString(wildcard.id))}')">${favorite}${escapeHtml(wildcard.name || 'Untitled Wildcard')} <span class="prompt-lab-count">${count}</span></button>`;
         }
         list.innerHTML = html || '<div class="prompt-lab-empty translate">No saved wildcards.</div>';
     }
