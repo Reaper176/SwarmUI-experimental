@@ -21,6 +21,7 @@ class PromptLab {
         }
         getRequiredElementById('prompt_lab_max_combinations').value = window.userFeatureToggles?.promptLabWildcardHardLimit || 10000;
         getRequiredElementById('prompt_lab_shuffle_results').checked = window.userFeatureToggles?.promptLabShuffleWildcards == true;
+        getRequiredElementById('prompt_lab_autosave').checked = window.userFeatureToggles?.promptLabAutoSaveDefault == true;
         promptTabComplete.enableFor(getRequiredElementById('prompt_lab_positive'));
         promptTabComplete.enableFor(getRequiredElementById('prompt_lab_negative'));
         this.enablePromptDrop(getRequiredElementById('prompt_lab_positive'));

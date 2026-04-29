@@ -43,7 +43,8 @@
         promptLabWildcardWarningLimit: @(pageModel.User?.Settings.PromptLabWildcardCombinationWarningLimit ?? 1000),
         promptLabWildcardHardLimit: @(pageModel.User?.Settings.PromptLabWildcardCombinationHardLimit ?? 10000),
         promptLabShuffleWildcards: @((pageModel.User?.Settings.PromptLabShuffleWildcardCombinations == true).ToString().ToLowerFast()),
-        promptLabSaveWildcardMetadata: @((pageModel.User?.Settings.PromptLabSaveWildcardValuesToMetadata != false).ToString().ToLowerFast())
+        promptLabSaveWildcardMetadata: @((pageModel.User?.Settings.PromptLabSaveWildcardValuesToMetadata != false).ToString().ToLowerFast()),
+        promptLabAutoSaveDefault: @((pageModel.User?.Settings.PromptLabAutoSaveDefault == true).ToString().ToLowerFast())
     };
     window.checkForUpdatesAutomatically = @doCheckForUpdates;
     window.genpageLazyTabs = {

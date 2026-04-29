@@ -597,6 +597,9 @@ public class Settings : AutoConfiguration
         [ConfigComment("If enabled, Prompt Lab wildcard choices are saved into generated image metadata.")]
         public bool PromptLabSaveWildcardValuesToMetadata = true;
 
+        [ConfigComment("If enabled, Prompt Lab auto-save is enabled by default.")]
+        public bool PromptLabAutoSaveDefault = false;
+
         public enum HintFormatOptions
         {
             BUTTON, HOVER, HOVER_DELAY, NONE
