@@ -831,6 +831,15 @@ class PromptLab {
                 downloadPlainText(`prompt-lab-combinations-${stamp}.json`, JSON.stringify(data.prompts, null, 2));
                 return;
             }
+            if (format == 'csv') {
+                let csv = 'index,positive,negative\n';
+                for (let i = 0; i < data.prompts.length; i++) {
+                    let prompt = data.prompts[i];
+                    csv += `${i + 1},"${(`${prompt.positive || ''}`).replaceAll('"', '""')}","${(`${prompt.negative || ''}`).replaceAll('"', '""')}"\n`;
+                }
+                downloadPlainText(`prompt-lab-combinations-${stamp}.csv`, csv);
+                return;
+            }
             let text = '';
             for (let i = 0; i < data.prompts.length; i++) {
                 let prompt = data.prompts[i];
