@@ -755,7 +755,7 @@ public static class T2IAPI
         "mp3", "aac", "wav", "flac" // audio
     ];
 
-    public enum ImageHistorySortMode { Name, Date, Rating, Resolution, Model, Seed }
+    public enum ImageHistorySortMode { Name, Date, Rating, Resolution, Model, Seed, FileSize }
 
     private static bool MetadataIsHidden(OutputMetadataTracker.OutputMetadataEntry metadata)
     {
@@ -848,6 +848,18 @@ public static class T2IAPI
         }
     }
 
+    private static long GetHistoryFileSize(string file)
+    {
+        try
+        {
+            return new FileInfo(file).Length;
+        }
+        catch (Exception)
+        {
+            return 0;
+        }
+    }
+
     private static JObject GetListAPIInternal(Session session, string rawPath, string root, HashSet<string> extensions, Func<string, bool> isAllowed, int depth, ImageHistorySortMode sortBy, bool sortReverse, bool includeHidden, bool fastFirst = false, int fastFirstLimit = 128)
     {
         int maxInHistory = session.User.Settings.MaxImagesInHistory;
@@ -908,6 +920,10 @@ public static class T2IAPI
                 {
                     list.Sort((a, b) => MetadataSeed(b.Metadata).CompareTo(MetadataSeed(a.Metadata)));
                 }
+                else if (sortBy == ImageHistorySortMode.FileSize)
+                {
+                    list.Sort((a, b) => b.FileSize.CompareTo(a.FileSize));
+                }
                 if (sortReverse)
                 {
                     list.Reverse();
@@ -946,7 +962,7 @@ public static class T2IAPI
                         .OrderDescending()
                         .Take(startupLimit - files.Count);
                     files.AddRange(orderedFiles
-                        .Select(f => new ImageHistoryHelper(prefix + f.AfterLast('/'), OutputMetadataTracker.GetMetadataFor(f, root, starNoFolders)))
+                        .Select(f => new ImageHistoryHelper(prefix + f.AfterLast('/'), OutputMetadataTracker.GetMetadataFor(f, root, starNoFolders), GetHistoryFileSize(f)))
                         .Where(f => f.Metadata is not null)
                         .Where(f => includeHidden || !MetadataIsHidden(f.Metadata)));
                     if (files.Count >= startupLimit || subDepth <= 0)
@@ -1063,7 +1079,7 @@ public static class T2IAPI
                     }
                     List<string> subFiles = [.. Directory.EnumerateFiles(actualPath).Take(localLimit)];
                     IEnumerable<string> newFileNames = subFiles.Select(f => f.Replace('\\', '/')).Where(isAllowed).Where(f => !f.AfterLast('/').StartsWithFast('.') && extensions.Contains(f.AfterLast('.')) && !f.EndsWith(".swarmpreview.jpg") && !f.EndsWith(".swarmpreview.webp"));
-                    List<ImageHistoryHelper> localFiles = [.. newFileNames.Select(f => new ImageHistoryHelper(prefix + f.AfterLast('/'), OutputMetadataTracker.GetMetadataFor(f, root, starNoFolders))).Where(f => f.Metadata is not null).Where(f => includeHidden || !MetadataIsHidden(f.Metadata))];
+                    List<ImageHistoryHelper> localFiles = [.. newFileNames.Select(f => new ImageHistoryHelper(prefix + f.AfterLast('/'), OutputMetadataTracker.GetMetadataFor(f, root, starNoFolders), GetHistoryFileSize(f))).Where(f => f.Metadata is not null).Where(f => includeHidden || !MetadataIsHidden(f.Metadata))];
                     int leftOver = Interlocked.Add(ref remaining, -localFiles.Count);
                     sortList(localFiles);
                     filesConc.TryAdd(localId, localFiles);
@@ -1093,7 +1109,7 @@ public static class T2IAPI
             return new JObject()
             {
                 ["folders"] = JToken.FromObject(dirs.Union(finalDirs.Keys).ToList()),
-                ["files"] = JToken.FromObject(files.Take(maxInHistory).Select(f => new JObject() { ["src"] = f.Name, ["metadata"] = f.Metadata.Metadata }).ToList())
+                ["files"] = JToken.FromObject(files.Take(maxInHistory).Select(f => new JObject() { ["src"] = f.Name, ["metadata"] = f.Metadata.Metadata, ["file_size"] = f.FileSize }).ToList())
             };
         }
         catch (Exception ex)
@@ -1110,7 +1126,7 @@ public static class T2IAPI
         }
     }
 
-    public record struct ImageHistoryHelper(string Name, OutputMetadataTracker.OutputMetadataEntry Metadata);
+    public record struct ImageHistoryHelper(string Name, OutputMetadataTracker.OutputMetadataEntry Metadata, long FileSize);
 
     [API.APIDescription("Gets a list of images in a saved image history folder.",
         """
@@ -1126,7 +1142,7 @@ public static class T2IAPI
     public static async Task<JObject> ListImages(Session session,
         [API.APIParameter("The folder path to start the listing in. Use an empty string for root.")] string path,
         [API.APIParameter("Maximum depth (number of recursive folders) to search.")] int depth,
-        [API.APIParameter("What to sort the list by - `Name` or `Date`.")] string sortBy = "Name",
+        [API.APIParameter("What to sort the list by - `Name`, `Date`, `Rating`, `Resolution`, `Model`, `Seed`, or `FileSize`.")] string sortBy = "Name",
         [API.APIParameter("If true, the sorting should be done in reverse.")] bool sortReverse = false,
         [API.APIParameter("If true, include images marked as hidden.")] bool includeHidden = false,
         [API.APIParameter("If true, return only a bounded startup slice biased toward newest work.")] bool fastFirst = false,
