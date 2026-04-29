@@ -289,6 +289,10 @@ function ensureImageHistoryHeaderControlsReady(sortBy, reverse, allowAnims, show
         return null;
     }
     sortElem.value = sortBy;
+    if (!sortElem.value) {
+        sortElem.value = 'Name';
+        localStorage.setItem('image_history_sort_by', 'Name');
+    }
     sortReverseElem.checked = reverse;
     allowAnimsElem.checked = allowAnims;
     showHiddenElem.checked = showHidden;
