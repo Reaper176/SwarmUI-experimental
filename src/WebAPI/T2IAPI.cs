@@ -753,7 +753,7 @@ public static class T2IAPI
         "mp3", "aac", "wav", "flac" // audio
     ];
 
-    public enum ImageHistorySortMode { Name, Date, Rating }
+    public enum ImageHistorySortMode { Name, Date, Rating, Resolution }
 
     private static bool MetadataIsHidden(OutputMetadataTracker.OutputMetadataEntry metadata)
     {
@@ -782,6 +782,29 @@ public static class T2IAPI
         {
             JToken rating = metadata.Metadata.ParseToJson()["rating"];
             return rating is null ? 0 : rating.Value<double>();
+        }
+        catch (Exception)
+        {
+            return 0;
+        }
+    }
+
+    private static long MetadataResolutionPixels(OutputMetadataTracker.OutputMetadataEntry metadata)
+    {
+        if (metadata is null || string.IsNullOrWhiteSpace(metadata.Metadata) || !metadata.Metadata.Contains("\"sui_image_params\""))
+        {
+            return 0;
+        }
+        try
+        {
+            JObject parsed = metadata.Metadata.ParseToJson();
+            JObject parameters = parsed["sui_image_params"] as JObject;
+            long width = parameters?["width"]?.Value<long>() ?? 0;
+            long height = parameters?["height"]?.Value<long>() ?? 0;
+            JObject extra = parsed["sui_extra_data"] as JObject;
+            width = extra?["final_width"]?.Value<long>() ?? width;
+            height = extra?["final_height"]?.Value<long>() ?? height;
+            return width * height;
         }
         catch (Exception)
         {
@@ -836,6 +859,10 @@ public static class T2IAPI
                 else if (sortBy == ImageHistorySortMode.Rating)
                 {
                     list.Sort((a, b) => MetadataRating(b.Metadata).CompareTo(MetadataRating(a.Metadata)));
+                }
+                else if (sortBy == ImageHistorySortMode.Resolution)
+                {
+                    list.Sort((a, b) => MetadataResolutionPixels(b.Metadata).CompareTo(MetadataResolutionPixels(a.Metadata)));
                 }
                 if (sortReverse)
                 {
