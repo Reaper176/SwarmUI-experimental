@@ -36,6 +36,9 @@
         <input class="auto-text prompt-lab-search" id="prompt_lab_wildcard_search" placeholder="Search wildcards" oninput="promptLab.scheduleSearchRender('wildcards')" />
         <div id="prompt_lab_wildcard_list" class="prompt-lab-list"></div>
         <div class="prompt-lab-section-title translate">Recent Prompts</div>
+        <div class="prompt-lab-toolbar">
+            <button class="basic-button translate" onclick="promptLab.clearHistory()">Clear History</button>
+        </div>
         <div id="prompt_lab_history_list" class="prompt-lab-list"></div>
     </div>
     <div class="prompt-lab-column prompt-lab-editor">

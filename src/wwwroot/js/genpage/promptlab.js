@@ -560,6 +560,16 @@ class PromptLab {
         list.innerHTML = html || '<div class="prompt-lab-empty translate">No recent prompts.</div>';
     }
 
+    /** Clears recent Prompt Lab history locally and from storage. */
+    clearHistory() {
+        let history = (this.data.history || []).slice();
+        this.data.history = [];
+        this.renderHistoryList();
+        for (let item of history) {
+            genericRequest('PromptLabDelete', { collection: 'history', id: item.id }, data => {});
+        }
+    }
+
     /** Loads a history prompt into the editor. */
     loadHistoryPrompt(id) {
         let item = (this.data.history || []).find(h => h.id == id);
