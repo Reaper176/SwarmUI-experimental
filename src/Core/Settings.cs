@@ -591,6 +591,12 @@ public class Settings : AutoConfiguration
         [ConfigComment("Prompt Lab wildcard expansions cannot return more combinations than this hard limit.")]
         public int PromptLabWildcardCombinationHardLimit = 10000;
 
+        [ConfigComment("If enabled, Prompt Lab wildcard expansion results are shuffled by default.")]
+        public bool PromptLabShuffleWildcardCombinations = false;
+
+        [ConfigComment("If enabled, Prompt Lab wildcard choices are saved into generated image metadata.")]
+        public bool PromptLabSaveWildcardValuesToMetadata = true;
+
         public enum HintFormatOptions
         {
             BUTTON, HOVER, HOVER_DELAY, NONE

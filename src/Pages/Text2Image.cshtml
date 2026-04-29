@@ -41,7 +41,9 @@
         imageHistoryCompareMetadataDefault: @((pageModel.User?.Settings.ImageHistoryCompareMetadataDefault == true).ToString().ToLowerFast()),
         imageHistoryCompareDiffDefault: @((pageModel.User?.Settings.ImageHistoryCompareDiffDefault == true).ToString().ToLowerFast()),
         promptLabWildcardWarningLimit: @(pageModel.User?.Settings.PromptLabWildcardCombinationWarningLimit ?? 1000),
-        promptLabWildcardHardLimit: @(pageModel.User?.Settings.PromptLabWildcardCombinationHardLimit ?? 10000)
+        promptLabWildcardHardLimit: @(pageModel.User?.Settings.PromptLabWildcardCombinationHardLimit ?? 10000),
+        promptLabShuffleWildcards: @((pageModel.User?.Settings.PromptLabShuffleWildcardCombinations == true).ToString().ToLowerFast()),
+        promptLabSaveWildcardMetadata: @((pageModel.User?.Settings.PromptLabSaveWildcardValuesToMetadata != false).ToString().ToLowerFast())
     };
     window.checkForUpdatesAutomatically = @doCheckForUpdates;
     window.genpageLazyTabs = {

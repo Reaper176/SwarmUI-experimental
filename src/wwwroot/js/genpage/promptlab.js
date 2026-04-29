@@ -20,6 +20,7 @@ class PromptLab {
             return;
         }
         getRequiredElementById('prompt_lab_max_combinations').value = window.userFeatureToggles?.promptLabWildcardHardLimit || 10000;
+        getRequiredElementById('prompt_lab_shuffle_results').checked = window.userFeatureToggles?.promptLabShuffleWildcards == true;
         promptTabComplete.enableFor(getRequiredElementById('prompt_lab_positive'));
         promptTabComplete.enableFor(getRequiredElementById('prompt_lab_negative'));
         this.enablePromptDrop(getRequiredElementById('prompt_lab_positive'));
@@ -843,7 +844,8 @@ class PromptLab {
             negative: getRequiredElementById('prompt_lab_negative').value,
             mode: modeOverride || getRequiredElementById('prompt_lab_wildcard_mode').value,
             sample_count: parseInt(getRequiredElementById('prompt_lab_sample_count').value) || 25,
-            max_combinations: Math.min(parseInt(getRequiredElementById('prompt_lab_max_combinations').value) || 1000, window.userFeatureToggles?.promptLabWildcardHardLimit || 10000)
+            max_combinations: Math.min(parseInt(getRequiredElementById('prompt_lab_max_combinations').value) || 1000, window.userFeatureToggles?.promptLabWildcardHardLimit || 10000),
+            shuffle_results: getRequiredElementById('prompt_lab_shuffle_results').checked
         };
     }
 
@@ -958,7 +960,9 @@ class PromptLab {
         mainGenHandler.doGenerate(overrides, {}, actualInput => {
             actualInput.extra_metadata = actualInput.extra_metadata || {};
             actualInput.extra_metadata.prompt_lab_id = this.currentPromptId || '';
-            actualInput.extra_metadata.prompt_lab_wildcard_values = JSON.stringify(prompt.wildcard_values || {});
+            if (window.userFeatureToggles?.promptLabSaveWildcardMetadata != false) {
+                actualInput.extra_metadata.prompt_lab_wildcard_values = JSON.stringify(prompt.wildcard_values || {});
+            }
         });
     }
 
