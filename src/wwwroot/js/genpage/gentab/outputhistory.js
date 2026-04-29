@@ -535,6 +535,7 @@ function ensureImageHistoryCompareModal() {
             <label for="image_history_compare_diff"><input id="image_history_compare_diff" type="checkbox" autocomplete="off"> Diff</label>
             <label for="image_history_compare_metadata"><input id="image_history_compare_metadata" type="checkbox" autocomplete="off"> Metadata</label>
             <button type="button" class="basic-button translate" id="image_history_compare_fit">Fit</button>
+            <button type="button" class="basic-button translate" id="image_history_compare_swap">Swap</button>
             <button type="button" class="basic-button translate" id="image_history_compare_close">Close</button>
         </div>
         <div class="image-history-compare-body">
@@ -555,6 +556,9 @@ function ensureImageHistoryCompareModal() {
     getRequiredElementById('image_history_compare_fit').onclick = () => {
         setImageHistoryCompareZoom(100);
     };
+    getRequiredElementById('image_history_compare_swap').onclick = () => {
+        swapImageHistoryCompareImages();
+    };
     getRequiredElementById('image_history_compare_zoom').addEventListener('input', e => {
         setImageHistoryCompareZoom(e.target.value);
     });
@@ -568,6 +572,39 @@ function ensureImageHistoryCompareModal() {
     stage.addEventListener('pointermove', updateImageHistoryCompareRevealFromPointer);
     stage.addEventListener('pointerdown', updateImageHistoryCompareRevealFromPointer);
     return modal;
+}
+
+/**
+ * Loads the current compare pair into the overlay view.
+ */
+function renderImageHistoryComparePair() {
+    if (!imageHistoryCompareFiles) {
+        return;
+    }
+    let first = imageHistoryCompareFiles.first;
+    let second = imageHistoryCompareFiles.second;
+    getRequiredElementById('image_history_compare_title').innerText = `${first.data.name || first.name} / ${second.data.name || second.name}`;
+    getRequiredElementById('image_history_compare_img_a').src = first.data.src;
+    getRequiredElementById('image_history_compare_img_b').src = second.data.src;
+    if (getRequiredElementById('image_history_compare_diff').checked) {
+        renderImageHistoryCompareDiff();
+    }
+    if (getRequiredElementById('image_history_compare_metadata').checked) {
+        renderImageHistoryCompareMetadata();
+    }
+}
+
+/**
+ * Swaps image A and image B in the compare view.
+ */
+function swapImageHistoryCompareImages() {
+    if (!imageHistoryCompareFiles) {
+        return;
+    }
+    let oldFirst = imageHistoryCompareFiles.first;
+    imageHistoryCompareFiles.first = imageHistoryCompareFiles.second;
+    imageHistoryCompareFiles.second = oldFirst;
+    renderImageHistoryComparePair();
 }
 
 /**
@@ -788,12 +825,10 @@ function showImageHistoryCompare(paths) {
         return;
     }
     ensureImageHistoryCompareModal();
-    getRequiredElementById('image_history_compare_title').innerText = `${first.data.name || first.name} / ${second.data.name || second.name}`;
-    getRequiredElementById('image_history_compare_img_a').src = first.data.src;
-    getRequiredElementById('image_history_compare_img_b').src = second.data.src;
     imageHistoryCompareFiles = { first, second };
     getRequiredElementById('image_history_compare_diff').checked = false;
     getRequiredElementById('image_history_compare_metadata').checked = false;
+    renderImageHistoryComparePair();
     setImageHistoryCompareDiffMode(false);
     setImageHistoryCompareMetadataMode(false);
     setImageHistoryCompareZoom(100);
