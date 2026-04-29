@@ -434,6 +434,7 @@ function getImageHistorySearchFields(image, parsedMeta) {
     let generationResolution = params.width && params.height ? `${params.width}x${params.height}` : '';
     let finalResolution = extra.final_width && extra.final_height ? `${extra.final_width}x${extra.final_height}` : generationResolution;
     let favoriteText = parsedMeta.is_starred ? 'true yes starred favorite' : 'false no unstarred';
+    let hiddenText = parsedMeta.is_hidden ? 'true yes hidden' : 'false no visible';
     let width = Number.parseInt(params.width || 0) || 0;
     let height = Number.parseInt(params.height || 0) || 0;
     let finalWidth = Number.parseInt(extra.final_width || width || 0) || 0;
@@ -465,6 +466,7 @@ function getImageHistorySearchFields(image, parsedMeta) {
         cfg: params.cfgscale || '',
         rating: parsedMeta.rating || extra.rating || '',
         favorite: favoriteText,
+        hidden: hiddenText,
         tags: `${imageHistoryValueToSearchText(parsedMeta.tags)} ${imageHistoryValueToSearchText(extra.tags)}`,
         session: `${params.session_id || ''} ${extra.session_id || ''}`,
         wildcard: `${extra.prompt_lab_wildcard_values || ''} ${imageHistoryValueToSearchText(extra.prompt_lab_wildcards)}`,
@@ -509,6 +511,8 @@ function normalizeImageHistoryFilterField(field) {
     let aliases = {
         fav: 'favorite',
         starred: 'favorite',
+        hide: 'hidden',
+        is_hidden: 'hidden',
         tag: 'tags',
         neg: 'negative',
         negativeprompt: 'negative',
@@ -638,7 +642,7 @@ function updateImageHistoryFilterHint() {
     }
     filterInput.dataset.historyFilterHint = 'true';
     filterInput.placeholder = 'Search prompt/model/metadata...';
-    filterInput.title = 'Search text, or use field:value terms like model:sdxl seed:123 date:>=2026-04-01 rating:>=4 width:>=1024 wildcard:dragon.';
+    filterInput.title = 'Search text, or use field:value terms like model:sdxl seed:123 date:>=2026-04-01 rating:>=4 hidden:true wildcard:dragon.';
 }
 
 /**
