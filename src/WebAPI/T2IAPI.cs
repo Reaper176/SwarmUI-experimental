@@ -34,6 +34,7 @@ public static class T2IAPI
         API.RegisterAPICall(ToggleImageStarred, true, Permissions.UserStarImages);
         API.RegisterAPICall(ToggleImageHidden, true, Permissions.ViewImageHistory);
         API.RegisterAPICall(SetImageRating, true, Permissions.ViewImageHistory);
+        API.RegisterAPICall(SetImageTags, true, Permissions.ViewImageHistory);
         API.RegisterAPICall(OpenImageFolder, true, Permissions.LocalImageFolder);
         API.RegisterAPICall(DeleteImage, true, Permissions.UserDeleteImage);
         API.RegisterAPICall(SendImageToKrita, true, Permissions.LocalKritaBridge);
@@ -1420,6 +1421,121 @@ public static class T2IAPI
             OutputMetadataTracker.RemoveMetadataFor(starPath.Replace('\\', '/'));
         }
         return new JObject() { ["rating"] = rating };
+    }
+
+    [API.APIDescription("Add or remove user tags for an image in history.", "\"tags\": [\"tag\"]")]
+    public static async Task<JObject> SetImageTags(Session session,
+        [API.APIParameter("The path to the image to tag.")] string path,
+        [API.APIParameter("Comma-separated tags to add or remove.")] string tags,
+        [API.APIParameter("Tag mode, either add or remove.")] string mode)
+    {
+        List<string> tagList = [.. (tags ?? "").Split(',').Select(t => t.Trim()).Where(t => !string.IsNullOrWhiteSpace(t)).Distinct(StringComparer.OrdinalIgnoreCase)];
+        if (tagList.Count == 0)
+        {
+            return new JObject() { ["error"] = "No tags were provided." };
+        }
+        bool shouldAdd = mode == "add";
+        bool shouldRemove = mode == "remove";
+        if (!shouldAdd && !shouldRemove)
+        {
+            return new JObject() { ["error"] = "Tag mode must be add or remove." };
+        }
+        bool wasStar = false;
+        path = path.Replace('\\', '/').Trim('/');
+        if (path.StartsWith("Starred/"))
+        {
+            wasStar = true;
+            path = path["Starred/".Length..];
+        }
+        string origPath = path;
+        string root = Utilities.CombinePathWithAbsolute(Environment.CurrentDirectory, session.User.OutputDirectory);
+        (path, string consoleError, string userError) = WebServer.CheckFilePath(root, path);
+        if (consoleError is not null)
+        {
+            Logs.Error(consoleError);
+            return new JObject() { ["error"] = userError };
+        }
+        string rawPath = UserImageHistoryHelper.GetRealPathFor(session.User, path, root: root);
+        string starPath = $"Starred/{(session.User.Settings.StarNoFolders ? origPath.Replace("/", "") : origPath)}";
+        (starPath, _, _) = WebServer.CheckFilePath(root, starPath);
+        starPath = UserImageHistoryHelper.GetRealPathFor(session.User, starPath, root: root);
+        string primaryPath = wasStar ? starPath : rawPath;
+        bool rawExists = File.Exists(rawPath);
+        bool starExists = File.Exists(starPath);
+        if (!File.Exists(primaryPath) && !rawExists && !starExists)
+        {
+            Logs.Warning($"User {session.User.UserID} tried to tag image path '{origPath}' which maps to '{primaryPath}', but cannot as the image does not exist.");
+            return new JObject() { ["error"] = "That file does not exist, cannot tag." };
+        }
+        static JArray getTags(JObject metadata)
+        {
+            if (metadata["tags"] is JArray arr)
+            {
+                return arr;
+            }
+            if (metadata["tags"] is JValue value && value.Value is string text)
+            {
+                return new JArray(text.Split(',').Select(t => t.Trim()).Where(t => !string.IsNullOrWhiteSpace(t)));
+            }
+            return new JArray();
+        }
+        static JArray setTags(string imagePath, bool fileExists, List<string> changedTags, bool addMode)
+        {
+            if (!fileExists)
+            {
+                return null;
+            }
+            string sidecarPath = $"{imagePath.BeforeLast('.')}.swarm.json";
+            JObject metadata = new();
+            if (File.Exists(sidecarPath))
+            {
+                try
+                {
+                    metadata = File.ReadAllText(sidecarPath).ParseToJson();
+                }
+                catch (Exception)
+                {
+                    metadata = new();
+                }
+            }
+            List<string> existing = [.. getTags(metadata).Select(t => $"{t}").Where(t => !string.IsNullOrWhiteSpace(t))];
+            if (addMode)
+            {
+                foreach (string tag in changedTags)
+                {
+                    if (!existing.Any(t => t.Equals(tag, StringComparison.OrdinalIgnoreCase)))
+                    {
+                        existing.Add(tag);
+                    }
+                }
+            }
+            else
+            {
+                existing = [.. existing.Where(t => !changedTags.Any(r => r.Equals(t, StringComparison.OrdinalIgnoreCase)))];
+            }
+            JArray result = new(existing);
+            metadata["tags"] = result;
+            File.WriteAllText(sidecarPath, metadata.ToString(Newtonsoft.Json.Formatting.Indented));
+            return result;
+        }
+        JArray currentTags = setTags(rawPath, rawExists, tagList, shouldAdd);
+        if (rawPath != starPath)
+        {
+            JArray starTags = setTags(starPath, starExists, tagList, shouldAdd);
+            if (currentTags is null)
+            {
+                currentTags = starTags;
+            }
+        }
+        if (rawExists)
+        {
+            OutputMetadataTracker.RemoveMetadataFor(rawPath.Replace('\\', '/'));
+        }
+        if (starExists)
+        {
+            OutputMetadataTracker.RemoveMetadataFor(starPath.Replace('\\', '/'));
+        }
+        return new JObject() { ["tags"] = currentTags ?? new JArray() };
     }
 
     public static SemaphoreSlim RefreshSemaphore = new(1, 1);
