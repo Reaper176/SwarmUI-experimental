@@ -753,7 +753,7 @@ public static class T2IAPI
         "mp3", "aac", "wav", "flac" // audio
     ];
 
-    public enum ImageHistorySortMode { Name, Date, Rating, Resolution }
+    public enum ImageHistorySortMode { Name, Date, Rating, Resolution, Model }
 
     private static bool MetadataIsHidden(OutputMetadataTracker.OutputMetadataEntry metadata)
     {
@@ -812,6 +812,23 @@ public static class T2IAPI
         }
     }
 
+    private static string MetadataModel(OutputMetadataTracker.OutputMetadataEntry metadata)
+    {
+        if (metadata is null || string.IsNullOrWhiteSpace(metadata.Metadata) || !metadata.Metadata.Contains("\"model\""))
+        {
+            return "";
+        }
+        try
+        {
+            JToken model = metadata.Metadata.ParseToJson()["sui_image_params"]?["model"];
+            return $"{model}".ToLowerFast();
+        }
+        catch (Exception)
+        {
+            return "";
+        }
+    }
+
     private static JObject GetListAPIInternal(Session session, string rawPath, string root, HashSet<string> extensions, Func<string, bool> isAllowed, int depth, ImageHistorySortMode sortBy, bool sortReverse, bool includeHidden, bool fastFirst = false, int fastFirstLimit = 128)
     {
         int maxInHistory = session.User.Settings.MaxImagesInHistory;
@@ -863,6 +880,10 @@ public static class T2IAPI
                 else if (sortBy == ImageHistorySortMode.Resolution)
                 {
                     list.Sort((a, b) => MetadataResolutionPixels(b.Metadata).CompareTo(MetadataResolutionPixels(a.Metadata)));
+                }
+                else if (sortBy == ImageHistorySortMode.Model)
+                {
+                    list.Sort((a, b) => MetadataModel(b.Metadata).CompareTo(MetadataModel(a.Metadata)));
                 }
                 if (sortReverse)
                 {
