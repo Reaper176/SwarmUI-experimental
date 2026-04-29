@@ -432,6 +432,10 @@ function getImageHistorySearchFields(image, parsedMeta) {
     let generationResolution = params.width && params.height ? `${params.width}x${params.height}` : '';
     let finalResolution = extra.final_width && extra.final_height ? `${extra.final_width}x${extra.final_height}` : generationResolution;
     let favoriteText = parsedMeta.is_starred ? 'true yes starred favorite' : 'false no unstarred';
+    let width = Number.parseInt(params.width || 0) || 0;
+    let height = Number.parseInt(params.height || 0) || 0;
+    let finalWidth = Number.parseInt(extra.final_width || width || 0) || 0;
+    let finalHeight = Number.parseInt(extra.final_height || height || 0) || 0;
     let fields = {
         name: name,
         path: fullsrc,
@@ -439,7 +443,6 @@ function getImageHistorySearchFields(image, parsedMeta) {
         type: extension,
         filetype: extension,
         filesize: fileSize ? `${fileSize} ${largeCountStringify(fileSize)}` : '',
-        size: fileSize ? `${fileSize} ${largeCountStringify(fileSize)}` : '',
         has: hasMetadataText,
         date: fullsrc,
         metadata: `${rawMetadata} ${imageHistoryValueToSearchText(parsedMeta)}`,
@@ -452,6 +455,12 @@ function getImageHistorySearchFields(image, parsedMeta) {
         scheduler: params.scheduler || '',
         seed: params.seed || '',
         resolution: `${generationResolution} ${finalResolution}`,
+        width: `${width} ${finalWidth}`,
+        height: `${height} ${finalHeight}`,
+        finalwidth: finalWidth,
+        finalheight: finalHeight,
+        steps: params.steps || '',
+        cfg: params.cfgscale || '',
         rating: parsedMeta.rating || extra.rating || '',
         favorite: favoriteText,
         tags: `${imageHistoryValueToSearchText(parsedMeta.tags)} ${imageHistoryValueToSearchText(extra.tags)}`,
@@ -503,7 +512,10 @@ function normalizeImageHistoryFilterField(field) {
         negativeprompt: 'negative',
         loras: 'lora',
         res: 'resolution',
-        size: 'resolution',
+        file_size: 'filesize',
+        size: 'filesize',
+        final_width: 'finalwidth',
+        final_height: 'finalheight',
         prompt_lab: 'promptlab',
         prompt_lab_id: 'promptlab',
         ext: 'filetype',
@@ -512,6 +524,31 @@ function normalizeImageHistoryFilterField(field) {
         wildcard_values: 'wildcard'
     };
     return aliases[field] || field;
+}
+
+function imageHistoryNumericFilterMatches(fieldText, value) {
+    let match = value.match(/^(>=|<=|>|<|=)(-?\d+(?:\.\d+)?)$/);
+    if (!match) {
+        return null;
+    }
+    let actual = Number.parseFloat(fieldText);
+    let expected = Number.parseFloat(match[2]);
+    if (!Number.isFinite(actual) || !Number.isFinite(expected)) {
+        return false;
+    }
+    if (match[1] == '>=') {
+        return actual >= expected;
+    }
+    if (match[1] == '<=') {
+        return actual <= expected;
+    }
+    if (match[1] == '>') {
+        return actual > expected;
+    }
+    if (match[1] == '<') {
+        return actual < expected;
+    }
+    return actual == expected;
 }
 
 /**
@@ -539,6 +576,13 @@ function imageHistoryFilterMatches(desc, filter) {
                 }
                 continue;
             }
+            let numericMatch = imageHistoryNumericFilterMatches(fieldText, value);
+            if (numericMatch != null) {
+                if (!numericMatch) {
+                    return false;
+                }
+                continue;
+            }
             if (!`${fieldText}`.toLowerCase().includes(value)) {
                 return false;
             }
@@ -560,7 +604,7 @@ function updateImageHistoryFilterHint() {
     }
     filterInput.dataset.historyFilterHint = 'true';
     filterInput.placeholder = 'Search prompt/model/metadata...';
-    filterInput.title = 'Search text, or use field:value terms like model:sdxl seed:123 res:1024x1024 wildcard:dragon.';
+    filterInput.title = 'Search text, or use field:value terms like model:sdxl seed:123 res:1024x1024 rating:>=4 width:>=1024 wildcard:dragon.';
 }
 
 /**
