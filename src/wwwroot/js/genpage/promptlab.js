@@ -199,7 +199,7 @@ class PromptLab {
         let html = '';
         let prompts = this.sortedWithFavorites(this.data.prompts);
         for (let prompt of prompts) {
-            let text = `${prompt.name || ''} ${(prompt.tags || []).join(' ')}`.toLowerCase();
+            let text = `${prompt.name || ''} ${(prompt.tags || []).join(' ')} ${prompt.notes || ''} ${prompt.positive || ''} ${prompt.negative || ''}`.toLowerCase();
             if (search && !text.includes(search)) {
                 continue;
             }
