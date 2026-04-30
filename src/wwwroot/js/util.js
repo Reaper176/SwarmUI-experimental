@@ -1,13 +1,13 @@
 /** Dirt-simple direct POST request sender. */
-function getSwarmXhrTimeoutMs() {
-    return window.swarmXhrTimeoutMs || 120000;
+function getSwarmXhrTimeoutMs(timeoutMs = null) {
+    return timeoutMs || window.swarmXhrTimeoutMs || 120000;
 }
 
-function sendJsonToServer(url, json_input, callback, error_callback) {
+function sendJsonToServer(url, json_input, callback, error_callback, timeoutMs = null) {
     let xhr = new XMLHttpRequest();
     xhr.open('POST', url, true);
     xhr.responseType = 'json';
-    xhr.timeout = getSwarmXhrTimeoutMs();
+    xhr.timeout = getSwarmXhrTimeoutMs(timeoutMs);
     xhr.onload = function() {
         callback(xhr.status, xhr.response);
     };
@@ -19,11 +19,11 @@ function sendJsonToServer(url, json_input, callback, error_callback) {
 };
 
 /** Dirt-simple direct GET request sender. */
-function getJsonDirect(url, callback, error_callback) {
+function getJsonDirect(url, callback, error_callback, timeoutMs = null) {
     let xhr = new XMLHttpRequest();
     xhr.open('GET', url, true);
     xhr.responseType = 'json';
-    xhr.timeout = getSwarmXhrTimeoutMs();
+    xhr.timeout = getSwarmXhrTimeoutMs(timeoutMs);
     xhr.onload = function() {
         callback(xhr.status, xhr.response);
     };

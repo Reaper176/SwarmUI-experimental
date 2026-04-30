@@ -955,7 +955,7 @@ class ModelBrowserWrapper {
             }
             showError(`Failed to list models: ${e}`);
             callback([], []);
-        });
+        }, 300000);
     }
 
     isStarred(name) {

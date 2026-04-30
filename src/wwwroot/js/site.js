@@ -167,7 +167,7 @@ function describeRequestFailure(e) {
     return e;
 }
 
-function genericRequest(url, in_data, callback, depth = 0, errorHandle = null) {
+function genericRequest(url, in_data, callback, depth = 0, errorHandle = null, timeoutMs = null) {
     in_data['session_id'] = session_id;
     function fail(e) {
         e = describeRequestFailure(e);
@@ -192,7 +192,7 @@ function genericRequest(url, in_data, callback, depth = 0, errorHandle = null) {
             if (data.error_id == 'invalid_session_id') {
                 console.log('Session refused, will get new one and try again.');
                 getSession(() => {
-                    genericRequest(url, in_data, callback, depth + 1, errorHandle);
+                    genericRequest(url, in_data, callback, depth + 1, errorHandle, timeoutMs);
                 });
                 return;
             }
@@ -200,7 +200,7 @@ function genericRequest(url, in_data, callback, depth = 0, errorHandle = null) {
                 console.log(`Failed to impersonate user ${impersonateTargetUserId}, will clear and try again.`);
                 impersonateTargetUserId = null;
                 getSession(() => {
-                    genericRequest(url, in_data, callback, depth + 1, errorHandle);
+                    genericRequest(url, in_data, callback, depth + 1, errorHandle, timeoutMs);
                 });
                 return;
             }
@@ -212,7 +212,7 @@ function genericRequest(url, in_data, callback, depth = 0, errorHandle = null) {
             return;
         }
         callback(data);
-    }, fail);
+    }, fail, timeoutMs);
 }
 
 let lastServerVersion = null;

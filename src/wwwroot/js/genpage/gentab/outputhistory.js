@@ -2188,7 +2188,7 @@ function listOutputHistoryFolderAndFiles(path, isRefresh, callback, depth, onErr
         if (onError) {
             onError(error);
         }
-    });
+    }, 300000);
 }
 
 function queueFullImageHistoryLoad(path, depth, sortBy, reverse, showHidden) {
@@ -2224,7 +2224,7 @@ function queueFullImageHistoryLoad(path, depth, sortBy, reverse, showHidden) {
             imageHistoryBackgroundRetryCount++;
             setImageHistoryRequestStatus('loading', 'Retrying older history...');
             queueFullImageHistoryLoad(path, depth, sortBy, reverse, showHidden);
-        });
+        }, 300000);
     }, 0);
 }
 
