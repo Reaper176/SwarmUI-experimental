@@ -415,7 +415,7 @@ class GenerateHandler {
         }
     }
 
-    doGenerate(input_overrides = {}, input_preoverrides = {}, postCollectRun = null) {
+    doGenerate(input_overrides = {}, input_preoverrides = {}, postCollectRun = null, previewRetryCount = 0) {
         if (session_id == null) {
             if (Date.now() - time_started > 1000 * 60) {
                 this.hadError("Cannot generate, session not started. Did the server crash?");
@@ -430,6 +430,13 @@ class GenerateHandler {
         if (isPreview) {
             delete input_overrides['_preview'];
             socketId = 'preview';
+        }
+        if (isPreview && num_models_loading > 0 && previewRetryCount < 6) {
+            setTimeout(() => {
+                input_overrides['_preview'] = true;
+                this.doGenerate(input_overrides, input_preoverrides, postCollectRun, previewRetryCount + 1);
+            }, 1500);
+            return;
         }
         this.beforeGenRun();
         let run = () => {
@@ -463,6 +470,13 @@ class GenerateHandler {
                     }
                 }, 1);
                 if (this.interrupted >= batch_id) {
+                    return;
+                }
+                if (isPreview && previewRetryCount < 2) {
+                    setTimeout(() => {
+                        input_overrides['_preview'] = true;
+                        this.doGenerate(input_overrides, input_preoverrides, postCollectRun, previewRetryCount + 1);
+                    }, 1500);
                     return;
                 }
                 this.hadError(e);
