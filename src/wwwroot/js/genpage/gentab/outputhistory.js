@@ -81,8 +81,9 @@ class ImageHistoryWindowManager {
         if (img.getAttribute('src')) {
             return false;
         }
-        img.dataset.src = img.dataset.origSrc;
-        img.classList.add('lazyload');
+        img.classList.remove('lazyload');
+        img.removeAttribute('data-src');
+        img.src = img.dataset.origSrc;
         return true;
     }
 
@@ -159,9 +160,7 @@ class ImageHistoryWindowManager {
                 }
             }
         }
-        if (hydrateQueued) {
-            browserUtil.queueMakeVisible(this.content);
-        }
+        return hydrateQueued;
     }
 }
 
