@@ -213,7 +213,25 @@ class GenerateHandler {
         return null;
     }
 
-    internalHandleData(data, images, discardable, timeLastGenHit, actualInput, socketId, socket, isPreview, batch_id) {
+    /** Retries a preview run that closed without producing an image, waiting for cold model loads when needed. */
+    scheduleEmptyPreviewRetry(input_overrides, input_preoverrides, postCollectRun, previewRetryCount, waitCount = 0) {
+        if (previewRetryCount >= 3) {
+            return false;
+        }
+        if (num_models_loading > 0 && waitCount < 120) {
+            setTimeout(() => {
+                this.scheduleEmptyPreviewRetry(input_overrides, input_preoverrides, postCollectRun, previewRetryCount, waitCount + 1);
+            }, 1000);
+            return true;
+        }
+        setTimeout(() => {
+            input_overrides['_preview'] = true;
+            this.doGenerate(input_overrides, input_preoverrides, postCollectRun, previewRetryCount + 1);
+        }, 1000);
+        return true;
+    }
+
+    internalHandleData(data, images, discardable, timeLastGenHit, actualInput, socketId, socket, isPreview, batch_id, previewState = null, retryPreview = null) {
         if ('socket_intention' in data && data.socket_intention == 'close' && socket) {
             this.debugTrack('socket-close', {
                 socketId,
@@ -226,6 +244,11 @@ class GenerateHandler {
             });
             if (this.sockets[socketId] == socket) {
                 this.sockets[socketId] = null;
+            }
+            if (isPreview && !previewState?.hadOutput && this.interrupted < batch_id && retryPreview) {
+                if (retryPreview()) {
+                    return;
+                }
             }
             let removeInterrupted = getUserSetting('ui.removeinterruptedgens', false);
             let wasInterrupted = this.interrupted >= batch_id;
@@ -263,7 +286,16 @@ class GenerateHandler {
         }
         if (isPreview) {
             if (data.image) {
+                if (previewState) {
+                    previewState.hadOutput = true;
+                }
                 this.setCurrentImage(data.image, data.metadata, `${data.request_id}_${data.batch_index}`, false, true);
+            }
+            if (data.gen_progress?.preview) {
+                if (previewState) {
+                    previewState.hadOutput = true;
+                }
+                this.setCurrentImage(data.gen_progress.preview, data.gen_progress.metadata ?? '', `${data.gen_progress.request_id}_${data.gen_progress.batch_index}`, true);
             }
             return;
         }
@@ -446,7 +478,11 @@ class GenerateHandler {
             let discardable = {};
             let timeLastGenHit = [Date.now()];
             let actualInput = this.getGenInput(input_overrides, input_preoverrides);
+            let previewState = { hadOutput: false };
             let socket = null;
+            let retryPreview = () => {
+                return this.scheduleEmptyPreviewRetry(input_overrides, input_preoverrides, postCollectRun, previewRetryCount);
+            };
             let handleError = e => {
                 console.log(`Error in GenerateText2ImageWS:`, e, this.interrupted, batch_id);
                 if (this.sockets[socketId] == socket) {
@@ -491,7 +527,7 @@ class GenerateHandler {
                 this.sockets[socketId].send(JSON.stringify(actualInput));
             }
             else {
-                socket = makeWSRequestT2I('GenerateText2ImageWS', actualInput, data => this.internalHandleData(data, images, discardable, timeLastGenHit, actualInput, socketId, socket, isPreview, batch_id), handleError);
+                socket = makeWSRequestT2I('GenerateText2ImageWS', actualInput, data => this.internalHandleData(data, images, discardable, timeLastGenHit, actualInput, socketId, socket, isPreview, batch_id, previewState, retryPreview), handleError);
                 this.sockets[socketId] = socket;
             }
         };
