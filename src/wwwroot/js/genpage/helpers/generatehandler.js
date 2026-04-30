@@ -213,6 +213,34 @@ class GenerateHandler {
         return null;
     }
 
+    /** Loads the selected model before a normal generation so cold-storage first runs can emit previews. */
+    preloadCurrentModelForPreviews(callback) {
+        let model = currentModelHelper.curModel || getRequiredElementById('current_model').value;
+        if (!model) {
+            callback();
+            return;
+        }
+        genericRequest('ListLoadedModels', {}, data => {
+            let selectedClean = cleanModelName(model);
+            for (let loaded of data.models) {
+                let loadedName = loaded.name || loaded;
+                if (loadedName == model || cleanModelName(loadedName) == selectedClean) {
+                    callback();
+                    return;
+                }
+            }
+            genericRequest('SelectModel', { 'model': model }, data => {
+                callback();
+            }, 0, e => {
+                console.log(`Preview model preload failed: ${e}`);
+                callback();
+            }, 300000);
+        }, 0, e => {
+            console.log(`Loaded model check failed: ${e}`);
+            callback();
+        }, 300000);
+    }
+
     /** Retries a preview run that closed without producing an image, waiting for cold model loads when needed. */
     scheduleEmptyPreviewRetry(input_overrides, input_preoverrides, postCollectRun, previewRetryCount, waitCount = 0) {
         if (previewRetryCount >= 3) {
@@ -540,7 +568,12 @@ class GenerateHandler {
                 if (currentModelHelper.doModelInstallRequiredCheck()) {
                     return;
                 }
-                run();
+                if (!isPreview && previewRetryCount == 0) {
+                    this.preloadCurrentModelForPreviews(run);
+                }
+                else {
+                    run();
+                }
             });
         }
         else {
