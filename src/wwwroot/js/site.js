@@ -71,7 +71,7 @@ function enableSliderForBox(div) {
 function showError(message) {
     if (message instanceof ProgressEvent || message?.constructor?.name == 'ProgressEvent') {
         let type = message.type || 'error';
-        message = type == 'timeout' ? `Request timed out after ${window.swarmXhrTimeoutMs || 30000}ms.` : type == 'abort' ? 'Request was aborted before the server responded.' : 'Failed to send request to server. Did the server crash?';
+        message = type == 'timeout' ? `Request timed out after ${getSwarmXhrTimeoutMs()}ms.` : type == 'abort' ? 'Request was aborted before the server responded.' : 'Failed to send request to server. Did the server crash?';
     }
     else if (typeof message != 'string') {
         message = `${message}`;
@@ -157,7 +157,7 @@ function describeRequestFailure(e) {
     if (e instanceof ProgressEvent || e?.constructor?.name == 'ProgressEvent') {
         let type = e.type || 'error';
         if (type == 'timeout') {
-            return `Request timed out after ${window.swarmXhrTimeoutMs || 30000}ms.`;
+            return `Request timed out after ${getSwarmXhrTimeoutMs()}ms.`;
         }
         if (type == 'abort') {
             return `Request was aborted before the server responded.`;

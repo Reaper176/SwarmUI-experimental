@@ -1,9 +1,13 @@
 /** Dirt-simple direct POST request sender. */
+function getSwarmXhrTimeoutMs() {
+    return window.swarmXhrTimeoutMs || 120000;
+}
+
 function sendJsonToServer(url, json_input, callback, error_callback) {
     let xhr = new XMLHttpRequest();
     xhr.open('POST', url, true);
     xhr.responseType = 'json';
-    xhr.timeout = window.swarmXhrTimeoutMs || 30000;
+    xhr.timeout = getSwarmXhrTimeoutMs();
     xhr.onload = function() {
         callback(xhr.status, xhr.response);
     };
@@ -19,7 +23,7 @@ function getJsonDirect(url, callback, error_callback) {
     let xhr = new XMLHttpRequest();
     xhr.open('GET', url, true);
     xhr.responseType = 'json';
-    xhr.timeout = window.swarmXhrTimeoutMs || 30000;
+    xhr.timeout = getSwarmXhrTimeoutMs();
     xhr.onload = function() {
         callback(xhr.status, xhr.response);
     };
