@@ -14,6 +14,7 @@ let imageHistoryBackgroundLoadToken = 0;
 let imageHistoryBackgroundRetryCount = 0;
 let imageHistoryBackgroundRequestKey = null;
 let imageHistoryBackgroundWatchdog = null;
+let imageHistoryBackgroundRequestInFlight = false;
 const IMAGE_HISTORY_METADATA_CACHE_LIMIT = 1024;
 const IMAGE_HISTORY_AUTO_RETRY_DELAY_MS = 1500;
 const IMAGE_HISTORY_FAST_FIRST_LIMIT = 128;
@@ -246,6 +247,11 @@ function scheduleImageHistoryBackgroundWatchdog(path, depth, sortBy, reverse, sh
     clearImageHistoryBackgroundWatchdog();
     imageHistoryBackgroundWatchdog = setTimeout(() => {
         if (!isImageHistoryBackgroundRequestStillRelevant(path, requestKey, backgroundToken) || imageHistoryStartupStage != 'recent_loaded') {
+            return;
+        }
+        if (imageHistoryBackgroundRequestInFlight) {
+            setImageHistoryRequestStatus('loading', 'Still loading older history...');
+            scheduleImageHistoryBackgroundWatchdog(path, depth, sortBy, reverse, showHidden, requestKey, backgroundToken);
             return;
         }
         if (imageHistoryBackgroundRetryCount >= IMAGE_HISTORY_BACKGROUND_MAX_RETRIES) {
@@ -2197,12 +2203,14 @@ function queueFullImageHistoryLoad(path, depth, sortBy, reverse, showHidden) {
     let serverReverse = imageHistorySortSupportedByServer(sortBy) ? reverse : false;
     let backgroundToken = ++imageHistoryBackgroundLoadToken;
     imageHistoryBackgroundRequestKey = requestKey;
+    imageHistoryBackgroundRequestInFlight = true;
     scheduleImageHistoryBackgroundWatchdog(path, depth, sortBy, reverse, showHidden, requestKey, backgroundToken);
     setTimeout(() => {
         genericRequest('ListImages', { 'path': path, 'depth': depth, 'sortBy': serverSortBy, 'sortReverse': serverReverse, 'includeHidden': showHidden }, data => {
             if (!isImageHistoryBackgroundRequestStillRelevant(path, requestKey, backgroundToken)) {
                 return;
             }
+            imageHistoryBackgroundRequestInFlight = false;
             let prefix = path == '' ? '' : (path.endsWith('/') ? path : `${path}/`);
             let folders = data.folders.sort((a, b) => b.toLowerCase().localeCompare(a.toLowerCase()));
             let mapped = applyImageHistoryClientSort(mapHistoryFiles(prefix, orderHistoryFilesForDisplay(data.files)), sortBy, reverse);
@@ -2215,6 +2223,7 @@ function queueFullImageHistoryLoad(path, depth, sortBy, reverse, showHidden) {
             if (!isImageHistoryBackgroundRequestStillRelevant(path, requestKey, backgroundToken)) {
                 return;
             }
+            imageHistoryBackgroundRequestInFlight = false;
             console.log(`Background history fill failed: ${error}`);
             clearImageHistoryBackgroundWatchdog();
             if (imageHistoryBackgroundRetryCount >= IMAGE_HISTORY_BACKGROUND_MAX_RETRIES) {
