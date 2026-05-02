@@ -23,7 +23,7 @@ class PromptLab {
         if (window.userFeatureToggles?.promptLab == false || !document.getElementById('prompt_lab_positive')) {
             return;
         }
-        getRequiredElementById('prompt_lab_max_combinations').value = window.userFeatureToggles?.promptLabWildcardHardLimit || 10000;
+        getRequiredElementById('prompt_lab_max_combinations').value = window.userFeatureToggles?.promptLabWildcardHardLimit || 1000000;
         getRequiredElementById('prompt_lab_shuffle_results').checked = window.userFeatureToggles?.promptLabShuffleWildcards == true;
         getRequiredElementById('prompt_lab_autosave').checked = window.userFeatureToggles?.promptLabAutoSaveDefault == true;
         promptTabComplete.enableFor(getRequiredElementById('prompt_lab_positive'));
@@ -849,7 +849,7 @@ class PromptLab {
             negative: getRequiredElementById('prompt_lab_negative').value,
             mode: modeOverride || getRequiredElementById('prompt_lab_wildcard_mode').value,
             sample_count: parseInt(getRequiredElementById('prompt_lab_sample_count').value) || 25,
-            max_combinations: Math.min(parseInt(getRequiredElementById('prompt_lab_max_combinations').value) || 1000, window.userFeatureToggles?.promptLabWildcardHardLimit || 10000),
+            max_combinations: Math.min(parseInt(getRequiredElementById('prompt_lab_max_combinations').value) || 1000, window.userFeatureToggles?.promptLabWildcardHardLimit || 1000000),
             shuffle_results: getRequiredElementById('prompt_lab_shuffle_results').checked
         };
     }
@@ -924,7 +924,7 @@ class PromptLab {
             }
 
             let jobCount = data.prompts.length;
-            let warningLimit = window.userFeatureToggles?.promptLabWildcardWarningLimit || 1000;
+            let warningLimit = window.userFeatureToggles?.promptLabWildcardWarningLimit || 1000000;
 
             if (jobCount > warningLimit && !confirm(`This will create ${jobCount} generation jobs. Continue?`)) {
                 return;
@@ -956,7 +956,7 @@ class PromptLab {
             }
 
             let jobCount = data.prompts.length;
-            let warningLimit = window.userFeatureToggles?.promptLabWildcardWarningLimit || 1000;
+            let warningLimit = window.userFeatureToggles?.promptLabWildcardWarningLimit || 1000000;
 
             if (jobCount > warningLimit && !confirm(`This will create ${jobCount} generation jobs. Continue?`)) {
                 return;
@@ -978,7 +978,7 @@ class PromptLab {
     exportWildcardCombinations(format) {
         let selectedMode = getRequiredElementById('prompt_lab_wildcard_mode').value;
         let request = this.getWildcardExpansionRequest();
-    
+
         // For sample/random modes, export ONLY the prompts currently shown
         // by Preview Wildcards.
         if (selectedMode != 'all') {
@@ -986,11 +986,11 @@ class PromptLab {
                 showError('Click Preview Wildcards first, then export. This ensures the exact displayed sampled prompts are exported.');
                 return;
             }
-        
+
             this.downloadWildcardCombinations(format, this.lastWildcardPreviewData.prompts);
             return;
         }
-    
+
         // For "all", preserve the original behavior:
         // export all combinations and require max_combinations to be high enough.
         genericRequest('PromptLabExpandWildcards', request, data => {
@@ -998,14 +998,52 @@ class PromptLab {
                 showError('No wildcard combinations to export.');
                 return;
             }
-        
+
             if (data.returned_combinations < data.total_possible_combinations) {
                 showError(`Wildcard combinations exceed the max limit. Increase max combinations to export all ${data.total_possible_combinations}.`);
                 return;
             }
-        
+
             this.downloadWildcardCombinations(format, data.prompts);
         });
+    }
+
+    /** Downloads wildcard combinations in the selected format. */
+    downloadWildcardCombinations(format, prompts) {
+        if (!prompts || prompts.length == 0) {
+            showError('No wildcard combinations to export.');
+            return;
+        }
+    
+        let stamp = new Date().toISOString().replaceAll(':', '-').replaceAll('.', '-');
+    
+        if (format == 'json') {
+            downloadPlainText(`prompt-lab-combinations-${stamp}.json`, JSON.stringify(prompts, null, 2));
+            return;
+        }
+    
+        if (format == 'csv') {
+            let csv = 'index,positive,negative\n';
+        
+            for (let i = 0; i < prompts.length; i++) {
+                let prompt = prompts[i];
+                let positive = (`${prompt.positive || ''}`).replaceAll('"', '""');
+                let negative = (`${prompt.negative || ''}`).replaceAll('"', '""');
+                csv += `${i + 1},"${positive}","${negative}"\n`;
+            }
+        
+            downloadPlainText(`prompt-lab-combinations-${stamp}.csv`, csv);
+            return;
+        }
+    
+        let text = '';
+    
+        for (let i = 0; i < prompts.length; i++) {
+            let prompt = prompts[i];
+            text += `# ${i + 1}\nPositive: ${prompt.positive || ''}\nNegative: ${prompt.negative || ''}\n\n`;
+        }
+    
+        downloadPlainText(`prompt-lab-combinations-${stamp}.txt`, text);
     }
 
     /** Runs the next queued wildcard generation after the normal generation socket is usable. */
