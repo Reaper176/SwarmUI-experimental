@@ -869,23 +869,37 @@ class PromptLab {
         });
     }
 
-    /** Generates all currently expanded wildcard combinations with normal Generate settings. */
+    /** Generates currently expanded wildcard combinations with normal Generate settings. */
     generateWildcardCombinations() {
-        let request = this.getWildcardExpansionRequest('all');
+        let selectedMode = getRequiredElementById('prompt_lab_wildcard_mode').value;
+        let request = this.getWildcardExpansionRequest();
+
         genericRequest('PromptLabExpandWildcards', request, data => {
             if (!data.prompts || data.prompts.length == 0) {
                 showError('No wildcard combinations to generate.');
                 return;
             }
-            if (data.returned_combinations < data.total_possible_combinations) {
+
+            // Only require max_combinations to cover every possible combination
+            // when the user explicitly selected "all".
+            if (selectedMode == 'all' && data.returned_combinations < data.total_possible_combinations) {
                 showError(`Wildcard combinations exceed the max limit. Increase max combinations to generate all ${data.total_possible_combinations}.`);
                 return;
             }
+
+            let jobCount = data.prompts.length;
             let warningLimit = window.userFeatureToggles?.promptLabWildcardWarningLimit || 1000;
-            if (data.total_possible_combinations > warningLimit && !confirm(`This will create ${data.total_possible_combinations} generation jobs. Continue?`)) {
+
+            if (jobCount > warningLimit && !confirm(`This will create ${jobCount} generation jobs. Continue?`)) {
                 return;
             }
-            this.addHistory('Generated Combinations', getRequiredElementById('prompt_lab_positive').value, getRequiredElementById('prompt_lab_negative').value);
+
+            this.addHistory(
+                'Generated Combinations',
+                getRequiredElementById('prompt_lab_positive').value,
+                getRequiredElementById('prompt_lab_negative').value
+            );
+
             this.pendingWildcardGenerations = data.prompts.slice();
             this.runNextWildcardGeneration();
             openGenPageTab('text2imagetabbutton');
