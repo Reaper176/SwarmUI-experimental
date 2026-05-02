@@ -878,24 +878,24 @@ class PromptLab {
     /** Requests wildcard expansion preview from the backend. */
     previewWildcards() {
         let request = this.getWildcardExpansionRequest();
-    
+
         genericRequest('PromptLabExpandWildcards', request, data => {
             this.lastWildcardPreviewRequestKey = this.getWildcardExpansionRequestCacheKey(request);
             this.lastWildcardPreviewData = data;
-        
+
             let wildcardBox = getRequiredElementById('prompt_lab_wildcards');
             let previewBox = getRequiredElementById('prompt_lab_preview');
             let warningBox = getRequiredElementById('prompt_lab_warnings');
-        
+
             wildcardBox.innerHTML = this.renderDetectedWildcards(data.tokens || []);
-        
+
             let promptHtml = '';
             for (let prompt of data.prompts) {
                 promptHtml += `<div class="prompt-lab-expanded-prompt">${escapeHtml(prompt.positive)}<br><span class="text-muted">${escapeHtml(prompt.negative || '')}</span></div>`;
             }
-        
+
             previewBox.innerHTML = `<div>${data.returned_combinations} / ${data.total_possible_combinations}</div>${promptHtml}`;
-        
+
             let diagnostics = this.getPromptDiagnostics();
             let warnings = diagnostics.warnings.concat(data.warnings || []);
             warningBox.innerHTML = this.renderWarnings(warnings);
@@ -976,36 +976,35 @@ class PromptLab {
 
     /** Exports all expanded wildcard combinations. */
     exportWildcardCombinations(format) {
-        let request = this.getWildcardExpansionRequest('all');
+        let selectedMode = getRequiredElementById('prompt_lab_wildcard_mode').value;
+        let request = this.getWildcardExpansionRequest();
+    
+        // For sample/random modes, export ONLY the prompts currently shown
+        // by Preview Wildcards.
+        if (selectedMode != 'all') {
+            if (!this.isCurrentWildcardPreviewCached(request)) {
+                showError('Click Preview Wildcards first, then export. This ensures the exact displayed sampled prompts are exported.');
+                return;
+            }
+        
+            this.downloadWildcardCombinations(format, this.lastWildcardPreviewData.prompts);
+            return;
+        }
+    
+        // For "all", preserve the original behavior:
+        // export all combinations and require max_combinations to be high enough.
         genericRequest('PromptLabExpandWildcards', request, data => {
             if (!data.prompts || data.prompts.length == 0) {
                 showError('No wildcard combinations to export.');
                 return;
             }
+        
             if (data.returned_combinations < data.total_possible_combinations) {
                 showError(`Wildcard combinations exceed the max limit. Increase max combinations to export all ${data.total_possible_combinations}.`);
                 return;
             }
-            let stamp = new Date().toISOString().replaceAll(':', '-').replaceAll('.', '-');
-            if (format == 'json') {
-                downloadPlainText(`prompt-lab-combinations-${stamp}.json`, JSON.stringify(data.prompts, null, 2));
-                return;
-            }
-            if (format == 'csv') {
-                let csv = 'index,positive,negative\n';
-                for (let i = 0; i < data.prompts.length; i++) {
-                    let prompt = data.prompts[i];
-                    csv += `${i + 1},"${(`${prompt.positive || ''}`).replaceAll('"', '""')}","${(`${prompt.negative || ''}`).replaceAll('"', '""')}"\n`;
-                }
-                downloadPlainText(`prompt-lab-combinations-${stamp}.csv`, csv);
-                return;
-            }
-            let text = '';
-            for (let i = 0; i < data.prompts.length; i++) {
-                let prompt = data.prompts[i];
-                text += `# ${i + 1}\nPositive: ${prompt.positive}\nNegative: ${prompt.negative || ''}\n\n`;
-            }
-            downloadPlainText(`prompt-lab-combinations-${stamp}.txt`, text);
+        
+            this.downloadWildcardCombinations(format, data.prompts);
         });
     }
 
