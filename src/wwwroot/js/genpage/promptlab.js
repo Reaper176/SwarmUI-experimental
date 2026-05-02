@@ -12,6 +12,10 @@ class PromptLab {
         this.searchRenderTimeouts = {};
         this.pendingGenerateMetadata = null;
         this.autoSaveTimeout = null;
+
+        // Stores the exact results shown by Preview Wildcards.
+        this.lastWildcardPreviewRequestKey = null;
+        this.lastWildcardPreviewData = null;
     }
 
     /** Initializes Prompt Lab once the page is ready. */
@@ -850,19 +854,48 @@ class PromptLab {
         };
     }
 
+    /** Creates a stable cache key for wildcard preview/generate matching. */
+    getWildcardExpansionRequestCacheKey(request) {
+        return JSON.stringify({
+            positive: request.positive || '',
+            negative: request.negative || '',
+            mode: request.mode || '',
+            sample_count: parseInt(request.sample_count) || 25,
+            max_combinations: parseInt(request.max_combinations) || 1000,
+            shuffle_results: !!request.shuffle_results
+        });
+    }
+
+    /** Returns true when the cached wildcard preview matches the current wildcard request. */
+    isCurrentWildcardPreviewCached(request) {
+        if (!this.lastWildcardPreviewRequestKey || !this.lastWildcardPreviewData) {
+            return false;
+        }
+
+        return this.lastWildcardPreviewRequestKey == this.getWildcardExpansionRequestCacheKey(request);
+    }
+
     /** Requests wildcard expansion preview from the backend. */
     previewWildcards() {
         let request = this.getWildcardExpansionRequest();
+    
         genericRequest('PromptLabExpandWildcards', request, data => {
+            this.lastWildcardPreviewRequestKey = this.getWildcardExpansionRequestCacheKey(request);
+            this.lastWildcardPreviewData = data;
+        
             let wildcardBox = getRequiredElementById('prompt_lab_wildcards');
             let previewBox = getRequiredElementById('prompt_lab_preview');
             let warningBox = getRequiredElementById('prompt_lab_warnings');
+        
             wildcardBox.innerHTML = this.renderDetectedWildcards(data.tokens || []);
+        
             let promptHtml = '';
             for (let prompt of data.prompts) {
                 promptHtml += `<div class="prompt-lab-expanded-prompt">${escapeHtml(prompt.positive)}<br><span class="text-muted">${escapeHtml(prompt.negative || '')}</span></div>`;
             }
+        
             previewBox.innerHTML = `<div>${data.returned_combinations} / ${data.total_possible_combinations}</div>${promptHtml}`;
+        
             let diagnostics = this.getPromptDiagnostics();
             let warnings = diagnostics.warnings.concat(data.warnings || []);
             warningBox.innerHTML = this.renderWarnings(warnings);
@@ -870,19 +903,54 @@ class PromptLab {
     }
 
     /** Generates currently expanded wildcard combinations with normal Generate settings. */
+/** Generates wildcard combinations with normal Generate settings. */
     generateWildcardCombinations() {
         let selectedMode = getRequiredElementById('prompt_lab_wildcard_mode').value;
         let request = this.getWildcardExpansionRequest();
 
+        // For sample/random modes, generate ONLY the prompts currently shown
+        // by Preview Wildcards.
+        if (selectedMode != 'all') {
+            if (!this.isCurrentWildcardPreviewCached(request)) {
+                showError('Click Preview Wildcards first, then generate. This ensures the exact displayed sampled prompts are used.');
+                return;
+            }
+
+            let data = this.lastWildcardPreviewData;
+
+            if (!data.prompts || data.prompts.length == 0) {
+                showError('No wildcard combinations to generate.');
+                return;
+            }
+
+            let jobCount = data.prompts.length;
+            let warningLimit = window.userFeatureToggles?.promptLabWildcardWarningLimit || 1000;
+
+            if (jobCount > warningLimit && !confirm(`This will create ${jobCount} generation jobs. Continue?`)) {
+                return;
+            }
+
+            this.addHistory(
+                'Generated Sampled Combinations',
+                getRequiredElementById('prompt_lab_positive').value,
+                getRequiredElementById('prompt_lab_negative').value
+            );
+
+            this.pendingWildcardGenerations = data.prompts.slice();
+            this.runNextWildcardGeneration();
+            openGenPageTab('text2imagetabbutton');
+            return;
+        }
+
+        // For "all", preserve the original behavior:
+        // generate all combinations and require max_combinations to be high enough.
         genericRequest('PromptLabExpandWildcards', request, data => {
             if (!data.prompts || data.prompts.length == 0) {
                 showError('No wildcard combinations to generate.');
                 return;
             }
 
-            // Only require max_combinations to cover every possible combination
-            // when the user explicitly selected "all".
-            if (selectedMode == 'all' && data.returned_combinations < data.total_possible_combinations) {
+            if (data.returned_combinations < data.total_possible_combinations) {
                 showError(`Wildcard combinations exceed the max limit. Increase max combinations to generate all ${data.total_possible_combinations}.`);
                 return;
             }
@@ -895,7 +963,7 @@ class PromptLab {
             }
 
             this.addHistory(
-                'Generated Combinations',
+                'Generated All Combinations',
                 getRequiredElementById('prompt_lab_positive').value,
                 getRequiredElementById('prompt_lab_negative').value
             );
