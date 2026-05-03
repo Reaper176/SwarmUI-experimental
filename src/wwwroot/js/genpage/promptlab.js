@@ -849,7 +849,7 @@ class PromptLab {
             negative: getRequiredElementById('prompt_lab_negative').value,
             mode: modeOverride || getRequiredElementById('prompt_lab_wildcard_mode').value,
             sample_count: parseInt(getRequiredElementById('prompt_lab_sample_count').value) || 25,
-            max_combinations: Math.min(parseInt(getRequiredElementById('prompt_lab_max_combinations').value) || 1000, window.userFeatureToggles?.promptLabWildcardHardLimit || 1000000),
+            max_combinations: Math.min(parseInt(getRequiredElementById('prompt_lab_max_combinations').value) || 1000000, window.userFeatureToggles?.promptLabWildcardHardLimit || 1000000),
             shuffle_results: getRequiredElementById('prompt_lab_shuffle_results').checked
         };
     }
