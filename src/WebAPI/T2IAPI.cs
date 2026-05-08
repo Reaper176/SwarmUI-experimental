@@ -867,6 +867,9 @@ public static class T2IAPI
         int maxScanned = session.User.Settings.MaxImagesScannedInHistory;
         Logs.Verbose($"User {session.User.UserID} wants to list images in '{rawPath}', maxDepth={depth}, sortBy={sortBy}, reverse={sortReverse}, includeHidden={includeHidden}, fastFirst={fastFirst}, fastFirstLimit={fastFirstLimit}, maxInHistory={maxInHistory}, maxScanned={maxScanned}");
         long timeStart = Environment.TickCount64;
+        long dirScanMs = 0;
+        long fileScanMs = 0;
+        long finalSortMs = 0;
         int limit = sortBy == ImageHistorySortMode.Name ? maxInHistory : Math.Max(maxInHistory, maxScanned);
         (string path, string consoleError, string userError) = WebServer.CheckFilePath(root, rawPath);
         path = UserImageHistoryHelper.GetRealPathFor(session.User, path, root: root);
@@ -934,6 +937,7 @@ public static class T2IAPI
             List<ImageHistoryHelper> files;
             if (fastFirst)
             {
+                long fastStart = Environment.TickCount64;
                 int startupLimit = Math.Max(1, Math.Min(fastFirstLimit, maxInHistory));
                 HashSet<string> seenDirs = [];
                 HashSet<string> traversedDirs = [];
@@ -1002,9 +1006,11 @@ public static class T2IAPI
                     }
                 }
                 collectFastFirstFiles("", depth);
+                fileScanMs = Environment.TickCount64 - fastStart;
             }
             else
             {
+                long dirStart = Environment.TickCount64;
                 ConcurrentDictionary<string, string> dirsConc = [];
                 ConcurrentDictionary<string, Task> tasks = [];
                 void addDirs(string dir, int subDepth)
@@ -1060,6 +1066,8 @@ public static class T2IAPI
                 {
                     dirs.Reverse();
                 }
+                dirScanMs = Environment.TickCount64 - dirStart;
+                long fileStart = Environment.TickCount64;
                 ConcurrentDictionary<int, List<ImageHistoryHelper>> filesConc = [];
                 int id = 0;
                 int remaining = limit;
@@ -1090,7 +1098,9 @@ public static class T2IAPI
                     }
                 });
                 files = [.. filesConc.Values.SelectMany(f => f).Take(limit)];
+                fileScanMs = Environment.TickCount64 - fileStart;
             }
+            long finalSortStart = Environment.TickCount64;
             HashSet<string> included = [.. files.Select(f => f.Name)];
             for (int i = 0; i < files.Count; i++)
             {
@@ -1105,8 +1115,9 @@ public static class T2IAPI
             }
             files = [.. files.Where(f => f.Name is not null)];
             sortList(files);
+            finalSortMs = Environment.TickCount64 - finalSortStart;
             long timeEnd = Environment.TickCount64;
-            Logs.Verbose($"Listed {files.Count} images in {(timeEnd - timeStart) / 1000.0:0.###} seconds.");
+            Logs.Verbose($"Listed {files.Count} images from {dirs.Count} folder entries in {(timeEnd - timeStart) / 1000.0:0.###} seconds (dirScan={dirScanMs / 1000.0:0.###}s, fileScan={fileScanMs / 1000.0:0.###}s, finalSort={finalSortMs / 1000.0:0.###}s, fastFirst={fastFirst}).");
             return new JObject()
             {
                 ["folders"] = JToken.FromObject(dirs.Union(finalDirs.Keys).ToList()),

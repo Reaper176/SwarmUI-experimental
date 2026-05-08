@@ -1448,7 +1448,12 @@ function saveCurrentImageToHistory(img, button = null) {
                 imageFullView.showImage(saved.image, savedMetadata, imageFullView.currentBatchId);
                 imageFullView.pasteState(state);
             }
-            waitForHistoryToContain(saved.image);
+            if (typeof notifyImageHistorySavedPath == 'function') {
+                notifyImageHistorySavedPath(saved.image, savedMetadata);
+            }
+            else {
+                waitForHistoryToContain(saved.image);
+            }
             doNoticePopover('Saved image and metadata.', 'notice-pop-green');
         }, 0, error => {
             releaseButton();
@@ -4300,6 +4305,9 @@ function gotImageResult(image, metadata, batchId) {
     let src = image;
     let fname = src && src.includes('/') ? src.substring(src.lastIndexOf('/') + 1) : src;
     let batch_div = appendImage(getPreferredBatchContainer(batchId), src, batchId, fname, metadata, 'batch');
+    if (typeof notifyImageHistorySavedPath == 'function') {
+        notifyImageHistorySavedPath(src, metadata);
+    }
     if (batch_div.dataset.request_id) {
         let insertAfter = null;
         for (let c of batch_div.parentElement.children) {

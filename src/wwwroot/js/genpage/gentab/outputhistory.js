@@ -15,11 +15,15 @@ let imageHistoryBackgroundRetryCount = 0;
 let imageHistoryBackgroundRequestKey = null;
 let imageHistoryBackgroundWatchdog = null;
 let imageHistoryBackgroundRequestInFlight = false;
+let imageHistorySavedRefreshTimer = null;
+let imageHistorySavedRefreshAttempts = 0;
+let imageHistorySavedRefreshTargets = new Set();
 const IMAGE_HISTORY_METADATA_CACHE_LIMIT = 1024;
 const IMAGE_HISTORY_AUTO_RETRY_DELAY_MS = 1500;
 const IMAGE_HISTORY_FAST_FIRST_LIMIT = 128;
 const IMAGE_HISTORY_BACKGROUND_WATCHDOG_DELAY_MS = 10000;
 const IMAGE_HISTORY_BACKGROUND_MAX_RETRIES = 2;
+let IMAGE_HISTORY_SAVED_REFRESH_MAX_ATTEMPTS = 8;
 let IMAGE_HISTORY_UNLOAD_ROW_BUFFER = 10;
 let IMAGE_HISTORY_MIN_MEDIA_ROWS_TO_UNLOAD = 2;
 const imageHistoryMetadataCache = new Map();
@@ -194,6 +198,149 @@ function requestImageHistoryRefresh() {
     else {
         setTimeout(run, 0);
     }
+}
+
+/** Checks whether the currently loaded history file list contains a relative history path. */
+function imageHistoryHasFile(fullSrc) {
+    if (!imageHistoryBrowser?.lastFiles) {
+        return false;
+    }
+    for (let file of imageHistoryBrowser.lastFiles) {
+        if (!file) {
+            continue;
+        }
+        if (file.name == fullSrc) {
+            return true;
+        }
+        let fileSrc = file.data?.fullsrc || file.data?.src || file.name;
+        if (typeof getImageFullSrc == 'function' && getImageFullSrc(fileSrc) == fullSrc) {
+            return true;
+        }
+    }
+    return false;
+}
+
+/** Checks whether a saved relative history path belongs to the currently loaded browser folder/depth. */
+function imageHistoryCanIncludePath(fullSrc) {
+    if (!imageHistoryBrowser?.lastListCache) {
+        return false;
+    }
+    let folder = imageHistoryBrowser.folder || '';
+    let prefix = folder == '' ? '' : `${folder.replace(/\/+$/, '')}/`;
+    if (prefix && !fullSrc.startsWith(prefix)) {
+        return false;
+    }
+    let relative = prefix ? fullSrc.substring(prefix.length) : fullSrc;
+    if (!relative || relative.startsWith('/')) {
+        return false;
+    }
+    let slashCount = relative.split('/').length - 1;
+    return slashCount <= Number.parseInt(imageHistoryBrowser.depth || 0);
+}
+
+/** Adds any newly referenced folder paths to the currently loaded history folder list. */
+function addHistoryFoldersForPath(folders, fullSrc) {
+    let folder = imageHistoryBrowser.folder || '';
+    let prefix = folder == '' ? '' : `${folder.replace(/\/+$/, '')}/`;
+    let relative = prefix ? fullSrc.substring(prefix.length) : fullSrc;
+    if (!relative.includes('/')) {
+        return folders;
+    }
+    let copy = [...folders];
+    let existing = new Set(copy);
+    let parts = relative.split('/');
+    let current = '';
+    for (let i = 0; i < parts.length - 1; i++) {
+        current = current ? `${current}/${parts[i]}` : parts[i];
+        if (!existing.has(current)) {
+            existing.add(current);
+            copy.push(current);
+        }
+    }
+    return copy.sort((a, b) => b.toLowerCase().localeCompare(a.toLowerCase()));
+}
+
+/** Attempts to add a saved output image to the active history browser without a server list refresh. */
+function tryAddSavedImageToHistory(savedPath, metadata = null) {
+    if (!imageHistoryBrowser?.lastListCache || !savedPath) {
+        return false;
+    }
+    let fullSrc = typeof getImageFullSrc == 'function' ? getImageFullSrc(savedPath) : savedPath;
+    if (!fullSrc || imageHistoryHasFile(fullSrc) || !imageHistoryCanIncludePath(fullSrc)) {
+        return false;
+    }
+    let sortBy = localStorage.getItem('image_history_sort_by') ?? window.userFeatureToggles?.imageHistoryDefaultSort ?? 'Name';
+    if (sortBy == 'FileSize') {
+        return false;
+    }
+    let folder = imageHistoryBrowser.folder || '';
+    let prefix = folder == '' ? '' : `${folder.replace(/\/+$/, '')}/`;
+    let relativeName = prefix ? fullSrc.substring(prefix.length) : fullSrc;
+    let mappedFile = mapHistoryFiles(prefix, [{
+        src: relativeName,
+        metadata: metadata || '{}',
+        file_size: 0,
+        file_time: Math.floor(Date.now() / 1000)
+    }])[0];
+    let reverse = localStorage.getItem('image_history_sort_reverse') == 'true';
+    let files = imageHistoryBrowser.lastFiles ? [...imageHistoryBrowser.lastFiles, mappedFile] : [mappedFile];
+    files = sortHistoryFilesForDisplay(files, sortBy, reverse);
+    let folders = addHistoryFoldersForPath(imageHistoryBrowser.lastListCache.folders || [], fullSrc);
+    replaceHistoryBrowserContents(folder, folders, files);
+    return imageHistoryHasFile(fullSrc);
+}
+
+/** Schedules a bounded retry loop to refresh history until recently saved files appear. */
+function scheduleImageHistorySavedRefresh(delayMs) {
+    if (imageHistorySavedRefreshTimer) {
+        return;
+    }
+    imageHistorySavedRefreshTimer = setTimeout(() => {
+        imageHistorySavedRefreshTimer = null;
+        if (imageHistorySavedRefreshAttempts > 0) {
+            for (let target of [...imageHistorySavedRefreshTargets]) {
+                if (imageHistoryHasFile(target)) {
+                    imageHistorySavedRefreshTargets.delete(target);
+                }
+            }
+        }
+        if (imageHistorySavedRefreshTargets.size == 0) {
+            imageHistorySavedRefreshAttempts = 0;
+            return;
+        }
+        if (!imageHistoryBrowser) {
+            imageHistorySavedRefreshTargets.clear();
+            imageHistorySavedRefreshAttempts = 0;
+            return;
+        }
+        imageHistorySavedRefreshAttempts++;
+        requestImageHistoryRefresh();
+        if (imageHistorySavedRefreshAttempts < IMAGE_HISTORY_SAVED_REFRESH_MAX_ATTEMPTS) {
+            scheduleImageHistorySavedRefresh(imageHistorySavedRefreshAttempts < 4 ? 250 : 600);
+        }
+        else {
+            imageHistorySavedRefreshTargets.clear();
+            imageHistorySavedRefreshAttempts = 0;
+        }
+    }, delayMs);
+}
+
+/** Queues the history browser to refresh after a generation or manual save returns a saved output path. */
+function notifyImageHistorySavedPath(savedPath, metadata = null) {
+    if (!savedPath || savedPath.startsWith('data:') || savedPath.startsWith('DOPLACEHOLDER:')) {
+        return;
+    }
+    if (!imageHistoryBrowser) {
+        return;
+    }
+    let expected = typeof getImageFullSrc == 'function' ? getImageFullSrc(savedPath) : savedPath;
+    if (!expected) {
+        return;
+    }
+    imageHistorySavedRefreshTargets.add(expected);
+    tryAddSavedImageToHistory(savedPath, metadata);
+    imageHistorySavedRefreshAttempts = 0;
+    scheduleImageHistorySavedRefresh(100);
 }
 
 function rescanImageHistoryMetadata(rebuild = true) {
@@ -1196,6 +1343,25 @@ function applyImageHistoryClientSort(files, sortBy, reverse) {
     return files;
 }
 
+/** Sorts a mapped history file list using the same visible order rules as the history browser. */
+function sortHistoryFilesForDisplay(files, sortBy, reverse) {
+    if (sortBy == 'Name') {
+        files.sort((a, b) => b.name.localeCompare(a.name));
+        if (reverse) {
+            files.reverse();
+        }
+        return files;
+    }
+    if (sortBy == 'Date') {
+        files.sort((a, b) => (b.data?.file_time || 0) - (a.data?.file_time || 0));
+        if (reverse) {
+            files.reverse();
+        }
+        return files;
+    }
+    return applyImageHistoryClientSort(files, sortBy, reverse);
+}
+
 function replaceHistoryBrowserContents(path, folders, mapped) {
     if (!imageHistoryBrowser) {
         return;
@@ -2139,6 +2305,7 @@ async function deleteSelectedHistoryImages() {
 
 function listOutputHistoryFolderAndFiles(path, isRefresh, callback, depth, onError = null) {
     ensureImageHistoryBrowserShellReady();
+    let requestStart = performance.now();
     let sortBy = localStorage.getItem('image_history_sort_by') ?? window.userFeatureToggles?.imageHistoryDefaultSort ?? 'Name';
     let reverse = localStorage.getItem('image_history_sort_reverse') == 'true';
     let allowAnims = localStorage.getItem('image_history_allow_anims') != 'false';
@@ -2167,12 +2334,18 @@ function listOutputHistoryFolderAndFiles(path, isRefresh, callback, depth, onErr
     }
     setImageHistoryRequestStatus(isRetryLoad ? 'retrying' : 'loading', isRetryLoad ? 'Retrying history load...' : 'Loading history...');
     genericRequest('ListImages', request, data => {
+        let responseMs = performance.now() - requestStart;
+        let mapStart = performance.now();
         clearImageHistoryAutoRetry();
         imageHistoryHasLoadedOnce = true;
         let prefix = path == '' ? '' : (path.endsWith('/') ? path : `${path}/`);
         let folders = data.folders.sort((a, b) => b.toLowerCase().localeCompare(a.toLowerCase()));
         let mapped = applyImageHistoryClientSort(mapHistoryFiles(prefix, orderHistoryFilesForDisplay(data.files)), sortBy, reverse);
+        let mapMs = performance.now() - mapStart;
+        let renderStart = performance.now();
         callback(folders, mapped);
+        let renderMs = performance.now() - renderStart;
+        console.debug(`History load: path='${path || '/'}', refresh=${isRefresh}, fastFirst=${useFastFirst}, folders=${folders.length}, files=${mapped.length}, request=${responseMs.toFixed(1)}ms, map=${mapMs.toFixed(1)}ms, render=${renderMs.toFixed(1)}ms`);
         if (useFastFirst) {
             imageHistoryStartupStage = 'recent_loaded';
             imageHistoryBackgroundRetryCount = 0;
@@ -2206,18 +2379,25 @@ function queueFullImageHistoryLoad(path, depth, sortBy, reverse, showHidden) {
     imageHistoryBackgroundRequestInFlight = true;
     scheduleImageHistoryBackgroundWatchdog(path, depth, sortBy, reverse, showHidden, requestKey, backgroundToken);
     setTimeout(() => {
+        let requestStart = performance.now();
         genericRequest('ListImages', { 'path': path, 'depth': depth, 'sortBy': serverSortBy, 'sortReverse': serverReverse, 'includeHidden': showHidden }, data => {
             if (!isImageHistoryBackgroundRequestStillRelevant(path, requestKey, backgroundToken)) {
                 return;
             }
+            let responseMs = performance.now() - requestStart;
+            let mapStart = performance.now();
             imageHistoryBackgroundRequestInFlight = false;
             let prefix = path == '' ? '' : (path.endsWith('/') ? path : `${path}/`);
             let folders = data.folders.sort((a, b) => b.toLowerCase().localeCompare(a.toLowerCase()));
             let mapped = applyImageHistoryClientSort(mapHistoryFiles(prefix, orderHistoryFilesForDisplay(data.files)), sortBy, reverse);
+            let mapMs = performance.now() - mapStart;
             imageHistoryStartupStage = 'complete';
             imageHistoryBackgroundRetryCount = 0;
             clearImageHistoryBackgroundWatchdog();
+            let renderStart = performance.now();
             replaceHistoryBrowserContents(path, folders, mapped);
+            let renderMs = performance.now() - renderStart;
+            console.debug(`History background load: path='${path || '/'}', folders=${folders.length}, files=${mapped.length}, request=${responseMs.toFixed(1)}ms, map=${mapMs.toFixed(1)}ms, render=${renderMs.toFixed(1)}ms`);
             setImageHistoryRequestStatus('idle');
         }, 0, error => {
             if (!isImageHistoryBackgroundRequestStillRelevant(path, requestKey, backgroundToken)) {
