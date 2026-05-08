@@ -1012,42 +1012,43 @@ public static class T2IAPI
             {
                 long dirStart = Environment.TickCount64;
                 ConcurrentDictionary<string, string> dirsConc = [];
-                ConcurrentDictionary<string, Task> tasks = [];
+                HashSet<string> traversedDirs = [];
                 void addDirs(string dir, int subDepth)
                 {
-                    tasks.TryAdd(dir, Utilities.RunCheckedTask(() =>
+                    if (dir.EndsWith('/'))
                     {
-                        if (dir.EndsWith('/'))
+                        dir = dir[..^1];
+                    }
+                    if (!traversedDirs.Add(dir))
+                    {
+                        return;
+                    }
+                    if (dir != "")
+                    {
+                        (subDepth == 0 ? finalDirs : dirsConc).TryAdd(dir, dir);
+                    }
+                    if (subDepth > 0)
+                    {
+                        string actualPath = $"{path}/{dir}";
+                        actualPath = UserImageHistoryHelper.GetRealPathFor(session.User, actualPath, root: root);
+                        if (!Directory.Exists(actualPath))
                         {
-                            dir = dir[..^1];
+                            return;
                         }
-                        if (dir != "")
+                        IEnumerable<string> subDirs = Directory.EnumerateDirectories(actualPath).Select(Path.GetFileName).OrderDescending();
+                        foreach (string subDir in subDirs)
                         {
-                            (subDepth == 0 ? finalDirs : dirsConc).TryAdd(dir, dir);
-                        }
-                        if (subDepth > 0)
-                        {
-                            string actualPath = $"{path}/{dir}";
-                            actualPath = UserImageHistoryHelper.GetRealPathFor(session.User, actualPath, root: root);
-                            if (!Directory.Exists(actualPath))
+                            if (subDir.StartsWithFast('.'))
                             {
-                                return;
+                                continue;
                             }
-                            IEnumerable<string> subDirs = Directory.EnumerateDirectories(actualPath).Select(Path.GetFileName).OrderDescending();
-                            foreach (string subDir in subDirs)
+                            string subPath = dir == "" ? subDir : $"{dir}/{subDir}";
+                            if (isAllowed(subPath))
                             {
-                                if (subDir.StartsWithFast('.'))
-                                {
-                                    continue;
-                                }
-                                string subPath = dir == "" ? subDir : $"{dir}/{subDir}";
-                                if (isAllowed(subPath))
-                                {
-                                    addDirs(subPath, subDepth - 1);
-                                }
+                                addDirs(subPath, subDepth - 1);
                             }
                         }
-                    }, "t2i getlist add dir"));
+                    }
                 }
                 addDirs("", depth);
                 foreach (string specialFolder in UserImageHistoryHelper.SharedSpecialFolders.Keys)
@@ -1056,10 +1057,6 @@ public static class T2IAPI
                     {
                         addDirs(specialFolder[rawRefPath.Length..], 1);
                     }
-                }
-                while (tasks.Any(t => !t.Value.IsCompleted))
-                {
-                    Task.WaitAll([.. tasks.Values]);
                 }
                 dirs = [.. dirsConc.Keys.OrderDescending()];
                 if (sortReverse)
