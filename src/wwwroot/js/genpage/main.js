@@ -1371,7 +1371,6 @@ function genpageLoad() {
     });
     getSession(() => {
         ensureImageHistoryBrowserShellReady();
-        imageHistoryBrowser.navigate('');
         genericRequest('ListT2IParams', {}, data => {
             modelsHelpers.loadClassesFromServer(data.models, data.model_compat_classes, data.model_classes);
             updateAllModels(data.models);
@@ -1402,7 +1401,11 @@ function genpageLoad() {
             automaticWelcomeMessage();
             autoTitle();
             swarmHasLoaded = true;
-        }, 0, e => console.warn(`Startup ListT2IParams request failed: ${e}`));
+            scheduleInitialImageHistoryLoad(250);
+        }, 0, e => {
+            console.warn(`Startup ListT2IParams request failed: ${e}`);
+            scheduleInitialImageHistoryLoad(250);
+        });
         if (reviseStatusInterval) {
             clearInterval(reviseStatusInterval);
         }

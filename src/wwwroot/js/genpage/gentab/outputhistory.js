@@ -15,6 +15,7 @@ let imageHistoryBackgroundRetryCount = 0;
 let imageHistoryBackgroundRequestKey = null;
 let imageHistoryBackgroundWatchdog = null;
 let imageHistoryBackgroundRequestInFlight = false;
+let imageHistoryInitialLoadScheduled = false;
 let imageHistorySavedRefreshTimer = null;
 let imageHistorySavedRefreshAttempts = 0;
 let imageHistorySavedRefreshTargets = new Set();
@@ -376,6 +377,13 @@ function clearImageHistoryBackgroundWatchdog() {
     }
 }
 
+/** Cancels any older background full-history fill so it cannot replace newer foreground data. */
+function cancelImageHistoryBackgroundLoad() {
+    imageHistoryBackgroundLoadToken++;
+    imageHistoryBackgroundRequestInFlight = false;
+    clearImageHistoryBackgroundWatchdog();
+}
+
 function getImageHistoryRequestKey(path, depth, sortBy, reverse, showHidden) {
     return JSON.stringify({ path, depth, sortBy, reverse, showHidden });
 }
@@ -468,6 +476,22 @@ function ensureImageHistoryBrowserShellReady() {
     }
     imageHistoryBrowser.ensureBuilt();
     ensureImageHistoryStatusReady();
+}
+
+/** Schedules the first real history load after startup-critical genpage work has had a chance to finish. */
+function scheduleInitialImageHistoryLoad(delayMs = 0) {
+    if (!imageHistoryBrowser || imageHistoryBrowser.everLoaded || imageHistoryInitialLoadScheduled) {
+        return;
+    }
+    imageHistoryInitialLoadScheduled = true;
+    setTimeout(() => {
+        imageHistoryInitialLoadScheduled = false;
+        if (!imageHistoryBrowser || imageHistoryBrowser.everLoaded) {
+            return;
+        }
+        ensureImageHistoryBrowserShellReady();
+        imageHistoryBrowser.navigate('');
+    }, delayMs);
 }
 
 function ensureImageHistoryHeaderControlsReady(sortBy, reverse, allowAnims, showHidden) {
@@ -1260,23 +1284,6 @@ function showImageHistoryCompare(paths) {
     openImageHistoryCompareModal();
 }
 
-/**
- * Interpret history metadata when possible, but never let a bad blob abort the list render.
- */
-function safeInterpretHistoryMetadata(metadata, fullsrc = '') {
-    if (!metadata) {
-        return metadata;
-    }
-    try {
-        let interpreted = interpretMetadata(metadata);
-        return interpreted ?? metadata;
-    }
-    catch (e) {
-        console.log(`Failed to interpret history metadata${fullsrc ? ` for '${fullsrc}'` : ''}: ${e}`);
-        return metadata;
-    }
-}
-
 function orderHistoryFilesForDisplay(files) {
     function isPreSortFile(file) {
         return file.src == 'index.html';
@@ -1289,7 +1296,7 @@ function orderHistoryFilesForDisplay(files) {
 function mapHistoryFiles(prefix, files) {
     return files.map(file => {
         let fullSrc = `${prefix}${file.src}`;
-        return { 'name': fullSrc, 'data': { 'src': getHistoryImageSrc(fullSrc), 'fullsrc': fullSrc, 'name': file.src, 'metadata': safeInterpretHistoryMetadata(file.metadata, fullSrc), 'file_size': file.file_size || 0, 'file_time': file.file_time || 0 } };
+        return { 'name': fullSrc, 'data': { 'src': getHistoryImageSrc(fullSrc), 'fullsrc': fullSrc, 'name': file.src, 'metadata': file.metadata, 'file_size': file.file_size || 0, 'file_time': file.file_time || 0 } };
     });
 }
 
@@ -1360,6 +1367,14 @@ function sortHistoryFilesForDisplay(files, sortBy, reverse) {
         return files;
     }
     return applyImageHistoryClientSort(files, sortBy, reverse);
+}
+
+/** Formats server timing details returned by ListImages for console diagnostics. */
+function imageHistoryPerfText(perf) {
+    if (!perf) {
+        return '';
+    }
+    return `, server=${Number(perf.total_ms || 0).toFixed(1)}ms (dirs=${Number(perf.dir_scan_ms || 0).toFixed(1)}ms, files=${Number(perf.file_scan_ms || 0).toFixed(1)}ms, sort=${Number(perf.final_sort_ms || 0).toFixed(1)}ms)`;
 }
 
 function replaceHistoryBrowserContents(path, folders, mapped) {
@@ -2322,6 +2337,9 @@ function listOutputHistoryFolderAndFiles(path, isRefresh, callback, depth, onErr
     imageHistoryNextLoadIsRetry = false;
     let loadToken = ++imageHistoryLoadToken;
     let useFastFirst = imageHistoryStartupStage == 'pending' && path == '' && !isRefresh;
+    if (!useFastFirst) {
+        cancelImageHistoryBackgroundLoad();
+    }
     if (useFastFirst || path != '' || isRefresh) {
         clearImageHistoryBackgroundWatchdog();
     }
@@ -2334,6 +2352,9 @@ function listOutputHistoryFolderAndFiles(path, isRefresh, callback, depth, onErr
     }
     setImageHistoryRequestStatus(isRetryLoad ? 'retrying' : 'loading', isRetryLoad ? 'Retrying history load...' : 'Loading history...');
     genericRequest('ListImages', request, data => {
+        if (loadToken != imageHistoryLoadToken) {
+            return;
+        }
         let responseMs = performance.now() - requestStart;
         let mapStart = performance.now();
         clearImageHistoryAutoRetry();
@@ -2345,7 +2366,7 @@ function listOutputHistoryFolderAndFiles(path, isRefresh, callback, depth, onErr
         let renderStart = performance.now();
         callback(folders, mapped);
         let renderMs = performance.now() - renderStart;
-        console.debug(`History load: path='${path || '/'}', refresh=${isRefresh}, fastFirst=${useFastFirst}, folders=${folders.length}, files=${mapped.length}, request=${responseMs.toFixed(1)}ms, map=${mapMs.toFixed(1)}ms, render=${renderMs.toFixed(1)}ms`);
+        console.debug(`History load: path='${path || '/'}', refresh=${isRefresh}, fastFirst=${useFastFirst}, folders=${folders.length}, files=${mapped.length}, request=${responseMs.toFixed(1)}ms, map=${mapMs.toFixed(1)}ms, render=${renderMs.toFixed(1)}ms${imageHistoryPerfText(data.perf)}`);
         if (useFastFirst) {
             imageHistoryStartupStage = 'recent_loaded';
             imageHistoryBackgroundRetryCount = 0;
@@ -2357,6 +2378,9 @@ function listOutputHistoryFolderAndFiles(path, isRefresh, callback, depth, onErr
         clearImageHistoryBackgroundWatchdog();
         setImageHistoryRequestStatus('idle');
     }, 0, error => {
+        if (loadToken != imageHistoryLoadToken) {
+            return;
+        }
         showError(error);
         let shouldRetry = !isRetryLoad && scheduleImageHistoryAutoRetry();
         let errorMessage = `History failed to load: ${error}`;
@@ -2397,7 +2421,7 @@ function queueFullImageHistoryLoad(path, depth, sortBy, reverse, showHidden) {
             let renderStart = performance.now();
             replaceHistoryBrowserContents(path, folders, mapped);
             let renderMs = performance.now() - renderStart;
-            console.debug(`History background load: path='${path || '/'}', folders=${folders.length}, files=${mapped.length}, request=${responseMs.toFixed(1)}ms, map=${mapMs.toFixed(1)}ms, render=${renderMs.toFixed(1)}ms`);
+            console.debug(`History background load: path='${path || '/'}', folders=${folders.length}, files=${mapped.length}, request=${responseMs.toFixed(1)}ms, map=${mapMs.toFixed(1)}ms, render=${renderMs.toFixed(1)}ms${imageHistoryPerfText(data.perf)}`);
             setImageHistoryRequestStatus('idle');
         }, 0, error => {
             if (!isImageHistoryBackgroundRequestStillRelevant(path, requestKey, backgroundToken)) {
@@ -2638,6 +2662,7 @@ function selectOutputInHistory(image, div) {
 
 let imageHistoryBrowser = new GenPageBrowserClass('image_history', listOutputHistoryFolderAndFiles, 'imagehistorybrowser', window.userFeatureToggles?.imageHistoryDefaultView || 'Thumbnails', describeOutputFile, selectOutputInHistory,
     `<label for="image_history_sort_by">Sort:</label> <select id="image_history_sort_by"><option>Name</option><option>Date</option><option>Rating</option><option>Resolution</option><option>Model</option><option>Seed</option><option value="FileSize">File Size</option></select> <input type="checkbox" id="image_history_sort_reverse"> <label for="image_history_sort_reverse">Reverse</label> &emsp; <input type="checkbox" id="image_history_allow_anims" checked autocomplete="off"> <label for="image_history_allow_anims">Allow Animation</label> &emsp; <input type="checkbox" id="image_history_show_hidden" autocomplete="off"> <label for="image_history_show_hidden">Show Hidden</label> <button type="button" id="image_history_rescan_metadata" class="refresh-button" onclick="rescanImageHistoryMetadata()">Rescan Metadata</button> <span id="image_history_bulk_controls" class="image-history-bulk-controls"><span id="image_history_selected_count" class="image-history-selected-count">0 selected</span> <button type="button" id="image_history_select_all" class="refresh-button" onclick="selectAllImageHistory()">Select All</button> <button type="button" id="image_history_clear_selection" class="refresh-button" onclick="clearSelectedImageHistory()">Clear</button> <button type="button" id="image_history_compare_selected" class="refresh-button" onclick="compareSelectedImageHistory()">Compare</button> <button type="button" id="image_history_copy_paths_selected" class="refresh-button" onclick="copySelectedImageHistoryPaths()">Copy Paths</button> <button type="button" id="image_history_contact_sheet_selected" class="refresh-button" onclick="createSelectedImageHistoryContactSheet()">Contact Sheet</button> <button type="button" id="image_history_set_rating_selected" class="refresh-button" onclick="setSelectedImageHistoryRatingPrompt()">Set Rating</button> <button type="button" id="image_history_add_tags_selected" class="refresh-button" onclick="setSelectedImageHistoryTagsPrompt('add')">Add Tags</button> <button type="button" id="image_history_remove_tags_selected" class="refresh-button" onclick="setSelectedImageHistoryTagsPrompt('remove')">Remove Tags</button> <button type="button" id="image_history_set_notes_selected" class="refresh-button" onclick="setSelectedImageHistoryNotesPrompt()">Set Notes</button> <button type="button" id="image_history_copy_to_selected" class="refresh-button" onclick="moveSelectedImageHistoryPrompt('copy')">Copy To</button> <button type="button" id="image_history_move_to_selected" class="refresh-button" onclick="moveSelectedImageHistoryPrompt('move')">Move To</button> <button type="button" id="image_history_export_metadata_selected" class="refresh-button" onclick="exportSelectedImageHistoryMetadata()">Export Metadata</button> <button type="button" id="image_history_send_prompt_lab_selected" class="refresh-button" onclick="sendSelectedImageHistoryToPromptLab()">Send to Prompt Lab</button> <button type="button" id="image_history_star_selected" class="refresh-button" onclick="starSelectedImageHistory()">Star Selected</button> <button type="button" id="image_history_unstar_selected" class="refresh-button" onclick="unstarSelectedImageHistory()">Unstar Selected</button> <button type="button" id="image_history_hide_selected" class="refresh-button" onclick="hideSelectedImageHistory()">Hide Selected</button> <button type="button" id="image_history_unhide_selected" class="refresh-button" onclick="unhideSelectedImageHistory()">Unhide Selected</button> <button type="button" id="image_history_delete_selected" class="interrupt-button" onclick="deleteSelectedImageHistory()">Delete Selected</button></span> <span id="image_history_request_status" class="image-history-request-status" data-state="idle"><span id="image_history_request_status_text" class="image-history-request-status-text"></span> <button type="button" id="image_history_retry_button" class="refresh-button" style="display:none;">Retry</button></span>`);
+imageHistoryBrowser.maxPreBuild = IMAGE_HISTORY_FAST_FIRST_LIMIT;
 imageHistoryBrowser.filterMatcher = imageHistoryFilterMatches;
 imageHistoryBrowser.folderSelectedEvent = () => {
     clearImageHistorySelection();
@@ -2652,6 +2677,7 @@ imageHistoryBrowser.builtEvent = () => {
 };
 
 getRequiredElementById('imagehistorytabclickable').addEventListener('shown.bs.tab', () => {
+    scheduleInitialImageHistoryLoad();
     let historyContent = document.getElementById('imagehistorybrowser-content');
     if (historyContent) {
         browserUtil.queueMakeVisible(historyContent);
