@@ -641,6 +641,19 @@ textarea, input, select {
     border-color: var(--shadow);
     color: var(--text);
 }
+.history-save-folder-input {
+    flex-direction: column;
+    align-items: stretch;
+}
+.history-save-folder-input label {
+    width: 100%;
+}
+.history-save-folder-select-hidden {
+    display: none;
+}
+.history-save-folder-text {
+    width: 100%;
+}
 .select2-container--bootstrap-5 .select2-selection--multiple .select2-selection__rendered .select2-selection__choice {
     color: var(--text);
 }

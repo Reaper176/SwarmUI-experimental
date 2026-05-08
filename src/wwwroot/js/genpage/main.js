@@ -1402,7 +1402,7 @@ function genpageLoad() {
             automaticWelcomeMessage();
             autoTitle();
             swarmHasLoaded = true;
-        });
+        }, 0, e => console.warn(`Startup ListT2IParams request failed: ${e}`));
         if (reviseStatusInterval) {
             clearInterval(reviseStatusInterval);
         }

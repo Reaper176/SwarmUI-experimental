@@ -1074,8 +1074,10 @@ function copy_current_image_params() {
     if (!('aspectratio' in metadata) && 'width' in metadata && 'height' in metadata) {
         metadata.aspectratio = 'Custom';
     }
+    let inputDoNotSave = document.getElementById('input_donotsave');
+    let shouldKeepDoNotSave = inputDoNotSave?.checked == true || isDefaultDoNotSaveEnabled();
     let exclude = getUserSetting('reuseparamexcludelist', '').split(',').map(s => cleanParamName(s));
-    if (getUserSetting('defaultdonotsave', false)) {
+    if (shouldKeepDoNotSave) {
         exclude.push('donotsave');
     }
     let resetExclude = [...exclude, ...Object.keys(metadata), ...Object.keys(extra).map(e => e.endsWith('_filename') ? e.substring(0, e.length - '_filename'.length) : null).filter(e => e != null)];
@@ -1107,7 +1109,13 @@ function copy_current_image_params() {
             }
         }
     }
-    applyDefaultDoNotSaveSetting();
+    if (shouldKeepDoNotSave && inputDoNotSave) {
+        inputDoNotSave.checked = true;
+        triggerChangeFor(inputDoNotSave);
+    }
+    else {
+        applyDefaultDoNotSaveSetting();
+    }
     hideUnsupportableParams();
 }
 

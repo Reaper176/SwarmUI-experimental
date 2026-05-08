@@ -150,9 +150,14 @@ function getUserSetting(id, def = 'require') {
     }
 }
 
+function isDefaultDoNotSaveEnabled() {
+    let shouldDefaultDoNotSave = getUserSetting('defaultdonotsave', window.userFeatureToggles?.defaultDoNotSave == true);
+    return shouldDefaultDoNotSave;
+}
+
 function applyDefaultDoNotSaveSetting() {
     let inputDoNotSave = document.getElementById('input_donotsave');
-    let shouldDefaultDoNotSave = getUserSetting('defaultdonotsave', false);
+    let shouldDefaultDoNotSave = isDefaultDoNotSaveEnabled();
     if (inputDoNotSave && shouldDefaultDoNotSave) {
         inputDoNotSave.checked = true;
         triggerChangeFor(inputDoNotSave);
@@ -233,6 +238,7 @@ function loadServerSettings() {
 }
 
 function loadSettingsEditor() {
+    applyDefaultDoNotSaveSetting();
     loadUserSettings(() => {
         let inputBatchSize = document.getElementById('input_batchsize');
         let shouldResetBatch = getUserSetting('resetbatchsizetoone', false);
@@ -240,8 +246,7 @@ function loadSettingsEditor() {
             inputBatchSize.value = 1;
             triggerChangeFor(inputBatchSize);
         }
-        genInputs(true);
-        applyDefaultDoNotSaveSetting();
+        genInputs(true, applyDefaultDoNotSaveSetting);
     });
 }
 
@@ -276,7 +281,7 @@ sessionReadyCallbacks.push(loadSettingsEditor);
 function save_user_settings() {
     genericRequest('ChangeUserSettings', { settings: userSettingsData.altered }, data => {
         getRequiredElementById(`usersettings_confirmer`).style.display = 'none';
-        loadUserSettings();
+        loadUserSettings(applyDefaultDoNotSaveSetting);
         loadUserData();
         if (window.notesTab && typeof window.notesTab.onUserSettingsSaved == 'function') {
             window.notesTab.onUserSettingsSaved();

@@ -10,11 +10,118 @@ function sanitizeHistoryFolderInput(folder) {
     return (folder || '').trim().replaceAll('\\', '/').replaceAll('//', '/').replace(/^\/+|\/+$/g, '');
 }
 
+function normalizeHistoryFolderLiveInput(folder) {
+    return (folder || '').replaceAll('\\', '/').replaceAll('//', '/').replace(/^\/+/, '');
+}
+
 function ensureHistorySaveCreateOption(selectElem) {
     if (!selectElem || [...selectElem.options].find(o => o.value == HISTORY_SAVE_CREATE_NEW_VALUE)) {
         return;
     }
     selectElem.add(new Option('Create New Folder...', HISTORY_SAVE_CREATE_NEW_VALUE, false, false));
+}
+
+function ensureHistorySaveFolderOption(selectElem, folder) {
+    if ([...selectElem.options].find(o => o.value == folder)) {
+        return;
+    }
+    let oldTemp = [...selectElem.options].find(o => o.dataset.historySaveFolderTemp == 'true');
+    if (oldTemp) {
+        oldTemp.remove();
+    }
+    let createOption = [...selectElem.options].find(o => o.value == HISTORY_SAVE_CREATE_NEW_VALUE);
+    let newOption = new Option(folder, folder, true, true);
+    newOption.dataset.historySaveFolderTemp = 'true';
+    if (createOption) {
+        selectElem.insertBefore(newOption, createOption);
+    }
+    else {
+        selectElem.add(newOption);
+    }
+}
+
+function setHistorySaveFolderValue(selectElem, folder, liveEdit = false) {
+    let entered = liveEdit ? normalizeHistoryFolderLiveInput(folder) : sanitizeHistoryFolderInput(folder);
+    if (entered == HISTORY_SAVE_CREATE_NEW_VALUE) {
+        selectElem.value = selectElem.dataset.prevHistorySaveFolderValue || '';
+        triggerChangeFor(selectElem);
+        return;
+    }
+    if (!entered) {
+        selectElem.value = '';
+        selectElem.dataset.prevHistorySaveFolderValue = '';
+        triggerChangeFor(selectElem);
+        return;
+    }
+    ensureHistorySaveFolderOption(selectElem, entered);
+    selectElem.value = entered;
+    selectElem.dataset.prevHistorySaveFolderValue = entered;
+    if (liveEdit) {
+        selectElem.dispatchEvent(new Event('change'));
+    }
+    else {
+        triggerChangeFor(selectElem);
+    }
+}
+
+function syncHistorySaveFolderTextInput(selectElem) {
+    let textElem = document.getElementById(`${selectElem.id}_text`);
+    if (!textElem) {
+        return;
+    }
+    if (selectElem.value != HISTORY_SAVE_CREATE_NEW_VALUE) {
+        textElem.value = selectElem.value || '';
+    }
+}
+
+function addHistorySaveFolderDatalistOption(listElem, value, isTemp = false) {
+    if (!value || value == HISTORY_SAVE_CREATE_NEW_VALUE || [...listElem.options].find(o => o.value == value)) {
+        return;
+    }
+    let option = new Option(value, value);
+    if (isTemp) {
+        let oldTemp = [...listElem.options].find(o => o.dataset.historySaveFolderTemp == 'true');
+        if (oldTemp) {
+            oldTemp.remove();
+        }
+        option.dataset.historySaveFolderTemp = 'true';
+    }
+    listElem.appendChild(option);
+}
+
+function enableHistorySaveFolderTextInput(selectElem) {
+    if (document.getElementById(`${selectElem.id}_text`)) {
+        return;
+    }
+    let container = findParentOfClass(selectElem, 'auto-input');
+    if (container) {
+        container.classList.add('history-save-folder-input');
+    }
+    let listElem = document.createElement('datalist');
+    listElem.id = `${selectElem.id}_list`;
+    for (let option of selectElem.options) {
+        addHistorySaveFolderDatalistOption(listElem, option.value);
+    }
+    let textElem = document.createElement('input');
+    textElem.type = 'text';
+    textElem.className = 'auto-text history-save-folder-text';
+    textElem.id = `${selectElem.id}_text`;
+    textElem.setAttribute('list', listElem.id);
+    textElem.autocomplete = 'off';
+    textElem.value = selectElem.value == HISTORY_SAVE_CREATE_NEW_VALUE ? '' : selectElem.value;
+    textElem.addEventListener('focus', () => {
+        selectElem.dispatchEvent(new Event('focus'));
+    });
+    textElem.addEventListener('input', () => {
+        setHistorySaveFolderValue(selectElem, textElem.value, true);
+        addHistorySaveFolderDatalistOption(listElem, selectElem.value, true);
+    });
+    textElem.addEventListener('change', () => {
+        setHistorySaveFolderValue(selectElem, textElem.value);
+    });
+    selectElem.after(listElem);
+    selectElem.after(textElem);
+    selectElem.classList.add('history-save-folder-select-hidden');
 }
 
 function bindHistorySaveFolderSelectInput(selectElem) {
@@ -38,6 +145,7 @@ function bindHistorySaveFolderSelectInput(selectElem) {
     selectElem.addEventListener('change', () => {
         if (selectElem.value != HISTORY_SAVE_CREATE_NEW_VALUE) {
             selectElem.dataset.prevHistorySaveFolderValue = selectElem.value;
+            syncHistorySaveFolderTextInput(selectElem);
             return;
         }
         let entered = prompt('Enter a new History folder path. You can include subfolders using "/".');
@@ -46,27 +154,10 @@ function bindHistorySaveFolderSelectInput(selectElem) {
             triggerChangeFor(selectElem);
             return;
         }
-        entered = sanitizeHistoryFolderInput(entered);
-        if (!entered || entered == HISTORY_SAVE_CREATE_NEW_VALUE) {
-            selectElem.value = selectElem.dataset.prevHistorySaveFolderValue || '';
-            triggerChangeFor(selectElem);
-            return;
-        }
-        if (![...selectElem.options].find(o => o.value == entered)) {
-            let createOption = [...selectElem.options].find(o => o.value == HISTORY_SAVE_CREATE_NEW_VALUE);
-            let newOption = new Option(entered, entered, true, true);
-            if (createOption) {
-                selectElem.insertBefore(newOption, createOption);
-            }
-            else {
-                selectElem.add(newOption);
-            }
-        }
-        selectElem.value = entered;
-        selectElem.dataset.prevHistorySaveFolderValue = entered;
-        triggerChangeFor(selectElem);
+        setHistorySaveFolderValue(selectElem, entered);
     });
     ensureHistorySaveCreateOption(selectElem);
+    enableHistorySaveFolderTextInput(selectElem);
 }
 
 /** Set 'id': true to indicate that advanced status should be overridden for a group, ie it should be visible even when Display Advanced is unchecked. */
@@ -408,7 +499,7 @@ function autoRepersistParams() {
     }
 }
 
-function genInputs(delay_final = false) {
+function genInputs(delay_final = false, finalCallback = null) {
     let runnables = [];
     let groupsClose = [];
     let groupsEnable = [];
@@ -857,7 +948,7 @@ function genInputs(delay_final = false) {
                 function getParamValue(param, elem) {
                     let val = null;
                     if (param.type == "boolean") {
-                        val = elem.checked;
+                        val = `${elem.checked}`;
                     }
                     else if (param.type == "list" && elem.tagName == "SELECT") {
                         let valSet = [...elem.selectedOptions].map(option => option.value);
@@ -957,6 +1048,9 @@ function genInputs(delay_final = false) {
         }
         if (currentPresets.length > 0) {
             updatePresetList();
+        }
+        if (finalCallback) {
+            finalCallback();
         }
     };
     if (delay_final) {
