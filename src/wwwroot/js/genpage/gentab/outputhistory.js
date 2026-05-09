@@ -480,13 +480,13 @@ function ensureImageHistoryBrowserShellReady() {
 
 /** Schedules the first real history load after startup-critical genpage work has had a chance to finish. */
 function scheduleInitialImageHistoryLoad(delayMs = 0) {
-    if (!imageHistoryBrowser || imageHistoryBrowser.everLoaded || imageHistoryInitialLoadScheduled) {
+    if (!imageHistoryBrowser || imageHistoryHasLoadedOnce || imageHistoryInitialLoadScheduled) {
         return;
     }
     imageHistoryInitialLoadScheduled = true;
     setTimeout(() => {
         imageHistoryInitialLoadScheduled = false;
-        if (!imageHistoryBrowser || imageHistoryBrowser.everLoaded) {
+        if (!imageHistoryBrowser || imageHistoryHasLoadedOnce) {
             return;
         }
         ensureImageHistoryBrowserShellReady();
