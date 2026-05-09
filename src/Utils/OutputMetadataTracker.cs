@@ -140,6 +140,9 @@ public static class OutputMetadataTracker
     /// <summary>Set of all image metadatabases, as a map from folder name to database.</summary>
     public static ConcurrentDictionary<string, OutputDatabase> Databases = new();
 
+    /// <summary>Lock used to serialize LiteDB creation and index setup per process.</summary>
+    public static LockObject DatabaseCreationLock = new();
+
     public class PreviewMemoryCacheEntry
     {
         public OutputPreviewEntry Entry;
@@ -244,20 +247,52 @@ public static class OutputMetadataTracker
         {
             folder = Path.GetFullPath(folder);
         }
-        return Databases.GetOrCreate(folder, () =>
+        if (Databases.TryGetValue(folder, out OutputDatabase existingDatabase))
         {
-            string path = $"{folder}/swarm_metadata.ldb";
-            LiteDatabase ldb;
+            return existingDatabase;
+        }
+        lock (DatabaseCreationLock)
+        {
+            if (Databases.TryGetValue(folder, out existingDatabase))
+            {
+                return existingDatabase;
+            }
+            OutputDatabase database = CreateDatabaseForFolder(folder);
+            Databases[folder] = database;
+            return database;
+        }
+    }
+
+    /// <summary>Creates and initializes the metadata database for a folder.</summary>
+    private static OutputDatabase CreateDatabaseForFolder(string folder)
+    {
+        string path = $"{folder}/swarm_metadata.ldb";
+        try
+        {
+            return TryCreateDatabaseForFolder(folder, path);
+        }
+        catch (Exception ex)
+        {
+            Logs.Warning($"Swarm output metadata store at '{path}' is corrupt or unavailable, deleting it and rebuilding: {ex.Message}");
             try
             {
-                ldb = new(path);
-            }
-            catch (Exception)
-            {
-                Logs.Warning($"Swarm output metadata store at '{path}' is corrupt, deleting it and rebuilding.");
                 File.Delete(path);
-                ldb = new(path);
             }
+            catch (Exception deleteEx)
+            {
+                Logs.Warning($"Failed to delete corrupt output metadata store at '{path}': {deleteEx.ReadableString()}");
+            }
+            return TryCreateDatabaseForFolder(folder, path);
+        }
+    }
+
+    /// <summary>Attempts to create and initialize the metadata database for a folder.</summary>
+    private static OutputDatabase TryCreateDatabaseForFolder(string folder, string path)
+    {
+        LiteDatabase ldb = null;
+        try
+        {
+            ldb = new(path);
             // TODO: TEMP 0.9.7: Clear out old image_metadata files.
             if (File.Exists($"{folder}/image_metadata.ldb"))
             {
@@ -269,7 +304,12 @@ public static class OutputMetadataTracker
             historyIndex.EnsureIndex(e => e.FileTime);
             historyIndex.EnsureIndex(e => e.Extension);
             return new(folder, new(), ldb, ldb.GetCollection<OutputMetadataEntry>("output_metadata"), ldb.GetCollection<OutputPreviewEntry>("output_previews"), historyIndex, historyIndexStates);
-        });
+        }
+        catch (Exception)
+        {
+            ldb?.Dispose();
+            throw;
+        }
     }
 
     /// <summary>File format extensions that even can have metadata on them.</summary>
