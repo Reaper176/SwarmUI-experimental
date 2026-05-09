@@ -1047,6 +1047,7 @@ public static class T2IAPI
             {
                 rawRefPath = "";
             }
+            TryStartImageHistoryIndexWarmup(session, root, path, rawRefPath);
             JObject indexedResult = TryGetListFromHistoryIndex(session, rawRefPath, depth, sortBy, sortReverse, includeHidden, fastFirst, fastFirstLimit, maxInHistory, timeStart);
             if (indexedResult is not null)
             {
@@ -1362,6 +1363,93 @@ public static class T2IAPI
 
     public record struct ImageHistoryHelper(string Name, OutputMetadataTracker.OutputMetadataEntry Metadata, long FileSize);
 
+    /// <summary>Currently running background history index warm-up jobs.</summary>
+    public static ConcurrentDictionary<string, byte> ImageHistoryIndexWarmups = [];
+
+    /// <summary>Returns whether a relative image history path is safe to index under the output root.</summary>
+    private static bool CanIndexHistoryPrefix(string relativePrefix)
+    {
+        relativePrefix = (relativePrefix ?? "").Replace('\\', '/').Trim('/');
+        return relativePrefix != ".." && !relativePrefix.StartsWith("../");
+    }
+
+    /// <summary>Indexes one image history folder.</summary>
+    private static (int Indexed, int Skipped) IndexImageHistoryFolder(string root, string checkedPath, bool starNoFolders, bool clearIndex, bool rebuildMetadata)
+    {
+        int indexed = 0;
+        int skipped = 0;
+        string relativePrefix = OutputMetadataTracker.GetRelativePath(checkedPath, root);
+        if (!CanIndexHistoryPrefix(relativePrefix))
+        {
+            return (indexed, skipped);
+        }
+        if (clearIndex)
+        {
+            OutputMetadataTracker.RemoveHistoryIndexPrefixComplete(root, relativePrefix);
+            OutputMetadataTracker.RemoveHistoryIndexForPrefix(root, relativePrefix);
+        }
+        foreach (string rawFile in Directory.EnumerateFiles(checkedPath, "*", SearchOption.AllDirectories))
+        {
+            string file = rawFile.Replace('\\', '/');
+            string filename = file.AfterLast('/');
+            string ext = file.AfterLast('.').ToLowerFast();
+            if (filename.StartsWithFast('.') || !HistoryExtensions.Contains(ext) || file.EndsWith(".swarmpreview.jpg") || file.EndsWith(".swarmpreview.webp"))
+            {
+                skipped++;
+                continue;
+            }
+            if (rebuildMetadata)
+            {
+                OutputMetadataTracker.RemoveMetadataFor(file);
+            }
+            OutputMetadataTracker.OutputHistoryIndexEntry entry = OutputMetadataTracker.UpsertHistoryIndexForFile(file, root, starNoFolders);
+            if (entry is null)
+            {
+                skipped++;
+                continue;
+            }
+            indexed++;
+        }
+        OutputMetadataTracker.MarkHistoryIndexPrefixComplete(root, relativePrefix);
+        return (indexed, skipped);
+    }
+
+    /// <summary>Starts a background history index warm-up for a folder if needed.</summary>
+    private static void TryStartImageHistoryIndexWarmup(Session session, string root, string checkedPath, string relativePrefix)
+    {
+        relativePrefix = (relativePrefix ?? "").Replace('\\', '/').Trim('/');
+        if (!CanIndexHistoryPrefix(relativePrefix) || OutputMetadataTracker.IsHistoryIndexPrefixComplete(root, relativePrefix))
+        {
+            return;
+        }
+        string warmupKey = $"{root}|{relativePrefix}";
+        if (!ImageHistoryIndexWarmups.TryAdd(warmupKey, 1))
+        {
+            return;
+        }
+        string userId = session.User.UserID;
+        bool starNoFolders = session.User.Settings.StarNoFolders;
+        _ = Utilities.RunCheckedTask(async () =>
+        {
+            try
+            {
+                await Task.Delay(TimeSpan.FromSeconds(2), Program.GlobalProgramCancel);
+                if (!Directory.Exists(checkedPath))
+                {
+                    return;
+                }
+                long timeStart = Environment.TickCount64;
+                (int indexed, int skipped) = IndexImageHistoryFolder(root, checkedPath, starNoFolders, true, false);
+                long timeEnd = Environment.TickCount64;
+                Logs.Verbose($"Warmed image history index for user '{userId}' path '{relativePrefix}' with {indexed} indexed, {skipped} skipped in {(timeEnd - timeStart) / 1000.0:0.###} seconds.");
+            }
+            finally
+            {
+                ImageHistoryIndexWarmups.TryRemove(warmupKey, out _);
+            }
+        }, "image history index warm-up");
+    }
+
     [API.APIDescription("Gets a list of images in a saved image history folder.",
         """
             "folders": ["Folder1", "Folder2"],
@@ -1407,47 +1495,16 @@ public static class T2IAPI
         {
             return new JObject() { ["error"] = "That folder does not exist." };
         }
-        int indexed = 0;
-        int skipped = 0;
-        bool starNoFolders = session.User.Settings.StarNoFolders;
         try
         {
-            string relativePrefix = OutputMetadataTracker.GetRelativePath(checkedPath, root);
-            if (rebuild)
-            {
-                OutputMetadataTracker.RemoveHistoryIndexPrefixComplete(root, relativePrefix);
-                OutputMetadataTracker.RemoveHistoryIndexForPrefix(root, relativePrefix);
-            }
-            foreach (string rawFile in Directory.EnumerateFiles(checkedPath, "*", SearchOption.AllDirectories))
-            {
-                string file = rawFile.Replace('\\', '/');
-                string filename = file.AfterLast('/');
-                string ext = file.AfterLast('.').ToLowerFast();
-                if (filename.StartsWithFast('.') || !HistoryExtensions.Contains(ext) || file.EndsWith(".swarmpreview.jpg") || file.EndsWith(".swarmpreview.webp"))
-                {
-                    skipped++;
-                    continue;
-                }
-                if (rebuild)
-                {
-                    OutputMetadataTracker.RemoveMetadataFor(file);
-                }
-                OutputMetadataTracker.OutputHistoryIndexEntry entry = OutputMetadataTracker.UpsertHistoryIndexForFile(file, root, starNoFolders);
-                if (entry is null)
-                {
-                    skipped++;
-                    continue;
-                }
-                indexed++;
-            }
-            OutputMetadataTracker.MarkHistoryIndexPrefixComplete(root, relativePrefix);
+            (int indexed, int skipped) = IndexImageHistoryFolder(root, checkedPath, session.User.Settings.StarNoFolders, rebuild, rebuild);
+            return new JObject() { ["success"] = true, ["indexed"] = indexed, ["skipped"] = skipped };
         }
         catch (Exception ex)
         {
             Logs.Warning($"Error rescanning image history metadata for '{path}': {ex.ReadableString()}");
             return new JObject() { ["error"] = "Error rescanning image history metadata." };
         }
-        return new JObject() { ["success"] = true, ["indexed"] = indexed, ["skipped"] = skipped };
     }
 
     [API.APIDescription("Open an image folder in the file explorer. Used for local users directly.", "\"success\": true")]
