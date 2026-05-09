@@ -495,7 +495,7 @@ public static class OutputMetadataTracker
         OutputDatabase database = GetDatabaseForFolder(root);
         lock (database.Lock)
         {
-            return [.. database.HistoryIndex.Find(e => e.Folder == relativePrefix || (e.Folder != null && e.Folder.StartsWith(folderPrefix)))];
+            return [.. database.HistoryIndex.Find(Query.Or(Query.EQ(nameof(OutputHistoryIndexEntry.Folder), relativePrefix), Query.StartsWith(nameof(OutputHistoryIndexEntry.Folder), folderPrefix)))];
         }
     }
 
