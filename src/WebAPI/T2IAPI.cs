@@ -921,6 +921,19 @@ public static class T2IAPI
         }
         HashSet<string> folders = [];
         List<OutputMetadataTracker.OutputHistoryIndexEntry> files = [];
+        string specialPrefix = requestPrefix == "" ? "" : $"{requestPrefix}/";
+        foreach (string specialFolder in UserImageHistoryHelper.SharedSpecialFolders.Keys)
+        {
+            if (specialFolder.StartsWith(specialPrefix))
+            {
+                string relativeSpecialFolder = specialFolder[specialPrefix.Length..];
+                relativeSpecialFolder = relativeSpecialFolder.EndsWith('/') ? relativeSpecialFolder[..^1] : relativeSpecialFolder;
+                if (!string.IsNullOrWhiteSpace(relativeSpecialFolder))
+                {
+                    folders.Add(relativeSpecialFolder);
+                }
+            }
+        }
         foreach (OutputMetadataTracker.OutputHistoryIndexEntry entry in indexed)
         {
             if (!includeHidden && entry.IsHidden)
