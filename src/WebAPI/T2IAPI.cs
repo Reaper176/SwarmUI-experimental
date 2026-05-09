@@ -910,7 +910,7 @@ public static class T2IAPI
         {
             return null;
         }
-        List<OutputMetadataTracker.OutputHistoryIndexEntry> indexed = OutputMetadataTracker.GetHistoryIndexForRoot(root);
+        List<OutputMetadataTracker.OutputHistoryIndexEntry> indexed = OutputMetadataTracker.GetHistoryIndexForPrefix(root, requestPrefix);
         if (indexed.Count == 0)
         {
             return null;

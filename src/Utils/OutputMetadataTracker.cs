@@ -483,6 +483,22 @@ public static class OutputMetadataTracker
         }
     }
 
+    /// <summary>Returns fast history index entries under a relative folder prefix.</summary>
+    public static List<OutputHistoryIndexEntry> GetHistoryIndexForPrefix(string root, string relativePrefix)
+    {
+        relativePrefix = (relativePrefix ?? "").Replace('\\', '/').Trim('/');
+        if (string.IsNullOrWhiteSpace(relativePrefix))
+        {
+            return GetHistoryIndexForRoot(root);
+        }
+        string folderPrefix = $"{relativePrefix}/";
+        OutputDatabase database = GetDatabaseForFolder(root);
+        lock (database.Lock)
+        {
+            return [.. database.HistoryIndex.Find(e => e.Folder == relativePrefix || (e.Folder != null && e.Folder.StartsWith(folderPrefix)))];
+        }
+    }
+
     /// <summary>Normalizes a relative prefix for storage as a non-empty LiteDB ID.</summary>
     private static string NormalizeHistoryIndexStatePrefix(string relativePrefix)
     {
