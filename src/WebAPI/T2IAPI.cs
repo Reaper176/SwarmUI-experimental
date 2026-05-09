@@ -861,6 +861,149 @@ public static class T2IAPI
         }
     }
 
+    /// <summary>Sorts history index entries with the requested sort mode.</summary>
+    private static List<OutputMetadataTracker.OutputHistoryIndexEntry> SortHistoryIndexEntries(List<OutputMetadataTracker.OutputHistoryIndexEntry> entries, ImageHistorySortMode sortBy, bool sortReverse)
+    {
+        if (sortBy == ImageHistorySortMode.Name)
+        {
+            entries.Sort((a, b) => b.RelativePath.CompareTo(a.RelativePath));
+        }
+        else if (sortBy == ImageHistorySortMode.Date)
+        {
+            entries.Sort((a, b) => b.FileTime.CompareTo(a.FileTime));
+        }
+        else if (sortBy == ImageHistorySortMode.Rating)
+        {
+            entries.Sort((a, b) => b.Rating.CompareTo(a.Rating));
+        }
+        else if (sortBy == ImageHistorySortMode.Resolution)
+        {
+            entries.Sort((a, b) => b.ResolutionPixels.CompareTo(a.ResolutionPixels));
+        }
+        else if (sortBy == ImageHistorySortMode.Model)
+        {
+            entries.Sort((a, b) => (b.Model ?? "").CompareTo(a.Model ?? ""));
+        }
+        else if (sortBy == ImageHistorySortMode.Seed)
+        {
+            entries.Sort((a, b) => b.Seed.CompareTo(a.Seed));
+        }
+        else if (sortBy == ImageHistorySortMode.FileSize)
+        {
+            entries.Sort((a, b) => b.FileSize.CompareTo(a.FileSize));
+        }
+        if (sortReverse)
+        {
+            entries.Reverse();
+        }
+        return entries;
+    }
+
+    /// <summary>Attempts to answer a history list request from the persistent history index.</summary>
+    private static JObject TryGetListFromHistoryIndex(Session session, string rawRefPath, int depth, ImageHistorySortMode sortBy, bool sortReverse, bool includeHidden, bool fastFirst, int fastFirstLimit, int maxInHistory, long timeStart)
+    {
+        string root = Utilities.CombinePathWithAbsolute(Environment.CurrentDirectory, session.User.OutputDirectory);
+        int limit = fastFirst ? Math.Max(1, Math.Min(fastFirstLimit, maxInHistory)) : maxInHistory;
+        string requestPrefix = rawRefPath == "./" ? "" : rawRefPath;
+        requestPrefix = requestPrefix.Replace('\\', '/').Trim('/');
+        if (!OutputMetadataTracker.IsHistoryIndexPrefixComplete(root, requestPrefix))
+        {
+            return null;
+        }
+        List<OutputMetadataTracker.OutputHistoryIndexEntry> indexed = OutputMetadataTracker.GetHistoryIndexForRoot(root);
+        if (indexed.Count == 0)
+        {
+            return null;
+        }
+        if (!string.IsNullOrWhiteSpace(requestPrefix))
+        {
+            requestPrefix += "/";
+        }
+        HashSet<string> folders = [];
+        List<OutputMetadataTracker.OutputHistoryIndexEntry> files = [];
+        foreach (OutputMetadataTracker.OutputHistoryIndexEntry entry in indexed)
+        {
+            if (!includeHidden && entry.IsHidden)
+            {
+                continue;
+            }
+            if (!entry.RelativePath.StartsWith(requestPrefix))
+            {
+                continue;
+            }
+            string relative = entry.RelativePath[requestPrefix.Length..];
+            if (string.IsNullOrWhiteSpace(relative) || relative.StartsWith('/'))
+            {
+                continue;
+            }
+            string[] parts = relative.Split('/', StringSplitOptions.RemoveEmptyEntries);
+            if (parts.Length == 0)
+            {
+                continue;
+            }
+            int folderDepth = parts.Length - 1;
+            int folderLimit = Math.Min(folderDepth, depth);
+            string folderPath = "";
+            for (int i = 0; i < folderLimit; i++)
+            {
+                folderPath = folderPath == "" ? parts[i] : $"{folderPath}/{parts[i]}";
+                folders.Add(folderPath);
+            }
+            if (folderDepth <= depth)
+            {
+                files.Add(entry);
+            }
+        }
+        if (files.Count == 0 && folders.Count == 0)
+        {
+            return null;
+        }
+        HashSet<string> included = [.. files.Select(f => f.RelativePath)];
+        files = [.. files.Where(f =>
+        {
+            if (f.RelativePath.StartsWith("Starred/"))
+            {
+                return true;
+            }
+            string starPath = session.User.Settings.StarNoFolders ? $"Starred/{f.RelativePath.Replace("/", "")}" : $"Starred/{f.RelativePath}";
+            return !included.Contains(starPath);
+        })];
+        files = SortHistoryIndexEntries(files, sortBy, sortReverse);
+        long timeEnd = Environment.TickCount64;
+        Logs.Verbose($"Listed {files.Count} indexed images from {folders.Count} indexed folder entries in {(timeEnd - timeStart) / 1000.0:0.###} seconds.");
+        return new JObject()
+        {
+            ["folders"] = JToken.FromObject(folders.OrderDescending().ToList()),
+            ["files"] = JToken.FromObject(files.Take(limit).Select(f =>
+            {
+                string src = requestPrefix == "" ? f.RelativePath : f.RelativePath[requestPrefix.Length..];
+                return new JObject() { ["src"] = src, ["metadata"] = f.Metadata, ["file_size"] = f.FileSize, ["file_time"] = f.FileTime };
+            }).ToList()),
+            ["perf"] = new JObject()
+            {
+                ["total_ms"] = timeEnd - timeStart,
+                ["dir_scan_ms"] = 0,
+                ["file_scan_ms"] = 0,
+                ["final_sort_ms"] = 0,
+                ["fast_first"] = fastFirst,
+                ["indexed"] = true
+            }
+        };
+    }
+
+    /// <summary>Removes a file path from the persistent history index.</summary>
+    private static void RemoveHistoryIndexForPath(string root, string path)
+    {
+        OutputMetadataTracker.RemoveHistoryIndexForPrefix(root, OutputMetadataTracker.GetRelativePath(path, root));
+    }
+
+    /// <summary>Refreshes the persistent history index entry for a file path.</summary>
+    private static void RefreshHistoryIndexForPath(string root, string path, bool starNoFolders)
+    {
+        RemoveHistoryIndexForPath(root, path);
+        OutputMetadataTracker.UpsertHistoryIndexForFile(path.Replace('\\', '/'), root, starNoFolders);
+    }
+
     private static JObject GetListAPIInternal(Session session, string rawPath, string root, HashSet<string> extensions, Func<string, bool> isAllowed, int depth, ImageHistorySortMode sortBy, bool sortReverse, bool includeHidden, bool fastFirst = false, int fastFirstLimit = 128)
     {
         int maxInHistory = session.User.Settings.MaxImagesInHistory;
@@ -891,6 +1034,11 @@ public static class T2IAPI
             {
                 rawRefPath = "";
             }
+            JObject indexedResult = TryGetListFromHistoryIndex(session, rawRefPath, depth, sortBy, sortReverse, includeHidden, fastFirst, fastFirstLimit, maxInHistory, timeStart);
+            if (indexedResult is not null)
+            {
+                return indexedResult;
+            }
             List<string> specialSeedDirs = [.. UserImageHistoryHelper.SharedSpecialFolders.Keys
                 .Where(f => f.StartsWith(rawRefPath))
                 .Select(f => f[rawRefPath.Length..])
@@ -898,6 +1046,62 @@ public static class T2IAPI
                 .Where(f => !string.IsNullOrEmpty(f))
                 .Distinct()
                 .OrderDescending()];
+            Dictionary<OutputMetadataTracker.OutputMetadataEntry, double> ratingSortCache = [];
+            Dictionary<OutputMetadataTracker.OutputMetadataEntry, long> resolutionSortCache = [];
+            Dictionary<OutputMetadataTracker.OutputMetadataEntry, string> modelSortCache = [];
+            Dictionary<OutputMetadataTracker.OutputMetadataEntry, long> seedSortCache = [];
+            double cachedRating(OutputMetadataTracker.OutputMetadataEntry metadata)
+            {
+                if (metadata is null)
+                {
+                    return 0;
+                }
+                if (!ratingSortCache.TryGetValue(metadata, out double result))
+                {
+                    result = MetadataRating(metadata);
+                    ratingSortCache[metadata] = result;
+                }
+                return result;
+            }
+            long cachedResolution(OutputMetadataTracker.OutputMetadataEntry metadata)
+            {
+                if (metadata is null)
+                {
+                    return 0;
+                }
+                if (!resolutionSortCache.TryGetValue(metadata, out long result))
+                {
+                    result = MetadataResolutionPixels(metadata);
+                    resolutionSortCache[metadata] = result;
+                }
+                return result;
+            }
+            string cachedModel(OutputMetadataTracker.OutputMetadataEntry metadata)
+            {
+                if (metadata is null)
+                {
+                    return "";
+                }
+                if (!modelSortCache.TryGetValue(metadata, out string result))
+                {
+                    result = MetadataModel(metadata);
+                    modelSortCache[metadata] = result;
+                }
+                return result;
+            }
+            long cachedSeed(OutputMetadataTracker.OutputMetadataEntry metadata)
+            {
+                if (metadata is null)
+                {
+                    return 0;
+                }
+                if (!seedSortCache.TryGetValue(metadata, out long result))
+                {
+                    result = MetadataSeed(metadata);
+                    seedSortCache[metadata] = result;
+                }
+                return result;
+            }
             void sortList(List<ImageHistoryHelper> list)
             {
                 if (sortBy == ImageHistorySortMode.Name)
@@ -910,19 +1114,19 @@ public static class T2IAPI
                 }
                 else if (sortBy == ImageHistorySortMode.Rating)
                 {
-                    list.Sort((a, b) => MetadataRating(b.Metadata).CompareTo(MetadataRating(a.Metadata)));
+                    list.Sort((a, b) => cachedRating(b.Metadata).CompareTo(cachedRating(a.Metadata)));
                 }
                 else if (sortBy == ImageHistorySortMode.Resolution)
                 {
-                    list.Sort((a, b) => MetadataResolutionPixels(b.Metadata).CompareTo(MetadataResolutionPixels(a.Metadata)));
+                    list.Sort((a, b) => cachedResolution(b.Metadata).CompareTo(cachedResolution(a.Metadata)));
                 }
                 else if (sortBy == ImageHistorySortMode.Model)
                 {
-                    list.Sort((a, b) => MetadataModel(b.Metadata).CompareTo(MetadataModel(a.Metadata)));
+                    list.Sort((a, b) => cachedModel(b.Metadata).CompareTo(cachedModel(a.Metadata)));
                 }
                 else if (sortBy == ImageHistorySortMode.Seed)
                 {
-                    list.Sort((a, b) => MetadataSeed(b.Metadata).CompareTo(MetadataSeed(a.Metadata)));
+                    list.Sort((a, b) => cachedSeed(b.Metadata).CompareTo(cachedSeed(a.Metadata)));
                 }
                 else if (sortBy == ImageHistorySortMode.FileSize)
                 {
@@ -1195,6 +1399,12 @@ public static class T2IAPI
         bool starNoFolders = session.User.Settings.StarNoFolders;
         try
         {
+            string relativePrefix = OutputMetadataTracker.GetRelativePath(checkedPath, root);
+            if (rebuild)
+            {
+                OutputMetadataTracker.RemoveHistoryIndexPrefixComplete(root, relativePrefix);
+                OutputMetadataTracker.RemoveHistoryIndexForPrefix(root, relativePrefix);
+            }
             foreach (string rawFile in Directory.EnumerateFiles(checkedPath, "*", SearchOption.AllDirectories))
             {
                 string file = rawFile.Replace('\\', '/');
@@ -1209,14 +1419,15 @@ public static class T2IAPI
                 {
                     OutputMetadataTracker.RemoveMetadataFor(file);
                 }
-                OutputMetadataTracker.OutputMetadataEntry metadata = OutputMetadataTracker.GetMetadataFor(file, root, starNoFolders);
-                if (metadata is null)
+                OutputMetadataTracker.OutputHistoryIndexEntry entry = OutputMetadataTracker.UpsertHistoryIndexForFile(file, root, starNoFolders);
+                if (entry is null)
                 {
                     skipped++;
                     continue;
                 }
                 indexed++;
             }
+            OutputMetadataTracker.MarkHistoryIndexPrefixComplete(root, relativePrefix);
         }
         catch (Exception ex)
         {
@@ -1298,6 +1509,7 @@ public static class T2IAPI
             }
         }
         OutputMetadataTracker.RemoveMetadataFor(path);
+        RemoveHistoryIndexForPath(root, path);
         return new JObject() { ["success"] = true };
     }
 
@@ -1361,6 +1573,7 @@ public static class T2IAPI
             {
                 File.Move(sourcePath, targetPath);
                 OutputMetadataTracker.RemoveMetadataFor(sourcePath);
+                RemoveHistoryIndexForPath(root, sourcePath);
             }
             string sourceBase = sourcePath.BeforeLast('.');
             string targetBase = targetPath.BeforeLast('.');
@@ -1380,6 +1593,7 @@ public static class T2IAPI
                     File.Move(sourceAlt, $"{targetBase}{ext}", true);
                 }
             }
+            RefreshHistoryIndexForPath(root, targetPath, session.User.Settings.StarNoFolders);
             changed++;
         }
         return new JObject() { ["success"] = true, ["changed"] = changed, ["failed"] = failed };
@@ -1506,6 +1720,8 @@ public static class T2IAPI
                 }
                 OutputMetadataTracker.RemoveMetadataFor(path);
                 OutputMetadataTracker.RemoveMetadataFor(starPath);
+                RemoveHistoryIndexForPath(root, starPath);
+                RefreshHistoryIndexForPath(root, path, session.User.Settings.StarNoFolders);
                 return new JObject() { ["new_state"] = false };
             }
             Logs.Warning($"User {session.User.UserID} tried to star image path '{origPath}' which maps to '{path}', but cannot as the image does not exist.");
@@ -1524,6 +1740,8 @@ public static class T2IAPI
             }
             OutputMetadataTracker.RemoveMetadataFor(path);
             OutputMetadataTracker.RemoveMetadataFor(starPath);
+            RemoveHistoryIndexForPath(root, starPath);
+            RefreshHistoryIndexForPath(root, path, session.User.Settings.StarNoFolders);
             return new JObject() { ["new_state"] = false };
         }
         else
@@ -1540,6 +1758,8 @@ public static class T2IAPI
             }
             OutputMetadataTracker.RemoveMetadataFor(path);
             OutputMetadataTracker.RemoveMetadataFor(starPath);
+            RefreshHistoryIndexForPath(root, path, session.User.Settings.StarNoFolders);
+            RefreshHistoryIndexForPath(root, starPath, session.User.Settings.StarNoFolders);
             return new JObject() { ["new_state"] = true };
         }
     }
@@ -1602,10 +1822,12 @@ public static class T2IAPI
         if (rawExists)
         {
             OutputMetadataTracker.RemoveMetadataFor(rawPath.Replace('\\', '/'));
+            RefreshHistoryIndexForPath(root, rawPath, session.User.Settings.StarNoFolders);
         }
         if (starExists)
         {
             OutputMetadataTracker.RemoveMetadataFor(starPath.Replace('\\', '/'));
+            RefreshHistoryIndexForPath(root, starPath, session.User.Settings.StarNoFolders);
         }
         Logs.Debug($"User {session.User.UserID} {(newState ? "hid" : "unhid")} image '{origPath}'");
         return new JObject() { ["new_state"] = newState };
@@ -1677,10 +1899,12 @@ public static class T2IAPI
         if (rawExists)
         {
             OutputMetadataTracker.RemoveMetadataFor(rawPath.Replace('\\', '/'));
+            RefreshHistoryIndexForPath(root, rawPath, session.User.Settings.StarNoFolders);
         }
         if (starExists)
         {
             OutputMetadataTracker.RemoveMetadataFor(starPath.Replace('\\', '/'));
+            RefreshHistoryIndexForPath(root, starPath, session.User.Settings.StarNoFolders);
         }
         return new JObject() { ["rating"] = rating };
     }
@@ -1792,10 +2016,12 @@ public static class T2IAPI
         if (rawExists)
         {
             OutputMetadataTracker.RemoveMetadataFor(rawPath.Replace('\\', '/'));
+            RefreshHistoryIndexForPath(root, rawPath, session.User.Settings.StarNoFolders);
         }
         if (starExists)
         {
             OutputMetadataTracker.RemoveMetadataFor(starPath.Replace('\\', '/'));
+            RefreshHistoryIndexForPath(root, starPath, session.User.Settings.StarNoFolders);
         }
         return new JObject() { ["tags"] = currentTags ?? new JArray() };
     }
@@ -1863,10 +2089,12 @@ public static class T2IAPI
         if (rawExists)
         {
             OutputMetadataTracker.RemoveMetadataFor(rawPath.Replace('\\', '/'));
+            RefreshHistoryIndexForPath(root, rawPath, session.User.Settings.StarNoFolders);
         }
         if (starExists)
         {
             OutputMetadataTracker.RemoveMetadataFor(starPath.Replace('\\', '/'));
+            RefreshHistoryIndexForPath(root, starPath, session.User.Settings.StarNoFolders);
         }
         return new JObject() { ["notes"] = notes };
     }

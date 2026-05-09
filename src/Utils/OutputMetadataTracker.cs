@@ -41,7 +41,62 @@ public static class OutputMetadataTracker
         public byte[] SimplifiedData { get; set; }
     }
 
-    public record class OutputDatabase(string Folder, LockObject Lock, LiteDatabase Database, ILiteCollection<OutputMetadataEntry> Metadata, ILiteCollection<OutputPreviewEntry> Previews)
+    /// <summary>BSON database entry for fast image history listing.</summary>
+    public class OutputHistoryIndexEntry
+    {
+        /// <summary>Relative image path from the output root.</summary>
+        [BsonId]
+        public string RelativePath { get; set; }
+
+        /// <summary>Relative folder path from the output root.</summary>
+        public string Folder { get; set; }
+
+        /// <summary>Lowercase file extension, without dot.</summary>
+        public string Extension { get; set; }
+
+        /// <summary>Raw metadata JSON string.</summary>
+        public string Metadata { get; set; }
+
+        /// <summary>Best available file modified timestamp.</summary>
+        public long FileTime { get; set; }
+
+        /// <summary>File size in bytes.</summary>
+        public long FileSize { get; set; }
+
+        /// <summary>Whether the image is marked hidden.</summary>
+        public bool IsHidden { get; set; }
+
+        /// <summary>Whether the image is in the starred folder.</summary>
+        public bool IsStarred { get; set; }
+
+        /// <summary>User rating value.</summary>
+        public double Rating { get; set; }
+
+        /// <summary>Final image resolution as width times height.</summary>
+        public long ResolutionPixels { get; set; }
+
+        /// <summary>Lowercase model name from metadata.</summary>
+        public string Model { get; set; }
+
+        /// <summary>Seed from metadata.</summary>
+        public long Seed { get; set; }
+
+        /// <summary>Unix timestamp for when this index entry was last verified.</summary>
+        public long LastVerified { get; set; }
+    }
+
+    /// <summary>BSON database entry tracking completed fast history index prefixes.</summary>
+    public class OutputHistoryIndexState
+    {
+        /// <summary>Relative output path prefix that has been fully indexed.</summary>
+        [BsonId]
+        public string RelativePrefix { get; set; }
+
+        /// <summary>Unix timestamp for when this prefix was last fully indexed.</summary>
+        public long LastRebuilt { get; set; }
+    }
+
+    public record class OutputDatabase(string Folder, LockObject Lock, LiteDatabase Database, ILiteCollection<OutputMetadataEntry> Metadata, ILiteCollection<OutputPreviewEntry> Previews, ILiteCollection<OutputHistoryIndexEntry> HistoryIndex, ILiteCollection<OutputHistoryIndexState> HistoryIndexStates)
     {
         public volatile int Errors = 0;
 
@@ -208,7 +263,12 @@ public static class OutputMetadataTracker
             {
                 File.Delete($"{folder}/image_metadata.ldb");
             }
-            return new(folder, new(), ldb, ldb.GetCollection<OutputMetadataEntry>("output_metadata"), ldb.GetCollection<OutputPreviewEntry>("output_previews"));
+            ILiteCollection<OutputHistoryIndexEntry> historyIndex = ldb.GetCollection<OutputHistoryIndexEntry>("output_history");
+            ILiteCollection<OutputHistoryIndexState> historyIndexStates = ldb.GetCollection<OutputHistoryIndexState>("output_history_state");
+            historyIndex.EnsureIndex(e => e.Folder);
+            historyIndex.EnsureIndex(e => e.FileTime);
+            historyIndex.EnsureIndex(e => e.Extension);
+            return new(folder, new(), ldb, ldb.GetCollection<OutputMetadataEntry>("output_metadata"), ldb.GetCollection<OutputPreviewEntry>("output_previews"), historyIndex, historyIndexStates);
         });
     }
 
@@ -276,6 +336,235 @@ public static class OutputMetadataTracker
         catch (Exception)
         {
             return fileData;
+        }
+    }
+
+    /// <summary>Returns a normalized relative path from root to a file.</summary>
+    public static string GetRelativePath(string file, string root)
+    {
+        file = file.Replace('\\', '/');
+        root = root.Replace('\\', '/').TrimEnd('/');
+        string relative = file == root ? "" : (file.StartsWith($"{root}/") ? file[(root.Length + 1)..] : Path.GetRelativePath(root, file));
+        return relative.Replace('\\', '/').Trim('/');
+    }
+
+    /// <summary>Gets a top-level numeric metadata value.</summary>
+    private static double GetMetadataDouble(JObject parsed, string key)
+    {
+        JToken token = parsed?[key];
+        if (token is null)
+        {
+            return 0;
+        }
+        if (token.Type == JTokenType.Float || token.Type == JTokenType.Integer)
+        {
+            return token.Value<double>();
+        }
+        if (double.TryParse($"{token}", out double result))
+        {
+            return result;
+        }
+        return 0;
+    }
+
+    /// <summary>Gets a nested numeric metadata value.</summary>
+    private static long GetMetadataLong(JObject parsed, string key)
+    {
+        JToken token = parsed?[key];
+        if (token is null)
+        {
+            return 0;
+        }
+        if (token.Type == JTokenType.Integer || token.Type == JTokenType.Float)
+        {
+            return token.Value<long>();
+        }
+        if (long.TryParse($"{token}", out long result))
+        {
+            return result;
+        }
+        return 0;
+    }
+
+    /// <summary>Gets a top-level boolean metadata value.</summary>
+    private static bool GetMetadataBool(JObject parsed, string key)
+    {
+        JToken token = parsed?[key];
+        if (token is null)
+        {
+            return false;
+        }
+        if (token.Type == JTokenType.Boolean)
+        {
+            return token.Value<bool>();
+        }
+        return bool.TryParse($"{token}", out bool result) && result;
+    }
+
+    /// <summary>Gets the preferred final pixel count from parsed metadata.</summary>
+    private static long GetMetadataResolutionPixels(JObject parsed)
+    {
+        JObject parameters = parsed?["sui_image_params"] as JObject;
+        long width = GetMetadataLong(parameters, "width");
+        long height = GetMetadataLong(parameters, "height");
+        JObject extra = parsed?["sui_extra_data"] as JObject;
+        long finalWidth = GetMetadataLong(extra, "final_width");
+        long finalHeight = GetMetadataLong(extra, "final_height");
+        width = finalWidth == 0 ? width : finalWidth;
+        height = finalHeight == 0 ? height : finalHeight;
+        return width * height;
+    }
+
+    /// <summary>Creates or updates the fast history index entry for a file.</summary>
+    public static OutputHistoryIndexEntry UpsertHistoryIndexForFile(string file, string root, bool starNoFolders)
+    {
+        file = file.Replace('\\', '/');
+        if (!File.Exists(file))
+        {
+            return null;
+        }
+        OutputMetadataEntry metadata = GetMetadataFor(file, root, starNoFolders);
+        if (metadata is null)
+        {
+            return null;
+        }
+        string relative = GetRelativePath(file, root);
+        string folder = relative.Contains('/') ? relative.BeforeLast('/') : "";
+        string extension = relative.AfterLast('.').ToLowerFast();
+        long timeNow = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+        long fileSize = 0;
+        try
+        {
+            fileSize = new FileInfo(file).Length;
+        }
+        catch (Exception)
+        {
+        }
+        JObject parsed = null;
+        try
+        {
+            parsed = metadata.Metadata?.ParseToJson();
+        }
+        catch (Exception)
+        {
+        }
+        JObject parameters = parsed?["sui_image_params"] as JObject;
+        OutputHistoryIndexEntry entry = new()
+        {
+            RelativePath = relative,
+            Folder = folder,
+            Extension = extension,
+            Metadata = metadata.Metadata,
+            FileTime = metadata.FileTime,
+            FileSize = fileSize,
+            IsHidden = GetMetadataBool(parsed, "is_hidden"),
+            IsStarred = GetMetadataBool(parsed, "is_starred"),
+            Rating = GetMetadataDouble(parsed, "rating"),
+            ResolutionPixels = GetMetadataResolutionPixels(parsed),
+            Model = $"{parameters?["model"]}".ToLowerFast(),
+            Seed = GetMetadataLong(parameters, "seed"),
+            LastVerified = timeNow
+        };
+        OutputDatabase database = GetDatabaseForFolder(root);
+        lock (database.Lock)
+        {
+            database.HistoryIndex.Upsert(entry);
+        }
+        return entry;
+    }
+
+    /// <summary>Returns all fast history index entries for an output root.</summary>
+    public static List<OutputHistoryIndexEntry> GetHistoryIndexForRoot(string root)
+    {
+        OutputDatabase database = GetDatabaseForFolder(root);
+        lock (database.Lock)
+        {
+            return [.. database.HistoryIndex.FindAll()];
+        }
+    }
+
+    /// <summary>Normalizes a relative prefix for storage as a non-empty LiteDB ID.</summary>
+    private static string NormalizeHistoryIndexStatePrefix(string relativePrefix)
+    {
+        relativePrefix = (relativePrefix ?? "").Replace('\\', '/').Trim('/');
+        return string.IsNullOrWhiteSpace(relativePrefix) ? "." : relativePrefix;
+    }
+
+    /// <summary>Normalizes a stored history index state prefix for comparison.</summary>
+    private static string CompareHistoryIndexStatePrefix(string relativePrefix)
+    {
+        relativePrefix = (relativePrefix ?? "").Replace('\\', '/').Trim('/');
+        return relativePrefix == "." ? "" : relativePrefix;
+    }
+
+    /// <summary>Marks a history index prefix as fully rebuilt.</summary>
+    public static void MarkHistoryIndexPrefixComplete(string root, string relativePrefix)
+    {
+        relativePrefix = NormalizeHistoryIndexStatePrefix(relativePrefix);
+        OutputDatabase database = GetDatabaseForFolder(root);
+        OutputHistoryIndexState state = new()
+        {
+            RelativePrefix = relativePrefix,
+            LastRebuilt = DateTimeOffset.UtcNow.ToUnixTimeSeconds()
+        };
+        lock (database.Lock)
+        {
+            database.HistoryIndexStates.Upsert(state);
+        }
+    }
+
+    /// <summary>Returns whether the history index is complete for a requested relative prefix.</summary>
+    public static bool IsHistoryIndexPrefixComplete(string root, string relativePrefix)
+    {
+        relativePrefix = (relativePrefix ?? "").Replace('\\', '/').Trim('/');
+        OutputDatabase database = GetDatabaseForFolder(root);
+        lock (database.Lock)
+        {
+            return database.HistoryIndexStates.FindAll().Any(s =>
+            {
+                string statePrefix = CompareHistoryIndexStatePrefix(s.RelativePrefix);
+                return string.IsNullOrWhiteSpace(statePrefix) || relativePrefix == statePrefix || relativePrefix.StartsWith($"{statePrefix}/");
+            });
+        }
+    }
+
+    /// <summary>Removes completed history index state markers under a prefix.</summary>
+    public static void RemoveHistoryIndexPrefixComplete(string root, string relativePrefix)
+    {
+        relativePrefix = CompareHistoryIndexStatePrefix(relativePrefix);
+        OutputDatabase database = GetDatabaseForFolder(root);
+        lock (database.Lock)
+        {
+            List<string> ids = [.. database.HistoryIndexStates.FindAll()
+                .Where(s =>
+                {
+                    string statePrefix = CompareHistoryIndexStatePrefix(s.RelativePrefix);
+                    return string.IsNullOrWhiteSpace(relativePrefix) || statePrefix == relativePrefix || statePrefix.StartsWith($"{relativePrefix}/");
+                })
+                .Select(s => s.RelativePrefix)];
+            foreach (string id in ids)
+            {
+                database.HistoryIndexStates.Delete(id);
+            }
+        }
+    }
+
+    /// <summary>Removes fast history index entries under a relative path prefix.</summary>
+    public static int RemoveHistoryIndexForPrefix(string root, string relativePrefix)
+    {
+        relativePrefix = (relativePrefix ?? "").Replace('\\', '/').Trim('/');
+        string folderPrefix = string.IsNullOrWhiteSpace(relativePrefix) ? "" : $"{relativePrefix}/";
+        OutputDatabase database = GetDatabaseForFolder(root);
+        lock (database.Lock)
+        {
+            List<string> ids = [.. database.HistoryIndex.FindAll()
+                .Where(e => string.IsNullOrWhiteSpace(relativePrefix) || e.RelativePath == relativePrefix || e.RelativePath.StartsWith(folderPrefix))
+                .Select(e => e.RelativePath)];
+            foreach (string id in ids)
+            {
+                database.HistoryIndex.Delete(id);
+            }
+            return ids.Count;
         }
     }
 

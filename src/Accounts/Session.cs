@@ -242,6 +242,7 @@ public class Session : IEquatable<Session>
         string pathFolder = imagePath.Contains('/') ? imagePath.BeforeLast('/') : "";
         string folderRoute = Path.GetFullPath(UserImageHistoryHelper.GetRealPathFor(User, $"{User.OutputDirectory}/{pathFolder}"));
         string fullPath = $"{fullPathNoExt}.{extension}";
+        string root = Utilities.CombinePathWithAbsolute(Environment.CurrentDirectory, User.OutputDirectory);
         lock (User.UserLock)
         {
             try
@@ -274,6 +275,7 @@ public class Session : IEquatable<Session>
                         }
                     }
                     OutputMetadataTracker.GetOrCreatePreviewFor(fullPath.Replace('\\', '/'));
+                    OutputMetadataTracker.UpsertHistoryIndexForFile(fullPath.Replace('\\', '/'), root, User.Settings.StarNoFolders);
                     Logs.Debug($"Saved an output file as '{fullPath}'");
                     await Task.Delay(TimeSpan.FromSeconds(10)); // (Give time for WebServer to read data from cache rather than having to reload from file for first read)
                     StillSavingFiles.TryRemove(fullPath, out _);
