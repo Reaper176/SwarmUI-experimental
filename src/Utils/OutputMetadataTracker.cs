@@ -274,15 +274,38 @@ public static class OutputMetadataTracker
         catch (Exception ex)
         {
             Logs.Warning($"Swarm output metadata store at '{path}' is corrupt or unavailable, deleting it and rebuilding: {ex.Message}");
-            try
+            DeleteDatabaseFiles(folder, path);
+            return TryCreateDatabaseForFolder(folder, path);
+        }
+    }
+
+    /// <summary>Deletes a LiteDB metadata file and its paired log file.</summary>
+    private static void DeleteDatabaseFiles(string folder, string path)
+    {
+        try
+        {
+            if (File.Exists(path))
             {
                 File.Delete(path);
             }
-            catch (Exception deleteEx)
+            string logPath = $"{path.BeforeLast('.')}-log.{path.AfterLast('.')}";
+            if (File.Exists(logPath))
             {
-                Logs.Warning($"Failed to delete corrupt output metadata store at '{path}': {deleteEx.ReadableString()}");
+                File.Delete(logPath);
             }
-            return TryCreateDatabaseForFolder(folder, path);
+            // TODO: TEMP 0.9.7: Clear out old image_metadata files.
+            if (File.Exists($"{folder}/image_metadata.ldb"))
+            {
+                File.Delete($"{folder}/image_metadata.ldb");
+            }
+            if (File.Exists($"{folder}/image_metadata-log.ldb"))
+            {
+                File.Delete($"{folder}/image_metadata-log.ldb");
+            }
+        }
+        catch (Exception deleteEx)
+        {
+            Logs.Warning($"Failed to delete corrupt output metadata store at '{path}': {deleteEx.ReadableString()}");
         }
     }
 
@@ -629,7 +652,16 @@ public static class OutputMetadataTracker
     {
         RemovePreviewFromMemoryCache(file);
         string folder = file.BeforeAndAfterLast('/', out string filename);
-        OutputDatabase metadata = GetDatabaseForFolder(folder);
+        OutputDatabase metadata;
+        try
+        {
+            metadata = GetDatabaseForFolder(folder);
+        }
+        catch (Exception ex)
+        {
+            Logs.Warning($"Error opening image metadata database to remove file '{file}': {ex.ReadableString()}");
+            return;
+        }
         if (!Program.ServerSettings.Metadata.ImageMetadataPerFolder)
         {
             filename = file;
@@ -660,7 +692,16 @@ public static class OutputMetadataTracker
         {
             filename = file;
         }
-        OutputDatabase metadata = GetDatabaseForFolder(folder);
+        OutputDatabase metadata;
+        try
+        {
+            metadata = GetDatabaseForFolder(folder);
+        }
+        catch (Exception ex)
+        {
+            Logs.Warning($"Error opening image preview database for file '{file}': {ex.ReadableString()}");
+            return null;
+        }
         long timeNow = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
         try
         {
@@ -829,7 +870,16 @@ public static class OutputMetadataTracker
         {
             filename = file;
         }
-        OutputDatabase metadata = GetDatabaseForFolder(folder);
+        OutputDatabase metadata;
+        try
+        {
+            metadata = GetDatabaseForFolder(folder);
+        }
+        catch (Exception ex)
+        {
+            Logs.Warning($"Error opening image metadata database for file '{file}': {ex.ReadableString()}");
+            return null;
+        }
         long timeNow = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
         try
         {
