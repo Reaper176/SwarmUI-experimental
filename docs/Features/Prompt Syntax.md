@@ -126,6 +126,29 @@
     - `weight` is a multiplier, where `1` is the default, `0.5` is weakened halfway, or `2` is twice as strong. Generally numbers larger than 2 will destroy image quality.
     - You may also use `<lora:filename:backbone_weight:textenc_weight>` to enable a lora and set its backbone (unet/dit) weight separately from its text encoder weight.
 
+### LoRA Schedules
+
+- When using a recent ComfyUI backend, each selected LoRA in the LoRA GUI can have an optional `Schedule` field.
+    - If the field is not visible, your active backend does not report support for ComfyUI's native hook LoRA scheduling nodes yet.
+- A schedule changes that LoRA's strength multiplier over denoise progress.
+    - The base LoRA weight still comes from the normal LoRA weight input.
+    - The schedule value multiplies that weight at the listed progress points.
+- Schedule format is a semicolon-separated list of `percent:multiplier` keyframes:
+
+```text
+0:0.25;0.5:1;0.8:0.7
+```
+
+- `percent` is denoise progress from `0` to `1`.
+    - `0` is the start of denoising.
+    - `1` is the end of denoising.
+- `multiplier` is the schedule multiplier for that LoRA at that point.
+    - Values from `-20` to `20` are accepted, matching ComfyUI's hook scheduling range.
+- For example, if a LoRA weight is `0.8` and its schedule is `0:0.25;0.5:1`, the effective model strength is `0.2` at the start and `0.8` from halfway onward.
+- Schedule keyframes are sorted internally by percent. If the same percent is entered more than once, the last entered value wins.
+- Leave the schedule field blank for normal unscheduled LoRA behavior.
+- LoRA schedules are saved in image metadata and reused with parameters like normal LoRA weights.
+
 ## Presets
 
 ![img](/docs/images/style-preset-cats.jpg)

@@ -47,6 +47,16 @@ No specific parameters are ever guaranteed. Even `model` and `prompt` can be mis
 
 The key `swarm_version` is also present in the params block.
 
+LoRA parameters are stored as aligned lists:
+
+- `loras`: selected LoRA names.
+- `loraweights`: model/backbone LoRA weights.
+- `loratencweights`: optional text encoder LoRA weights.
+- `lorasectionconfinement`: optional section IDs for section-confined LoRAs.
+- `loraschedules`: optional per-LoRA schedules.
+
+When present, `loraschedules` uses the same index order as `loras`. Each schedule entry is a semicolon-separated list of `percent:multiplier` keyframes, for example `"0:0.25;0.5:1"`. Empty schedule slots may be omitted entirely when no LoRAs are scheduled, or represented internally as `"none"` when another LoRA in the same list has a schedule.
+
 ### sui_extra_data
 
 `sui_extra_data` key is optional, but when present holds extra data generated while processing the image, such as generation time, an `original_prompt` for dynamic prompting, etc.
