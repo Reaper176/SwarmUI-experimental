@@ -499,6 +499,13 @@ public class T2IPromptHandling
         {
             data = context.Parse(data);
             string lora = data.ToLowerFast().Replace('\\', '/');
+            string rawSchedule = null;
+            int scheduleIndex = lora.IndexOf(';');
+            if (scheduleIndex != -1)
+            {
+                rawSchedule = lora[(scheduleIndex + 1)..].Trim().Replace(',', ';');
+                lora = lora[..scheduleIndex];
+            }
             int colonIndex = lora.IndexOf(':');
             double strength = 1;
             double tencStrength = double.NaN;
@@ -507,15 +514,19 @@ public class T2IPromptHandling
                 string after = lora[(colonIndex + 1)..];
                 lora = lora[..colonIndex];
                 colonIndex = after.IndexOf(':');
+                if (colonIndex == -1)
+                {
+                    colonIndex = after.IndexOf(',');
+                }
                 if (colonIndex != -1)
                 {
-                    strength = double.Parse(after[..colonIndex]);
+                    strength = double.Parse(after[..colonIndex], System.Globalization.CultureInfo.InvariantCulture);
                     after = after[(colonIndex + 1)..];
-                    tencStrength = double.Parse(after);
+                    tencStrength = double.Parse(after, System.Globalization.CultureInfo.InvariantCulture);
                 }
                 else
                 {
-                    strength = double.Parse(after);
+                    strength = double.Parse(after, System.Globalization.CultureInfo.InvariantCulture);
                 }
             }
             context.Loras ??= [.. Program.T2IModelSets["LoRA"].ListModelNamesFor(context.Input.SourceSession)];
@@ -541,6 +552,7 @@ public class T2IPromptHandling
             List<string> loraList = context.Input.Get(T2IParamTypes.Loras) ?? [];
             List<string> weights = context.Input.Get(T2IParamTypes.LoraWeights) ?? [];
             List<string> tencWeights = context.Input.Get(T2IParamTypes.LoraTencWeights) ?? [];
+            List<string> schedules = context.Input.Get(T2IParamTypes.LoraSchedules) ?? [];
             List<string> confinements = context.Input.Get(T2IParamTypes.LoraSectionConfinement);
             if (!(context.Input.SourceSession?.User?.Settings?.ParamParsing?.AllowLoraStacking ?? true) && loraList.Contains(matched))
             {
@@ -553,7 +565,7 @@ public class T2IPromptHandling
                 confinements = null;
             }
             loraList.Add(matched);
-            weights.Add(strength.ToString());
+            weights.Add(strength.ToString(System.Globalization.CultureInfo.InvariantCulture));
             context.Input.Set(T2IParamTypes.Loras, loraList);
             context.Input.Set(T2IParamTypes.LoraWeights, weights);
             if (!double.IsNaN(tencStrength) || tencWeights.Count > 0)
@@ -562,8 +574,17 @@ public class T2IPromptHandling
                 {
                     tencWeights.Add(weights[tencWeights.Count]);
                 }
-                tencWeights.Add((double.IsNaN(tencStrength) ? strength : tencStrength).ToString());
+                tencWeights.Add((double.IsNaN(tencStrength) ? strength : tencStrength).ToString(System.Globalization.CultureInfo.InvariantCulture));
                 context.Input.Set(T2IParamTypes.LoraTencWeights, tencWeights);
+            }
+            if (rawSchedule is not null || schedules.Count > 0)
+            {
+                while (schedules.Count < weights.Count - 1)
+                {
+                    schedules.Add("none");
+                }
+                schedules.Add(string.IsNullOrWhiteSpace(rawSchedule) ? "none" : rawSchedule);
+                context.Input.Set(T2IParamTypes.LoraSchedules, schedules);
             }
             string trigger = loraModel?.Metadata?.TriggerPhrase;
             if (!string.IsNullOrWhiteSpace(trigger))

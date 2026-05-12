@@ -304,7 +304,7 @@ public partial class WorkflowGenerator
     public List<LoraScheduleKeyframe> ParseLoraSchedule(string rawSchedule, string loraName)
     {
         Dictionary<double, LoraScheduleKeyframe> deduped = [];
-        string[] pieces = rawSchedule.Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        string[] pieces = rawSchedule.Split([';', ','], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
         if (pieces.Length == 0)
         {
             throw new SwarmUserErrorException($"Invalid LoRA schedule for '{loraName}': schedule must contain at least one percent:multiplier keyframe.");

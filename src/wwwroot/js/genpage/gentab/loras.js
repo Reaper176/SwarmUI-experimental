@@ -89,6 +89,19 @@ class LoraHelper {
         return document.getElementById('input_loraschedules');
     }
 
+    /** Split the raw LoRA schedules parameter while preserving schedule-internal commas. */
+    splitLoraScheduleValues(rawSchedules) {
+        if (!rawSchedules) {
+            return [];
+        }
+        return rawSchedules.includes('\n|||\n') ? rawSchedules.split('\n|||\n') : rawSchedules.split(',');
+    }
+
+    /** Normalize a user-entered LoRA schedule to the syntax expected by workflow generation. */
+    normalizeLoraSchedule(schedule) {
+        return (schedule || '').trim().replaceAll(',', ';');
+    }
+
     /** Get the container element for the bottom-bar LoRA listing UI. */
     getUIListContainer() {
         return getRequiredElementById('current_lora_list_view');
@@ -111,7 +124,7 @@ class LoraHelper {
         let loraVals = this.getLoraParamSelections();
         let weightVals = loraWeightsInput.value.split(',');
         let confinementVals = loraConfinementInput ? loraConfinementInput.value.split(',') : [];
-        let scheduleVals = loraSchedulesInput && loraSchedulesInput.value ? loraSchedulesInput.value.split(',') : [];
+        let scheduleVals = loraSchedulesInput ? this.splitLoraScheduleValues(loraSchedulesInput.value) : [];
         for (let i = 0; i < loraVals.length; i++) {
             let schedule = scheduleVals[i] == 'none' ? '' : (scheduleVals[i] || '');
             this.selected.push(new SelectedLora(loraVals[i], weightVals.length > i ? parseFloat(weightVals[i]) : null, confinementVals.length > i ? parseInt(confinementVals[i]) : null, schedule, null));
@@ -203,7 +216,7 @@ class LoraHelper {
                     scheduleInput.title = 'Format: percent:multiplier; percent:multiplier';
                     scheduleInput.value = lora.schedule || '';
                     scheduleInput.addEventListener('input', () => {
-                        getLora().setSchedule(scheduleInput.value.trim());
+                        getLora().setSchedule(this.normalizeLoraSchedule(scheduleInput.value));
                         this.rebuildParams();
                     });
                 }
@@ -354,7 +367,7 @@ class LoraHelper {
         let weightStr = weightVals.join(',');
         let confinementStr = anyConfined ? confinementVals.join(',') : '';
         let anySchedules = scheduleVals.some(s => s);
-        let scheduleStr = anySchedules ? scheduleVals.map(s => s || 'none').join(',') : '';
+        let scheduleStr = anySchedules ? scheduleVals.map(s => s || 'none').join('\n|||\n') : '';
         if (loraWeightsInput.value != weightStr) {
             loraWeightsInput.value = weightStr;
             triggerChangeFor(loraWeightsInput);

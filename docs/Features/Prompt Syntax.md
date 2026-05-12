@@ -125,6 +125,7 @@
     - The one time it does matter, is when you use `<segment:...>` or `<object:...>`: a LoRA inside one of these will apply *only* to that segment or object.
     - `weight` is a multiplier, where `1` is the default, `0.5` is weakened halfway, or `2` is twice as strong. Generally numbers larger than 2 will destroy image quality.
     - You may also use `<lora:filename:backbone_weight:textenc_weight>` to enable a lora and set its backbone (unet/dit) weight separately from its text encoder weight.
+    - You may also use `<lora:filename:backbone_weight,textenc_weight;schedule>` to set weights and a LoRA schedule from the prompt.
 
 ### LoRA Schedules
 
@@ -133,12 +134,28 @@
 - A schedule changes that LoRA's strength multiplier over denoise progress.
     - The base LoRA weight still comes from the normal LoRA weight input.
     - The schedule value multiplies that weight at the listed progress points.
-- Schedule format is a semicolon-separated list of `percent:multiplier` keyframes:
+- Schedule format is a separated list of `percent:multiplier` keyframes. Semicolons and commas are both accepted between keyframes:
 
 ```text
 0:0.25;0.5:1;0.8:0.7
 ```
 
+```text
+0:0.25,0.5:1,0.8:0.7
+```
+
+- Prompt LoRA tags can include a schedule after the first `;`:
+
+```text
+<lora:lora-name:1;0:0.25,0.25:0.5>
+```
+
+```text
+<lora:lora-name:1,0.8;0:0.25,0.25:0.5>
+```
+
+    - In the second example, `1` is the model/backbone LoRA weight, `0.8` is the text encoder weight, and `0:0.25,0.25:0.5` is the schedule.
+    - The older `<lora:lora-name:1:0.8>` syntax still works for separate model/text encoder weights without scheduling.
 - `percent` is denoise progress from `0` to `1`.
     - `0` is the start of denoising.
     - `1` is the end of denoising.
