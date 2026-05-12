@@ -2,6 +2,33 @@ I have made this fork to add some basic functionality to the ui.
 
 # Added Functionality
 
+## Added proper lora scheduling.
+new field under the loras when you select them
+
+<br/>
+
+<img width="452" height="58" alt="image" src="https://github.com/user-attachments/assets/47c80db6-c850-4d19-bbf0-1acb27a034b5" />
+
+<br/>
+
+or with syntax <lora:lora-name:1,0.8;0:0.5,0.25:1> that is to say <lora:lora-name:model-weight,clip-weight;start-percent:weight,change-percent:weight-after-change,change-percent:weight-after-change> so you can have "starting at this percent : be this strong; then at this percent : be this new strength>. You can change the weight as many times as you want theoreticly. 
+
+<img width="335" height="32" alt="image" src="https://github.com/user-attachments/assets/c23252ce-d4cd-4ea2-8a99-760a5de02735" />
+
+<br/>
+
+## Changed the way history is handled.
+
+<br/>
+
+The changes should allow for faster history loading and less memory usage I hope:) 
+
+<br/>
+
+Also when generating images it should live update when they are saved without needing to reload the entire history. If you have issues with this let me know.
+
+<br/>
+
 ## Added search options to models tabs.
 
 <br/>
