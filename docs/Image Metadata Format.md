@@ -55,7 +55,7 @@ LoRA parameters are stored as aligned lists:
 - `lorasectionconfinement`: optional section IDs for section-confined LoRAs.
 - `loraschedules`: optional per-LoRA schedules.
 
-When present, `loraschedules` uses the same index order as `loras`. Each schedule entry is either a separated list of stepped `percent:multiplier` keyframes, for example `"0:0.25;0.5:1"`, or a hyphen-chained linear ramp, for example `"0:1-0.5:0"`. Semicolons are preferred in stored stepped metadata, but commas are also accepted when parsing. Empty schedule slots may be omitted entirely when no LoRAs are scheduled, or represented internally as `"none"` when another LoRA in the same list has a schedule.
+When present, `loraschedules` uses the same index order as `loras`. Each schedule entry is a separated list of stepped `percent:multiplier` keyframes, for example `"0:0.25;0.5:1"`, a hyphen-chained linear ramp, for example `"0:1-0.5:0"`, or a mixed stepped/ramp schedule such as `"0:1;0.5:0.5-0.75:0"`. Semicolons are preferred in stored stepped metadata, but commas are also accepted when parsing. Empty schedule slots may be omitted entirely when no LoRAs are scheduled, or represented internally as `"none"` when another LoRA in the same list has a schedule.
 
 ### sui_extra_data
 

@@ -214,7 +214,7 @@ class LoraHelper {
                     scheduleInput.type = 'text';
                     scheduleInput.className = 'auto-input lora-schedule-input';
                     scheduleInput.placeholder = rampScheduleSupported ? '0:1-0.5:0' : '0:0.25;0.5:1';
-                    scheduleInput.title = rampScheduleSupported ? 'Format: percent:multiplier; percent:multiplier or percent:multiplier-percent:multiplier for ramps' : 'Format: percent:multiplier; percent:multiplier';
+                    scheduleInput.title = rampScheduleSupported ? 'Format: percent:multiplier; percent:multiplier for holds, percent:multiplier-percent:multiplier for ramps, or mixed' : 'Format: percent:multiplier; percent:multiplier';
                     scheduleInput.value = lora.schedule || '';
                     scheduleInput.addEventListener('input', () => {
                         getLora().setSchedule(this.normalizeLoraSchedule(scheduleInput.value));

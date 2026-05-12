@@ -163,7 +163,7 @@
 - `multiplier` is the schedule multiplier for that LoRA at that point.
     - Values from `-20` to `20` are accepted, matching ComfyUI's hook scheduling range.
 - For example, if a LoRA weight is `0.8` and its schedule is `0:0.25;0.5:1`, the effective model strength is `0.2` at the start and `0.8` from halfway onward.
-- Schedule keyframes are sorted internally by percent. If the same percent is entered more than once, the last entered value wins.
+- Stepped-only schedule keyframes are sorted internally by percent. If the same percent is entered more than once, the last entered value wins.
 - Ramp schedule format uses `-` between `percent:multiplier` keyframes:
 
 ```text
@@ -176,8 +176,15 @@
 
     - `0:1-0.5:0` starts at full scheduled strength, linearly falls to `0` by 50% denoise progress, then stays at `0`.
     - `0:1-0.5:0.5-1:0.25` starts at `1`, linearly falls to `0.5` by 50%, then linearly falls to `0.25` by the end.
-    - Ramp keyframes must be entered in increasing percent order.
+    - Ramp and mixed schedules must be entered in increasing percent order.
     - Ramp schedules require ComfyUI's interpolated hook keyframe node support.
+- You can mix stepped holds and ramps in one schedule. Use `,` or `;` to hold/step, and `-` to ramp:
+
+```text
+0:1,0.5:0.5-0.75:0
+```
+
+    - This starts at `1`, holds until 50%, steps to `0.5` at 50%, then linearly ramps to `0` by 75%.
 - Leave the schedule field blank for normal unscheduled LoRA behavior.
 - LoRA schedules are saved in image metadata and reused with parameters like normal LoRA weights.
 

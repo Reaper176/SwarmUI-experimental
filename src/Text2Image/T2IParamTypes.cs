@@ -713,7 +713,7 @@ public class T2IParamTypes
         LoraSectionConfinement = Register<List<string>>(new("LoRA Section Confinement", "Optional internal parameter used to confine LoRAs to certain sections of generation (eg a 'segment' block).\nComma separated list of section IDs (0 to mean global).\nMust match the length of the LoRAs input.",
             "", IgnoreIf: "", IsAdvanced: true, Group: GroupAdvancedModelAddons, VisibleNormally: false
             ));
-        LoraSchedules = Register<List<string>>(new("LoRA Schedules", "Optional per-LoRA schedule strings.\nEach entry must align with the LoRAs input and use the format percent:multiplier;percent:multiplier for stepped schedules, or percent:multiplier-percent:multiplier for ramp schedules, for example 0:0.25;0.5:1 or 0:1-0.5:0.\nEmpty UI schedules are serialized internally as 'none'.",
+        LoraSchedules = Register<List<string>>(new("LoRA Schedules", "Optional per-LoRA schedule strings.\nEach entry must align with the LoRAs input and use the format percent:multiplier;percent:multiplier for stepped schedules, percent:multiplier-percent:multiplier for ramp schedules, or mixed stepped/ramp schedules, for example 0:0.25;0.5:1, 0:1-0.5:0, or 0:1;0.5:0.5-0.75:0.\nEmpty UI schedules are serialized internally as 'none'.",
             "", IgnoreIf: "", IsAdvanced: true, Group: GroupAdvancedModelAddons, VisibleNormally: false, FeatureFlag: "hook_lora_scheduling"
             ));
         ClipLModel = Register<T2IModel>(new("CLIP-L Model", "Which CLIP-L model to use as a text encoder, for SD3/Flux style 'diffusion_models' folder models.",
