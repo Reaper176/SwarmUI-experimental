@@ -2,6 +2,7 @@ using System;
 using System.Text;
 using System.Collections.Generic;
 using System.IO;
+using System.Text.RegularExpressions;
 using SwarmUI.Core;
 using SwarmUI.Media;
 using SwarmUI.Text2Image;
@@ -285,6 +286,12 @@ public partial class WorkflowGenerator
     /// <summary>Represents a single LoRA schedule keyframe.</summary>
     public record struct LoraScheduleKeyframe(double StartPercent, double StrengthMult);
 
+    /// <summary>Represents a parsed LoRA schedule and whether it should be interpolated.</summary>
+    public record struct LoraScheduleParseResult(List<LoraScheduleKeyframe> Keyframes, bool IsInterpolated);
+
+    /// <summary>Splits LoRA ramp schedules on hyphen separators while preserving negative multiplier values.</summary>
+    public static readonly Regex LoraScheduleRampSplitter = new(@"(?<=\d)\s*-\s*(?=[+-]?(?:\d|\.\d))", RegexOptions.Compiled);
+
     /// <summary>Gets a LoRA schedule entry, or null if the LoRA has no schedule.</summary>
     public string GetLoraScheduleAt(List<string> schedules, int index)
     {
@@ -300,50 +307,108 @@ public partial class WorkflowGenerator
         return schedule;
     }
 
-    /// <summary>Parses a LoRA schedule string into sorted, deduplicated keyframes.</summary>
-    public List<LoraScheduleKeyframe> ParseLoraSchedule(string rawSchedule, string loraName)
+    /// <summary>Parses one LoRA schedule keyframe.</summary>
+    public LoraScheduleKeyframe ParseLoraScheduleKeyframe(string piece, string loraName)
     {
-        Dictionary<double, LoraScheduleKeyframe> deduped = [];
-        string[] pieces = rawSchedule.Split([';', ','], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        string[] pair = piece.Split(':', StringSplitOptions.TrimEntries);
+        if (pair.Length != 2 || string.IsNullOrWhiteSpace(pair[0]) || string.IsNullOrWhiteSpace(pair[1]))
+        {
+            throw new SwarmUserErrorException($"Invalid LoRA schedule for '{loraName}': keyframe '{piece}' must use percent:multiplier format.");
+        }
+        if (!double.TryParse(pair[0], System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out double percent))
+        {
+            throw new SwarmUserErrorException($"Invalid LoRA schedule for '{loraName}': percent '{pair[0]}' is not a number.");
+        }
+        if (!double.TryParse(pair[1], System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out double strength))
+        {
+            throw new SwarmUserErrorException($"Invalid LoRA schedule for '{loraName}': multiplier '{pair[1]}' is not a number.");
+        }
+        if (percent < 0 || percent > 1)
+        {
+            throw new SwarmUserErrorException($"Invalid LoRA schedule for '{loraName}': percent '{pair[0]}' must be between 0 and 1.");
+        }
+        if (strength < -20 || strength > 20)
+        {
+            throw new SwarmUserErrorException($"Invalid LoRA schedule for '{loraName}': multiplier '{pair[1]}' must be between -20 and 20.");
+        }
+        return new(percent, strength);
+    }
+
+    /// <summary>Parses a LoRA schedule string into keyframes.</summary>
+    public LoraScheduleParseResult ParseLoraSchedule(string rawSchedule, string loraName)
+    {
+        bool isInterpolated = LoraScheduleRampSplitter.IsMatch(rawSchedule);
+        string[] pieces = isInterpolated ? LoraScheduleRampSplitter.Split(rawSchedule) : rawSchedule.Split([';', ','], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
         if (pieces.Length == 0)
         {
             throw new SwarmUserErrorException($"Invalid LoRA schedule for '{loraName}': schedule must contain at least one percent:multiplier keyframe.");
         }
+        if (isInterpolated)
+        {
+            if (pieces.Length < 2)
+            {
+                throw new SwarmUserErrorException($"Invalid LoRA schedule for '{loraName}': ramp schedules must contain at least two percent:multiplier keyframes.");
+            }
+            List<LoraScheduleKeyframe> rampKeyframes = [];
+            foreach (string piece in pieces)
+            {
+                rampKeyframes.Add(ParseLoraScheduleKeyframe(piece, loraName));
+            }
+            for (int i = 1; i < rampKeyframes.Count; i++)
+            {
+                if (rampKeyframes[i].StartPercent <= rampKeyframes[i - 1].StartPercent)
+                {
+                    throw new SwarmUserErrorException($"Invalid LoRA schedule for '{loraName}': ramp keyframes must increase from start to end percent.");
+                }
+            }
+            return new(rampKeyframes, true);
+        }
+        Dictionary<double, LoraScheduleKeyframe> deduped = [];
         foreach (string piece in pieces)
         {
-            string[] pair = piece.Split(':', StringSplitOptions.TrimEntries);
-            if (pair.Length != 2 || string.IsNullOrWhiteSpace(pair[0]) || string.IsNullOrWhiteSpace(pair[1]))
-            {
-                throw new SwarmUserErrorException($"Invalid LoRA schedule for '{loraName}': keyframe '{piece}' must use percent:multiplier format.");
-            }
-            if (!double.TryParse(pair[0], System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out double percent))
-            {
-                throw new SwarmUserErrorException($"Invalid LoRA schedule for '{loraName}': percent '{pair[0]}' is not a number.");
-            }
-            if (!double.TryParse(pair[1], System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out double strength))
-            {
-                throw new SwarmUserErrorException($"Invalid LoRA schedule for '{loraName}': multiplier '{pair[1]}' is not a number.");
-            }
-            if (percent < 0 || percent > 1)
-            {
-                throw new SwarmUserErrorException($"Invalid LoRA schedule for '{loraName}': percent '{pair[0]}' must be between 0 and 1.");
-            }
-            if (strength < -20 || strength > 20)
-            {
-                throw new SwarmUserErrorException($"Invalid LoRA schedule for '{loraName}': multiplier '{pair[1]}' must be between -20 and 20.");
-            }
-            deduped[percent] = new(percent, strength);
+            LoraScheduleKeyframe keyframe = ParseLoraScheduleKeyframe(piece, loraName);
+            deduped[keyframe.StartPercent] = keyframe;
         }
-        return [.. deduped.Values.OrderBy(k => k.StartPercent)];
+        return new([.. deduped.Values.OrderBy(k => k.StartPercent)], false);
+    }
+
+    /// <summary>Gets the number of generated keyframes to use for one interpolated LoRA ramp segment.</summary>
+    public int GetLoraScheduleRampKeyframeCount(LoraScheduleKeyframe start, LoraScheduleKeyframe end)
+    {
+        double range = end.StartPercent - start.StartPercent;
+        int keyframes = (int)Math.Ceiling(range * 20) + 1;
+        return Math.Clamp(keyframes, 2, 20);
     }
 
     /// <summary>Creates a CreateHookKeyframe chain for a parsed LoRA schedule.</summary>
-    public JArray CreateHookKeyframesForLoraSchedule(List<LoraScheduleKeyframe> keyframes, int loraIndex)
+    public JArray CreateHookKeyframesForLoraSchedule(LoraScheduleParseResult schedule, int loraIndex)
     {
-        JArray last = null;
-        for (int i = 0; i < keyframes.Count; i++)
+        if (schedule.IsInterpolated)
         {
-            LoraScheduleKeyframe keyframe = keyframes[i];
+            JArray lastInterpolated = null;
+            for (int i = 1; i < schedule.Keyframes.Count; i++)
+            {
+                LoraScheduleKeyframe start = schedule.Keyframes[i - 1];
+                LoraScheduleKeyframe end = schedule.Keyframes[i];
+                string keyframeId = CreateNode("CreateHookKeyframesInterpolated", new JObject()
+                {
+                    ["strength_start"] = start.StrengthMult,
+                    ["strength_end"] = end.StrengthMult,
+                    ["interpolation"] = "linear",
+                    ["start_percent"] = start.StartPercent,
+                    ["end_percent"] = end.StartPercent,
+                    ["keyframes_count"] = GetLoraScheduleRampKeyframeCount(start, end),
+                    ["print_keyframes"] = false,
+                    ["prev_hook_kf"] = lastInterpolated
+                }, GetStableDynamicID(2600, loraIndex * 100 + i - 1), false);
+                lastInterpolated = [keyframeId, 0];
+            }
+            return lastInterpolated;
+        }
+        JArray last = null;
+        for (int i = 0; i < schedule.Keyframes.Count; i++)
+        {
+            LoraScheduleKeyframe keyframe = schedule.Keyframes[i];
             string keyframeId = CreateNode("CreateHookKeyframe", new JObject()
             {
                 ["strength_mult"] = keyframe.StrengthMult,
@@ -353,6 +418,12 @@ public partial class WorkflowGenerator
             last = [keyframeId, 0];
         }
         return last;
+    }
+
+    /// <summary>Creates a CreateHookKeyframe chain for a parsed LoRA schedule.</summary>
+    public JArray CreateHookKeyframesForLoraSchedule(List<LoraScheduleKeyframe> keyframes, int loraIndex)
+    {
+        return CreateHookKeyframesForLoraSchedule(new LoraScheduleParseResult(keyframes, false), loraIndex);
     }
 
     /// <summary>Loads and applies LoRAs in the user parameters for the given LoRA confinement ID, as a Set CLIP Hooks node.</summary>
@@ -416,8 +487,12 @@ public partial class WorkflowGenerator
                 {
                     throw new SwarmUserErrorException("LoRA scheduling requires a recent ComfyUI backend with hook scheduling nodes.");
                 }
-                List<LoraScheduleKeyframe> keyframes = ParseLoraSchedule(rawSchedule, loras[i]);
-                JArray hookKeyframes = CreateHookKeyframesForLoraSchedule(keyframes, i);
+                LoraScheduleParseResult schedule = ParseLoraSchedule(rawSchedule, loras[i]);
+                if (schedule.IsInterpolated && !Features.Contains("hook_lora_interpolated_scheduling"))
+                {
+                    throw new SwarmUserErrorException("LoRA ramp scheduling requires a recent ComfyUI backend with interpolated hook keyframe support.");
+                }
+                JArray hookKeyframes = CreateHookKeyframesForLoraSchedule(schedule, i);
                 string scheduledId = CreateNode("SetHookKeyframes", new JObject()
                 {
                     ["hooks"] = currentHooks,

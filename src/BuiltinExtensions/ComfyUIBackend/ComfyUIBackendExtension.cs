@@ -478,15 +478,25 @@ public class ComfyUIBackendExtension : Extension
     private static void DetectHookLoraSchedulingSupport(JObject rawObjectInfo)
     {
         string feature = "hook_lora_scheduling";
+        string interpolatedFeature = "hook_lora_interpolated_scheduling";
         string[] requiredNodes = ["CreateHookLora", "CreateHookKeyframe", "SetHookKeyframes", "SetClipHooks"];
         bool supported = requiredNodes.All(rawObjectInfo.ContainsKey);
         if (supported)
         {
             FeaturesSupported.Add(feature);
+            if (rawObjectInfo.ContainsKey("CreateHookKeyframesInterpolated"))
+            {
+                FeaturesSupported.Add(interpolatedFeature);
+            }
+            else
+            {
+                FeaturesSupported.Remove(interpolatedFeature);
+            }
         }
         else
         {
             FeaturesSupported.Remove(feature);
+            FeaturesSupported.Remove(interpolatedFeature);
         }
     }
 

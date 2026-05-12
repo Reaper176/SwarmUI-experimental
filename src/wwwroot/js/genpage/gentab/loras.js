@@ -137,9 +137,10 @@ class LoraHelper {
         let toRender = this.getLorasInput() ? this.selected : [];
         let container = this.getUIListContainer();
         let scheduleSupported = currentBackendFeatureSet.includes('hook_lora_scheduling');
+        let rampScheduleSupported = currentBackendFeatureSet.includes('hook_lora_interpolated_scheduling');
         for (let lora of toRender) {
             let renderElem = this.rendered[lora.name];
-            if (renderElem && renderElem.scheduleSupported != scheduleSupported) {
+            if (renderElem && (renderElem.scheduleSupported != scheduleSupported || renderElem.rampScheduleSupported != rampScheduleSupported)) {
                 renderElem.div.remove();
                 delete this.rendered[lora.name];
                 renderElem = null;
@@ -212,8 +213,8 @@ class LoraHelper {
                     scheduleInput = document.createElement('input');
                     scheduleInput.type = 'text';
                     scheduleInput.className = 'auto-input lora-schedule-input';
-                    scheduleInput.placeholder = '0:0.25;0.5:1';
-                    scheduleInput.title = 'Format: percent:multiplier; percent:multiplier';
+                    scheduleInput.placeholder = rampScheduleSupported ? '0:1-0.5:0' : '0:0.25;0.5:1';
+                    scheduleInput.title = rampScheduleSupported ? 'Format: percent:multiplier; percent:multiplier or percent:multiplier-percent:multiplier for ramps' : 'Format: percent:multiplier; percent:multiplier';
                     scheduleInput.value = lora.schedule || '';
                     scheduleInput.addEventListener('input', () => {
                         getLora().setSchedule(this.normalizeLoraSchedule(scheduleInput.value));
@@ -300,6 +301,7 @@ class LoraHelper {
                     confinementInput: confinementInput,
                     scheduleInput: scheduleInput,
                     scheduleSupported: scheduleSupported,
+                    rampScheduleSupported: rampScheduleSupported,
                     removeButton: removeButton,
                     fixSize: fixSize,
                 };
