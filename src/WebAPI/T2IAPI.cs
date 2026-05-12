@@ -1708,8 +1708,7 @@ public static class T2IAPI
         }
         try
         {
-            byte[] bytes = Convert.FromBase64String(imageBase64);
-            ImageFile image = new Image(bytes, MediaType.ImagePng).ForceToPng();
+            ImageFile image = ImageFile.FromBase64(imageBase64, MediaType.ImagePng).ForceToPng();
             KritaImageBridge.StorePendingImport(targetSession, image.AsDataString());
             return new JObject() { ["success"] = true };
         }
