@@ -17,6 +17,14 @@ or with syntax <lora:lora-name:1,0.8;0:0.5,0.25:1> that is to say <lora:lora-nam
 
 <br/>
 
+You may also do lora:lora-name:1,1;0:1-1:0> to have it gradualy fall off from weight 1 to weight 0 by 100%. This is combinable with the above so you can do <lora:lora-name:1,1;0:1,0.5:0.5-0.75:0> This will make it 1 weight at 0 until 50% where it will be .5 weight and fall off to 0 weight by 75%. 
+
+<br/> 
+
+Don't know who uses this but it is now a thing.
+
+<br/>
+
 ## Changed the way history is handled.
 
 <br/>
