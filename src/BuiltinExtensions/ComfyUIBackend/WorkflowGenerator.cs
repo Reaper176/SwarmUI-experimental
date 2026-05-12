@@ -282,8 +282,81 @@ public partial class WorkflowGenerator
         }
     }
 
+    /// <summary>Represents a single LoRA schedule keyframe.</summary>
+    public record struct LoraScheduleKeyframe(double StartPercent, double StrengthMult);
+
+    /// <summary>Gets a LoRA schedule entry, or null if the LoRA has no schedule.</summary>
+    public string GetLoraScheduleAt(List<string> schedules, int index)
+    {
+        if (schedules is null || index >= schedules.Count)
+        {
+            return null;
+        }
+        string schedule = schedules[index]?.Trim();
+        if (string.IsNullOrWhiteSpace(schedule) || schedule.Equals("none", StringComparison.OrdinalIgnoreCase))
+        {
+            return null;
+        }
+        return schedule;
+    }
+
+    /// <summary>Parses a LoRA schedule string into sorted, deduplicated keyframes.</summary>
+    public List<LoraScheduleKeyframe> ParseLoraSchedule(string rawSchedule, string loraName)
+    {
+        Dictionary<double, LoraScheduleKeyframe> deduped = [];
+        string[] pieces = rawSchedule.Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        if (pieces.Length == 0)
+        {
+            throw new SwarmUserErrorException($"Invalid LoRA schedule for '{loraName}': schedule must contain at least one percent:multiplier keyframe.");
+        }
+        foreach (string piece in pieces)
+        {
+            string[] pair = piece.Split(':', StringSplitOptions.TrimEntries);
+            if (pair.Length != 2 || string.IsNullOrWhiteSpace(pair[0]) || string.IsNullOrWhiteSpace(pair[1]))
+            {
+                throw new SwarmUserErrorException($"Invalid LoRA schedule for '{loraName}': keyframe '{piece}' must use percent:multiplier format.");
+            }
+            if (!double.TryParse(pair[0], System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out double percent))
+            {
+                throw new SwarmUserErrorException($"Invalid LoRA schedule for '{loraName}': percent '{pair[0]}' is not a number.");
+            }
+            if (!double.TryParse(pair[1], System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out double strength))
+            {
+                throw new SwarmUserErrorException($"Invalid LoRA schedule for '{loraName}': multiplier '{pair[1]}' is not a number.");
+            }
+            if (percent < 0 || percent > 1)
+            {
+                throw new SwarmUserErrorException($"Invalid LoRA schedule for '{loraName}': percent '{pair[0]}' must be between 0 and 1.");
+            }
+            if (strength < -20 || strength > 20)
+            {
+                throw new SwarmUserErrorException($"Invalid LoRA schedule for '{loraName}': multiplier '{pair[1]}' must be between -20 and 20.");
+            }
+            deduped[percent] = new(percent, strength);
+        }
+        return [.. deduped.Values.OrderBy(k => k.StartPercent)];
+    }
+
+    /// <summary>Creates a CreateHookKeyframe chain for a parsed LoRA schedule.</summary>
+    public JArray CreateHookKeyframesForLoraSchedule(List<LoraScheduleKeyframe> keyframes, int loraIndex)
+    {
+        JArray last = null;
+        for (int i = 0; i < keyframes.Count; i++)
+        {
+            LoraScheduleKeyframe keyframe = keyframes[i];
+            string keyframeId = CreateNode("CreateHookKeyframe", new JObject()
+            {
+                ["strength_mult"] = keyframe.StrengthMult,
+                ["start_percent"] = keyframe.StartPercent,
+                ["prev_hook_kf"] = last
+            }, GetStableDynamicID(2600, loraIndex * 100 + i), false);
+            last = [keyframeId, 0];
+        }
+        return last;
+    }
+
     /// <summary>Loads and applies LoRAs in the user parameters for the given LoRA confinement ID, as a Set CLIP Hooks node.</summary>
-    public JArray CreateHookLorasForConfinement(int confinement, JArray clip)
+    public JArray CreateHookLorasForConfinement(int confinement, JArray clip, bool scheduledOnly = false)
     {
         if (!UserInput.TryGet(T2IParamTypes.Loras, out List<string> loras))
         {
@@ -292,6 +365,7 @@ public partial class WorkflowGenerator
         List<string> weights = UserInput.Get(T2IParamTypes.LoraWeights);
         List<string> tencWeights = UserInput.Get(T2IParamTypes.LoraTencWeights);
         List<string> confinements = UserInput.Get(T2IParamTypes.LoraSectionConfinement);
+        List<string> schedules = UserInput.Get(T2IParamTypes.LoraSchedules);
         if (confinement > 0 && (confinements is null || confinements.Count == 0))
         {
             return clip;
@@ -306,6 +380,11 @@ public partial class WorkflowGenerator
                 confinementId = int.Parse(confinements[i]);
             }
             if (confinementId != confinement)
+            {
+                continue;
+            }
+            string rawSchedule = GetLoraScheduleAt(schedules, i);
+            if (scheduledOnly && rawSchedule is null)
             {
                 continue;
             }
@@ -330,7 +409,23 @@ public partial class WorkflowGenerator
                 ["strength_model"] = weight,
                 ["strength_clip"] = tencWeight
             }, GetStableDynamicID(2500, i), false);
-            last = [newId, 0];
+            JArray currentHooks = [newId, 0];
+            if (rawSchedule is not null)
+            {
+                if (!Features.Contains("hook_lora_scheduling"))
+                {
+                    throw new SwarmUserErrorException("LoRA scheduling requires a recent ComfyUI backend with hook scheduling nodes.");
+                }
+                List<LoraScheduleKeyframe> keyframes = ParseLoraSchedule(rawSchedule, loras[i]);
+                JArray hookKeyframes = CreateHookKeyframesForLoraSchedule(keyframes, i);
+                string scheduledId = CreateNode("SetHookKeyframes", new JObject()
+                {
+                    ["hooks"] = currentHooks,
+                    ["hook_kf"] = hookKeyframes
+                }, GetStableDynamicID(2700, i), false);
+                currentHooks = [scheduledId, 0];
+            }
+            last = currentHooks;
         }
         if (last is null)
         {
@@ -356,6 +451,7 @@ public partial class WorkflowGenerator
         List<string> weights = UserInput.Get(T2IParamTypes.LoraWeights);
         List<string> tencWeights = UserInput.Get(T2IParamTypes.LoraTencWeights);
         List<string> confinements = UserInput.Get(T2IParamTypes.LoraSectionConfinement);
+        List<string> schedules = UserInput.Get(T2IParamTypes.LoraSchedules);
         if (confinement > 0 && (confinements is null || confinements.Count == 0))
         {
             return (model, clip);
@@ -370,6 +466,14 @@ public partial class WorkflowGenerator
             }
             if (confinementId != confinement)
             {
+                continue;
+            }
+            if (GetLoraScheduleAt(schedules, i) is not null)
+            {
+                if (!Features.Contains("hook_lora_scheduling"))
+                {
+                    throw new SwarmUserErrorException("LoRA scheduling requires a recent ComfyUI backend with hook scheduling nodes.");
+                }
                 continue;
             }
             if (!loraHandler.Models.TryGetValue(loras[i] + ".safetensors", out T2IModel lora))

@@ -1028,21 +1028,30 @@ function copy_current_image_params() {
         let confinements = metadata.lorasectionconfinement;
         let loras = metadata.loras;
         let weights = metadata.loraweights;
+        let schedules = metadata.loraschedules || [];
+        let hasSchedules = schedules.length == loras.length;
         let promptedLoras = extra.prompted_loras || [];
         let isOldSwarmVers = !metadata.swarm_version || metadata.swarm_version.match(/^0\.9\.[0-6]\./);
         if (confinements.length == loras.length && loras.length == weights.length) {
             let newLoras = [];
             let newWeights = [];
             let newConfinements = [];
+            let newSchedules = [];
             for (let i = 0; i < confinements.length; i++) {
                 if (isOldSwarmVers ? confinements[i] == -1 : !promptedLoras.includes(loras[i])) {
                     newLoras.push(loras[i]);
                     newWeights.push(weights[i]);
                     newConfinements.push(confinements[i]);
+                    if (hasSchedules) {
+                        newSchedules.push(schedules[i] || 'none');
+                    }
                 }
             }
             metadata.loras = newLoras;
             metadata.loraweights = newWeights;
+            if (hasSchedules) {
+                metadata.loraschedules = newSchedules;
+            }
             if (isOldSwarmVers) {
                 delete metadata.lorasectionconfinement;
             }
@@ -1053,6 +1062,8 @@ function copy_current_image_params() {
     }
     if ('loras' in metadata && 'loraweights' in metadata && document.getElementById('input_loras') && metadata.loras.length == metadata.loraweights.length) {
         let loraElem = getRequiredElementById('input_loras');
+        let schedules = metadata.loraschedules || [];
+        let hasSchedules = schedules.length == metadata.loras.length;
         for (let val of metadata.loras) {
             if (val && !$(loraElem).find(`option[value="${val}"]`).length) {
                 $(loraElem).append(new Option(val, val, false, false));
@@ -1061,15 +1072,22 @@ function copy_current_image_params() {
         let valSet = [...loraElem.options].map(option => option.value);
         let newLoras = [];
         let newWeights = [];
+        let newSchedules = [];
         for (let val of valSet) {
             let index = metadata.loras.indexOf(val);
             if (index != -1) {
                 newLoras.push(metadata.loras[index]);
                 newWeights.push(metadata.loraweights[index]);
+                if (hasSchedules) {
+                    newSchedules.push(schedules[index] || 'none');
+                }
             }
         }
         metadata.loras = newLoras;
         metadata.loraweights = newWeights;
+        if (hasSchedules) {
+            metadata.loraschedules = newSchedules;
+        }
     }
     if (!('aspectratio' in metadata) && 'width' in metadata && 'height' in metadata) {
         metadata.aspectratio = 'Custom';

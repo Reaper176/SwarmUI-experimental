@@ -321,11 +321,16 @@ function formatMetadata(metadata, finalResolution = null) {
         let loras = data.sui_image_params.loras;
         let loraWeights = data.sui_image_params.loraweights;
         let loraSectionConfinement = data.sui_image_params['lorasectionconfinement'];
+        let loraSchedules = data.sui_image_params['loraschedules'];
         let simpleLoras = [];
         // TODO: Maybe look up some metadata on the models here?
         for (let i = 0; i < loras.length; i++) {
             let lora = loras[i];
             let weight = `${loraWeights[i]}`;
+            let schedule = loraSchedules && loraSchedules[i] != 'none' ? loraSchedules[i] : '';
+            if (schedule) {
+                weight = `${weight} schedule="${schedule}"`;
+            }
             if (loraSectionConfinement && loraSectionConfinement[i] != 0) {
                 let name = loraHelper.confinementNames[loraSectionConfinement[i]] || loraSectionConfinement[i];
                 weight = `${weight} (${name})`;
@@ -335,6 +340,7 @@ function formatMetadata(metadata, finalResolution = null) {
         delete data.sui_image_params.loras;
         delete data.sui_image_params.loraweights;
         delete data.sui_image_params['lorasectionconfinement'];
+        delete data.sui_image_params['loraschedules'];
         data.sui_image_params['loras'] = simpleLoras;
     }
     let generationResolution = null;

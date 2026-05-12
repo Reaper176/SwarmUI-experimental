@@ -475,6 +475,21 @@ public class ComfyUIBackendExtension : Extension
         return false;
     }
 
+    private static void DetectHookLoraSchedulingSupport(JObject rawObjectInfo)
+    {
+        string feature = "hook_lora_scheduling";
+        string[] requiredNodes = ["CreateHookLora", "CreateHookKeyframe", "SetHookKeyframes", "SetClipHooks"];
+        bool supported = requiredNodes.All(rawObjectInfo.ContainsKey);
+        if (supported)
+        {
+            FeaturesSupported.Add(feature);
+        }
+        else
+        {
+            FeaturesSupported.Remove(feature);
+        }
+    }
+
     public static void AssignValuesFromRaw(JObject rawObjectInfo)
     {
         lock (ValueAssignmentLocker)
@@ -595,6 +610,7 @@ public class ComfyUIBackendExtension : Extension
                     FeaturesDiscardIfNotFound.Remove(featureId);
                 }
             }
+            DetectHookLoraSchedulingSupport(rawObjectInfo);
             foreach (string feature in FeaturesDiscardIfNotFound)
             {
                 FeaturesSupported.Remove(feature);

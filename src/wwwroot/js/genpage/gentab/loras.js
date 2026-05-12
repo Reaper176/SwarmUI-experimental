@@ -1,9 +1,10 @@
 
 class SelectedLora {
-    constructor(name, weight, confinement, model) {
+    constructor(name, weight, confinement, schedule, model) {
         this.name = name;
         this.weight = weight === 0 ? 0 : (weight || (model && model.lora_default_weight ? parseFloat(model.lora_default_weight) : null) || loraHelper.loraWeightPref[name] || 1);
         this.confinement = confinement === 0 ? 0 : (confinement || (model && model.lora_default_confinement ? parseInt(model.lora_default_confinement) : null) || loraHelper.loraConfinementPref[name] || 0);
+        this.schedule = schedule || loraHelper.loraSchedulePref[name] || '';
         this.model = model;
     }
 
@@ -15,6 +16,12 @@ class SelectedLora {
     setConfinement(confinement) {
         this.confinement = confinement;
         loraHelper.loraConfinementPref[this.name] = confinement;
+    }
+
+    /** Sets the scheduling string used by this LoRA. */
+    setSchedule(schedule) {
+        this.schedule = schedule || '';
+        loraHelper.loraSchedulePref[this.name] = this.schedule;
     }
 }
 
@@ -32,6 +39,9 @@ class LoraHelper {
 
     /** Map of LoRA names to their last-used confinements. */
     loraConfinementPref = {};
+
+    /** Map of LoRA names to their last-used schedules. */
+    loraSchedulePref = {};
 
     /** If true, the helper is currently modifying parameters, and should not reload from parameter change events. */
     dedup = false;
@@ -74,6 +84,11 @@ class LoraHelper {
         return document.getElementById('input_lorasectionconfinement');
     }
 
+    /** Get the "LoRA Schedules" parameter input element. */
+    getLoraSchedulesInput() {
+        return document.getElementById('input_loraschedules');
+    }
+
     /** Get the container element for the bottom-bar LoRA listing UI. */
     getUIListContainer() {
         return getRequiredElementById('current_lora_list_view');
@@ -88,6 +103,7 @@ class LoraHelper {
         let loraInput = this.getLorasInput();
         let loraWeightsInput = this.getLoraWeightsInput();
         let loraConfinementInput = this.getLoraConfinementInput();
+        let loraSchedulesInput = this.getLoraSchedulesInput();
         if (!loraInput || !loraWeightsInput) {
             this.rebuildUI();
             return;
@@ -95,8 +111,10 @@ class LoraHelper {
         let loraVals = this.getLoraParamSelections();
         let weightVals = loraWeightsInput.value.split(',');
         let confinementVals = loraConfinementInput ? loraConfinementInput.value.split(',') : [];
+        let scheduleVals = loraSchedulesInput && loraSchedulesInput.value ? loraSchedulesInput.value.split(',') : [];
         for (let i = 0; i < loraVals.length; i++) {
-            this.selected.push(new SelectedLora(loraVals[i], weightVals.length > i ? parseFloat(weightVals[i]) : null, confinementVals.length > i ? parseInt(confinementVals[i]) : null, null));
+            let schedule = scheduleVals[i] == 'none' ? '' : (scheduleVals[i] || '');
+            this.selected.push(new SelectedLora(loraVals[i], weightVals.length > i ? parseFloat(weightVals[i]) : null, confinementVals.length > i ? parseInt(confinementVals[i]) : null, schedule, null));
         }
         this.rebuildUI();
     }
@@ -105,11 +123,20 @@ class LoraHelper {
     rebuildUI() {
         let toRender = this.getLorasInput() ? this.selected : [];
         let container = this.getUIListContainer();
+        let scheduleSupported = currentBackendFeatureSet.includes('hook_lora_scheduling');
         for (let lora of toRender) {
             let renderElem = this.rendered[lora.name];
+            if (renderElem && renderElem.scheduleSupported != scheduleSupported) {
+                renderElem.div.remove();
+                delete this.rendered[lora.name];
+                renderElem = null;
+            }
             if (renderElem) {
                 renderElem.weightInput.value = lora.weight;
                 renderElem.confinementInput.value = lora.confinement;
+                if (renderElem.scheduleInput) {
+                    renderElem.scheduleInput.value = lora.schedule || '';
+                }
                 renderElem.fixSize();
             }
             else {
@@ -167,6 +194,19 @@ class LoraHelper {
                     this.selectLora(lora);
                     sdLoraBrowser.rebuildSelectedClasses();
                 });
+                let scheduleInput = null;
+                if (scheduleSupported) {
+                    scheduleInput = document.createElement('input');
+                    scheduleInput.type = 'text';
+                    scheduleInput.className = 'auto-input lora-schedule-input';
+                    scheduleInput.placeholder = '0:0.25;0.5:1';
+                    scheduleInput.title = 'Format: percent:multiplier; percent:multiplier';
+                    scheduleInput.value = lora.schedule || '';
+                    scheduleInput.addEventListener('input', () => {
+                        getLora().setSchedule(scheduleInput.value.trim());
+                        this.rebuildParams();
+                    });
+                }
                 let doShowLoraPopup = (isClick) => {
                     let popovers = document.getElementsByClassName('sui-popover-visible');
                     for (let popover of Array.from(popovers)) {
@@ -237,11 +277,16 @@ class LoraHelper {
                 div.appendChild(confinementInput);
                 div.appendChild(weightInput);
                 div.appendChild(removeButton);
+                if (scheduleInput) {
+                    div.appendChild(scheduleInput);
+                }
                 container.appendChild(div);
                 this.rendered[lora.name] = {
                     div: div,
                     weightInput: weightInput,
                     confinementInput: confinementInput,
+                    scheduleInput: scheduleInput,
+                    scheduleSupported: scheduleSupported,
                     removeButton: removeButton,
                     fixSize: fixSize,
                 };
@@ -265,6 +310,7 @@ class LoraHelper {
         let loraInput = this.getLorasInput();
         let loraWeightsInput = this.getLoraWeightsInput();
         let loraConfinementInput = this.getLoraConfinementInput();
+        let loraSchedulesInput = this.getLoraSchedulesInput();
         if (!loraInput || !loraWeightsInput) {
             return;
         }
@@ -295,16 +341,20 @@ class LoraHelper {
         }
         let weightVals = [];
         let confinementVals = [];
+        let scheduleVals = [];
         let anyConfined = false;
         for (let lora of this.selected) {
             weightVals.push(lora.weight);
             confinementVals.push(lora.confinement);
+            scheduleVals.push(lora.schedule || '');
             if (lora.confinement != 0) {
                 anyConfined = true;
             }
         }
         let weightStr = weightVals.join(',');
         let confinementStr = anyConfined ? confinementVals.join(',') : '';
+        let anySchedules = scheduleVals.some(s => s);
+        let scheduleStr = anySchedules ? scheduleVals.map(s => s || 'none').join(',') : '';
         if (loraWeightsInput.value != weightStr) {
             loraWeightsInput.value = weightStr;
             triggerChangeFor(loraWeightsInput);
@@ -319,6 +369,15 @@ class LoraHelper {
             triggerChangeFor(loraConfinementInput);
             let toggler = document.getElementById('input_lorasectionconfinement_toggle');
             if (confinementStr.length == 0 && toggler) {
+                toggler.checked = false;
+                triggerChangeFor(toggler);
+            }
+        }
+        if (loraSchedulesInput && loraSchedulesInput.value != scheduleStr) {
+            loraSchedulesInput.value = scheduleStr;
+            triggerChangeFor(loraSchedulesInput);
+            let toggler = document.getElementById('input_loraschedules_toggle');
+            if (scheduleStr.length == 0 && toggler) {
                 toggler.checked = false;
                 triggerChangeFor(toggler);
             }
@@ -349,7 +408,7 @@ class LoraHelper {
             modelPresetLinkManager.removePresetsFrom('LoRA', name);
         }
         else {
-            this.selected.push(new SelectedLora(name, null, null, data));
+            this.selected.push(new SelectedLora(name, null, null, null, data));
             modelPresetLinkManager.addPresetsFrom('LoRA', name);
         }
         this.rebuildParams();
@@ -358,3 +417,6 @@ class LoraHelper {
 }
 
 loraHelper = new LoraHelper();
+featureSetChangedCallbacks.push(() => {
+    loraHelper.rebuildUI();
+});

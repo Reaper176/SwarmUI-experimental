@@ -123,6 +123,9 @@ function genOnePreview() {
                     else if (key == 'loraweights' && rawVal) {
                         val = rawVal + "," + val;
                     }
+                    else if (key == 'loraschedules' && rawVal) {
+                        val = rawVal + "," + val;
+                    }
                     input_overrides[key] = val;
                 }
             }

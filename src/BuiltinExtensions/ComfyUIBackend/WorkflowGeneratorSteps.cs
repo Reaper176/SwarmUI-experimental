@@ -120,6 +120,8 @@ public class WorkflowGeneratorSteps
             {
                 (g.LoadingModel, g.LoadingClip) = g.LoadLorasForConfinement(T2IParamInput.SectionID_BaseOnly, g.LoadingModel, g.LoadingClip);
             }
+            g.LoadingClip = g.CreateHookLorasForConfinement(-1, g.LoadingClip, true);
+            g.LoadingClip = g.CreateHookLorasForConfinement(0, g.LoadingClip, true);
         }, -10);
         AddModelGenStep(g =>
         {
@@ -1760,6 +1762,7 @@ public class WorkflowGeneratorSteps
                     if (part.ContextID > 0)
                     {
                         (JArray newModel, JArray newClip) = g.LoadLorasForConfinement(part.ContextID, g.CurrentModel.Path, clip.Path);
+                        newClip = g.CreateHookLorasForConfinement(part.ContextID, newClip, true);
                         model = model.WithPath(newModel);
                         clip = clip.WithPath(newClip);
                     }

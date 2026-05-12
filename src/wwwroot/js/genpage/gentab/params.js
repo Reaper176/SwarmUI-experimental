@@ -803,7 +803,7 @@ function genInputs(delay_final = false, finalCallback = null) {
             });
             tweakNegativePromptBox();
         }
-        for (let loraParam of ['loras', 'loraweights', 'lorasectionconfinement']) {
+        for (let loraParam of ['loras', 'loraweights', 'lorasectionconfinement', 'loraschedules']) {
             let input = document.getElementById(`input_${loraParam}`);
             if (input) {
                 input.addEventListener('change', () => {

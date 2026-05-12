@@ -84,6 +84,16 @@ public class T2IParamInput
                     }
                     input.Set(T2IParamTypes.LoraTencWeights, tencWeights);
                 }
+                if (input.TryGet(T2IParamTypes.LoraSchedules, out List<string> schedules) && schedules.Count != loras.Count)
+                {
+                    Logs.Warning($"Input has {loras.Count} loras, but {schedules.Count} schedules - the two lists must match to work properly. Applying an automatic fix.");
+                    schedules = [.. schedules.Take(loras.Count)];
+                    while (schedules.Count < loras.Count)
+                    {
+                        schedules.Add("none");
+                    }
+                    input.Set(T2IParamTypes.LoraSchedules, schedules);
+                }
             }
         },
         input =>
