@@ -145,7 +145,7 @@ When doing upscales, it is well known that you will simply amplify the errors th
 
 ## Added better save folder override
 
-Currently, in Swarm, you have to manually type out the save path override when doing so from the generate tab. I don’t like this. I have added an option directly under this current implementation that shows all your current folders, and also the option to add a new folder if you want that. Yes, searching works.
+Currently, in Swarm, you have to manually type out the save path override when doing so from the generate tab. I don’t like this. I have added an option directly under this current implementation that shows all your current folders, and also the option to add a new folder if you want that. Yes, searching works and manually typing in a new folder works if you dont want to use the d box.
 
 <br/>
 
@@ -175,7 +175,7 @@ Fixed my own save image button. It now saves metadata correctly.
 
 <br/>
 
-Fixed issues with large history loads. Now retries once and then gives you a manual option after that. This helps when loading large amounts of images (100k+). Most helpful when loading off a spinning drive.
+Fixed issues with large history loads. 
 
 <br/>
 
