@@ -1531,7 +1531,10 @@ public static class T2IAPI
         }
         else if (RuntimeInformation.IsOSPlatform(OSPlatform.Linux))
         {
-            Process.Start("xdg-open", $"\"{Path.GetDirectoryName(Path.GetFullPath(path))}\"");
+            if (!TryShowFileInLinuxFileManager(path))
+            {
+                Process.Start("xdg-open", $"\"{Path.GetDirectoryName(Path.GetFullPath(path))}\"");
+            }
         }
         else if (RuntimeInformation.IsOSPlatform(OSPlatform.OSX))
         {
@@ -1543,6 +1546,37 @@ public static class T2IAPI
             return new JObject() { ["error"] = "Cannot open image folder on this OS." };
         }
         return new JObject() { ["success"] = true };
+    }
+
+    /// <summary>Attempts to select a file in the Linux file manager, returning false if unsupported.</summary>
+    private static bool TryShowFileInLinuxFileManager(string path)
+    {
+        try
+        {
+            string fileUri = new Uri(Path.GetFullPath(path)).AbsoluteUri;
+            ProcessStartInfo info = new("dbus-send")
+            {
+                UseShellExecute = false
+            };
+            info.ArgumentList.Add("--session");
+            info.ArgumentList.Add("--dest=org.freedesktop.FileManager1");
+            info.ArgumentList.Add("--type=method_call");
+            info.ArgumentList.Add("/org/freedesktop/FileManager1");
+            info.ArgumentList.Add("org.freedesktop.FileManager1.ShowItems");
+            info.ArgumentList.Add($"array:string:{fileUri}");
+            info.ArgumentList.Add("string:");
+            Process process = Process.Start(info);
+            if (process is null)
+            {
+                return false;
+            }
+            return process.WaitForExit(1000) && process.ExitCode == 0;
+        }
+        catch (Exception ex)
+        {
+            Logs.Verbose($"Could not select file in Linux file manager: {ex.ReadableString()}");
+            return false;
+        }
     }
 
     public static string[] DeletableFileExtensions = [".txt", ".metadata.js", ".swarm.json", OutputMetadataTracker.HiddenMarkerExtension, ".swarmpreview.jpg", ".swarmpreview.webp"];
