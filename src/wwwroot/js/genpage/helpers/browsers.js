@@ -875,7 +875,7 @@ class GenPageBrowserClass {
             if (desc.checkbox) {
                 div.classList.add('browser-entry-has-checkbox');
             }
-            let popoverId = `${this.id}-${id}`;
+            let popoverId = `${this.id}-${entry.browserSortIndex}`;
             let buttons = (desc.buttons || []).filter(b => !b.multi_only);
             if (buttons.length > 0) {
                 let menuDiv = createDiv(`popover_${popoverId}`, 'sui-popover sui_popover_model');
