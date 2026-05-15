@@ -246,7 +246,7 @@ class ImageFullViewHelper {
         this.lastMouseY = 0;
         this.isDragging = false;
         this.didDrag = false;
-        this.content.addEventListener('wheel', this.onWheel.bind(this));
+        this.content.addEventListener('wheel', this.onWheel.bind(this), { passive: false });
         this.content.addEventListener('mousedown', this.onMouseDown.bind(this));
         document.addEventListener('mouseup', this.onGlobalMouseUp.bind(this));
         document.addEventListener('mousemove', this.onGlobalMouseMove.bind(this));
@@ -264,6 +264,7 @@ class ImageFullViewHelper {
         this.imageWrap = null;
         this.buttonsWrap = null;
         this.metadataWrap = null;
+        this.pendingPasteState = null;
     }
 
     ensureScaffold() {
@@ -476,6 +477,10 @@ class ImageFullViewHelper {
         if (!this.isDragging) {
             return;
         }
+        if ((e.buttons & 1) == 0) {
+            this.onGlobalMouseUp(e);
+            return;
+        }
         let xDiff = e.clientX - this.lastMouseX;
         let yDiff = e.clientY - this.lastMouseY;
         this.lastMouseX = e.clientX;
@@ -599,13 +604,42 @@ class ImageFullViewHelper {
         if (!state || state.left == undefined || state.top == undefined || state.height == undefined) {
             return;
         }
+        this.pendingPasteState = {
+            left: state.left,
+            top: state.top,
+            height: state.height,
+            showMetadata: state.showMetadata
+        };
+        if (this.applyPendingPasteState()) {
+            this.didPasteState = true;
+        }
+    }
+
+    applyPendingPasteState() {
+        if (!this.pendingPasteState) {
+            return false;
+        }
+        let geometry = this.getFitGeometry();
+        if (!geometry) {
+            return false;
+        }
         let img = this.getImgOrContainer();
         this.detachImg();
-        img.style.left = `${state.left}px`;
-        img.style.top = `${state.top}px`;
-        img.style.height = `${state.height}%`;
-        this.toggleMetadataVisibility(state.showMetadata);
-        this.didPasteState = true;
+        geometry = this.getFitGeometry();
+        if (!geometry) {
+            return false;
+        }
+        let targetHeightPercent = Math.max(geometry.fittedHeightPercent, this.pendingPasteState.height);
+        let scale = targetHeightPercent / geometry.fittedHeightPercent;
+        let targetWidth = geometry.fittedWidth * scale;
+        let targetHeight = geometry.fittedHeight * scale;
+        let clamped = this.clampPosition(this.pendingPasteState.left, this.pendingPasteState.top, targetWidth, targetHeight, geometry.wrap);
+        img.style.left = `${clamped.left}px`;
+        img.style.top = `${clamped.top}px`;
+        img.style.height = `${targetHeightPercent}%`;
+        this.toggleMetadataVisibility(this.pendingPasteState.showMetadata);
+        this.pendingPasteState = null;
+        return true;
     }
 
     applyWheelZoom(stepDelta, clientX, clientY) {
@@ -641,11 +675,14 @@ class ImageFullViewHelper {
     }
 
     onWheel(e) {
-        if (!findParentOfClass(e.target, 'imageview_modal_imagewrap') || e.ctrlKey || e.shiftKey) {
+        if (!findParentOfClass(e.target, 'imageview_modal_imagewrap') || e.shiftKey) {
             return;
         }
         e.preventDefault();
         e.stopPropagation();
+        this.flushPendingDragMove();
+        this.isDragging = false;
+        this.didDrag = false;
         this.pendingWheelSteps += -e.deltaY / 100;
         this.pendingWheelMouseX = e.clientX;
         this.pendingWheelMouseY = e.clientY;
@@ -682,6 +719,10 @@ class ImageFullViewHelper {
 
     /** Format fixes that need to run after the image content has loaded. */
     onImgLoad() {
+        if (this.applyPendingPasteState()) {
+            this.didPasteState = true;
+            return;
+        }
         if (this.didPasteState) {
             return;
         }
@@ -702,6 +743,20 @@ class ImageFullViewHelper {
 
     showImage(src, metadata, batchId = null) {
         this.didPasteState = false;
+        this.pendingPasteState = null;
+        this.isDragging = false;
+        this.didDrag = false;
+        this.pendingDragX = 0;
+        this.pendingDragY = 0;
+        this.pendingWheelSteps = 0;
+        if (this.dragMoveRaf) {
+            cancelAnimationFrame(this.dragMoveRaf);
+            this.dragMoveRaf = null;
+        }
+        if (this.wheelRaf) {
+            cancelAnimationFrame(this.wheelRaf);
+            this.wheelRaf = null;
+        }
         this.currentSrc = src;
         this.currentMetadata = metadata;
         this.currentBatchId = batchId;
@@ -710,6 +765,7 @@ class ImageFullViewHelper {
         let isVideo = isVideoExt(src);
         let isAudio = isAudioExt(src);
         this.ensureScaffold();
+        this.imageWrap.style.textAlign = 'center';
         let mediaElem = this.createMediaElement(src, isVideo, isAudio);
         this.imageWrap.replaceChildren(mediaElem);
         this.buttonsWrap.replaceChildren();
