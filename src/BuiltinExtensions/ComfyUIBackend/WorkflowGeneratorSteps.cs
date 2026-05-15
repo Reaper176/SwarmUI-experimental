@@ -1351,12 +1351,18 @@ public class WorkflowGeneratorSteps
             {
                 return;
             }
+            double confidenceThreshold = 0.2;
+            if (g.UserInput.TryGet(ComfyUIBackendExtension.Sam3SegmentConfidence, out string confidenceRaw)
+                && double.TryParse(confidenceRaw, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out double parsedConfidence))
+            {
+                confidenceThreshold = Math.Clamp(parsedConfidence, 0.01, 1.0);
+            }
             string modelNode = g.CreateNode("LoadSAM3Model", ComfyUIBackendExtension.Sam3ModelInputs());
             string segNode = g.CreateNode("SAM3Grounding", new JObject()
             {
                 ["sam3_model_config"] = NodePath(modelNode, 0),
                 ["image"] = imageNodeActual,
-                ["confidence_threshold"] = 0.2,
+                ["confidence_threshold"] = confidenceThreshold,
                 ["text_prompt"] = segmentPrompt,
                 ["max_detections"] = -1
             });

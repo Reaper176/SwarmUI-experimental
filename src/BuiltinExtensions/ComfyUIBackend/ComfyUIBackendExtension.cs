@@ -650,7 +650,7 @@ public class ComfyUIBackendExtension : Extension
 
     public static T2IParamGroup ComfyAdvancedGroup;
 
-    public static T2IRegisteredParam<string> Sam3PointCoordsPositive, Sam3PointCoordsNegative, Sam3BBox, Sam3MaskPadding, Sam3SegmentPrompt;
+    public static T2IRegisteredParam<string> Sam3PointCoordsPositive, Sam3PointCoordsNegative, Sam3BBox, Sam3MaskPadding, Sam3SegmentPrompt, Sam3SegmentConfidence;
 
     /// <summary>Creates the standard input set for a LoadSAM3Model node.</summary>
     public static JObject Sam3ModelInputs()
@@ -679,6 +679,9 @@ public class ComfyUIBackendExtension : Extension
             ));
         Sam3SegmentPrompt = T2IParamTypes.Register<string>(new("SAM3 Segment Prompt", "Internal: text prompt for SAM3 image editor text masking.",
             "", IgnoreIf: "", FeatureFlag: "sam3", VisibleNormally: false, ExtraHidden: true, DoNotSave: true, DoNotPreview: true, AlwaysRetain: true, Toggleable: true
+            ));
+        Sam3SegmentConfidence = T2IParamTypes.Register<string>(new("SAM3 Segment Confidence", "Internal: confidence threshold for SAM3 image editor text masking.",
+            "0.2", IgnoreIf: "0.2", FeatureFlag: "sam3", VisibleNormally: false, ExtraHidden: true, DoNotSave: true, DoNotPreview: true, AlwaysRetain: true, Toggleable: true
             ));
         UseIPAdapterForRevision = T2IParamTypes.Register<string>(new("Use IP-Adapter", $"Select an IP-Adapter model to use IP-Adapter for image-prompt input handling.\nModels will automatically be downloaded when you first use them.\nNote if you use a custom model, you must also set your CLIP-Vision Model under Advanced Model Addons, otherwise CLIP Vision G will be presumed.\n<a target=\"_blank\" href=\"{Utilities.RepoDocsRoot}/Features/ImagePrompting.md\">See more docs here.</a>",
             "None", IgnoreIf: "None", FeatureFlag: "ipadapter", GetValues: _ => IPAdapterModels, Group: T2IParamTypes.GroupImagePrompting, OrderPriority: 15, ChangeWeight: 1

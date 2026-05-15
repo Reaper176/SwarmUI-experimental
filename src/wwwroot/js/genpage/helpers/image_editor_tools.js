@@ -3306,6 +3306,7 @@ class ImageEditorToolSam3Text extends ImageEditorToolSam3Base {
     constructor(editor) {
         super(editor, 'sam3text', 'wand', 'SAM3 Text', 'Type a text description to generate a matching mask.\nRequires SAM3 to be installed.', null);
         this.textPrompt = '';
+        this.confidence = 0.2;
         this.showControls();
     }
 
@@ -3315,13 +3316,29 @@ class ImageEditorToolSam3Text extends ImageEditorToolSam3Base {
             <label>Prompt:&nbsp;</label>
             <input type="text" class="auto-text id-sam3-text-prompt" value="${escapeHtml(this.textPrompt || '')}" placeholder="object to mask">
         </div>
+        <div class="image-editor-tool-block id-sam3-confidence-block">
+            <label>Confidence:&nbsp;</label>
+            <input type="number" style="width: 4rem;" class="auto-number id-sam3-confidence1" min="0.01" max="1" step="0.01" value="${this.confidence}">
+            <div class="auto-slider-range-wrapper" style="${getRangeStyle(this.confidence, 0.01, 1)}">
+                <input type="range" style="flex-grow: 2;" class="auto-slider-range id-sam3-confidence2" min="0.01" max="1" step="0.01" value="${this.confidence}" oninput="updateRangeStyle(arguments[0])" onchange="updateRangeStyle(arguments[0])">
+            </div>
+        </div>
         <div class="image-editor-tool-block tool-block-nogrow">
             <button class="basic-button id-generate-mask">Generate Mask</button>
             <button class="basic-button id-clear-mask">Clear Mask</button>
         </div>`;
         this.promptInput = this.configDiv.querySelector('.id-sam3-text-prompt');
+        enableSliderForBox(this.configDiv.querySelector('.id-sam3-confidence-block'));
+        this.confidenceNumber = this.configDiv.querySelector('.id-sam3-confidence1');
+        this.confidenceSelector = this.configDiv.querySelector('.id-sam3-confidence2');
         this.promptInput.addEventListener('input', () => {
             this.textPrompt = this.promptInput.value;
+        });
+        this.confidenceNumber.addEventListener('change', () => {
+            this.updateConfidence();
+        });
+        this.confidenceSelector.addEventListener('change', () => {
+            this.updateConfidence();
         });
         this.promptInput.addEventListener('keydown', e => {
             if (e.key == 'Enter') {
@@ -3337,8 +3354,27 @@ class ImageEditorToolSam3Text extends ImageEditorToolSam3Base {
         });
     }
 
+    /**
+     * Updates the SAM3 text confidence value from the paired control.
+     */
+    updateConfidence() {
+        let confidence = parseFloat(this.confidenceNumber ? this.confidenceNumber.value : this.confidence);
+        if (!Number.isFinite(confidence)) {
+            confidence = 0.2;
+        }
+        confidence = Math.max(0.01, Math.min(1, confidence));
+        this.confidence = confidence;
+        if (this.confidenceNumber) {
+            this.confidenceNumber.value = this.confidence;
+        }
+        if (this.confidenceSelector) {
+            this.confidenceSelector.value = this.confidence;
+        }
+    }
+
     addWarmupGenData(genData, cx, cy) {
         genData['samsegmentprompt'] = 'object';
+        genData['samsegmentconfidence'] = `${this.confidence}`;
     }
 
     requestMaskUpdate() {
@@ -3356,7 +3392,9 @@ class ImageEditorToolSam3Text extends ImageEditorToolSam3Base {
         let requestId = ++this.requestSerial;
         this.activeRequestId = requestId;
         let [genData] = this.getGeneralMaskRequestInputs();
+        this.updateConfidence();
         genData['samsegmentprompt'] = prompt;
+        genData['samsegmentconfidence'] = `${this.confidence}`;
         makeWSRequestT2I('GenerateText2ImageWS', genData, data => {
             if (requestId != this.activeRequestId) {
                 return;
