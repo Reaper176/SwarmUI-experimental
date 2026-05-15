@@ -24,6 +24,7 @@ class ImageEditorTool {
         this.infoBubble.innerHTML = `<div class="image-editor-info-bubble-title">${escapeHtml(this.name)}</div><div class="image-editor-info-bubble-description">${escapeHtml(this.description)}</div>`;
         this.div = document.createElement('div');
         this.div.className = 'image-editor-tool';
+        this.div.classList.add(`image-editor-tool-${this.id}`);
         this.div.style.backgroundImage = `url(imgs/${this.icon}.png)`;
         this.div.addEventListener('click', () => this.onClick());
         this.div.addEventListener('mouseenter', () => {

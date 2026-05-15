@@ -808,6 +808,24 @@ body {
     background-position: center;
     background-size: 1.45rem 1.45rem;
 }
+#ImageEditing .imageediting_tool_icon_button_sam3text,
+.image-editor-tool-sam3text {
+    position: relative;
+    background-image: none !important;
+}
+#ImageEditing .imageediting_tool_icon_button_sam3text::before,
+.image-editor-tool-sam3text::before {
+    content: 'T';
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--text);
+    font-size: 1.25rem;
+    font-weight: 800;
+    line-height: 1;
+}
 #ImageEditing .imageediting_tool_icon_button_active {
     background-color: var(--danger-button-background-hover);
     border-color: var(--box-selected-border);

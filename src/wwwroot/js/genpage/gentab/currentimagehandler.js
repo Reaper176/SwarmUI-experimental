@@ -2277,6 +2277,7 @@ function imageEditingBuildToolRail() {
             }
             let button = document.createElement('button');
             button.className = 'basic-button imageediting_tool_icon_button';
+            button.classList.add(`imageediting_tool_icon_button_${tool.id}`);
             button.type = 'button';
             button.style.backgroundImage = `url(imgs/${tool.icon}.png)`;
             button.setAttribute('aria-label', tool.name);
