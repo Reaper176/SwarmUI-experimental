@@ -1531,9 +1531,14 @@ public static class T2IAPI
         }
         else if (RuntimeInformation.IsOSPlatform(OSPlatform.Linux))
         {
-            if (!TryShowFileInLinuxFileManager(path))
+            if (!(IsKdeDesktop() && TrySelectFileInDolphin(path)) && !TryShowFileInLinuxFileManager(path))
             {
-                Process.Start("xdg-open", $"\"{Path.GetDirectoryName(Path.GetFullPath(path))}\"");
+                ProcessStartInfo info = new("xdg-open")
+                {
+                    UseShellExecute = false
+                };
+                info.ArgumentList.Add(Path.GetDirectoryName(Path.GetFullPath(path)));
+                Process.Start(info);
             }
         }
         else if (RuntimeInformation.IsOSPlatform(OSPlatform.OSX))
@@ -1546,6 +1551,39 @@ public static class T2IAPI
             return new JObject() { ["error"] = "Cannot open image folder on this OS." };
         }
         return new JObject() { ["success"] = true };
+    }
+
+    /// <summary>Returns whether the current desktop environment is KDE/Plasma.</summary>
+    private static bool IsKdeDesktop()
+    {
+        string currentDesktop = Environment.GetEnvironmentVariable("XDG_CURRENT_DESKTOP") ?? "";
+        string desktopSession = Environment.GetEnvironmentVariable("DESKTOP_SESSION") ?? "";
+        return currentDesktop.Contains("KDE", StringComparison.OrdinalIgnoreCase) || desktopSession.Contains("kde", StringComparison.OrdinalIgnoreCase) || desktopSession.Contains("plasma", StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>Attempts to select a file in KDE Dolphin, returning false if unsupported.</summary>
+    private static bool TrySelectFileInDolphin(string path)
+    {
+        try
+        {
+            ProcessStartInfo info = new("dolphin")
+            {
+                UseShellExecute = false
+            };
+            info.ArgumentList.Add("--select");
+            info.ArgumentList.Add(Path.GetFullPath(path));
+            Process process = Process.Start(info);
+            if (process is null)
+            {
+                return false;
+            }
+            return !process.WaitForExit(1000) || process.ExitCode == 0;
+        }
+        catch (Exception ex)
+        {
+            Logs.Verbose($"Could not select file in Dolphin: {ex.ReadableString()}");
+            return false;
+        }
     }
 
     /// <summary>Attempts to select a file in the Linux file manager, returning false if unsupported.</summary>
