@@ -813,6 +813,148 @@ body {
     position: relative;
     background-image: none !important;
 }
+#ImageEditing .imageediting_tool_icon_button_select,
+#ImageEditing .imageediting_tool_icon_button_ellipse-select,
+#ImageEditing .imageediting_tool_icon_button_lasso-select,
+#ImageEditing .imageediting_tool_icon_button_polygon-select,
+#ImageEditing .imageediting_tool_icon_button_magic-wand,
+#ImageEditing .imageediting_tool_icon_button_color-select,
+.image-editor-tool-select,
+.image-editor-tool-ellipse-select,
+.image-editor-tool-lasso-select,
+.image-editor-tool-polygon-select,
+.image-editor-tool-magic-wand,
+.image-editor-tool-color-select {
+    position: relative;
+    overflow: hidden;
+    color: var(--text);
+    background-image: none !important;
+}
+#ImageEditing .imageediting_tool_icon_button_select::before,
+#ImageEditing .imageediting_tool_icon_button_ellipse-select::before,
+#ImageEditing .imageediting_tool_icon_button_lasso-select::before,
+#ImageEditing .imageediting_tool_icon_button_polygon-select::before,
+#ImageEditing .imageediting_tool_icon_button_magic-wand::before,
+#ImageEditing .imageediting_tool_icon_button_color-select::before,
+#ImageEditing .imageediting_tool_icon_button_select::after,
+#ImageEditing .imageediting_tool_icon_button_ellipse-select::after,
+#ImageEditing .imageediting_tool_icon_button_lasso-select::after,
+#ImageEditing .imageediting_tool_icon_button_polygon-select::after,
+#ImageEditing .imageediting_tool_icon_button_magic-wand::after,
+#ImageEditing .imageediting_tool_icon_button_color-select::after,
+.image-editor-tool-select::before,
+.image-editor-tool-ellipse-select::before,
+.image-editor-tool-lasso-select::before,
+.image-editor-tool-polygon-select::before,
+.image-editor-tool-magic-wand::before,
+.image-editor-tool-color-select::before,
+.image-editor-tool-select::after,
+.image-editor-tool-ellipse-select::after,
+.image-editor-tool-lasso-select::after,
+.image-editor-tool-polygon-select::after,
+.image-editor-tool-magic-wand::after,
+.image-editor-tool-color-select::after {
+    content: '';
+    position: absolute;
+    box-sizing: border-box;
+    pointer-events: none;
+}
+#ImageEditing .imageediting_tool_icon_button_select::before,
+.image-editor-tool-select::before {
+    left: 24%;
+    top: 28%;
+    width: 52%;
+    height: 44%;
+    border: 2px dashed currentColor;
+}
+#ImageEditing .imageediting_tool_icon_button_ellipse-select::before,
+.image-editor-tool-ellipse-select::before {
+    left: 22%;
+    top: 25%;
+    width: 56%;
+    height: 50%;
+    border: 2px dashed currentColor;
+    border-radius: 50%;
+}
+#ImageEditing .imageediting_tool_icon_button_lasso-select::before,
+.image-editor-tool-lasso-select::before {
+    left: 21%;
+    top: 24%;
+    width: 58%;
+    height: 50%;
+    border: 2px dashed currentColor;
+    border-radius: 58% 42% 62% 38%;
+    transform: rotate(-15deg);
+}
+#ImageEditing .imageediting_tool_icon_button_lasso-select::after,
+.image-editor-tool-lasso-select::after {
+    left: 61%;
+    top: 63%;
+    width: 22%;
+    height: 2px;
+    background: currentColor;
+    transform: rotate(28deg);
+    transform-origin: left center;
+}
+#ImageEditing .imageediting_tool_icon_button_polygon-select::before,
+.image-editor-tool-polygon-select::before {
+    left: 23%;
+    top: 24%;
+    width: 54%;
+    height: 50%;
+    border: 2px solid currentColor;
+    transform: skewX(-12deg) rotate(-5deg);
+}
+#ImageEditing .imageediting_tool_icon_button_polygon-select::after,
+.image-editor-tool-polygon-select::after {
+    left: 20%;
+    top: 21%;
+    width: 5px;
+    height: 5px;
+    border-radius: 50%;
+    background: currentColor;
+    box-shadow: 15px -2px 0 currentColor, 31px 9px 0 currentColor, 23px 27px 0 currentColor, 3px 24px 0 currentColor;
+}
+#ImageEditing .imageediting_tool_icon_button_magic-wand::before,
+.image-editor-tool-magic-wand::before {
+    left: 45%;
+    top: 25%;
+    width: 3px;
+    height: 56%;
+    border-radius: 999px;
+    background: currentColor;
+    transform: rotate(42deg);
+}
+#ImageEditing .imageediting_tool_icon_button_magic-wand::after,
+.image-editor-tool-magic-wand::after {
+    left: 23%;
+    top: 20%;
+    width: 5px;
+    height: 5px;
+    border-radius: 50%;
+    background: currentColor;
+    box-shadow: 10px -5px 0 -1px currentColor, 17px 4px 0 -1px currentColor, -2px 12px 0 -1px currentColor;
+}
+#ImageEditing .imageediting_tool_icon_button_color-select::before,
+.image-editor-tool-color-select::before {
+    left: 41%;
+    top: 21%;
+    width: 5px;
+    height: 56%;
+    border-radius: 999px;
+    background: currentColor;
+    transform: rotate(42deg);
+}
+#ImageEditing .imageediting_tool_icon_button_color-select::after,
+.image-editor-tool-color-select::after {
+    left: 25%;
+    top: 55%;
+    width: 18%;
+    height: 18%;
+    border: 2px solid currentColor;
+    border-radius: 50%;
+    box-shadow: 12px -20px 0 -2px currentColor;
+}
 #ImageEditing .imageediting_tool_icon_button_sam3text::before,
 .image-editor-tool-sam3text::before {
     content: 'T';
