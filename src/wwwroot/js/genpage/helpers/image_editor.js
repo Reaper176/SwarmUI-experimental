@@ -1325,6 +1325,8 @@ class ImageEditor {
     onMouseWheel(e) {
         this.activeTool.onMouseWheel(e);
         if (!e.defaultPrevented) {
+            e.preventDefault();
+            e.stopPropagation();
             let zoom = Math.pow(this.zoomRate, -e.deltaY / 100);
             let rect = this.canvas.getBoundingClientRect();
             let mouseX = e.clientX - rect.left;
@@ -1337,6 +1339,7 @@ class ImageEditor {
             this.queueViewRedraw();
         }
         else {
+            e.stopPropagation();
             this.queueOverlayRedraw();
         }
     }
