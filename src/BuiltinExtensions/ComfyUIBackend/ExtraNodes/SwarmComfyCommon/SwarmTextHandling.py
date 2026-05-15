@@ -1,5 +1,17 @@
+import itertools
+import numpy
 import torch, comfy
+from comfy import model_management
+from comfy.sdxl_clip import SDXLClipModel, SDXLRefinerClipModel, SDXLClipG
 from nodes import MAX_RESOLUTION
+
+try:
+    from comfy.text_encoders.sd3_clip import SD3ClipModel
+except ImportError:
+    try:
+        from comfy.sd3_clip import SD3ClipModel
+    except ImportError:
+        SD3ClipModel = None
 
 
 # LLaMA template for Hunyuan Image2Video.
@@ -19,6 +31,259 @@ PROMPT_TEMPLATE_ENCODE_VIDEO_I2V = (
 # LLaMA template for Qwen Image Edit Plus.
 PROMPT_TEMPLATE_QWEN_IMAGE_EDIT_PLUS = "<|im_start|>system\nDescribe the key features of the input image (color, shape, size, texture, objects, background), then explain how the user's text instruction should alter or modify the image. Generate a new image that meets the user's requirements while maintaining consistency with the original input where appropriate.<|im_end|>\n<|im_start|>user\n{}<|im_end|>\n<|im_start|>assistant\n"
 
+def grouped(iterable, count):
+    iterator = iter(iterable)
+    while True:
+        chunk = list(itertools.islice(iterator, count))
+        if not chunk:
+            return
+        yield chunk
+
+
+def normalize_weight_magnitude(weight, token_count):
+    delta = weight - 1
+    return 1 + numpy.sign(delta) * numpy.sqrt(numpy.abs(delta) ** 2 / token_count)
+
+
+def divide_length(word_ids, weights):
+    counts = dict(zip(*numpy.unique(word_ids, return_counts=True)))
+    counts[0] = 1
+    return [[normalize_weight_magnitude(weight, counts[word_id]) if word_id != 0 else 1.0 for weight, word_id in zip(weight_row, word_row)] for weight_row, word_row in zip(weights, word_ids)]
+
+
+def shift_mean_weight(word_ids, weights):
+    word_weights = [weight for weight_row, word_row in zip(weights, word_ids) for weight, word_id in zip(weight_row, word_row) if word_id != 0]
+    if len(word_weights) == 0:
+        return weights
+    delta = 1 - numpy.mean(word_weights)
+    return [[weight if word_id == 0 else weight + delta for weight, word_id in zip(weight_row, word_row)] for weight_row, word_row in zip(weights, word_ids)]
+
+
+def scale_to_norm(weights, word_ids, weight_max):
+    top = numpy.max(weights)
+    if top == 0:
+        return weights
+    weight_max = min(top, weight_max)
+    return [[weight_max if word_id == 0 else (weight / top) * weight_max for weight, word_id in zip(weight_row, word_row)] for weight_row, word_row in zip(weights, word_ids)]
+
+
+def from_zero(weights, base_emb):
+    weight_tensor = torch.tensor(weights, dtype=base_emb.dtype, device=base_emb.device)
+    weight_tensor = weight_tensor.reshape(1, -1, 1).expand(base_emb.shape)
+    return base_emb * weight_tensor
+
+
+def mask_word_id(tokens, word_ids, target_id, mask_token):
+    new_tokens = [[mask_token if word_id == target_id else token for token, word_id in zip(token_row, word_row)] for token_row, word_row in zip(tokens, word_ids)]
+    mask = numpy.array(word_ids) == target_id
+    return new_tokens, mask
+
+
+def batched_clip_encode(tokens, length, encode_func, num_chunks):
+    embeddings = []
+    for token_group in grouped(tokens, 32):
+        encoded, pooled = encode_func(token_group)
+        encoded = encoded.reshape((len(token_group), length, -1))
+        embeddings.append(encoded)
+    embeddings = torch.cat(embeddings)
+    return embeddings.reshape((len(tokens) // num_chunks, length * num_chunks, -1))
+
+
+def from_masked(tokens, weights, word_ids, base_emb, length, encode_func, mask_token=266):
+    pooled_base = base_emb[0, length - 1:length, :]
+    unique_word_ids, indices = numpy.unique(numpy.array(word_ids).reshape(-1), return_index=True)
+    weight_dict = dict((word_id, weight) for word_id, weight in zip(unique_word_ids, numpy.array(weights).reshape(-1)[indices]) if weight != 1.0)
+    if len(weight_dict) == 0:
+        return torch.zeros_like(base_emb), pooled_base
+    weight_tensor = torch.tensor(weights, dtype=base_emb.dtype, device=base_emb.device)
+    weight_tensor = weight_tensor.reshape(1, -1, 1).expand(base_emb.shape)
+    mask_token = (mask_token, 1.0)
+    weights_to_apply = []
+    masked_tokens = []
+    masks = []
+    for word_id, weight in weight_dict.items():
+        masked, mask = mask_word_id(tokens, word_ids, word_id, mask_token)
+        masked_tokens.extend(masked)
+        mask = torch.tensor(mask, dtype=base_emb.dtype, device=base_emb.device)
+        mask = mask.reshape(1, -1, 1).expand(base_emb.shape)
+        masks.append(mask)
+        weights_to_apply.append(weight)
+    embeddings = batched_clip_encode(masked_tokens, length, encode_func, len(tokens))
+    masks = torch.cat(masks)
+    embeddings = base_emb.expand(embeddings.shape) - embeddings
+    pooled = embeddings[0, length - 1:length, :]
+    embeddings *= masks
+    embeddings = embeddings.sum(dim=0, keepdim=True)
+    pooled_start = pooled_base.expand(len(weights_to_apply), -1)
+    weights_to_apply = torch.tensor(weights_to_apply, dtype=base_emb.dtype, device=base_emb.device).reshape(-1, 1).expand(pooled_start.shape)
+    pooled = (pooled - pooled_start) * (weights_to_apply - 1)
+    pooled = pooled.mean(dim=0, keepdim=True)
+    return (weight_tensor - 1) * embeddings, pooled_base + pooled
+
+
+def mask_indices(tokens, indices, mask_token):
+    clip_len = len(tokens[0])
+    indices_set = set(indices)
+    return [[mask_token if row_index * clip_len + token_index in indices_set else token for token_index, token in enumerate(token_row)] for row_index, token_row in enumerate(tokens)]
+
+
+def down_weight(tokens, weights, word_ids, base_emb, length, encode_func, mask_token=266):
+    unique_weights, inverse = numpy.unique(weights, return_inverse=True)
+    if numpy.sum(unique_weights < 1) == 0:
+        return base_emb, tokens, base_emb[0, length - 1:length, :]
+    mask_token = (mask_token, 1.0)
+    masked_tokens = []
+    masked_current = tokens
+    for index in range(len(unique_weights)):
+        if unique_weights[index] >= 1:
+            continue
+        masked_current = mask_indices(masked_current, numpy.where(inverse == index)[0], mask_token)
+        masked_tokens.extend(masked_current)
+    embeddings = batched_clip_encode(masked_tokens, length, encode_func, len(tokens))
+    embeddings = torch.cat([base_emb, embeddings])
+    unique_weights = unique_weights[unique_weights <= 1.0]
+    weight_mix = numpy.diff([0] + unique_weights.tolist())
+    weight_mix = torch.tensor(weight_mix, dtype=embeddings.dtype, device=embeddings.device).reshape((-1, 1, 1))
+    weighted_emb = (weight_mix * embeddings).sum(dim=0, keepdim=True)
+    return weighted_emb, masked_current, weighted_emb[0, length - 1:length, :]
+
+
+def a1111_renorm(base_emb, weighted_emb):
+    return (base_emb.mean() / weighted_emb.mean()) * weighted_emb
+
+
+def advanced_encode_from_tokens(tokenized, token_normalization, weight_interpretation, encode_func, weight_max=1.0, return_pooled=False, apply_to_pooled=False):
+    tokens = [[token for token, _, _ in token_row] for token_row in tokenized]
+    weights = [[weight for _, weight, _ in token_row] for token_row in tokenized]
+    word_ids = [[word_id for _, _, word_id in token_row] for token_row in tokenized]
+    length = len(tokens[0])
+    if token_normalization.startswith("length"):
+        weights = divide_length(word_ids, weights)
+    if token_normalization.endswith("mean"):
+        weights = shift_mean_weight(word_ids, weights)
+    pooled = None
+    pooled_base = None
+    if weight_interpretation == "comfy":
+        weighted_tokens = [[(token, weight) for token, weight in zip(token_row, weight_row)] for token_row, weight_row in zip(tokens, weights)]
+        weighted_emb, pooled_base = encode_func(weighted_tokens)
+        pooled = pooled_base
+    else:
+        unweighted_tokens = [[(token, 1.0) for token, _, _ in token_row] for token_row in tokenized]
+        base_emb, pooled_base = encode_func(unweighted_tokens)
+    if weight_interpretation == "A1111":
+        weighted_emb = from_zero(weights, base_emb)
+        weighted_emb = a1111_renorm(base_emb, weighted_emb)
+        pooled = pooled_base
+    if weight_interpretation == "compel":
+        pos_tokens = [[(token, weight) if weight >= 1.0 else (token, 1.0) for token, weight in zip(token_row, weight_row)] for token_row, weight_row in zip(tokens, weights)]
+        weighted_emb, _ = encode_func(pos_tokens)
+        weighted_emb, _, pooled = down_weight(pos_tokens, weights, word_ids, weighted_emb, length, encode_func)
+    if weight_interpretation == "comfy++":
+        weighted_emb, tokens_down, _ = down_weight(unweighted_tokens, weights, word_ids, base_emb, length, encode_func)
+        weights = [[weight if weight > 1.0 else 1.0 for weight in weight_row] for weight_row in weights]
+        embeddings, pooled = from_masked(unweighted_tokens, weights, word_ids, base_emb, length, encode_func)
+        weighted_emb += embeddings
+    if weight_interpretation == "down_weight":
+        weights = scale_to_norm(weights, word_ids, weight_max)
+        weighted_emb, _, pooled = down_weight(unweighted_tokens, weights, word_ids, base_emb, length, encode_func)
+    if return_pooled:
+        if apply_to_pooled:
+            return weighted_emb, pooled
+        return weighted_emb, pooled_base
+    return weighted_emb, None
+
+
+def encode_token_weights_for_model(model, token_weight_pairs, encode_func):
+    model.cond_stage_model.reset_clip_options()
+    if model.layer_idx is not None:
+        model.cond_stage_model.set_clip_options({"layer": model.layer_idx})
+    model_management.load_model_gpu(model.patcher)
+    model.cond_stage_model.set_clip_options({"execution_device": model.patcher.load_device})
+    return encode_func(model.cond_stage_model, token_weight_pairs)
+
+
+def encode_token_weights_l(model, token_weight_pairs):
+    output = model.clip_l.encode_token_weights(token_weight_pairs)
+    return output[0], output[1] if len(output) > 1 else None
+
+
+def encode_token_weights_g(model, token_weight_pairs):
+    output = model.clip_g.encode_token_weights(token_weight_pairs)
+    return output[0], output[1] if len(output) > 1 else None
+
+
+def encode_token_weights_t5(model, token_weight_pairs):
+    output = model.t5xxl.encode_token_weights(token_weight_pairs)
+    return output[0], output[1] if len(output) > 1 else None
+
+
+def encode_single_token_key(clip, token_key, token_weight_pairs):
+    cond, pooled = clip.encode_from_tokens({token_key: token_weight_pairs}, return_pooled=True)
+    return cond, pooled
+
+
+def prepare_xl(embeddings_l, embeddings_g, pooled, clip_balance=0.5):
+    weight_l = 1 - max(0, clip_balance - 0.5) * 2
+    weight_g = 1 - max(0, 0.5 - clip_balance) * 2
+    if embeddings_l is not None:
+        return torch.cat([embeddings_l * weight_l, embeddings_g * weight_g], dim=-1), pooled
+    return embeddings_g, pooled
+
+
+def advanced_encode(clip, text, token_normalization, weight_interpretation, tokenize_func, apply_to_pooled=True):
+    tokenized = tokenize_func(text, return_word_ids=True)
+    cond_model = clip.cond_stage_model
+    if SD3ClipModel is not None and isinstance(cond_model, SD3ClipModel):
+        lg_out = None
+        pooled = None
+        out = None
+        if "l" in tokenized and "g" in tokenized and (len(tokenized["l"]) > 0 or len(tokenized["g"]) > 0):
+            if cond_model.clip_l is not None:
+                lg_out, l_pooled = advanced_encode_from_tokens(tokenized["l"], token_normalization, weight_interpretation, lambda x: encode_token_weights_for_model(clip, x, encode_token_weights_l), return_pooled=True)
+            else:
+                l_pooled = torch.zeros((1, 768), device=model_management.intermediate_device())
+            if cond_model.clip_g is not None:
+                g_out, g_pooled = advanced_encode_from_tokens(tokenized["g"], token_normalization, weight_interpretation, lambda x: encode_token_weights_for_model(clip, x, encode_token_weights_g), return_pooled=True)
+                if lg_out is not None:
+                    cut_to = min(lg_out.shape[1], g_out.shape[1])
+                    lg_out = torch.cat([lg_out[:, :cut_to], g_out[:, :cut_to]], dim=-1)
+                else:
+                    lg_out = torch.nn.functional.pad(g_out, (768, 0))
+            else:
+                g_pooled = torch.zeros((1, 1280), device=model_management.intermediate_device())
+            if lg_out is not None:
+                lg_out = torch.nn.functional.pad(lg_out, (0, 4096 - lg_out.shape[-1]))
+                out = lg_out
+            pooled = torch.cat((l_pooled, g_pooled), dim=-1)
+        if "t5xxl" in tokenized and cond_model.t5xxl is not None:
+            t5_out, t5_pooled = advanced_encode_from_tokens(tokenized["t5xxl"], token_normalization, weight_interpretation, lambda x: encode_token_weights_for_model(clip, x, encode_token_weights_t5), return_pooled=True)
+            if lg_out is not None:
+                out = torch.cat([lg_out, t5_out], dim=-2)
+            else:
+                out = t5_out
+        if out is None:
+            out = torch.zeros((1, 77, 4096), device=model_management.intermediate_device())
+        if pooled is None:
+            pooled = torch.zeros((1, 768 + 1280), device=model_management.intermediate_device())
+        return [[out, {"pooled_output": pooled}]]
+    if isinstance(cond_model, (SDXLClipModel, SDXLRefinerClipModel, SDXLClipG)):
+        embeddings_l = None
+        embeddings_g = None
+        pooled = None
+        if "l" in tokenized and isinstance(cond_model, SDXLClipModel):
+            embeddings_l, _ = advanced_encode_from_tokens(tokenized["l"], token_normalization, weight_interpretation, lambda x: encode_token_weights_for_model(clip, x, encode_token_weights_l))
+        if "g" in tokenized:
+            embeddings_g, pooled = advanced_encode_from_tokens(tokenized["g"], token_normalization, weight_interpretation, lambda x: encode_token_weights_for_model(clip, x, encode_token_weights_g), return_pooled=True, apply_to_pooled=apply_to_pooled)
+        embeddings_final, pooled = prepare_xl(embeddings_l, embeddings_g, pooled)
+        return [[embeddings_final, {"pooled_output": pooled}]]
+    if len(tokenized) == 1:
+        token_key = next(iter(tokenized))
+        embeddings_final, pooled = advanced_encode_from_tokens(tokenized[token_key], token_normalization, weight_interpretation, lambda x: encode_single_token_key(clip, token_key, x), return_pooled=True)
+        return [[embeddings_final, {"pooled_output": pooled}]]
+    tokens = tokenize_func(text)
+    return clip.encode_from_tokens_scheduled(tokens)
+
+
 class SwarmClipTextEncodeAdvanced:
     @classmethod
     def INPUT_TYPES(s):
@@ -37,6 +302,8 @@ class SwarmClipTextEncodeAdvanced:
                 "llama_template": ("STRING", {"default": "", "multiline": True, "tooltip": "Template for the LLaMA model, if applicable."}),
                 "clip_vision_output": ("CLIP_VISION_OUTPUT", {"default": None, "tooltip": "Optional CLIP Vision Output to use for the LLaMA model, if applicable."}),
                 "images": ("IMAGE", {"default": None, "tooltip": "Optional images to use for a text-vision model, if applicable."}),
+                "token_normalization": (["none", "mean", "length", "length+mean"], {"default": "none", "tooltip": "How prompt weights should be normalized across tokens."}),
+                "weight_interpretation": (["comfy", "A1111", "compel", "comfy++", "down_weight"], {"default": "comfy", "tooltip": "How prompt weighting syntax should be interpreted."}),
             }
         }
 
@@ -45,7 +312,7 @@ class SwarmClipTextEncodeAdvanced:
     FUNCTION = "encode"
     DESCRIPTION = "Acts like the regular CLIPTextEncode, but supports more advanced special features like '<break>', '[from:to:when]', '[alter|nate]', ..."
 
-    def encode(self, clip, steps: int, prompt: str, width: int, height: int, target_width: int, target_height: int, guidance: float = -1, llama_template = None, clip_vision_output = None, images = None):
+    def encode(self, clip, steps: int, prompt: str, width: int, height: int, target_width: int, target_height: int, guidance: float = -1, llama_template = None, clip_vision_output = None, images = None, token_normalization = "none", weight_interpretation = "comfy"):
         image_prompt = ""
         if llama_template == "hunyuan_image":
             llama_template = PROMPT_TEMPLATE_ENCODE_VIDEO_I2V
@@ -59,13 +326,13 @@ class SwarmClipTextEncodeAdvanced:
                 for i, image in enumerate(images):
                     image_prompt += f"Picture {i + 1}: <|vision_start|><|image_pad|><|vision_end|>"
 
-        def tokenize(text: str):
+        def tokenize(text: str, return_word_ids = False):
             if clip_vision_output is not None:
-                return clip.tokenize(text, llama_template=llama_template, image_embeds=clip_vision_output.mm_projected)
+                return clip.tokenize(text, return_word_ids=return_word_ids, llama_template=llama_template, image_embeds=clip_vision_output.mm_projected)
             elif images is not None:
-                return clip.tokenize(image_prompt + text, llama_template=llama_template, images=images)
+                return clip.tokenize(image_prompt + text, return_word_ids=return_word_ids, llama_template=llama_template, images=images)
             else:
-                return clip.tokenize(text)
+                return clip.tokenize(text, return_word_ids=return_word_ids)
 
         encoding_cache = {}
 
@@ -75,12 +342,18 @@ class SwarmClipTextEncodeAdvanced:
                 cond_arr = encoding_cache[text]
             else:
                 cond_chunks = text.split("<break>")
-                tokens = tokenize(cond_chunks[0])
-                cond_arr = clip.encode_from_tokens_scheduled(tokens)
+                if token_normalization == "none" and weight_interpretation == "comfy":
+                    tokens = tokenize(cond_chunks[0])
+                    cond_arr = clip.encode_from_tokens_scheduled(tokens)
+                else:
+                    cond_arr = advanced_encode(clip, cond_chunks[0], token_normalization, weight_interpretation, tokenize)
                 if len(cond_chunks) > 1:
                     for chunk in cond_chunks[1:]:
-                        tokens = tokenize(chunk)
-                        cond_arr_chunk = clip.encode_from_tokens_scheduled(tokens)
+                        if token_normalization == "none" and weight_interpretation == "comfy":
+                            tokens = tokenize(chunk)
+                            cond_arr_chunk = clip.encode_from_tokens_scheduled(tokens)
+                        else:
+                            cond_arr_chunk = advanced_encode(clip, chunk, token_normalization, weight_interpretation, tokenize)
                         catted_cond = torch.cat([cond_arr[0][0], cond_arr_chunk[0][0]], dim=1)
                         cond_arr[0] = [catted_cond, cond_arr[0][1]]
                 encoding_cache[text] = cond_arr

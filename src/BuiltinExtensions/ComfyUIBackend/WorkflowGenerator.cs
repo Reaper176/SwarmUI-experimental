@@ -2540,7 +2540,9 @@ public partial class WorkflowGenerator
     /// <summary>Creates a "CLIPTextEncode" or equivalent node for the given input.</summary>
     public JArray CreateConditioningDirect(string prompt, JArray clip, T2IModel model, bool isPositive, string id = null)
     {
-        string trackerId = $"__cond_direct____{clip[0]}_{clip[1]}_{isPositive}____{prompt}";
+        string tokenNormalization = UserInput.Get(T2IParamTypes.PromptTokenNormalization, "none");
+        string weightInterpretation = UserInput.Get(T2IParamTypes.PromptWeightInterpretation, "comfy");
+        string trackerId = $"__cond_direct____{clip[0]}_{clip[1]}_{isPositive}_{tokenNormalization}_{weightInterpretation}____{prompt}";
         if (id is null && NodeHelpers.TryGetValue(trackerId, out string nodeId))
         {
             return [nodeId, 0];
@@ -2556,7 +2558,7 @@ public partial class WorkflowGenerator
         {
             defaultGuidance = 1;
         }
-        bool wantsSwarmCustom = Features.Contains("variation_seed") && (needsAdvancedEncode || (UserInput.TryGet(T2IParamTypes.FluxGuidanceScale, out _) && HasFluxGuidance()) || IsHunyuanVideoSkyreels());
+        bool wantsSwarmCustom = Features.Contains("variation_seed") && (tokenNormalization != "none" || weightInterpretation != "comfy" || needsAdvancedEncode || (UserInput.TryGet(T2IParamTypes.FluxGuidanceScale, out _) && HasFluxGuidance()) || IsHunyuanVideoSkyreels());
         JArray qwenImage;
         if (IsAceStep15())
         {
@@ -2623,7 +2625,9 @@ public partial class WorkflowGenerator
                     ["target_height"] = height,
                     ["guidance"] = UserInput.Get(T2IParamTypes.FluxGuidanceScale, defaultGuidance),
                     ["images"] = qwenImage,
-                    ["llama_template"] = "qwen_image_edit_plus"
+                    ["llama_template"] = "qwen_image_edit_plus",
+                    ["token_normalization"] = tokenNormalization,
+                    ["weight_interpretation"] = weightInterpretation
                 }, id);
             }
             else if (IsQwenImageEditPlus())
@@ -2678,7 +2682,9 @@ public partial class WorkflowGenerator
                     ["target_height"] = height,
                     ["guidance"] = UserInput.Get(T2IParamTypes.FluxGuidanceScale, defaultGuidance),
                     ["clip_vision_output"] = NodePath(encoded, 0),
-                    ["llama_template"] = "hunyuan_image"
+                    ["llama_template"] = "hunyuan_image",
+                    ["token_normalization"] = tokenNormalization,
+                    ["weight_interpretation"] = weightInterpretation
                 }, id);
             }
             else
@@ -2703,7 +2709,9 @@ public partial class WorkflowGenerator
                 ["height"] = enhance ? (int)Utilities.RoundToPrecision(height * mult, 64) : height,
                 ["target_width"] = width,
                 ["target_height"] = height,
-                ["guidance"] = UserInput.Get(T2IParamTypes.FluxGuidanceScale, defaultGuidance)
+                ["guidance"] = UserInput.Get(T2IParamTypes.FluxGuidanceScale, defaultGuidance),
+                ["token_normalization"] = tokenNormalization,
+                ["weight_interpretation"] = weightInterpretation
             }, id);
         }
         else if (model is not null && model.ModelClass is not null && model.ModelClass.ID == "stable-diffusion-xl-v1-base")

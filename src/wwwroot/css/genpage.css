@@ -3126,10 +3126,6 @@ mark.model-search-highlight {
 .trigger-phrase-tag:hover {
     background-color: var(--emphasis);
 }
-.trigger-phrase-tag-selected {
-    border-color: var(--box-selected-border-stronger);
-    background-color: color-mix(in srgb, var(--box-selected-background) 80%, transparent);
-}
 .trigger-phrase-separator {
     opacity: 0.8;
 }

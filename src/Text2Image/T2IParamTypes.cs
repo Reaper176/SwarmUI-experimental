@@ -323,7 +323,7 @@ public class T2IParamTypes
         return update;
     }
 
-    public static T2IRegisteredParam<string> Prompt, NegativePrompt, AspectRatio, BackendType, RefinerMethod, FreeUApplyTo, FreeUVersion, PersonalNote, VideoFormat, VideoResolution, UnsamplerPrompt, ImageFormat, MaskBehavior, ColorCorrectionBehavior, RawResolution, SeamlessTileable, SD3TextEncs, BitDepth, Webhooks, Text2VideoFormat, WildcardSeedBehavior, SegmentSortOrder, SegmentTargetResolution, SegmentApplyAfter, TorchCompile, VideoExtendFormat, ExactBackendID, OverridePredictionType, OverrideOutpathFormat, HistorySaveFolder, Text2AudioTimeSignature, Text2AudioLanguage, Text2AudioKeyScale, Text2AudioStyle;
+    public static T2IRegisteredParam<string> Prompt, NegativePrompt, AspectRatio, BackendType, RefinerMethod, FreeUApplyTo, FreeUVersion, PersonalNote, VideoFormat, VideoResolution, UnsamplerPrompt, ImageFormat, MaskBehavior, ColorCorrectionBehavior, RawResolution, SeamlessTileable, SD3TextEncs, BitDepth, Webhooks, Text2VideoFormat, WildcardSeedBehavior, PromptTokenNormalization, PromptWeightInterpretation, SegmentSortOrder, SegmentTargetResolution, SegmentApplyAfter, TorchCompile, VideoExtendFormat, ExactBackendID, OverridePredictionType, OverrideOutpathFormat, HistorySaveFolder, Text2AudioTimeSignature, Text2AudioLanguage, Text2AudioKeyScale, Text2AudioStyle;
     public static T2IRegisteredParam<int> Images, Steps, Width, Height, SideLength, BatchSize, VAETileSize, VAETileOverlap, VAETemporalTileSize, VAETemporalTileOverlap, ClipStopAtLayer, VideoFrames, VideoMotionBucket, VideoFPS, VideoSteps, RefinerSteps, CascadeLatentCompression, MaskShrinkGrow, MaskBlur, MaskGrow, InitImageScaleForMPWidth, InitImageScaleForMPHeight, SegmentMaskBlur, SegmentMaskGrow, SegmentMaskOversize, SegmentSteps, Text2VideoFrames, TrimVideoStartFrames, TrimVideoEndFrames, VideoExtendFrameOverlap;
     public static T2IRegisteredParam<long> Seed, VariationSeed, WildcardSeed, Text2AudioBPM;
     public static T2IRegisteredParam<double> CFGScale, DenoiseStrength, VariationSeedStrength, InitImageCreativity, InitImageResetToNorm, InitImageNoise, MaskShrinkGrowResolutionOverrideMP, RefinerControl, RefinerUpscale, RefinerCFGScale, ReVisionStrength, AltResolutionHeightMult,
@@ -809,6 +809,12 @@ public class T2IParamTypes
             ));
         WildcardSeedBehavior = Register<string>(new("Wildcard Seed Behavior", "How Wildcard Seed should behave.\nIf 'Random', seed is a random seed.\nIf 'Index', the seed is a 0-based index into the wildcard list. (Eg if you have 5 entries, seed 0 gets the first entry, seed 4 gets the last entry, seed 5 goes back to the first entry again.)",
             "Random", IgnoreIf: "Random", GetValues: (_) => ["Random", "Index"], IsAdvanced: true, Group: GroupSwarmInternal, AlwaysRetain: true, OrderPriority: -4.5
+            ));
+        PromptTokenNormalization = Register<string>(new("Prompt Token Normalization", "How ComfyUI should normalize weighted prompt tokens.\nThis matches ComfyUI advanced token_normalization options for text encoding.",
+            "none", IgnoreIf: "none", GetValues: (_) => ["none", "mean", "length", "length+mean"], FeatureFlag: "comfyui", IsAdvanced: true, Group: GroupSwarmInternal, AlwaysRetain: true, OrderPriority: -4.3
+            ));
+        PromptWeightInterpretation = Register<string>(new("Prompt Weight Interpretation", "How ComfyUI should interpret prompt weighting syntax.\nThis matches ComfyUI's weight_interpretation options for text encoding.",
+            "comfy", IgnoreIf: "comfy", GetValues: (_) => ["comfy", "A1111", "compel", "comfy++", "down_weight"], FeatureFlag: "comfyui", IsAdvanced: true, Group: GroupSwarmInternal, AlwaysRetain: true, OrderPriority: -4.25
             ));
         NoSeedIncrement = Register<bool>(new("No Seed Increment", "If checked, the seed will not be incremented when Images is above 1.\nUseful for example to test different wildcards for the same seed rapidly.",
             "false", IgnoreIf: "false", IsAdvanced: true, Group: GroupSwarmInternal, AlwaysRetain: true, OrderPriority: -4

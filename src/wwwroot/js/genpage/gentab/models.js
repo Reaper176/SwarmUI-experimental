@@ -457,11 +457,49 @@ function cleanModelName(name) {
     return name.endsWith('.safetensors') ? name.substring(0, name.length - '.safetensors'.length) : name;
 }
 
-function toggleTriggerPhraseTag(elem) {
-    elem.classList.toggle('trigger-phrase-tag-selected');
+/** Gets the prompt box and cursor position to insert trigger phrases into. */
+function getTriggerPhraseInsertTarget() {
+    let [promptBox, cursorPos] = uiImprover.getLastSelectedTextbox();
+    if (!promptBox || (promptBox.id != 'alt_prompt_textbox' && promptBox.id != 'alt_negativeprompt_textbox')) {
+        promptBox = getRequiredElementById('alt_prompt_textbox');
+        cursorPos = promptBox.value.length;
+    }
+    return [promptBox, cursorPos];
 }
 
-function copyTriggerPhraseSelection(button) {
+/** Inserts trigger phrase text into the active prompt box, falling back to the positive prompt. */
+function insertTriggerPhraseText(text) {
+    if (!text) {
+        return;
+    }
+    let [promptBox, cursorPos] = getTriggerPhraseInsertTarget();
+    let prefix = promptBox.value.substring(0, cursorPos);
+    let suffix = promptBox.value.substring(cursorPos);
+    promptBox.value = `${trimSpaces(prefix)} ${text} ${trimSpaces(suffix)}`.trim();
+    let selectionPos = Math.min(promptBox.value.length, trimSpaces(prefix).length + text.length + 1);
+    promptBox.selectionStart = selectionPos;
+    promptBox.selectionEnd = selectionPos;
+    promptBox.focus();
+    triggerChangeFor(promptBox);
+}
+
+/** Applies trigger phrase insertion formatting preferences. */
+function formatTriggerPhraseInsertText(text) {
+    if (getUserSetting('ui.copytriggerphrasewithtrailingcomma', false) && !text.endsWith(',')) {
+        return `${text}, `;
+    }
+    return text;
+}
+
+/** Inserts a clicked trigger phrase tag into the active prompt box. */
+function insertTriggerPhraseTag(elem) {
+    let phrase = decodeURIComponent(elem.dataset.phraseTag || '');
+    insertTriggerPhraseText(formatTriggerPhraseInsertText(phrase));
+    doNoticePopover('Inserted!', 'notice-pop-green');
+}
+
+/** Inserts all trigger phrase tags in the current entry into the active prompt box. */
+function insertTriggerPhraseEntry(button) {
     let phraseEntry = button.closest('.trigger-phrase-entry');
     if (!phraseEntry) {
         return;
@@ -470,22 +508,15 @@ function copyTriggerPhraseSelection(button) {
     if (allTags.length == 0) {
         return;
     }
-    let selectedTags = allTags.filter(tag => tag.classList.contains('trigger-phrase-tag-selected'));
-    let tagsToCopy = (selectedTags.length > 0 ? selectedTags : allTags)
+    let tagsToInsert = allTags
         .map(tag => decodeURIComponent(tag.dataset.phraseTag || ''))
         .filter(tag => tag.length > 0);
-    if (tagsToCopy.length == 0) {
+    if (tagsToInsert.length == 0) {
         return;
     }
-    let copyValue = tagsToCopy.join(', ');
-    if (getUserSetting('ui.copytriggerphrasewithtrailingcomma', false) && !copyValue.endsWith(',')) {
-        copyValue += ', ';
-    }
-    copyText(copyValue);
-    for (let tag of allTags) {
-        tag.classList.remove('trigger-phrase-tag-selected');
-    }
-    doNoticePopover('Copied!', 'notice-pop-green');
+    let insertValue = tagsToInsert.join(', ');
+    insertTriggerPhraseText(formatTriggerPhraseInsertText(insertValue));
+    doNoticePopover('Inserted!', 'notice-pop-green');
 }
 
 class ModelBrowserWrapper {
@@ -982,7 +1013,7 @@ class ModelBrowserWrapper {
 
     createTriggerPhraseTag(tag, highlightHtml = null) {
         let encodedTag = encodeURIComponent(tag);
-        return `<span class="trigger-phrase-tag" data-phrase-tag="${encodedTag}" onclick="toggleTriggerPhraseTag(this)" title="Click to select this tag for copying">${highlightHtml || escapeHtml(tag)}</span>`;
+        return `<span class="trigger-phrase-tag" data-phrase-tag="${encodedTag}" onclick="insertTriggerPhraseTag(this)" title="Click to insert this tag into the prompt">${highlightHtml || escapeHtml(tag)}</span>`;
     }
 
     createCopyableTriggerPhrase(phrase, searchMatch = null) {
@@ -1000,7 +1031,7 @@ class ModelBrowserWrapper {
             }
             return this.createTriggerPhraseTag(tag, highlightHtml);
         }).join('<span class="trigger-phrase-separator">, </span>');
-        return `<span class="trigger-phrase-entry">${renderedTags}<button title="Copy selected tags (or all if none selected)" class="basic-button trigger-phrase-copy-button" onclick="copyTriggerPhraseSelection(this)">&#x29C9;</button></span>`;
+        return `<span class="trigger-phrase-entry">${renderedTags}<button title="Insert all tags into the prompt" class="basic-button trigger-phrase-copy-button" onclick="insertTriggerPhraseEntry(this)">&#x29C9;</button></span>`;
     }
 
     formatTriggerPhrases(val, searchMatch = null) {
