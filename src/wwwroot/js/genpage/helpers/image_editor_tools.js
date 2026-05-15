@@ -2788,9 +2788,9 @@ class ImageEditorToolPicker extends ImageEditorTempTool {
 }
 
 /**
- * Shared base class for SAM2-based mask tools (warmup, clear mask, request tracking).
+ * Shared base class for SAM3-based mask tools (warmup, clear mask, request tracking).
  */
-class ImageEditorToolSam2Base extends ImageEditorTool {
+class ImageEditorToolSam3Base extends ImageEditorTool {
     constructor(editor, id, icon, name, description, hotkey = null) {
         super(editor, id, icon, name, description, hotkey);
         this.cursor = 'crosshair';
@@ -2803,7 +2803,7 @@ class ImageEditorToolSam2Base extends ImageEditorTool {
         <div class="image-editor-tool-block tool-block-nogrow">
             <button class="basic-button id-clear-mask">Clear Mask</button>
         </div>`;
-        this.warmupHTML = `<div class="image-editor-tool-block tool-block-nogrow" style="opacity:0.8; font-style:italic;">Warming up SAM2 model...</div>`;
+        this.warmupHTML = `<div class="image-editor-tool-block tool-block-nogrow" style="opacity:0.8; font-style:italic;">Warming up SAM3 model...</div>`;
         this.showControls();
         this.isMaskOnly = true;
         this.div.style.display = 'none';
@@ -2827,7 +2827,7 @@ class ImageEditorToolSam2Base extends ImageEditorTool {
 
     setActive() {
         super.setActive();
-        if (!this.modelWarmed && !this.isWarmingUp && currentBackendFeatureSet.includes('sam2') && this.editor.getFinalImageData?.()) {
+        if (!this.modelWarmed && !this.isWarmingUp && currentBackendFeatureSet.includes('sam3') && this.editor.getFinalImageData?.()) {
             this.triggerWarmup();
         }
     }
@@ -2874,7 +2874,7 @@ class ImageEditorToolSam2Base extends ImageEditorTool {
         this.showControls();
     }
 
-    /** Returns the image data and coordinate offset for SAM2 requests, cropped to the selection if active. */
+    /** Returns the image data and coordinate offset for SAM3 requests, cropped to the selection if active. */
     getImageForSam() {
         let bounds = this.editor.getSelectionBounds();
         let width, height;
@@ -2889,7 +2889,7 @@ class ImageEditorToolSam2Base extends ImageEditorTool {
         return { image: image, offsetX: bounds.x, offsetY: bounds.y, width: width, height: height };
     }
 
-    /** Returns the general mask request inputs for SAM2 requests, cropped to the selection if active. */
+    /** Returns the general mask request inputs for SAM3 requests, cropped to the selection if active. */
     getGeneralMaskRequestInputs() {
         let samInput = this.getImageForSam();
         let genData = getGenInput();
@@ -2905,7 +2905,7 @@ class ImageEditorToolSam2Base extends ImageEditorTool {
         return [genData, samInput];
     }
 
-    /** Applies a SAM2 mask result image to the active mask layer, handling selection cropping if active. */
+    /** Applies a SAM3 mask result image to the active mask layer, handling selection cropping if active. */
     applyMaskResult(maskImg) {
         if (!this.editor.activeLayer || !this.editor.activeLayer.isMask) {
             return;
@@ -2943,11 +2943,11 @@ class ImageEditorToolSam2Base extends ImageEditorTool {
 }
 
 /**
- * The SAM2 Point Segmentation tool - click to place positive/negative points and auto-generate a mask.
+ * The SAM3 Point Segmentation tool - click to place positive/negative points and auto-generate a mask.
  */
-class ImageEditorToolSam2Points extends ImageEditorToolSam2Base {
+class ImageEditorToolSam3Points extends ImageEditorToolSam3Base {
     constructor(editor) {
-        super(editor, 'sam2points', 'crosshair', 'SAM2 Points', 'Left click to add positive points. Right click to add negative points.\nEach click regenerates the mask.\nRequires SAM2 to be installed.\nHotKey: Y', 'y');
+        super(editor, 'sam3points', 'crosshair', 'SAM3 Points', 'Left click to add positive points. Right click to add negative points.\nEach click regenerates the mask.\nRequires SAM3 to be installed.\nHotKey: Y', 'y');
         // TODO: This map is a pretty iffy way to do things, probably stray persistence.
         this.layerPoints = new Map();
         this.pendingMaskUpdate = false;
@@ -3074,8 +3074,8 @@ class ImageEditorToolSam2Points extends ImageEditorToolSam2Base {
     }
 
     queueMaskUpdate() {
-        if (!currentBackendFeatureSet.includes('sam2')) {
-            $('#sam2_installer').modal('show');
+        if (!currentBackendFeatureSet.includes('sam3')) {
+            $('#sam3_installer').modal('show');
             return;
         }
         if (this.getActivePoints().positive.length == 0) {
@@ -3133,11 +3133,11 @@ class ImageEditorToolSam2Points extends ImageEditorToolSam2Base {
 }
 
 /**
- * The SAM2 Bounding Box segmentation tool - drag to define a box and auto-generate a mask.
+ * The SAM3 Bounding Box segmentation tool - drag to define a box and auto-generate a mask.
  */
-class ImageEditorToolSam2BBox extends ImageEditorToolSam2Base {
+class ImageEditorToolSam3BBox extends ImageEditorToolSam3Base {
     constructor(editor) {
-        super(editor, 'sam2bbox', 'bbox', 'SAM2 BBox', 'Click and drag to create a bounding box. Release to generate mask.\nRequires SAM2 to be installed.', null);
+        super(editor, 'sam3bbox', 'bbox', 'SAM3 BBox', 'Click and drag to create a bounding box. Release to generate mask.\nRequires SAM3 to be installed.', null);
         this.bboxStartX = null;
         this.bboxStartY = null;
         this.bboxEndX = null;
@@ -3202,8 +3202,8 @@ class ImageEditorToolSam2BBox extends ImageEditorToolSam2Base {
     }
 
     requestMaskUpdate() {
-        if (!currentBackendFeatureSet.includes('sam2')) {
-            $('#sam2_installer').modal('show');
+        if (!currentBackendFeatureSet.includes('sam3')) {
+            $('#sam3_installer').modal('show');
             return;
         }
         if (this.bboxStartX == null || this.bboxEndX == null) {

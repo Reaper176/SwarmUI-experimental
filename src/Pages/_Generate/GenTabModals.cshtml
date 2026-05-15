@@ -7,7 +7,7 @@
         <span class="translate">
             This Prompt-Syntax feature lets you add a region to the image that will be automatically detected after generation, and then automatically inpainted with a given prompt.
             <br>A common example use case here is when generating an image of a person, use this feature to automatically refine the face (this is sometimes called 'ADetailer').
-            <br>By default this uses CLIPSeg, which automatically masks the region based on a text prompt. You can instead use a YOLOv8 model.
+            <br>By default this uses CLIPSeg, which automatically masks the region based on a text prompt. You can instead use SAM3 or a YOLOv8 model.
             <br>Learn more about this feature here:
         </span>
         <a href="https://github.com/mcmonkeyprojects/SwarmUI/blob/master/docs/Features/Prompt%20Syntax.md#automatic-segmentation-and-refining" target="_blank" rel="noreferrer noopener" class="translate">[Swarm Docs: Prompt Syntax - Automatic Segmentation and Refining]</a>
@@ -60,16 +60,16 @@
         <button type="button" class="btn btn-secondary basic-button translate" onclick="$('#gen_previews_missing_preset_modal').modal('hide')">Cancel</button>
     </div>
 @WebUtil.ModalFooter()
-@WebUtil.ModalHeader("sam2_installer", "Install SAM2")
+@WebUtil.ModalHeader("sam3_installer", "Install SAM3")
     <div class="modal-body">
-        Full image auto-segmentation is made available via Segment-Anything-2 created by Meta AI (Apache 2 License), and ComfyUI nodepack for it created by kijai (Apache 2 License).
+        Interactive and text-based segmentation is made available via Segment-Anything-3 created by Meta AI, and ComfyUI nodepack for it created by PozzettiAndrea.
         <br>
-        <br>When used, it will generate an autosegmentation of the current image and provide the result as a layer in the image editor.
-        <br>You can then use the paintbucket tool to fill mask with sections you want, then delete or hide the segment layer.
+        <br>When used, it can generate point, bounding-box, and prompt-based masks for the current image.
+        <br>These masks can be used by the image editor and by prompt syntax such as <code>&lt;segment:sam3-face&gt;</code>.
     </div>
-    <div class="modal-footer" id="install_sam2_button">
-        <button type="button" class="btn btn-primary basic-button translate" onclick="installFeatureById('sam2', 'install_sam2_button', 'sam2_installer')">Install</button>
-        <button type="button" class="btn btn-secondary basic-button translate" onclick="$('#sam2_installer').modal('hide')">Cancel</button>
+    <div class="modal-footer" id="install_sam3_button">
+        <button type="button" class="btn btn-primary basic-button translate" onclick="installFeatureById('sam3', 'install_sam3_button', 'sam3_installer')">Install</button>
+        <button type="button" class="btn btn-secondary basic-button translate" onclick="$('#sam3_installer').modal('hide')">Cancel</button>
     </div>
 @WebUtil.ModalFooter()
 @WebUtil.ModalHeader("bnb_nf4_installer", "Install BnB NF4 Support")

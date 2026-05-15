@@ -217,7 +217,9 @@
     - See [the feature announcement](https://github.com/Stability-AI/StableSwarmUI/discussions/11#discussioncomment-7236821) for details.
     - Note the first time you run with CLIPSeg, Swarm will automatically download [an fp16 safetensors version of the clipseg-rd64-refined model](https://huggingface.co/mcmonkey/clipseg-rd64-refined-fp16)
     - You can insert a `<lora:...>` inside the prompt area of the segment to have a lora model apply onto that segment
-    - You can also replace the `texthere` with `yolo-modelnamehere` to use YOLOv8 segmentation models (this is what "ADetailer" uses)
+    - You can also replace the `texthere` with `sam3-texthere` to use SAM3 text segmentation, or `yolo-modelnamehere` to use YOLOv8 segmentation models (this is what "ADetailer" uses)
+        - For example, `<segment:sam3-face,0.6,0.2>` will use SAM3 text segmentation for `face`.
+        - Note the first time you run with SAM3, Swarm may need to install the SAM3 ComfyUI nodepack and download the SAM3 model.
         - store your models in `(Swarm)/Models/yolov8`
         - Examples of valid YOLOv8 Segmentation models here: https://github.com/hben35096/assets/releases/
         - You can also do `yolo-modelnamehere-1` to grab exactly match #1, and `-2` for match #2, and etc.
@@ -230,7 +232,7 @@
     - You can also combine multiple areas into a single segment to refine them as a single group.
         - Separate the areas with `|` in `texthere`.
         - For example, `<segment:face|hair>` will find all the faces and hair in the image and refine them as a single group.
-        - This works with YOLOv8 models as well.
+        - This works with SAM3 and YOLOv8 models as well.
             - `<segment:yolo-face_yolov8m-seg_60.pt | yolo-hair_yolov8m-seg_60.pt | fingers>` will refine the group of faces and hair (found by YOLO) and fingers (found by CLIPSeg) as a single group.
     - There's an advanced parameter group named `Segment Refining` which can configure additional options for this
         - `Segment Model` to customize the base model used for segment processing.

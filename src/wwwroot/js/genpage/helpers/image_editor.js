@@ -990,8 +990,8 @@ class ImageEditor {
         this.addTool(new ImageEditorToolShape(this));
         this.pickerTool = new ImageEditorToolPicker(this, 'picker', 'paintbrush', 'Color Picker', 'Pick a color from the image.');
         this.addTool(this.pickerTool);
-        this.addTool(new ImageEditorToolSam2Points(this));
-        this.addTool(new ImageEditorToolSam2BBox(this));
+        this.addTool(new ImageEditorToolSam3Points(this));
+        this.addTool(new ImageEditorToolSam3BBox(this));
         this.activateTool('brush');
         this.maxHistory = 15;
         $('#image_editor_debug_modal').on('hidden.bs.modal', () => {
@@ -2337,14 +2337,14 @@ class ImageEditor {
         this.addLayer(maskLayer, true);
         this.realWidth = img.naturalWidth;
         this.realHeight = img.naturalHeight;
-        if (this.tools['sam2points']) {
-            this.tools['sam2points'].layerPoints = new Map();
+        if (this.tools['sam3points']) {
+            this.tools['sam3points'].layerPoints = new Map();
         }
-        if (this.tools['sam2bbox']) {
-            this.tools['sam2bbox'].bboxStartX = null;
-            this.tools['sam2bbox'].bboxStartY = null;
-            this.tools['sam2bbox'].bboxEndX = null;
-            this.tools['sam2bbox'].bboxEndY = null;
+        if (this.tools['sam3bbox']) {
+            this.tools['sam3bbox'].bboxStartX = null;
+            this.tools['sam3bbox'].bboxStartY = null;
+            this.tools['sam3bbox'].bboxEndX = null;
+            this.tools['sam3bbox'].bboxEndY = null;
         }
         this.offsetX = 0
         this.offsetY = 0;

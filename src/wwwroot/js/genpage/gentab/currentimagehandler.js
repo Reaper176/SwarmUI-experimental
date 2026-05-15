@@ -3601,14 +3601,14 @@ async function openGenerateTabEditorForEditorData(sourceEditor, actionLabel = 'S
     imageEditor.realHeight = sourceEditor.realHeight;
     imageEditor.finalOffsetX = sourceEditor.finalOffsetX;
     imageEditor.finalOffsetY = sourceEditor.finalOffsetY;
-    if (imageEditor.tools['sam2points']) {
-        imageEditor.tools['sam2points'].layerPoints = new Map();
+    if (imageEditor.tools['sam3points']) {
+        imageEditor.tools['sam3points'].layerPoints = new Map();
     }
-    if (imageEditor.tools['sam2bbox']) {
-        imageEditor.tools['sam2bbox'].bboxStartX = null;
-        imageEditor.tools['sam2bbox'].bboxStartY = null;
-        imageEditor.tools['sam2bbox'].bboxEndX = null;
-        imageEditor.tools['sam2bbox'].bboxEndY = null;
+    if (imageEditor.tools['sam3bbox']) {
+        imageEditor.tools['sam3bbox'].bboxStartX = null;
+        imageEditor.tools['sam3bbox'].bboxStartY = null;
+        imageEditor.tools['sam3bbox'].bboxEndX = null;
+        imageEditor.tools['sam3bbox'].bboxEndY = null;
     }
     let activeLayerIndex = sourceEditor.layers.indexOf(sourceEditor.activeLayer);
     for (let sourceLayer of sourceEditor.layers) {

@@ -217,7 +217,7 @@ public static class ComfyUIWebAPI
             bool doFullRestart = false;
             foreach (InstallableFeatures.ComfyInstallableFeature featureData in installMe)
             {
-                ComfyUISelfStartBackend[] backendsStopped = await backend.EnsureNodeRepo(featureData.URL, featureData.SkipPipCache, false);
+                ComfyUISelfStartBackend[] backendsStopped = await backend.EnsureNodeRepo(featureData.URL, featureData.SkipPipCache, false, featureData.RunInstallScript);
                 if (backendsStopped is null)
                 {
                     doFullRestart = true;

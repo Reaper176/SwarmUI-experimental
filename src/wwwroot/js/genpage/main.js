@@ -773,21 +773,23 @@ async function ensureGenerateImageEditorReady() {
             let img = window.imageEditor.getMaximumImageData();
             storeImageToHistoryWithCurrentParams(img);
         }},
-        { key: 'Auto Segment Image (SAM2)', action: () => {
-            if (!currentBackendFeatureSet.includes('sam2')) {
-                $('#sam2_installer').modal('show');
+        { key: 'Segment Image By Prompt (SAM3)', action: () => {
+            if (!currentBackendFeatureSet.includes('sam3')) {
+                $('#sam3_installer').modal('show');
             }
             else {
+                let segmentPrompt = window.prompt('What should SAM3 segment?', '');
+                if (!segmentPrompt || !segmentPrompt.trim()) {
+                    return;
+                }
                 let img = window.imageEditor.getFinalImageData();
                 let genData = getGenInput();
-                genData['controlnetimageinput'] = img;
-                genData['controlnetstrength'] = 1;
-                genData['controlnetpreprocessor'] = 'Segment Anything 2 Global Autosegment base_plus';
+                genData['initimage'] = img;
+                genData['samsegmentprompt'] = segmentPrompt.trim();
                 genData['images'] = 1;
                 genData['prompt'] = '';
                 delete genData['batchsize'];
                 genData['donotsave'] = true;
-                genData['controlnetpreviewonly'] = true;
                 makeWSRequestT2I('GenerateText2ImageWS', genData, data => {
                     if (!data.image) {
                         return;

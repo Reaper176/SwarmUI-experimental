@@ -19,6 +19,7 @@ Directory.Build.props
 /Data
 /Models
 /src/BuiltinExtensions/ComfyUIBackend/models/
+/src/BuiltinExtensions/ComfyUIBackend/input/
 tmp/
 .worktrees/
 /src/Extensions
