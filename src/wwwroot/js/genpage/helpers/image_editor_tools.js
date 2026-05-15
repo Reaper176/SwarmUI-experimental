@@ -101,6 +101,10 @@ class ImageEditorTool {
         return false;
     }
 
+    onContextMenu(e) {
+        return false;
+    }
+
     onLayerChanged(oldLayer, newLayer) {
         if (this.isMaskOnly) {
             let isMask = newLayer && newLayer.isMask;
@@ -2951,6 +2955,22 @@ class ImageEditorToolSam3Points extends ImageEditorToolSam3Base {
         // TODO: This map is a pretty iffy way to do things, probably stray persistence.
         this.layerPoints = new Map();
         this.pendingMaskUpdate = false;
+        this.controlsHTML = `
+        <div class="image-editor-tool-block tool-block-nogrow">
+            <button class="basic-button id-clear-mask">Clear Mask</button>
+            <button class="basic-button id-clear-points">Clear Points</button>
+        </div>`;
+        this.showControls();
+    }
+
+    showControls() {
+        super.showControls();
+        let clearPointsButton = this.configDiv.querySelector('.id-clear-points');
+        if (clearPointsButton) {
+            clearPointsButton.addEventListener('click', () => {
+                this.clearPoints();
+            });
+        }
     }
 
     getActivePoints() {
@@ -2962,6 +2982,20 @@ class ImageEditorToolSam3Points extends ImageEditorToolSam3Base {
             this.layerPoints.set(layer.id, { positive: [], negative: [] });
         }
         return this.layerPoints.get(layer.id);
+    }
+
+    clearPoints() {
+        let maskLayer = this.editor.activeLayer;
+        if (!maskLayer || !maskLayer.isMask) {
+            return;
+        }
+        let points = this.getActivePoints();
+        points.positive = [];
+        points.negative = [];
+        this.activeRequestId = ++this.requestSerial;
+        this.maskRequestInFlight = false;
+        this.pendingMaskUpdate = false;
+        this.editor.queueOverlayRedraw();
     }
 
     clearMaskAndEndRequest() {
@@ -3021,6 +3055,14 @@ class ImageEditorToolSam3Points extends ImageEditorToolSam3Base {
     }
 
     onRightMouseDown(e) {
+        e.preventDefault();
+        e.stopPropagation();
+        return true;
+    }
+
+    onContextMenu(e) {
+        e.preventDefault();
+        e.stopPropagation();
         return true;
     }
 
@@ -3029,6 +3071,10 @@ class ImageEditorToolSam3Points extends ImageEditorToolSam3Base {
     }
 
     onMouseDown(e) {
+        if (e.button == 2) {
+            e.preventDefault();
+            e.stopPropagation();
+        }
         if (this.isWarmingUp || (e.button != 0 && e.button != 2)) {
             return;
         }
