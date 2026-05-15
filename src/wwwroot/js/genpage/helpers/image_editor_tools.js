@@ -3298,3 +3298,84 @@ class ImageEditorToolSam3BBox extends ImageEditorToolSam3Base {
         });
     }
 }
+
+/**
+ * The SAM3 text prompt segmentation tool - generates a mask from a text description.
+ */
+class ImageEditorToolSam3Text extends ImageEditorToolSam3Base {
+    constructor(editor) {
+        super(editor, 'sam3text', 'wand', 'SAM3 Text', 'Type a text description to generate a matching mask.\nRequires SAM3 to be installed.', null);
+        this.textPrompt = '';
+        this.showControls();
+    }
+
+    showControls() {
+        this.configDiv.innerHTML = `
+        <div class="image-editor-tool-block image-editor-sam3-text-block">
+            <label>Prompt:&nbsp;</label>
+            <input type="text" class="auto-text id-sam3-text-prompt" value="${escapeHtml(this.textPrompt || '')}" placeholder="object to mask">
+        </div>
+        <div class="image-editor-tool-block tool-block-nogrow">
+            <button class="basic-button id-generate-mask">Generate Mask</button>
+            <button class="basic-button id-clear-mask">Clear Mask</button>
+        </div>`;
+        this.promptInput = this.configDiv.querySelector('.id-sam3-text-prompt');
+        this.promptInput.addEventListener('input', () => {
+            this.textPrompt = this.promptInput.value;
+        });
+        this.promptInput.addEventListener('keydown', e => {
+            if (e.key == 'Enter') {
+                this.requestMaskUpdate();
+                e.preventDefault();
+            }
+        });
+        this.configDiv.querySelector('.id-generate-mask').addEventListener('click', () => {
+            this.requestMaskUpdate();
+        });
+        this.configDiv.querySelector('.id-clear-mask').addEventListener('click', () => {
+            this.onClearMask();
+        });
+    }
+
+    addWarmupGenData(genData, cx, cy) {
+        genData['samsegmentprompt'] = 'object';
+    }
+
+    requestMaskUpdate() {
+        if (!currentBackendFeatureSet.includes('sam3')) {
+            $('#sam3_installer').modal('show');
+            return;
+        }
+        let prompt = (this.promptInput ? this.promptInput.value : this.textPrompt || '').trim();
+        this.textPrompt = prompt;
+        if (!prompt) {
+            doNoticePopover('Enter a SAM3 text prompt first.', 'notice-pop-red');
+            return;
+        }
+        this.maskRequestInFlight = true;
+        let requestId = ++this.requestSerial;
+        this.activeRequestId = requestId;
+        let [genData] = this.getGeneralMaskRequestInputs();
+        genData['samsegmentprompt'] = prompt;
+        makeWSRequestT2I('GenerateText2ImageWS', genData, data => {
+            if (requestId != this.activeRequestId) {
+                return;
+            }
+            this.maskRequestInFlight = false;
+            if (!data.image) {
+                return;
+            }
+            let newImg = new Image();
+            newImg.onload = () => {
+                if (requestId != this.activeRequestId) {
+                    return;
+                }
+                if (!this.editor.activeLayer || !this.editor.activeLayer.isMask) {
+                    return;
+                }
+                this.applyMaskResult(newImg);
+            };
+            newImg.src = data.image;
+        });
+    }
+}

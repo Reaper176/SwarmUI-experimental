@@ -591,6 +591,10 @@ body {
     min-height: 32px;
     box-sizing: border-box;
 }
+#ImageEditing .imageediting_active_tool_options_body .image-editor-sam3-text-block input {
+    flex-grow: 1;
+    min-width: 0;
+}
 #ImageEditing .imageediting_active_tool_options_body .image-editor-tool-settings-dropdown {
     width: 100%;
     height: auto;

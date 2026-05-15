@@ -992,6 +992,7 @@ class ImageEditor {
         this.addTool(this.pickerTool);
         this.addTool(new ImageEditorToolSam3Points(this));
         this.addTool(new ImageEditorToolSam3BBox(this));
+        this.addTool(new ImageEditorToolSam3Text(this));
         this.activateTool('brush');
         this.maxHistory = 15;
         $('#image_editor_debug_modal').on('hidden.bs.modal', () => {

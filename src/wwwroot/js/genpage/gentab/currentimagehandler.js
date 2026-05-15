@@ -1574,13 +1574,13 @@ let imageEditingToolGroupDefinitions = [
     { id: 'paint', label: 'Paint', toolIds: ['brush', 'eraser', 'paintbucket', 'shape', 'picker'] },
     { id: 'select', label: 'Select', toolIds: ['select', 'ellipse-select', 'lasso-select', 'polygon-select', 'magic-wand', 'color-select'] },
     { id: 'transform', label: 'Transform', toolIds: ['move', 'crop'] },
-    { id: 'ai_mask', label: 'AI Mask', toolIds: ['sam3points', 'sam3bbox'] }
+    { id: 'ai_mask', label: 'AI Mask', toolIds: ['sam3points', 'sam3bbox', 'sam3text'] }
 ];
 let imageEditingPaintToolIds = ['brush', 'eraser', 'paintbucket', 'shape', 'picker'];
 let imageEditingSelectionContextToolIds = ['select', 'ellipse-select', 'lasso-select', 'polygon-select', 'magic-wand', 'color-select'];
 let imageEditingCropContextToolIds = ['crop'];
 let imageEditingTransformContextToolIds = ['move'];
-let imageEditingAiMaskContextToolIds = ['sam3points', 'sam3bbox'];
+let imageEditingAiMaskContextToolIds = ['sam3points', 'sam3bbox', 'sam3text'];
 let imageEditingLayerAdjustmentDefinitions = [
     { key: 'saturation', property: 'saturation', defaultValue: 1, sliderMin: 0, sliderMax: 200, sliderDefault: 100, sliderToProperty: value => value / 100, propertyToSlider: value => Math.round(value * 100), format: value => `${value}%`, contextId: 'imageediting_layer_saturation_context' },
     { key: 'light_value', property: 'lightValue', defaultValue: 1, sliderMin: 0, sliderMax: 200, sliderDefault: 100, sliderToProperty: value => value / 100, propertyToSlider: value => Math.round(value * 100), format: value => `${value}%`, contextId: 'imageediting_layer_light_value_context' },
