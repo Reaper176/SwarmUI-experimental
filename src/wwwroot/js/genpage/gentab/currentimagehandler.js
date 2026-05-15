@@ -1576,6 +1576,11 @@ let imageEditingToolGroupDefinitions = [
     { id: 'transform', label: 'Transform', toolIds: ['move', 'crop'] },
     { id: 'ai_mask', label: 'AI Mask', toolIds: ['sam3points', 'sam3bbox'] }
 ];
+let imageEditingPaintToolIds = ['brush', 'eraser', 'paintbucket', 'shape', 'picker'];
+let imageEditingSelectionContextToolIds = ['select', 'ellipse-select', 'lasso-select', 'polygon-select', 'magic-wand', 'color-select'];
+let imageEditingCropContextToolIds = ['crop'];
+let imageEditingTransformContextToolIds = ['move'];
+let imageEditingAiMaskContextToolIds = ['sam3points', 'sam3bbox'];
 let imageEditingLayerAdjustmentDefinitions = [
     { key: 'saturation', property: 'saturation', defaultValue: 1, sliderMin: 0, sliderMax: 200, sliderDefault: 100, sliderToProperty: value => value / 100, propertyToSlider: value => Math.round(value * 100), format: value => `${value}%`, contextId: 'imageediting_layer_saturation_context' },
     { key: 'light_value', property: 'lightValue', defaultValue: 1, sliderMin: 0, sliderMax: 200, sliderDefault: 100, sliderToProperty: value => value / 100, propertyToSlider: value => Math.round(value * 100), format: value => `${value}%`, contextId: 'imageediting_layer_light_value_context' },
@@ -2080,6 +2085,16 @@ function imageEditingEnsureSplittersWired() {
 }
 
 /**
+ * Shows or hides an Image Editing input group.
+ */
+function imageEditingSetInputGroupVisible(element, visible) {
+    if (!element || !element.parentElement) {
+        return;
+    }
+    element.parentElement.style.display = visible ? '' : 'none';
+}
+
+/**
  * Refreshes tool button visibility and active-state markers.
  */
 function imageEditingRefreshToolButtons() {
@@ -2123,6 +2138,7 @@ function imageEditingRefreshToolButtons() {
         imageEditingSetColor(imageEditingTabEditor.activeTool.color);
     }
     imageEditingRefreshPenOptions();
+    imageEditingRefreshContextPanel();
 }
 
 function imageEditingSetupPenOptions() {
@@ -2177,6 +2193,28 @@ function imageEditingRefreshPenOptions() {
     }
     empty.style.display = 'none';
     mount.appendChild(imageEditingTabEditor.activeTool.penOptionsDiv);
+}
+
+/**
+ * Refreshes which control sections appear in the Image Editing context panel.
+ */
+function imageEditingRefreshContextPanel() {
+    if (!imageEditingTabEditor || !imageEditingTabEditor.activeTool) {
+        return;
+    }
+    let toolId = imageEditingTabEditor.activeTool.id;
+    let isPaint = imageEditingPaintToolIds.includes(toolId);
+    let isSelection = imageEditingSelectionContextToolIds.includes(toolId);
+    let isCrop = imageEditingCropContextToolIds.includes(toolId);
+    let isTransform = imageEditingTransformContextToolIds.includes(toolId);
+    let isAiMask = imageEditingAiMaskContextToolIds.includes(toolId);
+    imageEditingSetInputGroupVisible(imageEditingGetToolsHeader(), false);
+    imageEditingSetInputGroupVisible(imageEditingGetPenOptionsHeader(), isPaint || isAiMask);
+    imageEditingSetInputGroupVisible(imageEditingGetActionsHeader(), isTransform || isAiMask);
+    imageEditingSetInputGroupVisible(imageEditingGetLayerOptionsHeader(), true);
+    imageEditingSetInputGroupVisible(imageEditingGetImageOptionsHeader(), isPaint || isTransform);
+    imageEditingSetInputGroupVisible(imageEditingGetSelectionCropHeader(), isSelection || isCrop);
+    imageEditingSetInputGroupVisible(imageEditingGetEffectsPresetsHeader(), isPaint || isTransform);
 }
 
 /**
@@ -3602,6 +3640,7 @@ function imageEditingEnsureUiReady() {
     imageEditingApplyLeftSidebarWidth();
     imageEditingApplyRightSidebarWidth();
     imageEditingApplyInputSectionState();
+    imageEditingRefreshContextPanel();
     imageEditingRefreshLayerOpacityControl();
     imageEditingRefreshSelectionControls();
     imageEditingRefreshCropControls();
