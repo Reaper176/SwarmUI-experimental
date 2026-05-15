@@ -567,6 +567,45 @@ body {
 #ImageEditing .imageediting_pen_options_body .image-editor-tool-block {
     width: 100%;
 }
+#ImageEditing .imageediting_active_tool_options_body {
+    display: flex;
+    flex-direction: column;
+    gap: 0.45rem;
+}
+#ImageEditing .imageediting_active_tool_options_mount {
+    display: flex;
+    flex-direction: column;
+    gap: 0.45rem;
+}
+#ImageEditing .imageediting_active_tool_options_body .image-editor-tool-bottombar {
+    display: flex;
+    flex-direction: column;
+    gap: 0.45rem;
+    width: 100%;
+    height: auto;
+    padding-left: 0;
+    justify-content: flex-start;
+}
+#ImageEditing .imageediting_active_tool_options_body .image-editor-tool-block {
+    width: 100%;
+    min-height: 32px;
+    box-sizing: border-box;
+}
+#ImageEditing .imageediting_active_tool_options_body .image-editor-tool-settings-dropdown {
+    width: 100%;
+    height: auto;
+}
+#ImageEditing .imageediting_active_tool_options_body .image-editor-tool-settings-summary {
+    min-height: 32px;
+}
+#ImageEditing .imageediting_active_tool_options_body .image-editor-tool-settings-panel {
+    position: static;
+    width: 100%;
+    max-width: 100%;
+    margin-top: 0.35rem;
+    box-shadow: none;
+    box-sizing: border-box;
+}
 #ImageEditing .imageediting_pen_options_body .id-preset-block,
 #ImageEditing .imageediting_pen_options_body .id-preset-buttons-block {
     height: auto;

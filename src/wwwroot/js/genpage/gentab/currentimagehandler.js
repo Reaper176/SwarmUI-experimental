@@ -1670,6 +1670,18 @@ function imageEditingGetPenOptionsEmpty() {
     return document.getElementById('imageediting_pen_options_empty');
 }
 
+function imageEditingGetActiveToolOptionsHeader() {
+    return document.getElementById('imageediting_active_tool_options_header');
+}
+
+function imageEditingGetActiveToolOptionsMount() {
+    return document.getElementById('imageediting_active_tool_options_mount');
+}
+
+function imageEditingGetActiveToolOptionsEmpty() {
+    return document.getElementById('imageediting_active_tool_options_empty');
+}
+
 /**
  * Gets the Image Editing tools section header.
  */
@@ -2138,6 +2150,7 @@ function imageEditingRefreshToolButtons() {
         imageEditingSetColor(imageEditingTabEditor.activeTool.color);
     }
     imageEditingRefreshPenOptions();
+    imageEditingRefreshActiveToolOptions();
     imageEditingRefreshContextPanel();
 }
 
@@ -2195,6 +2208,23 @@ function imageEditingRefreshPenOptions() {
     mount.appendChild(imageEditingTabEditor.activeTool.penOptionsDiv);
 }
 
+function imageEditingRefreshActiveToolOptions() {
+    let mount = imageEditingGetActiveToolOptionsMount();
+    let empty = imageEditingGetActiveToolOptionsEmpty();
+    if (!mount || !empty) {
+        return;
+    }
+    let tool = imageEditingTabEditor ? imageEditingTabEditor.activeTool : null;
+    if (!tool || !tool.configDiv || tool.configDiv.children.length <= 0) {
+        empty.style.display = '';
+        return;
+    }
+    empty.style.display = 'none';
+    if (tool.configDiv.parentElement != mount) {
+        mount.appendChild(tool.configDiv);
+    }
+}
+
 /**
  * Refreshes which control sections appear in the Image Editing context panel.
  */
@@ -2209,6 +2239,7 @@ function imageEditingRefreshContextPanel() {
     let isTransform = imageEditingTransformContextToolIds.includes(toolId);
     let isAiMask = imageEditingAiMaskContextToolIds.includes(toolId);
     imageEditingSetInputGroupVisible(imageEditingGetToolsHeader(), false);
+    imageEditingSetInputGroupVisible(imageEditingGetActiveToolOptionsHeader(), true);
     imageEditingSetInputGroupVisible(imageEditingGetPenOptionsHeader(), isPaint || isAiMask);
     imageEditingSetInputGroupVisible(imageEditingGetActionsHeader(), isTransform || isAiMask);
     imageEditingSetInputGroupVisible(imageEditingGetLayerOptionsHeader(), true);
@@ -3536,6 +3567,7 @@ function imageEditingEnsureEditorReady() {
     imageEditingTabEditor.unhideParams = () => {
     };
     imageEditingTabEditor.leftBar.style.display = 'none';
+    imageEditingTabEditor.bottomBar.style.display = 'none';
     imageEditingTabEditor.rightResizeBar = null;
     let rightSidebarContent = imageEditingGetRightSidebarContent();
     if (rightSidebarContent) {
