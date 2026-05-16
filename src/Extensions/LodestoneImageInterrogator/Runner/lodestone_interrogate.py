@@ -620,6 +620,13 @@ class Tagger:
 # CLI
 # =============================================================================
 
+class JsonArgumentParser(argparse.ArgumentParser):
+    def error(self, message):
+        self.print_usage(sys.stderr)
+        print(json.dumps({"success": False, "error": message}, ensure_ascii=False))
+        raise SystemExit(2)
+
+
 def category_for(tag, tag2category):
     category = tag2category.get(tag, "general")
     if not category:
@@ -628,7 +635,7 @@ def category_for(tag, tag2category):
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Lodestone tagger JSON inference")
+    parser = JsonArgumentParser(description="Lodestone tagger JSON inference")
     parser.add_argument("--checkpoint", required=True)
     parser.add_argument("--vocab", required=True)
     parser.add_argument("--image", required=True)
