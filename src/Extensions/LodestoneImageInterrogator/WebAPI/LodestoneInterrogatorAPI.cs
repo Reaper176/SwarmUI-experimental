@@ -18,6 +18,9 @@ public static class LodestoneInterrogatorPermissions
 
     /// <summary>Permission to use Lodestone Image Interrogator routes.</summary>
     public static readonly PermInfo Use = Permissions.Register(new PermInfo("use_lodestone_image_interrogator", "Use Lodestone Image Interrogator", "Allows using the Lodestone Image Interrogator extension.", PermissionDefault.POWERUSERS, Group));
+
+    /// <summary>Permission to run Lodestone Image Interrogator setup.</summary>
+    public static readonly PermInfo Setup = Permissions.Register(new PermInfo("setup_lodestone_image_interrogator", "Setup Lodestone Image Interrogator", "Allows installing Python dependencies and downloading model files for the Lodestone Image Interrogator extension.", PermissionDefault.ADMINS, Group, PermSafetyLevel.RISKY));
 }
 
 /// <summary>API routes for the Lodestone Image Interrogator extension.</summary>
@@ -37,8 +40,13 @@ public static class LodestoneInterrogatorAPI
         {
             throw new System.InvalidOperationException("Lodestone Image Interrogator use permission failed to register.");
         }
+        PermInfo setupPermission = LodestoneInterrogatorPermissions.Setup;
+        if (setupPermission is null)
+        {
+            throw new System.InvalidOperationException("Lodestone Image Interrogator setup permission failed to register.");
+        }
         API.RegisterAPICall(LodestoneInterrogatorStatus, false, LodestoneInterrogatorPermissions.View);
-        API.RegisterAPICall(LodestoneInterrogatorSetup, true, LodestoneInterrogatorPermissions.Use);
+        API.RegisterAPICall(LodestoneInterrogatorSetup, true, LodestoneInterrogatorPermissions.Setup);
     }
 
     /// <summary>Gets Lodestone Image Interrogator setup status.</summary>
