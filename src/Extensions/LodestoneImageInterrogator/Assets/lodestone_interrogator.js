@@ -76,28 +76,50 @@ class LodestoneInterrogatorHelper
         {
             return;
         }
-        let currentImage = document.getElementById("current_image");
-        if (!currentImage || !currentImage.parentElement)
+        let button = this.createGenerateBridgeButton();
+        let currentImageCollection = document.getElementById("currentimagecollection");
+        if (currentImageCollection)
+        {
+            let item = document.createElement("li");
+            item.className = "nav-item lodestone-interrogator-send-current-item";
+            item.setAttribute("role", "presentation");
+            button.className = "nav-link lodestone-interrogator-send-current translate";
+            item.appendChild(button);
+            currentImageCollection.appendChild(item);
+            return;
+        }
+        let currentImageWrapbox = document.getElementById("current_image_wrapbox");
+        if (!currentImageWrapbox)
         {
             return;
         }
+        button.className = "basic-button lodestone-interrogator-send-current lodestone-interrogator-send-current-float translate";
+        currentImageWrapbox.classList.add("lodestone-interrogator-current-image-wrapbox");
+        currentImageWrapbox.appendChild(button);
+    }
+
+    /**
+     * Creates the Generate tab bridge button.
+     */
+    createGenerateBridgeButton()
+    {
         let button = document.createElement("button");
         button.type = "button";
         button.id = "lodestone_interrogator_send_current_button";
-        button.className = "basic-button lodestone-interrogator-send-current translate";
         button.textContent = "Interrogate Image";
         button.addEventListener("click", this.takeCurrentImage.bind(this));
-        currentImage.parentElement.insertBefore(button, currentImage);
+        return button;
     }
 
     /**
      * Copies the current Generate tab image into the interrogator preview and opens the tab.
      */
-    takeCurrentImage()
+    async takeCurrentImage()
     {
         let currentImage = document.getElementById("current_image");
         if (!currentImage)
         {
+            showError("The current Generate image area is not available.");
             return;
         }
         let images = currentImage.querySelectorAll("img");
@@ -107,7 +129,8 @@ class LodestoneInterrogatorHelper
             let possible = images[i];
             let style = window.getComputedStyle(possible);
             let rect = possible.getBoundingClientRect();
-            if (possible.src && style.display != "none" && style.visibility != "hidden" && rect.width > 0 && rect.height > 0)
+            let imageSource = this.getImageSource(possible);
+            if (imageSource && style.display != "none" && style.visibility != "hidden" && rect.width > 0 && rect.height > 0)
             {
                 image = possible;
                 break;
@@ -115,9 +138,20 @@ class LodestoneInterrogatorHelper
         }
         if (!image)
         {
+            showError("No current Generate image is available to interrogate.");
             return;
         }
-        this.imageData = image.src;
+        let source = this.getImageSource(image);
+        try
+        {
+            this.imageData = await this.convertImageSourceToDataUrl(source);
+        }
+        catch (error)
+        {
+            this.imageData = null;
+            showError(`Failed to read current Generate image: ${error}`);
+            return;
+        }
         this.renderPreview(this.imageData);
         let hash = String.fromCharCode(35);
         let tab = document.getElementById("maintab_Image_Interrogator");
@@ -141,6 +175,60 @@ class LodestoneInterrogatorHelper
         {
             tab.click();
         }
+    }
+
+    /**
+     * Returns the most useful source URL from an image element.
+     */
+    getImageSource(image)
+    {
+        if (!image)
+        {
+            return "";
+        }
+        return image.currentSrc || image.dataset.src || image.src || "";
+    }
+
+    /**
+     * Converts an image URL to the data URL format expected by the backend.
+     */
+    async convertImageSourceToDataUrl(source)
+    {
+        if (!source)
+        {
+            throw new Error("No image URL is available.");
+        }
+        if (source.startsWith("data:"))
+        {
+            return source;
+        }
+        let response = await fetch(source);
+        if (!response.ok)
+        {
+            throw new Error(`Image request failed with status ${response.status}.`);
+        }
+        let blob = await response.blob();
+        return await this.blobToDataUrl(blob);
+    }
+
+    /**
+     * Reads a Blob as a data URL.
+     */
+    blobToDataUrl(blob)
+    {
+        return new Promise(function(resolve, reject)
+        {
+            let reader = new FileReader();
+            reader.onload = function(loadEvent)
+            {
+                resolve(loadEvent.target.result);
+            };
+            reader.onerror = function()
+            {
+                reject(new Error("Unable to convert image data."));
+            };
+            reader.readAsDataURL(blob);
+        });
     }
 
     /**

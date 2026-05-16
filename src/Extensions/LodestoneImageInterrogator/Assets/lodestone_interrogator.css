@@ -38,15 +38,26 @@
     align-items: center;
     justify-content: center;
     min-height: 14rem;
-    border: 1px solid var(--border-color);
+    border: 1px solid rgb(80, 80, 80);
     border-radius: 0.5rem;
     background: rgba(255, 255, 255, 0.03);
     text-align: center;
 }
 
 .lodestone-interrogator-send-current {
-    align-self: flex-start;
-    margin-bottom: 0.5rem;
+    margin-left: 0.5rem;
+}
+
+.lodestone-interrogator-current-image-wrapbox {
+    position: relative;
+}
+
+.lodestone-interrogator-send-current-float {
+    position: absolute;
+    top: 0.5rem;
+    right: 0.5rem;
+    z-index: 10;
+    margin-left: 0;
 }
 
 .lodestone-interrogator-preview img {
@@ -91,7 +102,7 @@
 }
 
 .lodestone-interrogator-result-group {
-    border: 1px solid var(--border-color);
+    border: 1px solid rgb(80, 80, 80);
     border-radius: 0.5rem;
     padding: 0.75rem;
     min-height: 5rem;
