@@ -64,6 +64,83 @@ class LodestoneInterrogatorHelper
         }
 
         this.refreshStatus();
+        this.addGenerateBridgeButton();
+    }
+
+    /**
+     * Adds a Generate tab button that sends the current image into this interrogator.
+     */
+    addGenerateBridgeButton()
+    {
+        if (document.getElementById("lodestone_interrogator_send_current_button"))
+        {
+            return;
+        }
+        let currentImage = document.getElementById("current_image");
+        if (!currentImage || !currentImage.parentElement)
+        {
+            return;
+        }
+        let button = document.createElement("button");
+        button.type = "button";
+        button.id = "lodestone_interrogator_send_current_button";
+        button.className = "basic-button lodestone-interrogator-send-current translate";
+        button.textContent = "Interrogate Image";
+        button.addEventListener("click", this.takeCurrentImage.bind(this));
+        currentImage.parentElement.insertBefore(button, currentImage);
+    }
+
+    /**
+     * Copies the current Generate tab image into the interrogator preview and opens the tab.
+     */
+    takeCurrentImage()
+    {
+        let currentImage = document.getElementById("current_image");
+        if (!currentImage)
+        {
+            return;
+        }
+        let images = currentImage.querySelectorAll("img");
+        let image = null;
+        for (let i = 0; i < images.length; i++)
+        {
+            let possible = images[i];
+            let style = window.getComputedStyle(possible);
+            let rect = possible.getBoundingClientRect();
+            if (possible.src && style.display != "none" && style.visibility != "hidden" && rect.width > 0 && rect.height > 0)
+            {
+                image = possible;
+                break;
+            }
+        }
+        if (!image)
+        {
+            return;
+        }
+        this.imageData = image.src;
+        this.renderPreview(this.imageData);
+        let hash = String.fromCharCode(35);
+        let tab = document.getElementById("maintab_Image_Interrogator");
+        if (!tab)
+        {
+            tab = document.getElementById("maintab_imageinterrogator");
+        }
+        if (!tab)
+        {
+            tab = document.querySelector(`[href="${hash}Image_Interrogator"]`);
+        }
+        if (!tab)
+        {
+            tab = document.querySelector(`[href="${hash}imageinterrogator"]`);
+        }
+        if (!tab)
+        {
+            tab = document.querySelector(`[href="${hash}Image-Interrogator"]`);
+        }
+        if (tab)
+        {
+            tab.click();
+        }
     }
 
     /**

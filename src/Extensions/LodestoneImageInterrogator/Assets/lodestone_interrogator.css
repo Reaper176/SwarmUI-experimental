@@ -44,6 +44,17 @@
     text-align: center;
 }
 
+.lodestone-interrogator-send-current {
+    align-self: flex-start;
+    margin-bottom: 0.5rem;
+}
+
+.lodestone-interrogator-preview img {
+    max-width: 100%;
+    max-height: 28rem;
+    object-fit: contain;
+}
+
 .lodestone-interrogator-field {
     display: flex;
     flex-direction: column;
