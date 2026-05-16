@@ -149,7 +149,7 @@ public static class LodestoneSetupManager
             }
 
             await RunProcessChecked(PythonExePath, ["-m", "pip", "install", "-r", "Runner/requirements.txt"], ExtensionRoot);
-            await RunProcessChecked(PythonExePath, ["-c", "import torch, torchvision, safetensors, PIL, requests"], ExtensionRoot);
+            await RunProcessChecked(PythonExePath, ["-c", "import torch, safetensors, PIL, requests"], ExtensionRoot);
             await DownloadIfMissing("https://huggingface.co/lodestones/taggerine/resolve/main/tagger_proto.safetensors", ModelPath);
             await DownloadIfMissing("https://huggingface.co/lodestones/taggerine/resolve/main/tagger_vocab_with_categories_and_alias_updated.json", VocabPath);
 

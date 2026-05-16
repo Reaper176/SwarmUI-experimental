@@ -363,7 +363,7 @@ class LodestoneInterrogatorHelper
         {
             if (!data.success)
             {
-                showError(data.error || "Lodestone interrogation failed.");
+                showError(this.formatApiError(data, "Lodestone interrogation failed."));
                 this.updateButtonStates();
                 return;
             }
@@ -375,6 +375,45 @@ class LodestoneInterrogatorHelper
             showError(error);
             this.updateButtonStates();
         }.bind(this));
+    }
+
+    /**
+     * Formats API errors with process output when the backend provides it.
+     */
+    formatApiError(data, fallback)
+    {
+        if (!data)
+        {
+            return fallback;
+        }
+        let message = data.error || fallback;
+        let detail = this.firstUsefulLine(data.stderr) || this.firstUsefulLine(data.stdout);
+        if (detail && !message.includes(detail))
+        {
+            message = `${message}\n${detail}`;
+        }
+        return message;
+    }
+
+    /**
+     * Extracts a concise line from process output.
+     */
+    firstUsefulLine(text)
+    {
+        if (!text)
+        {
+            return "";
+        }
+        let lines = `${text}`.replaceAll("\r\n", "\n").replaceAll("\r", "\n").split("\n");
+        for (let i = 0; i < lines.length; i++)
+        {
+            let trimmed = lines[i].trim();
+            if (trimmed)
+            {
+                return trimmed.length > 500 ? `${trimmed.substring(0, 500)}...` : trimmed;
+            }
+        }
+        return "";
     }
 
     /**

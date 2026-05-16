@@ -79,7 +79,7 @@ public static class LodestoneRunner
             return new JObject()
             {
                 ["success"] = false,
-                ["error"] = $"Lodestone runner exited with code {result.ExitCode}.",
+                ["error"] = BuildRunnerError(result.ExitCode, result.Stdout, result.Stderr),
                 ["stderr"] = result.Stderr,
                 ["stdout"] = result.Stdout,
                 ["exitCode"] = result.ExitCode
@@ -174,6 +174,40 @@ public static class LodestoneRunner
         string stdout = await stdoutTask;
         string stderr = await stderrTask;
         return (proc.ExitCode, stdout, stderr);
+    }
+
+    /// <summary>Builds a concise runner failure message with the most useful available process output.</summary>
+    private static string BuildRunnerError(int exitCode, string stdout, string stderr)
+    {
+        string detail = FirstUsefulLine(stderr);
+        if (string.IsNullOrWhiteSpace(detail))
+        {
+            detail = FirstUsefulLine(stdout);
+        }
+        if (string.IsNullOrWhiteSpace(detail))
+        {
+            return $"Lodestone runner exited with code {exitCode}.";
+        }
+        return $"Lodestone runner exited with code {exitCode}: {detail}";
+    }
+
+    /// <summary>Returns the first non-empty process output line, trimmed to a reasonable UI size.</summary>
+    private static string FirstUsefulLine(string text)
+    {
+        if (string.IsNullOrWhiteSpace(text))
+        {
+            return "";
+        }
+        string[] lines = text.Replace("\r\n", "\n").Replace('\r', '\n').Split('\n');
+        foreach (string line in lines)
+        {
+            string trimmed = line.Trim();
+            if (!string.IsNullOrWhiteSpace(trimmed))
+            {
+                return trimmed.Length > 500 ? $"{trimmed[..500]}..." : trimmed;
+            }
+        }
+        return "";
     }
 
     /// <summary>Parses runner stdout as a JSON object.</summary>

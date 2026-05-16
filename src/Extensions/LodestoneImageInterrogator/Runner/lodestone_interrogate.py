@@ -5,9 +5,9 @@ https://huggingface.co/lodestones/taggerine/raw/main/inference_tagger_standalone
 Upstream source is Apache-2.0 licensed.
 
 Zero dependency on transformers, trainer code, or any internal module.
-Only requires: torch, torchvision, safetensors, Pillow, requests.
+Only requires: torch, safetensors, Pillow, requests.
 
-  pip install torch torchvision safetensors Pillow requests
+  pip install torch safetensors Pillow requests
 
 The DINOv3 ViT-H/16+ architecture is implemented directly here, with weights
 loaded from a .safetensors checkpoint.  The state-dict key names match the
@@ -30,7 +30,6 @@ import requests
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-import torchvision.transforms.v2 as v2
 from PIL import Image
 from safetensors.torch import load_file
 
@@ -414,6 +413,16 @@ def _open_image(source) -> Image.Image:
     return Image.open(source).convert("RGB")
 
 
+def _image_to_normalized_tensor(img: Image.Image) -> torch.Tensor:
+    raw = img.tobytes()
+    tensor = torch.ByteTensor(torch.ByteStorage.from_buffer(raw))
+    tensor = tensor.view(img.height, img.width, 3).permute(2, 0, 1)
+    tensor = tensor.to(dtype=torch.float32).div(255.0)
+    mean = torch.tensor(_IMAGENET_MEAN, dtype=torch.float32).view(3, 1, 1)
+    std = torch.tensor(_IMAGENET_STD, dtype=torch.float32).view(3, 1, 1)
+    return (tensor - mean) / std
+
+
 def preprocess_image(source, max_size: int = 1024) -> torch.Tensor:
     """Load and preprocess an image → [1, 3, H, W] float32, ImageNet-normalised.
 
@@ -431,12 +440,8 @@ def preprocess_image(source, max_size: int = 1024) -> torch.Tensor:
     new_w = _snap(max(PATCH_SIZE, round(w * scale)), PATCH_SIZE)
     new_h = _snap(max(PATCH_SIZE, round(h * scale)), PATCH_SIZE)
 
-    return v2.Compose([
-        v2.Resize((new_h, new_w), interpolation=v2.InterpolationMode.LANCZOS),
-        v2.ToImage(),
-        v2.ToDtype(torch.float32, scale=True),
-        v2.Normalize(mean=_IMAGENET_MEAN, std=_IMAGENET_STD),
-    ])(img).unsqueeze(0)
+    img = img.resize((new_w, new_h), Image.Resampling.LANCZOS)
+    return _image_to_normalized_tensor(img).unsqueeze(0)
 
 
 # =============================================================================
@@ -552,12 +557,8 @@ class Tagger:
             scale = min(1.0, max_size / max(w, h))
             new_w = _snap(round(w * scale), PATCH_SIZE)
             new_h = _snap(round(h * scale), PATCH_SIZE)
-            pv = v2.Compose([
-                v2.Resize((new_h, new_w), interpolation=v2.InterpolationMode.LANCZOS),
-                v2.ToImage(),
-                v2.ToDtype(torch.float32, scale=True),
-                v2.Normalize(mean=_IMAGENET_MEAN, std=_IMAGENET_STD),
-            ])(img).unsqueeze(0).to(self.device)
+            img = img.resize((new_w, new_h), Image.Resampling.LANCZOS)
+            pv = _image_to_normalized_tensor(img).unsqueeze(0).to(self.device)
         else:
             pv = preprocess_image(image, max_size=max_size).to(self.device)
 
