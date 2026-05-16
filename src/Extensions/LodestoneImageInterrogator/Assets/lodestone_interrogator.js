@@ -399,12 +399,26 @@ class LodestoneInterrogatorHelper
         {
             this.runButton.disabled = true;
         }
-        genericRequest("LodestoneInterrogatorInterrogate", {
+        let payload = {
             image: this.imageData,
             threshold: threshold,
-            maxTags: maxTags
-        }, function(data)
+            maxTags: maxTags,
+            session_id: session_id
+        };
+        sendJsonToServer("API/LodestoneInterrogatorInterrogate", payload, function(status, data)
         {
+            if (!data)
+            {
+                showError("Lodestone interrogation failed.");
+                this.updateButtonStates();
+                return;
+            }
+            if (data.error_id == "invalid_session_id")
+            {
+                showError("Invalid session ID. Refresh the page and try again.");
+                this.updateButtonStates();
+                return;
+            }
             if (!data.success)
             {
                 showError(this.formatApiError(data, "Lodestone interrogation failed."));
@@ -414,7 +428,7 @@ class LodestoneInterrogatorHelper
             this.renderResults(data);
             this.setStatusText("Interrogation complete.");
             this.updateButtonStates();
-        }.bind(this), 0, function(error)
+        }.bind(this), function(error)
         {
             showError(error);
             this.updateButtonStates();
