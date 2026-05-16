@@ -5,7 +5,7 @@ class LodestoneInterrogatorHelper
      */
     init()
     {
-        this.registerGenerateBridgeButton();
+        this.registerGenerateBridgeAction();
         this.initPanel();
     }
 
@@ -84,56 +84,88 @@ class LodestoneInterrogatorHelper
     /**
      * Adds a Generate tab More-menu action that sends the selected image into this interrogator.
      */
-    registerGenerateBridgeButton()
+    registerGenerateBridgeAction()
     {
         if (this.hasRegisteredGenerateBridge)
         {
             return;
         }
-        if (typeof registerMediaButton != "function")
+        if (typeof AdvancedPopover != "function")
         {
             this.generateBridgeRegisterAttempts = (this.generateBridgeRegisterAttempts || 0) + 1;
             if (this.generateBridgeRegisterAttempts < 20)
             {
-                setTimeout(this.registerGenerateBridgeButton.bind(this), 250);
+                setTimeout(this.registerGenerateBridgeAction.bind(this), 250);
             }
             return;
         }
         this.hasRegisteredGenerateBridge = true;
-        registerMediaButton("Interrogate Image", this.takeCurrentImage.bind(this), "Send this image to the Lodestone Image Interrogator.", ["image"], false, false);
-        this.refreshCurrentImageButtons();
+        let originalAdvancedPopover = AdvancedPopover;
+        let helper = this;
+        AdvancedPopover = class extends originalAdvancedPopover
+        {
+            constructor(id, buttons, canSearch, x, y, root, preSelect = null, flipYHeight = null, heightLimit = 999999, canSelect = true)
+            {
+                if (id == "image_more_popover")
+                {
+                    buttons = helper.addCurrentImagePopoverButton(buttons);
+                }
+                super(id, buttons, canSearch, x, y, root, preSelect, flipYHeight, heightLimit, canSelect);
+            }
+        };
     }
 
     /**
-     * Rebuilds the already-rendered current image button row after late media-button registration.
+     * Adds the Lodestone action to the current image More popover button list.
      */
-    refreshCurrentImageButtons()
+    addCurrentImagePopoverButton(buttons)
     {
-        if (typeof setCurrentImage != "function" || typeof currentImageHelper == "undefined")
+        if (!Array.isArray(buttons))
         {
-            return;
+            return buttons;
+        }
+        let source = this.getCurrentImageSource();
+        if (!source)
+        {
+            return buttons;
+        }
+        let updatedButtons = buttons.slice();
+        let helper = this;
+        updatedButtons.push({
+            key: "Interrogate Image",
+            title: "Send this image to the Lodestone Image Interrogator.",
+            action: function()
+            {
+                helper.takeCurrentImage(source);
+            }
+        });
+        return updatedButtons;
+    }
+
+    /**
+     * Returns the current center image source if it is an image.
+     */
+    getCurrentImageSource()
+    {
+        if (typeof currentImageHelper == "undefined")
+        {
+            return "";
         }
         let image = currentImageHelper.getCurrentImage();
         if (!image)
         {
-            return;
+            return "";
         }
         let source = image.dataset.src || image.currentSrc || image.src || "";
         if (!source)
         {
-            return;
+            return "";
         }
         if (typeof getMediaType == "function" && getMediaType(source) != "image")
         {
-            return;
+            return "";
         }
-        let metadata = image.dataset.metadata || "";
-        let batchId = image.dataset.batch_id || "";
-        let previewGrow = image.dataset.previewGrow == "true";
-        setTimeout(function()
-        {
-            setCurrentImage(source, metadata, batchId, previewGrow, false, false);
-        }, 0);
+        return source;
     }
 
     /**
