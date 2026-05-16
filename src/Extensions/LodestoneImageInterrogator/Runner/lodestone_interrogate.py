@@ -5,9 +5,9 @@ https://huggingface.co/lodestones/taggerine/raw/main/inference_tagger_standalone
 Upstream source is Apache-2.0 licensed.
 
 Zero dependency on transformers, trainer code, or any internal module.
-Only requires: torch, safetensors, Pillow, requests.
+Only requires: torch, packaging, safetensors, Pillow, requests.
 
-  pip install torch safetensors Pillow requests
+  pip install torch packaging safetensors Pillow requests
 
 The DINOv3 ViT-H/16+ architecture is implemented directly here, with weights
 loaded from a .safetensors checkpoint.  The state-dict key names match the

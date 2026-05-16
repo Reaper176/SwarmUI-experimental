@@ -1,4 +1,5 @@
 torch
+packaging
 safetensors
 Pillow
 requests

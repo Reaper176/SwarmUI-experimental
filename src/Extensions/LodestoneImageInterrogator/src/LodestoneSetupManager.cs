@@ -158,7 +158,7 @@ public static class LodestoneSetupManager
             SetSetupMessage("Installing Lodestone Python dependencies.");
             await RunProcessChecked(PythonExePath, ["-m", "pip", "install", "-r", "Runner/requirements.txt"], ExtensionRoot);
             SetSetupMessage("Validating Lodestone Python dependencies.");
-            await RunProcessChecked(PythonExePath, ["-c", "import torch, safetensors, PIL, requests"], ExtensionRoot);
+            await RunProcessChecked(PythonExePath, ["-c", "import torch, packaging, safetensors, PIL, requests"], ExtensionRoot);
             SetSetupMessage("Downloading Lodestone model file. This is about 5.27 GB.");
             await DownloadIfMissing("https://huggingface.co/lodestones/taggerine/resolve/main/tagger_proto.safetensors", ModelPath);
             SetSetupMessage("Downloading Lodestone tag vocabulary.");
