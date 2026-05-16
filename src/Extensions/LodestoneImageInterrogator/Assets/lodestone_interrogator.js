@@ -65,84 +65,36 @@ class LodestoneInterrogatorHelper
         }
 
         this.refreshStatus();
-        this.addGenerateBridgeButton();
+        this.registerGenerateBridgeButton();
     }
 
     /**
-     * Adds a Generate tab button that sends the current image into this interrogator.
+     * Adds a Generate tab More-menu action that sends the selected image into this interrogator.
      */
-    addGenerateBridgeButton()
+    registerGenerateBridgeButton()
     {
-        if (document.getElementById("lodestone_interrogator_send_current_button"))
+        if (this.hasRegisteredGenerateBridge)
         {
             return;
         }
-        let button = this.createGenerateBridgeButton();
-        let currentImageCollection = document.getElementById("currentimagecollection");
-        if (currentImageCollection)
-        {
-            let item = document.createElement("li");
-            item.className = "nav-item lodestone-interrogator-send-current-item";
-            item.setAttribute("role", "presentation");
-            button.className = "nav-link lodestone-interrogator-send-current translate";
-            item.appendChild(button);
-            currentImageCollection.appendChild(item);
-            return;
-        }
-        let currentImageWrapbox = document.getElementById("current_image_wrapbox");
-        if (!currentImageWrapbox)
+        if (typeof registerMediaButton != "function")
         {
             return;
         }
-        button.className = "basic-button lodestone-interrogator-send-current lodestone-interrogator-send-current-float translate";
-        currentImageWrapbox.classList.add("lodestone-interrogator-current-image-wrapbox");
-        currentImageWrapbox.appendChild(button);
+        this.hasRegisteredGenerateBridge = true;
+        registerMediaButton("Interrogate Image", this.takeCurrentImage.bind(this), "Send this image to the Lodestone Image Interrogator.", ["image"], false, false);
     }
 
     /**
-     * Creates the Generate tab bridge button.
+     * Copies the selected Generate tab image into the interrogator preview and opens the tab.
      */
-    createGenerateBridgeButton()
+    async takeCurrentImage(source)
     {
-        let button = document.createElement("button");
-        button.type = "button";
-        button.id = "lodestone_interrogator_send_current_button";
-        button.textContent = "Interrogate Image";
-        button.addEventListener("click", this.takeCurrentImage.bind(this));
-        return button;
-    }
-
-    /**
-     * Copies the current Generate tab image into the interrogator preview and opens the tab.
-     */
-    async takeCurrentImage()
-    {
-        let currentImage = document.getElementById("current_image");
-        if (!currentImage)
-        {
-            showError("The current Generate image area is not available.");
-            return;
-        }
-        let images = currentImage.querySelectorAll("img");
-        let image = null;
-        for (let i = 0; i < images.length; i++)
-        {
-            let possible = images[i];
-            let style = window.getComputedStyle(possible);
-            let rect = possible.getBoundingClientRect();
-            let imageSource = this.getImageSource(possible);
-            if (imageSource && style.display != "none" && style.visibility != "hidden" && rect.width > 0 && rect.height > 0)
-            {
-                image = possible;
-                break;
-            }
-        }
-        if (!image)
+        if (!source)
         {
             showError("No current Generate image is available to interrogate.");
             return;
         }
-        let source = this.getImageSource(image);
         try
         {
             this.imageData = await this.convertImageSourceToDataUrl(source);
@@ -176,18 +128,6 @@ class LodestoneInterrogatorHelper
         {
             tab.click();
         }
-    }
-
-    /**
-     * Returns the most useful source URL from an image element.
-     */
-    getImageSource(image)
-    {
-        if (!image)
-        {
-            return "";
-        }
-        return image.currentSrc || image.dataset.src || image.src || "";
     }
 
     /**

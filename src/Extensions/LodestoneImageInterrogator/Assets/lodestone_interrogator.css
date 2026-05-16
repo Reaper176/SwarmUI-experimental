@@ -44,22 +44,6 @@
     text-align: center;
 }
 
-.lodestone-interrogator-send-current {
-    margin-left: 0.5rem;
-}
-
-.lodestone-interrogator-current-image-wrapbox {
-    position: relative;
-}
-
-.lodestone-interrogator-send-current-float {
-    position: absolute;
-    top: 0.5rem;
-    right: 0.5rem;
-    z-index: 10;
-    margin-left: 0;
-}
-
 .lodestone-interrogator-preview img {
     max-width: 100%;
     max-height: 28rem;
