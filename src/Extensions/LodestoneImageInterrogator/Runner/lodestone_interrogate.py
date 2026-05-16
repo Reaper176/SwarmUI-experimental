@@ -631,7 +631,7 @@ def category_for(tag, tag2category):
     category = tag2category.get(tag, "general")
     if not category:
         return "general"
-    return category
+    return str(category)
 
 
 def main():
