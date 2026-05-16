@@ -5,6 +5,19 @@ class LodestoneInterrogatorHelper
      */
     init()
     {
+        this.registerGenerateBridgeButton();
+        this.initPanel();
+    }
+
+    /**
+     * Initializes the Lodestone image interrogator panel when its DOM is available.
+     */
+    initPanel()
+    {
+        if (this.panelInitialized)
+        {
+            return;
+        }
         this.panel = document.getElementById("lodestone_interrogator_panel");
         if (!this.panel)
         {
@@ -65,7 +78,7 @@ class LodestoneInterrogatorHelper
         }
 
         this.refreshStatus();
-        this.registerGenerateBridgeButton();
+        this.panelInitialized = true;
     }
 
     /**
@@ -79,6 +92,11 @@ class LodestoneInterrogatorHelper
         }
         if (typeof registerMediaButton != "function")
         {
+            this.generateBridgeRegisterAttempts = (this.generateBridgeRegisterAttempts || 0) + 1;
+            if (this.generateBridgeRegisterAttempts < 20)
+            {
+                setTimeout(this.registerGenerateBridgeButton.bind(this), 250);
+            }
             return;
         }
         this.hasRegisteredGenerateBridge = true;
@@ -105,7 +123,6 @@ class LodestoneInterrogatorHelper
             showError(`Failed to read current Generate image: ${error}`);
             return;
         }
-        this.renderPreview(this.imageData);
         let hash = String.fromCharCode(35);
         let tab = document.getElementById("maintab_Image_Interrogator");
         if (!tab)
@@ -128,6 +145,8 @@ class LodestoneInterrogatorHelper
         {
             tab.click();
         }
+        this.initPanel();
+        this.renderPreview(this.imageData);
     }
 
     /**
