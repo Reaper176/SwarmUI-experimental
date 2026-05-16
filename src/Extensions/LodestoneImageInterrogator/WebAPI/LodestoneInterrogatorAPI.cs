@@ -23,7 +23,7 @@ public static class LodestoneInterrogatorAPI
     /// <summary>Registers Lodestone Image Interrogator API calls.</summary>
     public static void Register()
     {
-        API.RegisterAPICall(LodestoneInterrogatorStatus, false, LodestoneInterrogatorPermissions.Use);
+        API.RegisterAPICall(LodestoneInterrogatorStatus, false, Permissions.FundamentalGenerateTabAccess);
     }
 
     /// <summary>Gets Lodestone Image Interrogator setup status.</summary>

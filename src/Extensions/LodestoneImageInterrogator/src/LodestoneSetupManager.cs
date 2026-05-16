@@ -1,4 +1,6 @@
 using System.IO;
+using SwarmUI.Core;
+using SwarmUI.Utils;
 
 namespace LodestoneImageInterrogatorExtension;
 
@@ -9,13 +11,75 @@ public static class LodestoneSetupManager
     private static readonly object SetupLock = new object();
 
     /// <summary>Whether setup is currently running.</summary>
-    public static bool IsSetupRunning;
+    private static bool IsSetupRunningInternal;
 
-    /// <summary>Root folder for the Lodestone Image Interrogator extension.</summary>
-    public static string ExtensionRoot => "src/Extensions/LodestoneImageInterrogator";
+    /// <summary>Root folder for the Lodestone Image Interrogator extension source.</summary>
+    private static string ExtensionRootInternal = "";
+
+    /// <summary>Root folder for Lodestone runner files.</summary>
+    private static string RunnerRootInternal = "";
 
     /// <summary>Data folder for local Lodestone setup artifacts.</summary>
-    public static string DataRoot => $"{ExtensionRoot}/Data";
+    private static string DataRootInternal = "";
+
+    /// <summary>Whether setup is currently running.</summary>
+    public static bool IsSetupRunning
+    {
+        get
+        {
+            lock (SetupLock)
+            {
+                return IsSetupRunningInternal;
+            }
+        }
+    }
+
+    /// <summary>Initializes extension and runtime data paths.</summary>
+    public static void Initialize(string extensionRoot)
+    {
+        lock (SetupLock)
+        {
+            ExtensionRootInternal = Path.GetFullPath(extensionRoot);
+            RunnerRootInternal = ExtensionRootInternal;
+            DataRootInternal = Utilities.CombinePathWithAbsolute(Program.DataDir, "LodestoneImageInterrogator");
+        }
+    }
+
+    /// <summary>Root folder for the Lodestone Image Interrogator extension.</summary>
+    public static string ExtensionRoot
+    {
+        get
+        {
+            lock (SetupLock)
+            {
+                return ExtensionRootInternal;
+            }
+        }
+    }
+
+    /// <summary>Root folder used as the working directory for Lodestone runner scripts.</summary>
+    public static string RunnerRoot
+    {
+        get
+        {
+            lock (SetupLock)
+            {
+                return RunnerRootInternal;
+            }
+        }
+    }
+
+    /// <summary>Data folder for local Lodestone setup artifacts.</summary>
+    public static string DataRoot
+    {
+        get
+        {
+            lock (SetupLock)
+            {
+                return DataRootInternal;
+            }
+        }
+    }
 
     /// <summary>Local Python virtual environment path.</summary>
     public static string PythonEnvPath => $"{DataRoot}/python_env";
@@ -29,14 +93,25 @@ public static class LodestoneSetupManager
     /// <summary>Gets the current setup status.</summary>
     public static LodestoneSetupStatus GetStatus()
     {
-        bool hasPythonEnv = Directory.Exists(PythonEnvPath);
-        bool hasModelFile = File.Exists(ModelPath);
-        bool hasVocabFile = File.Exists(VocabPath);
+        bool isSetupRunning;
+        string pythonEnvPath;
+        string modelPath;
+        string vocabPath;
+        lock (SetupLock)
+        {
+            isSetupRunning = IsSetupRunningInternal;
+            pythonEnvPath = $"{DataRootInternal}/python_env";
+            modelPath = $"{DataRootInternal}/models/tagger_proto.safetensors";
+            vocabPath = $"{DataRootInternal}/models/tagger_vocab_with_categories_and_alias_updated.json";
+        }
+        bool hasPythonEnv = Directory.Exists(pythonEnvPath);
+        bool hasModelFile = File.Exists(modelPath);
+        bool hasVocabFile = File.Exists(vocabPath);
         bool isReady = hasPythonEnv && hasModelFile && hasVocabFile;
         return new LodestoneSetupStatus()
         {
             IsReady = isReady,
-            IsSetupRunning = IsSetupRunning,
+            IsSetupRunning = isSetupRunning,
             HasPythonEnv = hasPythonEnv,
             HasModelFile = hasModelFile,
             HasVocabFile = hasVocabFile,
@@ -49,11 +124,11 @@ public static class LodestoneSetupManager
     {
         lock (SetupLock)
         {
-            if (IsSetupRunning)
+            if (IsSetupRunningInternal)
             {
                 return false;
             }
-            IsSetupRunning = true;
+            IsSetupRunningInternal = true;
             return true;
         }
     }
@@ -63,7 +138,7 @@ public static class LodestoneSetupManager
     {
         lock (SetupLock)
         {
-            IsSetupRunning = false;
+            IsSetupRunningInternal = false;
         }
     }
 }

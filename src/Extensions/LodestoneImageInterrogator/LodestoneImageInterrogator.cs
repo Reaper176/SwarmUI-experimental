@@ -15,6 +15,7 @@ public class LodestoneImageInterrogator : Extension
     public override void OnInit()
     {
         Logs.Info("Lodestone Image Interrogator extension initializing.");
+        LodestoneSetupManager.Initialize(FilePath);
         LodestoneInterrogatorAPI.Register();
     }
 }
