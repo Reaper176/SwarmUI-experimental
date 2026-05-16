@@ -21,12 +21,16 @@ class LodestoneInterrogatorHelper
         this.preview = this.panel.querySelector("[data-lodestone-preview]");
         this.thresholdInput = this.panel.querySelector("[data-lodestone-threshold]");
         this.maxTagsInput = this.panel.querySelector("[data-lodestone-max-tags]");
+        this.includeRatingInput = this.panel.querySelector("[data-lodestone-include-rating]");
         this.prompt = this.panel.querySelector("[data-lodestone-prompt]");
         this.ratingResults = this.panel.querySelector("[data-lodestone-rating-results]");
         this.characterResults = this.panel.querySelector("[data-lodestone-character-results]");
         this.generalResults = this.panel.querySelector("[data-lodestone-general-results]");
         this.imageData = null;
+        this.lastData = null;
         this.lastPrompt = "";
+        this.statusKnown = false;
+        this.statusError = false;
         this.isReady = false;
         this.isRunning = false;
 
@@ -41,6 +45,10 @@ class LodestoneInterrogatorHelper
         if (this.runButton)
         {
             this.runButton.addEventListener("click", this.interrogate.bind(this));
+        }
+        if (this.includeRatingInput)
+        {
+            this.includeRatingInput.addEventListener("change", this.rerenderLastResults.bind(this));
         }
         if (this.copyButton)
         {
@@ -65,13 +73,27 @@ class LodestoneInterrogatorHelper
     {
         genericRequest("LodestoneInterrogatorStatus", {}, function(data)
         {
-            let status = data.status || {};
+            if (!data || !data.status || typeof data.status != "object" || typeof data.status.isReady != "boolean" || typeof data.status.isSetupRunning != "boolean")
+            {
+                this.statusKnown = false;
+                this.statusError = true;
+                this.isReady = false;
+                this.isRunning = false;
+                this.setStatusText("Lodestone interrogator status is unknown.");
+                this.updateButtonStates();
+                return;
+            }
+            let status = data.status;
+            this.statusKnown = true;
+            this.statusError = false;
             this.isReady = !!status.isReady;
             this.isRunning = !!status.isSetupRunning;
             this.setStatusText(status.message || "Lodestone interrogator status is unknown.");
             this.updateButtonStates();
         }.bind(this), 0, function(error)
         {
+            this.statusKnown = false;
+            this.statusError = true;
             this.isReady = false;
             this.isRunning = false;
             this.setStatusText(`Failed to check Lodestone interrogator status: ${error}`);
@@ -170,15 +192,33 @@ class LodestoneInterrogatorHelper
      */
     renderResults(data)
     {
-        this.lastPrompt = data.prompt || "";
+        this.lastData = data;
+        let renderedData = this.getRenderableData(data);
+        this.lastPrompt = renderedData.prompt;
         if (this.prompt)
         {
             this.prompt.value = this.lastPrompt;
         }
-        let groups = data.groups || {};
-        this.renderGroup(this.ratingResults, groups.rating || []);
+        let groups = renderedData.groups;
+        if (this.ratingResults)
+        {
+            this.ratingResults.style.display = renderedData.includeRating ? "" : "none";
+        }
+        this.renderGroup(this.ratingResults, renderedData.includeRating ? groups.rating || [] : []);
         this.renderGroup(this.characterResults, groups.character || groups.characters || []);
         this.renderGroup(this.generalResults, groups.general || []);
+    }
+
+    /**
+     * Re-renders the last returned results after a display option changes.
+     */
+    rerenderLastResults()
+    {
+        if (!this.lastData)
+        {
+            return;
+        }
+        this.renderResults(this.lastData);
     }
 
     /**
@@ -257,12 +297,90 @@ class LodestoneInterrogatorHelper
     {
         if (this.setupButton)
         {
-            this.setupButton.disabled = this.isReady || this.isRunning;
+            this.setupButton.disabled = !this.statusKnown || this.statusError || this.isReady || this.isRunning;
         }
         if (this.runButton)
         {
-            this.runButton.disabled = !this.isReady || this.isRunning;
+            this.runButton.disabled = !this.statusKnown || this.statusError || !this.isReady || this.isRunning;
         }
+    }
+
+    /**
+     * Returns whether rating tags should be shown in prompt and result groups.
+     */
+    shouldIncludeRating()
+    {
+        if (!this.includeRatingInput)
+        {
+            return true;
+        }
+        return this.includeRatingInput.checked;
+    }
+
+    /**
+     * Builds prompt and groups for the current Include Rating option.
+     */
+    getRenderableData(data)
+    {
+        let includeRating = this.shouldIncludeRating();
+        let groups = data.groups || {};
+        let prompt = data.prompt || "";
+        if (!includeRating)
+        {
+            groups = {
+                rating: this.filterRatingTags(groups.rating || []),
+                character: this.filterRatingTags(groups.character || []),
+                characters: this.filterRatingTags(groups.characters || []),
+                general: this.filterRatingTags(groups.general || [])
+            };
+            if (Array.isArray(data.tags))
+            {
+                prompt = this.tagsToPrompt(this.filterRatingTags(data.tags));
+            }
+        }
+        return {
+            includeRating: includeRating,
+            prompt: prompt,
+            groups: groups
+        };
+    }
+
+    /**
+     * Removes rating category tags while preserving all other tag objects.
+     */
+    filterRatingTags(tags)
+    {
+        if (!Array.isArray(tags))
+        {
+            return [];
+        }
+        let filtered = [];
+        for (let i = 0; i < tags.length; i++)
+        {
+            let tag = tags[i];
+            if (!tag || `${tag.category || ""}`.toLowerCase() != "rating")
+            {
+                filtered.push(tag);
+            }
+        }
+        return filtered;
+    }
+
+    /**
+     * Converts a tag list to a prompt string.
+     */
+    tagsToPrompt(tags)
+    {
+        let parts = [];
+        for (let i = 0; i < tags.length; i++)
+        {
+            let tag = tags[i];
+            if (tag && tag.name)
+            {
+                parts.push(`${tag.name}`);
+            }
+        }
+        return parts.join(", ");
     }
 
     /**
