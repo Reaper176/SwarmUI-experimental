@@ -153,6 +153,7 @@ public static class LodestoneSetupManager
             await DownloadIfMissing("https://huggingface.co/lodestones/taggerine/resolve/main/tagger_proto.safetensors", ModelPath);
             await DownloadIfMissing("https://huggingface.co/lodestones/taggerine/resolve/main/tagger_vocab_with_categories_and_alias_updated.json", VocabPath);
 
+            MarkSetupFinished();
             LodestoneSetupStatus status = GetStatus();
             status.Message = status.IsReady ? "Setup complete." : "Setup finished, but required files are still missing.";
             return status;
