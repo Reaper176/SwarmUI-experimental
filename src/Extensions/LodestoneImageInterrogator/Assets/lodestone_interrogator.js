@@ -21,11 +21,12 @@ class LodestoneInterrogatorHelper
         this.preview = this.panel.querySelector("[data-lodestone-preview]");
         this.thresholdInput = this.panel.querySelector("[data-lodestone-threshold]");
         this.maxTagsInput = this.panel.querySelector("[data-lodestone-max-tags]");
-        this.includeRatingInput = this.panel.querySelector("[data-lodestone-include-rating]");
+        this.categoryCheckboxes = this.panel.querySelectorAll(".lodestone-interrogator-category");
         this.prompt = this.panel.querySelector("[data-lodestone-prompt]");
         this.ratingResults = this.panel.querySelector("[data-lodestone-rating-results]");
         this.characterResults = this.panel.querySelector("[data-lodestone-character-results]");
         this.generalResults = this.panel.querySelector("[data-lodestone-general-results]");
+        this.styleResults = this.panel.querySelector("[data-lodestone-style-results]");
         this.imageData = null;
         this.lastData = null;
         this.lastPrompt = "";
@@ -46,9 +47,9 @@ class LodestoneInterrogatorHelper
         {
             this.runButton.addEventListener("click", this.interrogate.bind(this));
         }
-        if (this.includeRatingInput)
+        for (let i = 0; i < this.categoryCheckboxes.length; i++)
         {
-            this.includeRatingInput.addEventListener("change", this.rerenderLastResults.bind(this));
+            this.categoryCheckboxes[i].addEventListener("change", this.rerenderLastResults.bind(this));
         }
         if (this.copyButton)
         {
@@ -365,13 +366,11 @@ class LodestoneInterrogatorHelper
             this.prompt.value = this.lastPrompt;
         }
         let groups = renderedData.groups;
-        if (this.ratingResults)
-        {
-            this.ratingResults.style.display = renderedData.includeRating ? "" : "none";
-        }
-        this.renderGroup(this.ratingResults, renderedData.includeRating ? groups.rating || [] : []);
-        this.renderGroup(this.characterResults, groups.character || groups.characters || []);
-        this.renderGroup(this.generalResults, groups.general || []);
+        let categories = renderedData.categories;
+        this.renderCategoryGroup(this.ratingResults, groups.rating || [], categories, "rating");
+        this.renderCategoryGroup(this.characterResults, groups.character || [], categories, "character");
+        this.renderCategoryGroup(this.generalResults, groups.general || [], categories, "general");
+        this.renderCategoryGroup(this.styleResults, groups.style || [], categories, "style");
     }
 
     /**
@@ -471,81 +470,155 @@ class LodestoneInterrogatorHelper
     }
 
     /**
-     * Returns whether rating tags should be shown in prompt and result groups.
+     * Returns the selected tag category names.
      */
-    shouldIncludeRating()
+    selectedCategories()
     {
-        if (!this.includeRatingInput)
+        let categories = [];
+        if (!this.categoryCheckboxes || this.categoryCheckboxes.length < 1)
         {
-            return true;
+            return ["rating", "character", "general", "style"];
         }
-        return this.includeRatingInput.checked;
+        for (let i = 0; i < this.categoryCheckboxes.length; i++)
+        {
+            let checkbox = this.categoryCheckboxes[i];
+            if (checkbox.checked)
+            {
+                categories.push(this.normalizeCategory(checkbox.value));
+            }
+        }
+        return categories;
     }
 
     /**
-     * Builds prompt and groups for the current Include Rating option.
+     * Builds prompt and groups for the current category selection.
      */
     getRenderableData(data)
     {
-        let includeRating = this.shouldIncludeRating();
-        let groups = data.groups || {};
-        let prompt = data.prompt || "";
-        if (!includeRating)
+        let groups = this.normalizeGroups(data.groups || {}, data.tags || []);
+        let tags = [];
+        if (Array.isArray(data.tags))
         {
-            groups = {
-                rating: this.filterRatingTags(groups.rating || []),
-                character: this.filterRatingTags(groups.character || []),
-                characters: this.filterRatingTags(groups.characters || []),
-                general: this.filterRatingTags(groups.general || [])
-            };
-            if (Array.isArray(data.tags))
-            {
-                prompt = this.tagsToPrompt(this.filterRatingTags(data.tags));
-            }
+            tags = data.tags;
         }
+        else
+        {
+            tags = this.flattenGroups(groups);
+        }
+        let categories = this.selectedCategories();
         return {
-            includeRating: includeRating,
-            prompt: prompt,
+            categories: categories,
+            prompt: this.formatPrompt(tags),
             groups: groups
         };
     }
 
     /**
-     * Removes rating category tags while preserving all other tag objects.
+     * Normalizes tag groups and category aliases.
      */
-    filterRatingTags(tags)
+    normalizeGroups(sourceGroups, sourceTags)
     {
-        if (!Array.isArray(tags))
+        let groups = {
+            rating: [],
+            character: [],
+            general: [],
+            style: []
+        };
+        for (let key in sourceGroups)
         {
-            return [];
-        }
-        let filtered = [];
-        for (let i = 0; i < tags.length; i++)
-        {
-            let tag = tags[i];
-            if (!tag || `${tag.category || ""}`.toLowerCase() != "rating")
+            if (Object.prototype.hasOwnProperty.call(sourceGroups, key))
             {
-                filtered.push(tag);
+                this.addTagsToGroup(groups, key, sourceGroups[key]);
             }
         }
-        return filtered;
+        if (!sourceGroups || Object.keys(sourceGroups).length < 1)
+        {
+            this.addTagsToGroup(groups, "", sourceTags);
+        }
+        return groups;
     }
 
     /**
-     * Converts a tag list to a prompt string.
+     * Adds tags into a normalized category group.
      */
-    tagsToPrompt(tags)
+    addTagsToGroup(groups, category, tags)
     {
-        let parts = [];
+        if (!Array.isArray(tags))
+        {
+            return;
+        }
+        let fallbackCategory = this.normalizeCategory(category);
         for (let i = 0; i < tags.length; i++)
         {
             let tag = tags[i];
-            if (tag && tag.name)
+            if (tag)
+            {
+                let normalizedCategory = this.normalizeCategory(tag.category || fallbackCategory);
+                if (!tag.category)
+                {
+                    tag = Object.assign({}, tag);
+                    tag.category = normalizedCategory;
+                }
+                groups[normalizedCategory].push(tag);
+            }
+        }
+    }
+
+    /**
+     * Flattens normalized groups in prompt order.
+     */
+    flattenGroups(groups)
+    {
+        let tags = [];
+        let order = ["rating", "character", "general", "style"];
+        for (let i = 0; i < order.length; i++)
+        {
+            let groupTags = groups[order[i]] || [];
+            for (let j = 0; j < groupTags.length; j++)
+            {
+                tags.push(groupTags[j]);
+            }
+        }
+        return tags;
+    }
+
+    /**
+     * Converts selected tag categories to a prompt string.
+     */
+    formatPrompt(tags)
+    {
+        let parts = [];
+        let categories = this.selectedCategories();
+        for (let i = 0; i < tags.length; i++)
+        {
+            let tag = tags[i];
+            if (tag && tag.name && categories.indexOf(this.normalizeCategory(tag.category)) >= 0)
             {
                 parts.push(`${tag.name}`);
             }
         }
         return parts.join(", ");
+    }
+
+    /**
+     * Normalizes backend category names and aliases.
+     */
+    normalizeCategory(category)
+    {
+        let normalized = `${category || ""}`.trim().toLowerCase();
+        if (normalized == "characters")
+        {
+            return "character";
+        }
+        if (normalized == "styles")
+        {
+            return "style";
+        }
+        if (normalized == "rating" || normalized == "character" || normalized == "style")
+        {
+            return normalized;
+        }
+        return "general";
     }
 
     /**
@@ -612,6 +685,24 @@ class LodestoneInterrogatorHelper
             item.textContent = this.formatTag(tag);
             list.appendChild(item);
         }
+    }
+
+    /**
+     * Renders a group when its category is selected and hides it otherwise.
+     */
+    renderCategoryGroup(groupElement, tags, categories, category)
+    {
+        if (!groupElement)
+        {
+            return;
+        }
+        if (categories.indexOf(category) < 0)
+        {
+            groupElement.style.display = "none";
+            return;
+        }
+        groupElement.style.display = "";
+        this.renderGroup(groupElement, tags);
     }
 
     /**

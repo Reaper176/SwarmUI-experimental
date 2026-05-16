@@ -25,10 +25,25 @@
                     <span class="translate">Max Tags</span>
                     <input type="number" min="1" max="200" step="1" value="40" class="auto-text lodestone-interrogator-max-tags" data-lodestone-max-tags>
                 </label>
-                <label class="lodestone-interrogator-check">
-                    <input type="checkbox" checked data-lodestone-include-rating>
-                    <span class="translate">Include Rating</span>
-                </label>
+                <div class="lodestone-interrogator-category-set">
+                    <div class="lodestone-interrogator-category-heading translate">Categories</div>
+                    <label class="lodestone-interrogator-check">
+                        <input type="checkbox" class="lodestone-interrogator-category" value="rating" checked>
+                        <span class="translate">Rating</span>
+                    </label>
+                    <label class="lodestone-interrogator-check">
+                        <input type="checkbox" class="lodestone-interrogator-category" value="character" checked>
+                        <span class="translate">Characters</span>
+                    </label>
+                    <label class="lodestone-interrogator-check">
+                        <input type="checkbox" class="lodestone-interrogator-category" value="general" checked>
+                        <span class="translate">General</span>
+                    </label>
+                    <label class="lodestone-interrogator-check">
+                        <input type="checkbox" class="lodestone-interrogator-category" value="style" checked>
+                        <span class="translate">Style</span>
+                    </label>
+                </div>
             </div>
             <button type="button" class="basic-button lodestone-interrogator-run-button translate" data-lodestone-run-button>Interrogate Image</button>
         </div>
@@ -53,6 +68,10 @@
                 </div>
                 <div class="lodestone-interrogator-result-group" data-lodestone-general-results>
                     <div class="lodestone-interrogator-result-heading translate">General Tags</div>
+                    <div class="lodestone-interrogator-result-list"></div>
+                </div>
+                <div class="lodestone-interrogator-result-group" data-lodestone-style-results>
+                    <div class="lodestone-interrogator-result-heading translate">Style</div>
                     <div class="lodestone-interrogator-result-list"></div>
                 </div>
             </div>
