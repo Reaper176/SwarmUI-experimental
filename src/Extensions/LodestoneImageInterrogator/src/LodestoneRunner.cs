@@ -1,6 +1,7 @@
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 using SwarmUI.Core;
+using SwarmUI.Utils;
 using System;
 using System.Diagnostics;
 using System.Globalization;
@@ -76,6 +77,7 @@ public static class LodestoneRunner
                 return parsedFailure;
             }
 
+            Logs.Error($"Lodestone runner exited with code {result.ExitCode}.\nSTDOUT:\n{result.Stdout}\nSTDERR:\n{result.Stderr}");
             return new JObject()
             {
                 ["success"] = false,
@@ -179,10 +181,10 @@ public static class LodestoneRunner
     /// <summary>Builds a concise runner failure message with the most useful available process output.</summary>
     private static string BuildRunnerError(int exitCode, string stdout, string stderr)
     {
-        string detail = FirstUsefulLine(stderr);
+        string detail = MostUsefulLine(stderr);
         if (string.IsNullOrWhiteSpace(detail))
         {
-            detail = FirstUsefulLine(stdout);
+            detail = MostUsefulLine(stdout);
         }
         if (string.IsNullOrWhiteSpace(detail))
         {
@@ -191,17 +193,17 @@ public static class LodestoneRunner
         return $"Lodestone runner exited with code {exitCode}: {detail}";
     }
 
-    /// <summary>Returns the first non-empty process output line, trimmed to a reasonable UI size.</summary>
-    private static string FirstUsefulLine(string text)
+    /// <summary>Returns the most useful process output line, trimmed to a reasonable UI size.</summary>
+    private static string MostUsefulLine(string text)
     {
         if (string.IsNullOrWhiteSpace(text))
         {
             return "";
         }
         string[] lines = text.Replace("\r\n", "\n").Replace('\r', '\n').Split('\n');
-        foreach (string line in lines)
+        for (int i = lines.Length - 1; i >= 0; i--)
         {
-            string trimmed = line.Trim();
+            string trimmed = lines[i].Trim();
             if (!string.IsNullOrWhiteSpace(trimmed))
             {
                 return trimmed.Length > 500 ? $"{trimmed[..500]}..." : trimmed;

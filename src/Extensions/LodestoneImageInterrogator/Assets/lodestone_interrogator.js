@@ -431,7 +431,7 @@ class LodestoneInterrogatorHelper
             return fallback;
         }
         let message = data.error || fallback;
-        let detail = this.firstUsefulLine(data.stderr) || this.firstUsefulLine(data.stdout);
+        let detail = this.mostUsefulLine(data.stderr) || this.mostUsefulLine(data.stdout);
         if (detail && !message.includes(detail))
         {
             message = `${message}\n${detail}`;
@@ -440,16 +440,16 @@ class LodestoneInterrogatorHelper
     }
 
     /**
-     * Extracts a concise line from process output.
+     * Extracts the most useful concise line from process output.
      */
-    firstUsefulLine(text)
+    mostUsefulLine(text)
     {
         if (!text)
         {
             return "";
         }
         let lines = `${text}`.replaceAll("\r\n", "\n").replaceAll("\r", "\n").split("\n");
-        for (let i = 0; i < lines.length; i++)
+        for (let i = lines.length - 1; i >= 0; i--)
         {
             let trimmed = lines[i].trim();
             if (trimmed)
