@@ -23,6 +23,11 @@ public static class LodestoneInterrogatorAPI
     /// <summary>Registers Lodestone Image Interrogator API calls.</summary>
     public static void Register()
     {
+        PermInfo usePermission = LodestoneInterrogatorPermissions.Use;
+        if (usePermission is null)
+        {
+            throw new System.InvalidOperationException("Lodestone Image Interrogator use permission failed to register.");
+        }
         API.RegisterAPICall(LodestoneInterrogatorStatus, false, Permissions.FundamentalGenerateTabAccess);
     }
 
