@@ -2,6 +2,7 @@ using LodestoneImageInterrogatorExtension;
 using Newtonsoft.Json.Linq;
 using SwarmUI.Accounts;
 using SwarmUI.WebAPI;
+using System;
 using System.Threading.Tasks;
 
 namespace LodestoneImageInterrogatorExtension.WebAPI;
@@ -37,6 +38,7 @@ public static class LodestoneInterrogatorAPI
             throw new System.InvalidOperationException("Lodestone Image Interrogator use permission failed to register.");
         }
         API.RegisterAPICall(LodestoneInterrogatorStatus, false, LodestoneInterrogatorPermissions.View);
+        API.RegisterAPICall(LodestoneInterrogatorSetup, true, LodestoneInterrogatorPermissions.Use);
     }
 
     /// <summary>Gets Lodestone Image Interrogator setup status.</summary>
@@ -49,5 +51,31 @@ public static class LodestoneInterrogatorAPI
             ["success"] = true,
             ["status"] = status.ToJson()
         });
+    }
+
+    /// <summary>Runs Lodestone Image Interrogator setup after an explicit user request.</summary>
+    [API.APIDescription("Runs Lodestone Image Interrogator setup", "Creates local dependencies and downloads required model files after explicit user request.")]
+    public static async Task<JObject> LodestoneInterrogatorSetup(Session session)
+    {
+        try
+        {
+            LodestoneSetupStatus status = await LodestoneSetupManager.RunSetup();
+            return new JObject()
+            {
+                ["success"] = status.IsReady,
+                ["status"] = status.ToJson(),
+                ["error"] = status.IsReady ? null : status.Message
+            };
+        }
+        catch (Exception ex)
+        {
+            LodestoneSetupManager.MarkSetupFinished();
+            return new JObject()
+            {
+                ["success"] = false,
+                ["error"] = ex.Message,
+                ["status"] = LodestoneSetupManager.GetStatus().ToJson()
+            };
+        }
     }
 }

@@ -1,4 +1,6 @@
 using System.IO;
+using System.Net.Http;
+using System.Threading.Tasks;
 using SwarmUI.Core;
 using SwarmUI.Utils;
 
@@ -117,6 +119,62 @@ public static class LodestoneSetupManager
             HasVocabFile = hasVocabFile,
             Message = isReady ? "Ready." : "Setup is required before first use."
         };
+    }
+
+    /// <summary>Runs local Lodestone dependency and model setup.</summary>
+    public static async Task<LodestoneSetupStatus> RunSetup()
+    {
+        if (!TryMarkSetupRunning())
+        {
+            LodestoneSetupStatus runningStatus = GetStatus();
+            runningStatus.Message = "Setup is already running.";
+            return runningStatus;
+        }
+
+        try
+        {
+            Directory.CreateDirectory(DataRoot);
+            Directory.CreateDirectory($"{DataRoot}/models");
+            if (!Directory.Exists(PythonEnvPath))
+            {
+                await Utilities.QuickRunProcess("python3", ["-m", "venv", PythonEnvPath], ExtensionRoot);
+            }
+
+            string pythonExe = $"{PythonEnvPath}/bin/python";
+            await Utilities.QuickRunProcess(pythonExe, ["-m", "pip", "install", "-r", "Runner/requirements.txt"], ExtensionRoot);
+            await DownloadIfMissing("https://huggingface.co/lodestones/taggerine/resolve/main/tagger_proto.safetensors", ModelPath);
+            await DownloadIfMissing("https://huggingface.co/lodestones/taggerine/resolve/main/tagger_vocab_with_categories_and_alias_updated.json", VocabPath);
+
+            LodestoneSetupStatus status = GetStatus();
+            status.Message = status.IsReady ? "Setup complete." : "Setup finished, but required files are still missing.";
+            return status;
+        }
+        finally
+        {
+            MarkSetupFinished();
+        }
+    }
+
+    /// <summary>Downloads a remote file to a local target path when it is not already present.</summary>
+    private static async Task DownloadIfMissing(string url, string targetPath)
+    {
+        if (File.Exists(targetPath))
+        {
+            return;
+        }
+
+        string targetDirectory = Path.GetDirectoryName(targetPath);
+        if (!string.IsNullOrWhiteSpace(targetDirectory))
+        {
+            Directory.CreateDirectory(targetDirectory);
+        }
+
+        using HttpClient client = new HttpClient();
+        using HttpResponseMessage response = await client.GetAsync(url);
+        response.EnsureSuccessStatusCode();
+        await using Stream remote = await response.Content.ReadAsStreamAsync();
+        await using FileStream local = File.Create(targetPath);
+        await remote.CopyToAsync(local);
     }
 
     /// <summary>Attempts to mark setup as running.</summary>

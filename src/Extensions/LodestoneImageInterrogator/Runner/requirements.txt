@@ -1,0 +1,5 @@
+torch
+torchvision
+safetensors
+Pillow
+requests
