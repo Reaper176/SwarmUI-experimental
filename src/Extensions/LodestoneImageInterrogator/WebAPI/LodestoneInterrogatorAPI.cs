@@ -47,6 +47,7 @@ public static class LodestoneInterrogatorAPI
         }
         API.RegisterAPICall(LodestoneInterrogatorStatus, false, LodestoneInterrogatorPermissions.View);
         API.RegisterAPICall(LodestoneInterrogatorSetup, true, LodestoneInterrogatorPermissions.Setup);
+        API.RegisterAPICall(LodestoneInterrogatorInterrogate, true, LodestoneInterrogatorPermissions.Use);
     }
 
     /// <summary>Gets Lodestone Image Interrogator setup status.</summary>
@@ -83,6 +84,40 @@ public static class LodestoneInterrogatorAPI
                 ["success"] = false,
                 ["error"] = ex.Message,
                 ["status"] = LodestoneSetupManager.GetStatus().ToJson()
+            };
+        }
+    }
+
+    /// <summary>Runs Lodestone Image Interrogator against a browser image data URL.</summary>
+    [API.APIDescription("Runs Lodestone Image Interrogator", "Returns tag predictions for a provided image data URL.")]
+    public static async Task<JObject> LodestoneInterrogatorInterrogate(
+        Session session,
+        [API.APIParameter("Data URL containing base64 image data.")] string image,
+        [API.APIParameter("Minimum tag probability threshold, clamped to 0.0 through 1.0.")] double threshold = 0.35,
+        [API.APIParameter("Maximum number of tags to return, clamped to 1 through 300.")] int maxTags = 80)
+    {
+        if (string.IsNullOrWhiteSpace(image))
+        {
+            return new JObject()
+            {
+                ["success"] = false,
+                ["error"] = "No image was provided."
+            };
+        }
+
+        try
+        {
+            return await LodestoneRunner.Interrogate(
+                image,
+                LodestoneRunner.ClampThreshold(threshold),
+                LodestoneRunner.ClampMaxTags(maxTags));
+        }
+        catch (Exception ex)
+        {
+            return new JObject()
+            {
+                ["success"] = false,
+                ["error"] = ex.Message
             };
         }
     }
