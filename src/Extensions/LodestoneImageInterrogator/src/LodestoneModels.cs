@@ -20,6 +20,9 @@ public class LodestoneSetupStatus
     /// <summary>Whether the Lodestone vocabulary file exists.</summary>
     public bool HasVocabFile;
 
+    /// <summary>Whether the current extension dependency setup marker exists.</summary>
+    public bool HasSetupMarker;
+
     /// <summary>User-visible setup status message.</summary>
     public string Message = "";
 
@@ -33,6 +36,7 @@ public class LodestoneSetupStatus
             ["hasPythonEnv"] = HasPythonEnv,
             ["hasModelFile"] = HasModelFile,
             ["hasVocabFile"] = HasVocabFile,
+            ["hasSetupMarker"] = HasSetupMarker,
             ["message"] = Message
         };
     }

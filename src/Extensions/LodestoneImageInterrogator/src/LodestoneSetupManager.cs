@@ -20,6 +20,9 @@ public static class LodestoneSetupManager
     /// <summary>Current setup progress message.</summary>
     private static string SetupMessageInternal = "";
 
+    /// <summary>Current setup marker version. Increment when setup requirements change.</summary>
+    private const string SetupMarkerVersion = "2";
+
     /// <summary>Root folder for the Lodestone Image Interrogator extension source.</summary>
     private static string ExtensionRootInternal = "";
 
@@ -100,6 +103,9 @@ public static class LodestoneSetupManager
     /// <summary>Local Lodestone vocabulary file path.</summary>
     public static string VocabPath => Path.Combine(DataRoot, "models", "tagger_vocab_with_categories_and_alias_updated.json");
 
+    /// <summary>Local setup marker file path.</summary>
+    public static string SetupMarkerPath => Path.Combine(DataRoot, "setup_version.txt");
+
     /// <summary>Gets the current setup status.</summary>
     public static LodestoneSetupStatus GetStatus()
     {
@@ -109,6 +115,7 @@ public static class LodestoneSetupManager
         string pythonExePath;
         string modelPath;
         string vocabPath;
+        string setupMarkerPath;
         lock (SetupLock)
         {
             isSetupRunning = IsSetupRunningInternal;
@@ -117,11 +124,13 @@ public static class LodestoneSetupManager
             pythonExePath = Path.Combine(pythonEnvPath, RuntimeInformation.IsOSPlatform(OSPlatform.Windows) ? "Scripts/python.exe" : "bin/python");
             modelPath = Path.Combine(DataRootInternal, "models", "tagger_proto.safetensors");
             vocabPath = Path.Combine(DataRootInternal, "models", "tagger_vocab_with_categories_and_alias_updated.json");
+            setupMarkerPath = Path.Combine(DataRootInternal, "setup_version.txt");
         }
         bool hasPythonEnv = File.Exists(pythonExePath);
         bool hasModelFile = IsExistingFileValid(modelPath);
         bool hasVocabFile = IsExistingFileValid(vocabPath);
-        bool isReady = hasPythonEnv && hasModelFile && hasVocabFile;
+        bool hasSetupMarker = HasCurrentSetupMarker(setupMarkerPath);
+        bool isReady = hasPythonEnv && hasModelFile && hasVocabFile && hasSetupMarker;
         return new LodestoneSetupStatus()
         {
             IsReady = isReady,
@@ -129,7 +138,8 @@ public static class LodestoneSetupManager
             HasPythonEnv = hasPythonEnv,
             HasModelFile = hasModelFile,
             HasVocabFile = hasVocabFile,
-            Message = isSetupRunning && !string.IsNullOrWhiteSpace(setupMessage) ? setupMessage : isReady ? "Ready." : "Setup is required before first use."
+            HasSetupMarker = hasSetupMarker,
+            Message = isSetupRunning && !string.IsNullOrWhiteSpace(setupMessage) ? setupMessage : isReady ? "Ready." : BuildSetupRequiredMessage(hasPythonEnv, hasModelFile, hasVocabFile, hasSetupMarker)
         };
     }
 
@@ -163,6 +173,7 @@ public static class LodestoneSetupManager
             await DownloadIfMissing("https://huggingface.co/lodestones/taggerine/resolve/main/tagger_proto.safetensors", ModelPath);
             SetSetupMessage("Downloading Lodestone tag vocabulary.");
             await DownloadIfMissing("https://huggingface.co/lodestones/taggerine/resolve/main/tagger_vocab_with_categories_and_alias_updated.json", VocabPath);
+            await File.WriteAllTextAsync(SetupMarkerPath, SetupMarkerVersion, Program.GlobalProgramCancel);
 
             MarkSetupFinished();
             LodestoneSetupStatus status = GetStatus();
@@ -183,6 +194,41 @@ public static class LodestoneSetupManager
             SetupMessageInternal = message;
         }
         Logs.Info($"Lodestone Image Interrogator setup: {message}");
+    }
+
+    /// <summary>Builds a concise reason for setup being required.</summary>
+    private static string BuildSetupRequiredMessage(bool hasPythonEnv, bool hasModelFile, bool hasVocabFile, bool hasSetupMarker)
+    {
+        if (!hasPythonEnv)
+        {
+            return "Setup is required before first use.";
+        }
+        if (!hasSetupMarker)
+        {
+            return "Setup is required to update Lodestone Python dependencies.";
+        }
+        if (!hasModelFile || !hasVocabFile)
+        {
+            return "Setup is required to download missing Lodestone model files.";
+        }
+        return "Setup is required before first use.";
+    }
+
+    /// <summary>Returns whether the dependency setup marker matches this extension version.</summary>
+    private static bool HasCurrentSetupMarker(string markerPath)
+    {
+        if (!File.Exists(markerPath))
+        {
+            return false;
+        }
+        try
+        {
+            return File.ReadAllText(markerPath).Trim() == SetupMarkerVersion;
+        }
+        catch (IOException)
+        {
+            return false;
+        }
     }
 
     /// <summary>Downloads a remote file to a local target path when it is not already present.</summary>
