@@ -63,7 +63,9 @@ public static class LodestoneRunner
                     "--threshold",
                     clampedThreshold.ToString(CultureInfo.InvariantCulture),
                     "--max-tags",
-                    clampedMaxTags.ToString(CultureInfo.InvariantCulture)
+                    clampedMaxTags.ToString(CultureInfo.InvariantCulture),
+                    "--device",
+                    "cuda"
                 ],
                 LodestoneSetupManager.RunnerRoot);
 

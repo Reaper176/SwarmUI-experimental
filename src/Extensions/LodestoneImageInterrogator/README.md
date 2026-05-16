@@ -11,6 +11,8 @@ Lodestone Image Interrogator is a SwarmUI extension for local image interrogatio
 
 The Setup button creates the extension's local Python dependencies and downloads the required Hugging Face model files. Model downloads happen only after Setup is clicked.
 
+The default setup path targets Linux AMD ROCm gfx110X GPUs. It installs PyTorch and Torchvision from `https://repo.amd.com/rocm/whl/gfx110X-dgpu/`, validates that PyTorch can see a ROCm GPU, and runs inference on the PyTorch `cuda` device name used by both CUDA and ROCm builds.
+
 The main model file, `tagger_proto.safetensors`, is about 5.27 GB. Setup downloads it from `lodestones/taggerine` on Hugging Face, along with the required vocabulary file.
 
 ## Privacy

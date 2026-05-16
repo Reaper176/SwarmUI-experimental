@@ -21,7 +21,10 @@ public static class LodestoneSetupManager
     private static string SetupMessageInternal = "";
 
     /// <summary>Current setup marker version. Increment when setup requirements change.</summary>
-    private const string SetupMarkerVersion = "2";
+    private const string SetupMarkerVersion = "3";
+
+    /// <summary>AMD ROCm gfx110X wheel index for Linux AMD GPU installs.</summary>
+    private const string RocmGfx110XWheelIndex = "https://repo.amd.com/rocm/whl/gfx110X-dgpu/";
 
     /// <summary>Root folder for the Lodestone Image Interrogator extension source.</summary>
     private static string ExtensionRootInternal = "";
@@ -156,6 +159,10 @@ public static class LodestoneSetupManager
         try
         {
             SetSetupMessage("Starting Lodestone Image Interrogator setup.");
+            if (!RuntimeInformation.IsOSPlatform(OSPlatform.Linux))
+            {
+                throw new InvalidOperationException("Lodestone GPU setup currently targets Linux AMD ROCm gfx110X systems.");
+            }
             Directory.CreateDirectory(DataRoot);
             Directory.CreateDirectory(Path.Combine(DataRoot, "models"));
             if (!File.Exists(PythonExePath))
@@ -167,8 +174,10 @@ public static class LodestoneSetupManager
 
             SetSetupMessage("Installing Lodestone Python dependencies.");
             await RunProcessChecked(PythonExePath, ["-m", "pip", "install", "-r", "Runner/requirements.txt"], ExtensionRoot);
-            SetSetupMessage("Validating Lodestone Python dependencies.");
-            await RunProcessChecked(PythonExePath, ["-c", "import torch, packaging, safetensors, PIL, requests"], ExtensionRoot);
+            SetSetupMessage("Installing AMD ROCm PyTorch wheels for gfx110X.");
+            await RunProcessChecked(PythonExePath, ["-m", "pip", "install", "--upgrade", "--force-reinstall", "--index-url", RocmGfx110XWheelIndex, "torch", "torchvision"], ExtensionRoot);
+            SetSetupMessage("Validating Lodestone ROCm GPU dependencies.");
+            await RunProcessChecked(PythonExePath, ["-c", "import torch, packaging, safetensors, PIL, requests; assert torch.cuda.is_available(), 'ROCm GPU is not available to PyTorch'; assert torch.version.hip, 'PyTorch is not a ROCm/HIP build'; print(torch.cuda.get_device_name(0)); print(torch.version.hip)"], ExtensionRoot);
             SetSetupMessage("Downloading Lodestone model file. This is about 5.27 GB.");
             await DownloadIfMissing("https://huggingface.co/lodestones/taggerine/resolve/main/tagger_proto.safetensors", ModelPath);
             SetSetupMessage("Downloading Lodestone tag vocabulary.");

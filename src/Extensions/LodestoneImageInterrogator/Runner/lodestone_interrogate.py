@@ -7,7 +7,8 @@ Upstream source is Apache-2.0 licensed.
 Zero dependency on transformers, trainer code, or any internal module.
 Only requires: torch, packaging, safetensors, Pillow, requests.
 
-  pip install torch packaging safetensors Pillow requests
+  pip install packaging safetensors Pillow requests
+  pip install --index-url https://repo.amd.com/rocm/whl/gfx110X-dgpu/ torch torchvision
 
 The DINOv3 ViT-H/16+ architecture is implemented directly here, with weights
 loaded from a .safetensors checkpoint.  The state-dict key names match the
@@ -475,12 +476,13 @@ class Tagger:
         dtype: torch.dtype = torch.bfloat16,
         max_size: int = 1024,
     ):
+        if device == "gpu":
+            device = "cuda"
         if device == "auto":
             device = "cuda" if torch.cuda.is_available() else "cpu"
         want_cuda = device.startswith("cuda")
         if want_cuda and not torch.cuda.is_available():
-            print("[Tagger] CUDA not available, falling back to CPU", file=sys.stderr)
-            device = "cpu"
+            raise RuntimeError("GPU was requested, but PyTorch cannot access a CUDA/ROCm device.")
         if device == "cpu":
             dtype = torch.float32
         self.device = torch.device(device)
@@ -525,6 +527,13 @@ class Tagger:
         self.model.eval()
         print(f"[Tagger] Ready on {self.device} (backbone={dtype}, head=fp32)",
               file=sys.stderr)
+
+    def backend_name(self) -> str:
+        if self.device.type == "cuda" and torch.version.hip:
+            return "rocm"
+        if self.device.type == "cuda" and torch.version.cuda:
+            return "cuda"
+        return self.device.type
 
     @torch.no_grad()
     def embed_pca(
@@ -675,6 +684,7 @@ def main():
             "tags": tags,
             "groups": groups,
             "device": str(tagger.device),
+            "backend": tagger.backend_name(),
         }, ensure_ascii=False))
         return 0
     except Exception as ex:
