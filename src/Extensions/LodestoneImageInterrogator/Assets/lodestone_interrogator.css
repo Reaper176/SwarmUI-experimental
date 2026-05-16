@@ -38,7 +38,7 @@
     align-items: center;
     justify-content: center;
     min-height: 14rem;
-    border: 1px solid rgba(255, 255, 255, 0.18);
+    border: 1px solid var(--light-border);
     border-radius: 0.5rem;
     background: rgba(255, 255, 255, 0.03);
     text-align: center;
@@ -114,7 +114,7 @@
 }
 
 .lodestone-interrogator-result-group {
-    border: 1px solid rgba(255, 255, 255, 0.18);
+    border: 1px solid var(--light-border);
     border-radius: 0.5rem;
     padding: 0.75rem;
     min-height: 5rem;
