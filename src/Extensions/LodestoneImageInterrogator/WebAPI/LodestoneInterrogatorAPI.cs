@@ -1,6 +1,7 @@
 using LodestoneImageInterrogatorExtension;
 using Newtonsoft.Json.Linq;
 using SwarmUI.Accounts;
+using SwarmUI.Core;
 using SwarmUI.WebAPI;
 using System;
 using System.Threading.Tasks;
@@ -79,6 +80,7 @@ public static class LodestoneInterrogatorAPI
         catch (Exception ex)
         {
             LodestoneSetupManager.MarkSetupFinished();
+            Logs.Error($"Lodestone Image Interrogator setup failed: {ex}");
             return new JObject()
             {
                 ["success"] = false,

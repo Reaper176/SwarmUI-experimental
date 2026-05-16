@@ -6,7 +6,23 @@ class LodestoneInterrogatorHelper
     init()
     {
         this.registerGenerateBridgeAction();
-        this.initPanel();
+        this.initPanelWithRetry();
+    }
+
+    /**
+     * Initializes the panel, retrying briefly because extension tab HTML can load after this script.
+     */
+    initPanelWithRetry()
+    {
+        if (this.initPanel())
+        {
+            return;
+        }
+        this.panelInitAttempts = (this.panelInitAttempts || 0) + 1;
+        if (this.panelInitAttempts < 80)
+        {
+            setTimeout(this.initPanelWithRetry.bind(this), 250);
+        }
     }
 
     /**
@@ -16,12 +32,12 @@ class LodestoneInterrogatorHelper
     {
         if (this.panelInitialized)
         {
-            return;
+            return true;
         }
         this.panel = document.getElementById("lodestone_interrogator_panel");
         if (!this.panel)
         {
-            return;
+            return false;
         }
 
         this.status = this.panel.querySelector("[data-lodestone-status]");
@@ -79,6 +95,7 @@ class LodestoneInterrogatorHelper
 
         this.refreshStatus();
         this.panelInitialized = true;
+        return true;
     }
 
     /**
@@ -210,7 +227,7 @@ class LodestoneInterrogatorHelper
         {
             tab.click();
         }
-        this.initPanel();
+        this.initPanelWithRetry();
         this.renderPreview(this.imageData);
     }
 
@@ -299,8 +316,10 @@ class LodestoneInterrogatorHelper
         this.isRunning = true;
         this.setStatusText("Setting up Lodestone Image Interrogator. This may download about 5.27 GB of model data.");
         this.updateButtonStates();
+        this.startSetupStatusPolling();
         genericRequest("LodestoneInterrogatorSetup", {}, function(data)
         {
+            this.stopSetupStatusPolling();
             if (data.status && data.status.message)
             {
                 this.setStatusText(data.status.message);
@@ -308,9 +327,34 @@ class LodestoneInterrogatorHelper
             this.refreshStatus();
         }.bind(this), 0, function(error)
         {
+            this.stopSetupStatusPolling();
             showError(error);
             this.refreshStatus();
         }.bind(this), 60 * 60 * 1000);
+    }
+
+    /**
+     * Polls setup status while the long-running setup request is active.
+     */
+    startSetupStatusPolling()
+    {
+        this.stopSetupStatusPolling();
+        this.setupStatusPoll = setInterval(function()
+        {
+            this.refreshStatus();
+        }.bind(this), 3000);
+    }
+
+    /**
+     * Stops setup status polling.
+     */
+    stopSetupStatusPolling()
+    {
+        if (this.setupStatusPoll)
+        {
+            clearInterval(this.setupStatusPoll);
+            this.setupStatusPoll = null;
+        }
     }
 
     /**

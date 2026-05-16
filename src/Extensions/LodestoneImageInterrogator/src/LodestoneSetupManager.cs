@@ -17,6 +17,9 @@ public static class LodestoneSetupManager
     /// <summary>Whether setup is currently running.</summary>
     private static bool IsSetupRunningInternal;
 
+    /// <summary>Current setup progress message.</summary>
+    private static string SetupMessageInternal = "";
+
     /// <summary>Root folder for the Lodestone Image Interrogator extension source.</summary>
     private static string ExtensionRootInternal = "";
 
@@ -101,6 +104,7 @@ public static class LodestoneSetupManager
     public static LodestoneSetupStatus GetStatus()
     {
         bool isSetupRunning;
+        string setupMessage;
         string pythonEnvPath;
         string pythonExePath;
         string modelPath;
@@ -108,6 +112,7 @@ public static class LodestoneSetupManager
         lock (SetupLock)
         {
             isSetupRunning = IsSetupRunningInternal;
+            setupMessage = SetupMessageInternal;
             pythonEnvPath = Path.Combine(DataRootInternal, "python_env");
             pythonExePath = Path.Combine(pythonEnvPath, RuntimeInformation.IsOSPlatform(OSPlatform.Windows) ? "Scripts/python.exe" : "bin/python");
             modelPath = Path.Combine(DataRootInternal, "models", "tagger_proto.safetensors");
@@ -124,7 +129,7 @@ public static class LodestoneSetupManager
             HasPythonEnv = hasPythonEnv,
             HasModelFile = hasModelFile,
             HasVocabFile = hasVocabFile,
-            Message = isReady ? "Ready." : "Setup is required before first use."
+            Message = isSetupRunning && !string.IsNullOrWhiteSpace(setupMessage) ? setupMessage : isReady ? "Ready." : "Setup is required before first use."
         };
     }
 
@@ -140,17 +145,23 @@ public static class LodestoneSetupManager
 
         try
         {
+            SetSetupMessage("Starting Lodestone Image Interrogator setup.");
             Directory.CreateDirectory(DataRoot);
             Directory.CreateDirectory(Path.Combine(DataRoot, "models"));
             if (!File.Exists(PythonExePath))
             {
+                SetSetupMessage("Creating Lodestone Python environment.");
                 string bootstrapPython = RuntimeInformation.IsOSPlatform(OSPlatform.Windows) ? "python" : "python3";
                 await RunProcessChecked(bootstrapPython, ["-m", "venv", PythonEnvPath], ExtensionRoot);
             }
 
+            SetSetupMessage("Installing Lodestone Python dependencies.");
             await RunProcessChecked(PythonExePath, ["-m", "pip", "install", "-r", "Runner/requirements.txt"], ExtensionRoot);
+            SetSetupMessage("Validating Lodestone Python dependencies.");
             await RunProcessChecked(PythonExePath, ["-c", "import torch, safetensors, PIL, requests"], ExtensionRoot);
+            SetSetupMessage("Downloading Lodestone model file. This is about 5.27 GB.");
             await DownloadIfMissing("https://huggingface.co/lodestones/taggerine/resolve/main/tagger_proto.safetensors", ModelPath);
+            SetSetupMessage("Downloading Lodestone tag vocabulary.");
             await DownloadIfMissing("https://huggingface.co/lodestones/taggerine/resolve/main/tagger_vocab_with_categories_and_alias_updated.json", VocabPath);
 
             MarkSetupFinished();
@@ -162,6 +173,16 @@ public static class LodestoneSetupManager
         {
             MarkSetupFinished();
         }
+    }
+
+    /// <summary>Sets and logs current setup progress.</summary>
+    private static void SetSetupMessage(string message)
+    {
+        lock (SetupLock)
+        {
+            SetupMessageInternal = message;
+        }
+        Logs.Info($"Lodestone Image Interrogator setup: {message}");
     }
 
     /// <summary>Downloads a remote file to a local target path when it is not already present.</summary>
@@ -309,6 +330,7 @@ public static class LodestoneSetupManager
         lock (SetupLock)
         {
             IsSetupRunningInternal = false;
+            SetupMessageInternal = "";
         }
     }
 }
