@@ -12,6 +12,9 @@ public static class LodestoneInterrogatorPermissions
     /// <summary>Permission group for Lodestone Image Interrogator routes.</summary>
     public static readonly PermInfoGroup Group = new PermInfoGroup("Lodestone Image Interrogator", "Permissions for Lodestone image interrogation.");
 
+    /// <summary>Permission to view Lodestone Image Interrogator status and panel routes.</summary>
+    public static readonly PermInfo View = Permissions.Register(new PermInfo("view_lodestone_image_interrogator", "View Lodestone Image Interrogator", "Allows viewing/status for the Lodestone Image Interrogator panel.", PermissionDefault.USER, Group));
+
     /// <summary>Permission to use Lodestone Image Interrogator routes.</summary>
     public static readonly PermInfo Use = Permissions.Register(new PermInfo("use_lodestone_image_interrogator", "Use Lodestone Image Interrogator", "Allows using the Lodestone Image Interrogator extension.", PermissionDefault.POWERUSERS, Group));
 }
@@ -23,12 +26,17 @@ public static class LodestoneInterrogatorAPI
     /// <summary>Registers Lodestone Image Interrogator API calls.</summary>
     public static void Register()
     {
+        PermInfo viewPermission = LodestoneInterrogatorPermissions.View;
+        if (viewPermission is null)
+        {
+            throw new System.InvalidOperationException("Lodestone Image Interrogator view permission failed to register.");
+        }
         PermInfo usePermission = LodestoneInterrogatorPermissions.Use;
         if (usePermission is null)
         {
             throw new System.InvalidOperationException("Lodestone Image Interrogator use permission failed to register.");
         }
-        API.RegisterAPICall(LodestoneInterrogatorStatus, false, Permissions.FundamentalGenerateTabAccess);
+        API.RegisterAPICall(LodestoneInterrogatorStatus, false, LodestoneInterrogatorPermissions.View);
     }
 
     /// <summary>Gets Lodestone Image Interrogator setup status.</summary>
