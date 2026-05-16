@@ -101,6 +101,39 @@ class LodestoneInterrogatorHelper
         }
         this.hasRegisteredGenerateBridge = true;
         registerMediaButton("Interrogate Image", this.takeCurrentImage.bind(this), "Send this image to the Lodestone Image Interrogator.", ["image"], false, false);
+        this.refreshCurrentImageButtons();
+    }
+
+    /**
+     * Rebuilds the already-rendered current image button row after late media-button registration.
+     */
+    refreshCurrentImageButtons()
+    {
+        if (typeof setCurrentImage != "function" || typeof currentImageHelper == "undefined")
+        {
+            return;
+        }
+        let image = currentImageHelper.getCurrentImage();
+        if (!image)
+        {
+            return;
+        }
+        let source = image.dataset.src || image.currentSrc || image.src || "";
+        if (!source)
+        {
+            return;
+        }
+        if (typeof getMediaType == "function" && getMediaType(source) != "image")
+        {
+            return;
+        }
+        let metadata = image.dataset.metadata || "";
+        let batchId = image.dataset.batch_id || "";
+        let previewGrow = image.dataset.previewGrow == "true";
+        setTimeout(function()
+        {
+            setCurrentImage(source, metadata, batchId, previewGrow, false, false);
+        }, 0);
     }
 
     /**
