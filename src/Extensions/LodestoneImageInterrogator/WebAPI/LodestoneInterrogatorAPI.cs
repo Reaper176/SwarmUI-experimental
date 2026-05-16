@@ -1,7 +1,7 @@
 using LodestoneImageInterrogatorExtension;
 using Newtonsoft.Json.Linq;
 using SwarmUI.Accounts;
-using SwarmUI.Core;
+using SwarmUI.Utils;
 using SwarmUI.WebAPI;
 using System;
 using System.Threading.Tasks;
