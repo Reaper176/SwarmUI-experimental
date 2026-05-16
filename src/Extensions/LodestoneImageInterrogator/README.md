@@ -21,7 +21,7 @@ Inference runs locally. Images are sent only to the local runner process used by
 
 ## Content Notice
 
-The Lodestone vocabulary is based on e621 and Danbooru annotations. Results can include rating tags and adult-content tags. The panel's category filters control which tag categories are included in the prompt output.
+The Lodestone vocabulary is based on e621 and Danbooru annotations. Results can include adult-content tags. The panel's category filters control which tag categories are included in the prompt output.
 
 ## License
 

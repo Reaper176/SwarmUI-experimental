@@ -639,9 +639,15 @@ class JsonArgumentParser(argparse.ArgumentParser):
 
 def category_for(tag, tag2category):
     category = tag2category.get(tag, "general")
-    if not category:
-        return "general"
-    return str(category)
+    if category == 4:
+        return "character"
+    if category == 7:
+        return "style"
+    tag_lower = str(tag).strip().lower()
+    if tag_lower in {"safe", "questionable", "explicit", "rating:safe",
+                     "rating:questionable", "rating:explicit"}:
+        return "rating"
+    return "general"
 
 
 def main():
