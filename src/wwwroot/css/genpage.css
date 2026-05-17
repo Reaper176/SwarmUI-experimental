@@ -206,7 +206,7 @@ body {
 
 .prompt-lab-section {
     border: 1px solid var(--light-border);
-    background: var(--background-panel-subtle);
+    background: var(--background-panel-subtle, var(--background-panel, var(--background)));
     margin-bottom: 0.55rem;
 }
 
@@ -217,7 +217,7 @@ body {
     width: 100%;
     border: 0;
     background: var(--button-background);
-    color: var(--button-foreground);
+    color: var(--button-text);
     padding: 0.35rem 0.5rem;
     text-align: left;
 }
@@ -306,7 +306,7 @@ body {
     width: 100%;
     text-align: left;
     border: 1px solid var(--light-border);
-    background: var(--input-background);
+    background: var(--background-panel, var(--background));
     color: var(--text);
     padding: 0.4rem 0.45rem;
 }
@@ -374,11 +374,11 @@ body {
 }
 
 .prompt-lab-diff-added {
-    color: #62d98e;
+    color: color-mix(in srgb, var(--green) 70%, var(--text));
 }
 
 .prompt-lab-diff-removed {
-    color: #ff7a7a;
+    color: color-mix(in srgb, var(--red) 70%, var(--text));
 }
 
 .prompt-lab-diff-same {
