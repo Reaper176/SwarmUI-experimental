@@ -163,10 +163,10 @@ body {
 
 .prompt-lab-wrapper {
     display: grid;
-    grid-template-columns: minmax(14rem, 0.8fr) minmax(22rem, 1.3fr) minmax(18rem, 1fr);
-    gap: 0.75rem;
+    grid-template-columns: minmax(15rem, 0.85fr) minmax(25rem, 1.45fr) minmax(18rem, 0.95fr);
+    gap: 0.7rem;
     height: 100%;
-    padding: 0.75rem;
+    padding: 0.7rem;
 }
 
 .prompt-lab-column {
@@ -174,48 +174,124 @@ body {
     overflow: auto;
     border: 1px solid var(--light-border);
     background: var(--background);
-    padding: 0.75rem;
+    padding: 0.65rem;
 }
 
-.prompt-lab-toolbar {
+.prompt-lab-panel-header,
+.prompt-lab-editor-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+    margin-bottom: 0.55rem;
+}
+
+.prompt-lab-panel-title {
+    font-size: 1.05rem;
+    font-weight: 700;
+}
+
+.prompt-lab-actions,
+.prompt-lab-section-actions {
     display: flex;
     flex-wrap: wrap;
-    gap: 0.35rem;
-    margin-bottom: 0.5rem;
+    gap: 0.3rem;
+}
+
+.prompt-lab-actions .basic-button,
+.prompt-lab-section-actions .basic-button {
+    min-height: 1.9rem;
+    padding: 0.2rem 0.45rem;
+}
+
+.prompt-lab-section {
+    border: 1px solid var(--light-border);
+    background: var(--background-panel-subtle);
+    margin-bottom: 0.55rem;
+}
+
+.prompt-lab-section-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    width: 100%;
+    border: 0;
+    background: var(--button-background);
+    color: var(--button-foreground);
+    padding: 0.35rem 0.5rem;
+    text-align: left;
+}
+
+.prompt-lab-section-header:hover {
+    background: var(--button-background-hover);
+    color: var(--button-foreground-hover);
+}
+
+.prompt-lab-section-title {
+    font-weight: 700;
+}
+
+.prompt-lab-section-state {
+    min-width: 1ch;
+    text-align: center;
+    font-weight: 700;
+}
+
+.prompt-lab-section-actions {
+    padding: 0.4rem 0.45rem 0;
+}
+
+.prompt-lab-section-body {
+    padding: 0.45rem;
 }
 
 .prompt-lab-hidden-file {
     display: none;
 }
 
+.prompt-lab-autosave {
+    display: block;
+    margin-bottom: 0.45rem;
+}
+
 .prompt-lab-search,
-.prompt-lab-title {
+.prompt-lab-title,
+.prompt-lab-tags {
     width: 100%;
-    margin-bottom: 0.5rem;
+    margin-bottom: 0.45rem;
+}
+
+.prompt-lab-editor-header .prompt-lab-title {
+    flex: 1 1 16rem;
+    margin-bottom: 0;
 }
 
 .prompt-lab-textarea {
     width: 100%;
-    min-height: 10rem;
+    min-height: 11rem;
     margin-bottom: 0.5rem;
+}
+
+.prompt-lab-negative {
+    min-height: 7rem;
 }
 
 .prompt-lab-notes {
     width: 100%;
-    min-height: 5rem;
-    margin-top: 0.5rem;
+    min-height: 4rem;
+    margin-bottom: 0.55rem;
 }
 
 .prompt-lab-wildcard-values {
     width: 100%;
-    min-height: 10rem;
+    min-height: 9rem;
     margin-bottom: 0.5rem;
     resize: vertical;
 }
 
 .prompt-lab-fragment-text {
     width: 100%;
-    min-height: 6rem;
+    min-height: 5rem;
     margin-bottom: 0.5rem;
     resize: vertical;
 }
@@ -232,7 +308,7 @@ body {
     border: 1px solid var(--light-border);
     background: var(--input-background);
     color: var(--text);
-    padding: 0.45rem;
+    padding: 0.4rem 0.45rem;
 }
 
 .prompt-lab-list-item-selected {
@@ -254,16 +330,14 @@ body {
     text-transform: uppercase;
 }
 
-.prompt-lab-section-title {
-    font-weight: bold;
-    margin: 0.5rem 0 0.25rem;
-}
-
 .prompt-lab-output {
     border: 1px solid var(--light-border);
     min-height: 3rem;
+    max-height: 18rem;
+    overflow: auto;
     padding: 0.5rem;
     white-space: pre-wrap;
+    background: var(--background);
 }
 
 .prompt-lab-expanded-prompt {
@@ -282,7 +356,12 @@ body {
     display: grid;
     gap: 0.4rem;
     grid-template-columns: minmax(0, 1fr) 5rem 5rem;
-    margin-bottom: 0.7rem;
+    margin-bottom: 0.55rem;
+}
+
+.prompt-lab-export-actions {
+    padding: 0;
+    margin-bottom: 0.55rem;
 }
 
 .prompt-lab-small-input {
