@@ -94,6 +94,7 @@ public abstract class ComfyUIAPIAbstractBackend : AbstractT2IBackend
         trackModels("LoRA", "LoraLoader", "lora_name");
         trackModels("VAE", "VAELoader", "vae_name");
         trackModels("ControlNet", "ControlNetLoader", "control_net_name");
+        trackModels("ControlNet", "SwarmAnimaLLLite", "lllite_name");
         trackModels("ClipVision", "CLIPVisionLoader", "clip_name");
         trackModels("Embedding", "SwarmEmbedLoaderListProvider", "embed_name");
         Models = newModels;

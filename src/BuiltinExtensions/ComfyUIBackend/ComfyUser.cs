@@ -348,7 +348,7 @@ public class ComfyClientData
 
     public AbstractT2IBackend Backend;
 
-    public static HashSet<string> ModelNameInputNames = ["ckpt_name", "vae_name", "lora_name", "clip_name", "control_net_name", "style_model_name", "model_path", "lora_names"];
+    public static HashSet<string> ModelNameInputNames = ["ckpt_name", "vae_name", "lora_name", "clip_name", "control_net_name", "lllite_name", "style_model_name", "model_path", "lora_names"];
 
     /// <summary>Auto-fixer for some workflow features, notably Windows vs Linux instances need different file path formats (backslash vs forward slash).</summary>
     public void FixUpPrompt(JObject prompt)

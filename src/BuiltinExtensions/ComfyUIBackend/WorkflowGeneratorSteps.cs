@@ -1139,6 +1139,25 @@ public class WorkflowGeneratorSteps
                         g.CurrentModel = g.CurrentModel.WithPath([diffsynthNode, 0]);
                         continue;
                     }
+                    if (g.IsAnima())
+                    {
+                        JObject animaInputs = new()
+                        {
+                            ["model"] = g.CurrentModel.Path,
+                            ["lllite_name"] = controlModel.ToString(g.ModelFolderFormat),
+                            ["image"] = imageNodeActual.Path,
+                            ["strength"] = controlStrength,
+                            ["start_percent"] = g.UserInput.Get(controlnetParams.Start, 0),
+                            ["end_percent"] = g.UserInput.Get(controlnetParams.End, 1)
+                        };
+                        if (g.FinalMask is not null)
+                        {
+                            animaInputs["mask"] = g.FinalMask;
+                        }
+                        string animaControlNode = g.CreateNode("SwarmAnimaLLLite", animaInputs);
+                        g.CurrentModel = g.CurrentModel.WithPath([animaControlNode, 0]);
+                        continue;
+                    }
                     string controlModelNode = g.CreateNode("ControlNetLoader", new JObject()
                     {
                         ["control_net_name"] = controlModel.ToString(g.ModelFolderFormat)

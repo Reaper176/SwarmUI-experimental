@@ -1,11 +1,12 @@
 import os, folder_paths
 
-from . import SwarmBlending, SwarmClipSeg, SwarmImages, SwarmInternalUtil, SwarmKSampler, SwarmLoadImageB64, SwarmLoraLoader, SwarmMasks, SwarmSaveImageWS, SwarmTiling, SwarmExtractLora, SwarmUnsampler, SwarmLatents, SwarmInputNodes, SwarmTextHandling, SwarmReference, SwarmMath, SwarmSam3, SwarmAudio
+from . import SwarmAnimaLLLite, SwarmBlending, SwarmClipSeg, SwarmImages, SwarmInternalUtil, SwarmKSampler, SwarmLoadImageB64, SwarmLoraLoader, SwarmMasks, SwarmSaveImageWS, SwarmTiling, SwarmExtractLora, SwarmUnsampler, SwarmLatents, SwarmInputNodes, SwarmTextHandling, SwarmReference, SwarmMath, SwarmSam3, SwarmAudio
 
 WEB_DIRECTORY = "./web"
 
 NODE_CLASS_MAPPINGS = (
-    SwarmBlending.NODE_CLASS_MAPPINGS
+    SwarmAnimaLLLite.NODE_CLASS_MAPPINGS
+    | SwarmBlending.NODE_CLASS_MAPPINGS
     | SwarmClipSeg.NODE_CLASS_MAPPINGS
     | SwarmImages.NODE_CLASS_MAPPINGS
     | SwarmInternalUtil.NODE_CLASS_MAPPINGS
@@ -24,6 +25,10 @@ NODE_CLASS_MAPPINGS = (
     | SwarmMath.NODE_CLASS_MAPPINGS
     | SwarmSam3.NODE_CLASS_MAPPINGS
     | SwarmAudio.NODE_CLASS_MAPPINGS
+)
+
+NODE_DISPLAY_NAME_MAPPINGS = (
+    SwarmAnimaLLLite.NODE_DISPLAY_NAME_MAPPINGS
 )
 
 # TODO: Why is there no comfy core register method? 0.o
