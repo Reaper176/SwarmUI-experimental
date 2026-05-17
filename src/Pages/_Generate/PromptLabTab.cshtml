@@ -1,197 +1,195 @@
 @model GeneratePageModel
 
 <div class="prompt-lab-wrapper">
-    <div class="prompt-lab-column prompt-lab-library">
-        <div class="prompt-lab-panel-header">
+    <div class="prompt-lab-workspace">
+        <div class="prompt-lab-column prompt-lab-editor">
+            <div class="prompt-lab-editor-header">
+                <input class="auto-text prompt-lab-title" id="prompt_lab_name" placeholder="Prompt name" oninput="promptLab.scheduleAutoSave()" />
+                <div class="prompt-lab-actions">
+                    <button class="basic-button translate" onclick="promptLab.savePrompt()">Save</button>
+                    <button class="basic-button translate" onclick="promptLab.savePromptVariant()">Variant</button>
+                    <button class="basic-button translate" onclick="promptLab.resetPrompt()">Reset</button>
+                </div>
+            </div>
+            <textarea class="auto-text prompt-lab-textarea" id="prompt_lab_positive" placeholder="Positive prompt" oninput="promptLab.refreshPreview(); promptLab.scheduleAutoSave()"></textarea>
+            <textarea class="auto-text prompt-lab-textarea prompt-lab-negative" id="prompt_lab_negative" placeholder="Negative prompt" oninput="promptLab.refreshPreview(); promptLab.scheduleAutoSave()"></textarea>
+            <input class="auto-text prompt-lab-tags" id="prompt_lab_tags" placeholder="Tags, comma-separated" oninput="promptLab.scheduleAutoSave()" />
+            <textarea class="auto-text prompt-lab-notes" id="prompt_lab_notes" placeholder="Notes" oninput="promptLab.scheduleAutoSave()"></textarea>
+            <div class="prompt-lab-primary-actions">
+                <button class="basic-button translate" onclick="promptLab.sendToGenerate()">Send to Generate</button>
+                <button class="basic-button translate" onclick="promptLab.previewWildcards()">Preview Variations</button>
+            </div>
+
+            <div class="prompt-lab-section" data-prompt-lab-section="wildcard_editor">
+                <button type="button" class="prompt-lab-section-header" onclick="promptLab.toggleSection('wildcard_editor')">
+                    <span class="prompt-lab-section-title translate">Wildcard Set Editor</span>
+                    <span class="prompt-lab-section-state" id="prompt_lab_section_wildcard_editor_state">+</span>
+                </button>
+                <div class="prompt-lab-section-body" id="prompt_lab_section_wildcard_editor_body">
+                    <input class="auto-text prompt-lab-title" id="prompt_lab_wildcard_name" placeholder="Wildcard name" />
+                    <textarea class="auto-text prompt-lab-wildcard-values" id="prompt_lab_wildcard_values" placeholder="Wildcard values, one per line"></textarea>
+                    <input class="auto-text" id="prompt_lab_wildcard_tags" placeholder="Wildcard tags, comma-separated" />
+                    <button class="basic-button translate" onclick="promptLab.insertSelectedWildcard()">Insert Token</button>
+                </div>
+            </div>
+
+            <div class="prompt-lab-section" data-prompt-lab-section="fragment_editor">
+                <button type="button" class="prompt-lab-section-header" onclick="promptLab.toggleSection('fragment_editor')">
+                    <span class="prompt-lab-section-title translate">Fragment Editor</span>
+                    <span class="prompt-lab-section-state" id="prompt_lab_section_fragment_editor_state">+</span>
+                </button>
+                <div class="prompt-lab-section-body" id="prompt_lab_section_fragment_editor_body">
+                    <input class="auto-text prompt-lab-title" id="prompt_lab_fragment_name" placeholder="Fragment name" />
+                    <textarea class="auto-text prompt-lab-fragment-text" id="prompt_lab_fragment_text" placeholder="Fragment text"></textarea>
+                    <input class="auto-text" id="prompt_lab_fragment_category" placeholder="Fragment category" />
+                    <input class="auto-text" id="prompt_lab_fragment_tags" placeholder="Fragment tags, comma-separated" />
+                    <button class="basic-button translate" onclick="promptLab.insertSelectedFragment()">Insert Fragment</button>
+                </div>
+            </div>
+        </div>
+        <div class="prompt-lab-column prompt-lab-preview">
+            <div class="prompt-lab-panel-header">
+                <div class="prompt-lab-panel-heading">
+                    <span class="prompt-lab-panel-title translate">Context</span>
+                    <span class="prompt-lab-panel-subtitle translate">Wildcards, previews, warnings, and comparison</span>
+                </div>
+                <div class="prompt-lab-actions">
+                    <button class="basic-button translate" onclick="promptLab.previewWildcards()">Refresh Preview</button>
+                    <button class="basic-button translate" onclick="promptLab.generateWildcardCombinations()">Generate</button>
+                </div>
+            </div>
+            <div class="prompt-lab-section-actions prompt-lab-export-actions">
+                <button class="basic-button translate" onclick="promptLab.exportWildcardCombinations('txt')">Export Text</button>
+                <button class="basic-button translate" onclick="promptLab.exportWildcardCombinations('json')">Export JSON</button>
+                <button class="basic-button translate" onclick="promptLab.exportWildcardCombinations('csv')">Export CSV</button>
+            </div>
+            <div class="prompt-lab-wildcard-controls">
+                <select class="auto-dropdown" id="prompt_lab_wildcard_mode">
+                    <option value="all">All Combinations</option>
+                    <option value="random_single">Random Single</option>
+                    <option value="random_batch">Random Batch</option>
+                    <option value="sample">Sample N</option>
+                </select>
+                <input class="auto-text prompt-lab-small-input" id="prompt_lab_sample_count" type="number" min="1" value="25" />
+                <input class="auto-text prompt-lab-small-input" id="prompt_lab_max_combinations" type="number" min="1" value="1000" />
+                <label><input type="checkbox" id="prompt_lab_shuffle_results" autocomplete="off"> Shuffle</label>
+            </div>
+
+            <div class="prompt-lab-section" data-prompt-lab-section="detected_wildcards">
+                <button type="button" class="prompt-lab-section-header" onclick="promptLab.toggleSection('detected_wildcards')">
+                    <span class="prompt-lab-section-title translate">Detected Wildcards</span>
+                    <span class="prompt-lab-section-state" id="prompt_lab_section_detected_wildcards_state">-</span>
+                </button>
+                <div class="prompt-lab-section-body" id="prompt_lab_section_detected_wildcards_body">
+                    <div id="prompt_lab_wildcards" class="prompt-lab-output"></div>
+                </div>
+            </div>
+
+            <div class="prompt-lab-section" data-prompt-lab-section="preview">
+                <button type="button" class="prompt-lab-section-header" onclick="promptLab.toggleSection('preview')">
+                    <span class="prompt-lab-section-title translate">Prompt Preview</span>
+                    <span class="prompt-lab-section-state" id="prompt_lab_section_preview_state">-</span>
+                </button>
+                <div class="prompt-lab-section-body" id="prompt_lab_section_preview_body">
+                    <div id="prompt_lab_preview" class="prompt-lab-output"></div>
+                </div>
+            </div>
+
+            <div class="prompt-lab-section" data-prompt-lab-section="warnings">
+                <button type="button" class="prompt-lab-section-header" onclick="promptLab.toggleSection('warnings')">
+                    <span class="prompt-lab-section-title translate">Warnings</span>
+                    <span class="prompt-lab-section-state" id="prompt_lab_section_warnings_state">+</span>
+                </button>
+                <div class="prompt-lab-section-body" id="prompt_lab_section_warnings_body">
+                    <div id="prompt_lab_warnings" class="prompt-lab-output"></div>
+                </div>
+            </div>
+
+            <div class="prompt-lab-section" data-prompt-lab-section="diff">
+                <button type="button" class="prompt-lab-section-header" onclick="promptLab.toggleSection('diff')">
+                    <span class="prompt-lab-section-title translate">Compare / Diff</span>
+                    <span class="prompt-lab-section-state" id="prompt_lab_section_diff_state">+</span>
+                </button>
+                <div class="prompt-lab-section-body" id="prompt_lab_section_diff_body">
+                    <select class="auto-dropdown prompt-lab-compare-select" id="prompt_lab_compare_select" onchange="promptLab.refreshPreview()"></select>
+                    <div id="prompt_lab_diff" class="prompt-lab-output"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="prompt-lab-library">
+        <div class="prompt-lab-library-info">
             <div class="prompt-lab-panel-heading">
                 <span class="prompt-lab-panel-title translate">Library</span>
-                <span class="prompt-lab-panel-subtitle translate">Saved prompts and reusable parts</span>
+                <span class="prompt-lab-panel-subtitle translate">Browse, insert, and manage reusable prompt assets</span>
             </div>
-            <div class="prompt-lab-actions">
+            <div class="prompt-lab-actions prompt-lab-library-actions">
+                <label class="prompt-lab-autosave"><input type="checkbox" id="prompt_lab_autosave" autocomplete="off"> Auto Save</label>
+                <input id="prompt_lab_import_file" type="file" accept="application/json,.json" class="prompt-lab-hidden-file" onchange="promptLab.importLibraryFile(this)" />
+                <input class="auto-text prompt-lab-search prompt-lab-library-search" id="prompt_lab_search" placeholder="Search library" oninput="promptLab.scheduleSearchRender('all')" />
                 <button class="basic-button translate" onclick="promptLab.exportLibrary()">Export</button>
                 <button class="basic-button translate" onclick="promptLab.openImportPicker()">Import</button>
             </div>
         </div>
-        <label class="prompt-lab-autosave"><input type="checkbox" id="prompt_lab_autosave" autocomplete="off"> Auto Save</label>
-        <input id="prompt_lab_import_file" type="file" accept="application/json,.json" class="prompt-lab-hidden-file" onchange="promptLab.importLibraryFile(this)" />
-        <input class="auto-text prompt-lab-search" id="prompt_lab_search" placeholder="Search library" oninput="promptLab.scheduleSearchRender('all')" />
-
-        <div class="prompt-lab-section" data-prompt-lab-section="saved_prompts">
-            <button type="button" class="prompt-lab-section-header" onclick="promptLab.toggleSection('saved_prompts')">
-                <span class="prompt-lab-section-title translate">Saved Prompts</span>
-                <span class="prompt-lab-section-state" id="prompt_lab_section_saved_prompts_state">-</span>
-            </button>
-            <div class="prompt-lab-section-actions">
-                <button class="basic-button translate" onclick="promptLab.newPrompt()">New</button>
-                <button class="basic-button translate" onclick="promptLab.savePrompt()">Save</button>
-                <button class="basic-button translate" onclick="promptLab.savePromptVariant()">Variant</button>
-                <button class="basic-button translate" onclick="promptLab.duplicatePrompt()">Duplicate</button>
-                <button class="basic-button translate" onclick="promptLab.deletePrompt()">Delete</button>
-                <button class="basic-button translate" onclick="promptLab.togglePromptFavorite()">Favorite</button>
+        <ul class="nav nav-tabs swarm-gen-tab-subnav prompt-lab-library-tabs" role="tablist" id="promptlablibrarytabcollection">
+            <li class="nav-item" role="presentation">
+                <a class="nav-link active translate" data-bs-toggle="tab" href="#Prompt-Lab-Saved-Prompts-Tab" aria-selected="true" role="tab">Saved Prompts</a>
+            </li>
+            <li class="nav-item" role="presentation">
+                <a class="nav-link translate" data-bs-toggle="tab" href="#Prompt-Lab-Fragments-Tab" aria-selected="false" tabindex="-1" role="tab">Reusable Fragments</a>
+            </li>
+            <li class="nav-item" role="presentation">
+                <a class="nav-link translate" data-bs-toggle="tab" href="#Prompt-Lab-Wildcards-Tab" aria-selected="false" tabindex="-1" role="tab">Wildcard Sets</a>
+            </li>
+            <li class="nav-item" role="presentation">
+                <a class="nav-link translate" data-bs-toggle="tab" href="#Prompt-Lab-History-Tab" aria-selected="false" tabindex="-1" role="tab">Recent Prompts</a>
+            </li>
+        </ul>
+        <div class="tab-content prompt-lab-library-content" id="promptlablibrarytabcontent">
+            <div class="tab-pane show active prompt-lab-library-tab" id="Prompt-Lab-Saved-Prompts-Tab" role="tabpanel">
+                <div class="prompt-lab-section-actions prompt-lab-library-tab-actions">
+                    <button class="basic-button translate" onclick="promptLab.newPrompt()">New</button>
+                    <button class="basic-button translate" onclick="promptLab.savePrompt()">Save</button>
+                    <button class="basic-button translate" onclick="promptLab.savePromptVariant()">Variant</button>
+                    <button class="basic-button translate" onclick="promptLab.duplicatePrompt()">Duplicate</button>
+                    <button class="basic-button translate" onclick="promptLab.deletePrompt()">Delete</button>
+                    <button class="basic-button translate" onclick="promptLab.togglePromptFavorite()">Favorite</button>
+                </div>
+                <div class="prompt-lab-library-body" id="prompt_lab_section_saved_prompts_body">
+                    <div id="prompt_lab_prompt_list" class="prompt-lab-list"></div>
+                </div>
             </div>
-            <div class="prompt-lab-section-body" id="prompt_lab_section_saved_prompts_body">
-                <div id="prompt_lab_prompt_list" class="prompt-lab-list"></div>
+            <div class="tab-pane prompt-lab-library-tab" id="Prompt-Lab-Fragments-Tab" role="tabpanel">
+                <div class="prompt-lab-section-actions prompt-lab-library-tab-actions">
+                    <button class="basic-button translate" onclick="promptLab.newFragment()">New</button>
+                    <button class="basic-button translate" onclick="promptLab.saveFragment()">Save</button>
+                    <button class="basic-button translate" onclick="promptLab.deleteFragment()">Delete</button>
+                    <button class="basic-button translate" onclick="promptLab.toggleFragmentFavorite()">Favorite</button>
+                </div>
+                <div class="prompt-lab-library-body" id="prompt_lab_section_fragments_body">
+                    <input class="auto-text prompt-lab-search" id="prompt_lab_fragment_search" placeholder="Search fragments" oninput="promptLab.scheduleSearchRender('fragments')" />
+                    <div id="prompt_lab_fragment_list" class="prompt-lab-list"></div>
+                </div>
             </div>
-        </div>
-
-        <div class="prompt-lab-section" data-prompt-lab-section="fragments">
-            <button type="button" class="prompt-lab-section-header" onclick="promptLab.toggleSection('fragments')">
-                <span class="prompt-lab-section-title translate">Reusable Fragments</span>
-                <span class="prompt-lab-section-state" id="prompt_lab_section_fragments_state">+</span>
-            </button>
-            <div class="prompt-lab-section-actions">
-                <button class="basic-button translate" onclick="promptLab.newFragment()">New</button>
-                <button class="basic-button translate" onclick="promptLab.saveFragment()">Save</button>
-                <button class="basic-button translate" onclick="promptLab.deleteFragment()">Delete</button>
-                <button class="basic-button translate" onclick="promptLab.toggleFragmentFavorite()">Favorite</button>
+            <div class="tab-pane prompt-lab-library-tab" id="Prompt-Lab-Wildcards-Tab" role="tabpanel">
+                <div class="prompt-lab-section-actions prompt-lab-library-tab-actions">
+                    <button class="basic-button translate" onclick="promptLab.newWildcardSet()">New</button>
+                    <button class="basic-button translate" onclick="promptLab.saveWildcardSet()">Save</button>
+                    <button class="basic-button translate" onclick="promptLab.deleteWildcardSet()">Delete</button>
+                    <button class="basic-button translate" onclick="promptLab.toggleWildcardFavorite()">Favorite</button>
+                </div>
+                <div class="prompt-lab-library-body" id="prompt_lab_section_wildcards_body">
+                    <input class="auto-text prompt-lab-search" id="prompt_lab_wildcard_search" placeholder="Search wildcards" oninput="promptLab.scheduleSearchRender('wildcards')" />
+                    <div id="prompt_lab_wildcard_list" class="prompt-lab-list"></div>
+                </div>
             </div>
-            <div class="prompt-lab-section-body" id="prompt_lab_section_fragments_body">
-                <input class="auto-text prompt-lab-search" id="prompt_lab_fragment_search" placeholder="Search fragments" oninput="promptLab.scheduleSearchRender('fragments')" />
-                <div id="prompt_lab_fragment_list" class="prompt-lab-list"></div>
-            </div>
-        </div>
-
-        <div class="prompt-lab-section" data-prompt-lab-section="wildcards">
-            <button type="button" class="prompt-lab-section-header" onclick="promptLab.toggleSection('wildcards')">
-                <span class="prompt-lab-section-title translate">Wildcard Sets</span>
-                <span class="prompt-lab-section-state" id="prompt_lab_section_wildcards_state">+</span>
-            </button>
-            <div class="prompt-lab-section-actions">
-                <button class="basic-button translate" onclick="promptLab.newWildcardSet()">New</button>
-                <button class="basic-button translate" onclick="promptLab.saveWildcardSet()">Save</button>
-                <button class="basic-button translate" onclick="promptLab.deleteWildcardSet()">Delete</button>
-                <button class="basic-button translate" onclick="promptLab.toggleWildcardFavorite()">Favorite</button>
-            </div>
-            <div class="prompt-lab-section-body" id="prompt_lab_section_wildcards_body">
-                <input class="auto-text prompt-lab-search" id="prompt_lab_wildcard_search" placeholder="Search wildcards" oninput="promptLab.scheduleSearchRender('wildcards')" />
-                <div id="prompt_lab_wildcard_list" class="prompt-lab-list"></div>
-            </div>
-        </div>
-
-        <div class="prompt-lab-section" data-prompt-lab-section="history">
-            <button type="button" class="prompt-lab-section-header" onclick="promptLab.toggleSection('history')">
-                <span class="prompt-lab-section-title translate">Recent Prompts</span>
-                <span class="prompt-lab-section-state" id="prompt_lab_section_history_state">+</span>
-            </button>
-            <div class="prompt-lab-section-actions">
-                <button class="basic-button translate" onclick="promptLab.clearHistory()">Clear</button>
-            </div>
-            <div class="prompt-lab-section-body" id="prompt_lab_section_history_body">
-                <div id="prompt_lab_history_list" class="prompt-lab-list"></div>
-            </div>
-        </div>
-    </div>
-    <div class="prompt-lab-column prompt-lab-editor">
-        <div class="prompt-lab-editor-header">
-            <input class="auto-text prompt-lab-title" id="prompt_lab_name" placeholder="Prompt name" oninput="promptLab.scheduleAutoSave()" />
-            <div class="prompt-lab-actions">
-                <button class="basic-button translate" onclick="promptLab.savePrompt()">Save</button>
-                <button class="basic-button translate" onclick="promptLab.savePromptVariant()">Variant</button>
-                <button class="basic-button translate" onclick="promptLab.resetPrompt()">Reset</button>
-            </div>
-        </div>
-        <textarea class="auto-text prompt-lab-textarea" id="prompt_lab_positive" placeholder="Positive prompt" oninput="promptLab.refreshPreview(); promptLab.scheduleAutoSave()"></textarea>
-        <textarea class="auto-text prompt-lab-textarea prompt-lab-negative" id="prompt_lab_negative" placeholder="Negative prompt" oninput="promptLab.refreshPreview(); promptLab.scheduleAutoSave()"></textarea>
-        <input class="auto-text prompt-lab-tags" id="prompt_lab_tags" placeholder="Tags, comma-separated" oninput="promptLab.scheduleAutoSave()" />
-        <textarea class="auto-text prompt-lab-notes" id="prompt_lab_notes" placeholder="Notes" oninput="promptLab.scheduleAutoSave()"></textarea>
-        <div class="prompt-lab-primary-actions">
-            <button class="basic-button translate" onclick="promptLab.sendToGenerate()">Send to Generate</button>
-            <button class="basic-button translate" onclick="promptLab.previewWildcards()">Preview Variations</button>
-        </div>
-
-        <div class="prompt-lab-section" data-prompt-lab-section="wildcard_editor">
-            <button type="button" class="prompt-lab-section-header" onclick="promptLab.toggleSection('wildcard_editor')">
-                <span class="prompt-lab-section-title translate">Wildcard Set Editor</span>
-                <span class="prompt-lab-section-state" id="prompt_lab_section_wildcard_editor_state">+</span>
-            </button>
-            <div class="prompt-lab-section-body" id="prompt_lab_section_wildcard_editor_body">
-                <input class="auto-text prompt-lab-title" id="prompt_lab_wildcard_name" placeholder="Wildcard name" />
-                <textarea class="auto-text prompt-lab-wildcard-values" id="prompt_lab_wildcard_values" placeholder="Wildcard values, one per line"></textarea>
-                <input class="auto-text" id="prompt_lab_wildcard_tags" placeholder="Wildcard tags, comma-separated" />
-                <button class="basic-button translate" onclick="promptLab.insertSelectedWildcard()">Insert Token</button>
-            </div>
-        </div>
-
-        <div class="prompt-lab-section" data-prompt-lab-section="fragment_editor">
-            <button type="button" class="prompt-lab-section-header" onclick="promptLab.toggleSection('fragment_editor')">
-                <span class="prompt-lab-section-title translate">Fragment Editor</span>
-                <span class="prompt-lab-section-state" id="prompt_lab_section_fragment_editor_state">+</span>
-            </button>
-            <div class="prompt-lab-section-body" id="prompt_lab_section_fragment_editor_body">
-                <input class="auto-text prompt-lab-title" id="prompt_lab_fragment_name" placeholder="Fragment name" />
-                <textarea class="auto-text prompt-lab-fragment-text" id="prompt_lab_fragment_text" placeholder="Fragment text"></textarea>
-                <input class="auto-text" id="prompt_lab_fragment_category" placeholder="Fragment category" />
-                <input class="auto-text" id="prompt_lab_fragment_tags" placeholder="Fragment tags, comma-separated" />
-                <button class="basic-button translate" onclick="promptLab.insertSelectedFragment()">Insert Fragment</button>
-            </div>
-        </div>
-    </div>
-    <div class="prompt-lab-column prompt-lab-preview">
-        <div class="prompt-lab-panel-header">
-            <div class="prompt-lab-panel-heading">
-                <span class="prompt-lab-panel-title translate">Context</span>
-                <span class="prompt-lab-panel-subtitle translate">Wildcards, previews, warnings, and comparison</span>
-            </div>
-            <div class="prompt-lab-actions">
-                <button class="basic-button translate" onclick="promptLab.previewWildcards()">Refresh Preview</button>
-                <button class="basic-button translate" onclick="promptLab.generateWildcardCombinations()">Generate</button>
-            </div>
-        </div>
-        <div class="prompt-lab-section-actions prompt-lab-export-actions">
-            <button class="basic-button translate" onclick="promptLab.exportWildcardCombinations('txt')">Export Text</button>
-            <button class="basic-button translate" onclick="promptLab.exportWildcardCombinations('json')">Export JSON</button>
-            <button class="basic-button translate" onclick="promptLab.exportWildcardCombinations('csv')">Export CSV</button>
-        </div>
-        <div class="prompt-lab-wildcard-controls">
-            <select class="auto-dropdown" id="prompt_lab_wildcard_mode">
-                <option value="all">All Combinations</option>
-                <option value="random_single">Random Single</option>
-                <option value="random_batch">Random Batch</option>
-                <option value="sample">Sample N</option>
-            </select>
-            <input class="auto-text prompt-lab-small-input" id="prompt_lab_sample_count" type="number" min="1" value="25" />
-            <input class="auto-text prompt-lab-small-input" id="prompt_lab_max_combinations" type="number" min="1" value="1000" />
-            <label><input type="checkbox" id="prompt_lab_shuffle_results" autocomplete="off"> Shuffle</label>
-        </div>
-
-        <div class="prompt-lab-section" data-prompt-lab-section="detected_wildcards">
-            <button type="button" class="prompt-lab-section-header" onclick="promptLab.toggleSection('detected_wildcards')">
-                <span class="prompt-lab-section-title translate">Detected Wildcards</span>
-                <span class="prompt-lab-section-state" id="prompt_lab_section_detected_wildcards_state">-</span>
-            </button>
-            <div class="prompt-lab-section-body" id="prompt_lab_section_detected_wildcards_body">
-                <div id="prompt_lab_wildcards" class="prompt-lab-output"></div>
-            </div>
-        </div>
-
-        <div class="prompt-lab-section" data-prompt-lab-section="preview">
-            <button type="button" class="prompt-lab-section-header" onclick="promptLab.toggleSection('preview')">
-                <span class="prompt-lab-section-title translate">Prompt Preview</span>
-                <span class="prompt-lab-section-state" id="prompt_lab_section_preview_state">-</span>
-            </button>
-            <div class="prompt-lab-section-body" id="prompt_lab_section_preview_body">
-                <div id="prompt_lab_preview" class="prompt-lab-output"></div>
-            </div>
-        </div>
-
-        <div class="prompt-lab-section" data-prompt-lab-section="warnings">
-            <button type="button" class="prompt-lab-section-header" onclick="promptLab.toggleSection('warnings')">
-                <span class="prompt-lab-section-title translate">Warnings</span>
-                <span class="prompt-lab-section-state" id="prompt_lab_section_warnings_state">+</span>
-            </button>
-            <div class="prompt-lab-section-body" id="prompt_lab_section_warnings_body">
-                <div id="prompt_lab_warnings" class="prompt-lab-output"></div>
-            </div>
-        </div>
-
-        <div class="prompt-lab-section" data-prompt-lab-section="diff">
-            <button type="button" class="prompt-lab-section-header" onclick="promptLab.toggleSection('diff')">
-                <span class="prompt-lab-section-title translate">Compare / Diff</span>
-                <span class="prompt-lab-section-state" id="prompt_lab_section_diff_state">+</span>
-            </button>
-            <div class="prompt-lab-section-body" id="prompt_lab_section_diff_body">
-                <select class="auto-dropdown prompt-lab-compare-select" id="prompt_lab_compare_select" onchange="promptLab.refreshPreview()"></select>
-                <div id="prompt_lab_diff" class="prompt-lab-output"></div>
+            <div class="tab-pane prompt-lab-library-tab" id="Prompt-Lab-History-Tab" role="tabpanel">
+                <div class="prompt-lab-section-actions prompt-lab-library-tab-actions">
+                    <button class="basic-button translate" onclick="promptLab.clearHistory()">Clear</button>
+                </div>
+                <div class="prompt-lab-library-body" id="prompt_lab_section_history_body">
+                    <div id="prompt_lab_history_list" class="prompt-lab-list"></div>
+                </div>
             </div>
         </div>
     </div>

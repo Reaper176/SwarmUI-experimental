@@ -13,10 +13,6 @@ class PromptLab {
         this.pendingGenerateMetadata = null;
         this.autoSaveTimeout = null;
         this.sectionState = {
-            saved_prompts: true,
-            fragments: false,
-            wildcards: false,
-            history: false,
             wildcard_editor: false,
             fragment_editor: false,
             detected_wildcards: true,

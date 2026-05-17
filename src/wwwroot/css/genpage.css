@@ -163,10 +163,18 @@ body {
 
 .prompt-lab-wrapper {
     display: grid;
-    grid-template-columns: minmax(15rem, 0.85fr) minmax(25rem, 1.45fr) minmax(18rem, 0.95fr);
+    grid-template-rows: minmax(0, 1fr) minmax(13rem, 0.42fr);
     gap: 0.7rem;
     height: 100%;
     padding: 0.7rem;
+    min-height: 0;
+}
+
+.prompt-lab-workspace {
+    display: grid;
+    grid-template-columns: minmax(25rem, 1.35fr) minmax(18rem, 0.85fr);
+    gap: 0.7rem;
+    min-height: 0;
 }
 
 .prompt-lab-column {
@@ -175,6 +183,65 @@ body {
     border: 1px solid var(--light-border);
     background: var(--background);
     padding: 0.65rem;
+}
+
+.prompt-lab-library {
+    display: grid;
+    grid-template-rows: auto auto minmax(0, 1fr);
+    min-height: 0;
+    overflow: hidden;
+    border: 1px solid var(--light-border);
+    background: var(--background);
+}
+
+.prompt-lab-library-info {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.65rem;
+    border-bottom: 1px solid var(--light-border);
+    padding: 0.55rem 0.65rem;
+}
+
+.prompt-lab-library-actions {
+    align-items: center;
+    justify-content: flex-end;
+}
+
+.prompt-lab-library-search {
+    width: min(24rem, 38vw);
+    margin-bottom: 0;
+}
+
+.prompt-lab-library-tabs {
+    min-height: 0;
+}
+
+.prompt-lab-library-content {
+    min-height: 0;
+    overflow: hidden;
+}
+
+.prompt-lab-library-tab {
+    height: 100%;
+    min-height: 0;
+    overflow: hidden;
+}
+
+.prompt-lab-library-tab.active {
+    display: grid;
+    grid-template-rows: auto minmax(0, 1fr);
+}
+
+.prompt-lab-library-tab-actions {
+    border-bottom: 1px solid var(--light-border);
+    padding: 0.4rem 0.45rem;
+}
+
+.prompt-lab-library-body {
+    min-height: 0;
+    overflow: auto;
+    padding: 0.45rem;
 }
 
 .prompt-lab-panel-header,
@@ -263,8 +330,10 @@ body {
 }
 
 .prompt-lab-autosave {
-    display: block;
-    margin-bottom: 0.45rem;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+    margin-bottom: 0;
 }
 
 .prompt-lab-search,
@@ -415,7 +484,25 @@ body {
 
 @media (max-width: 900px) {
     .prompt-lab-wrapper {
+        grid-template-rows: auto auto;
+        height: auto;
+    }
+
+    .prompt-lab-workspace {
         grid-template-columns: 1fr;
+    }
+
+    .prompt-lab-library-info {
+        align-items: stretch;
+        flex-direction: column;
+    }
+
+    .prompt-lab-library-actions {
+        justify-content: flex-start;
+    }
+
+    .prompt-lab-library-search {
+        width: 100%;
     }
 }
 .main-image-area {
