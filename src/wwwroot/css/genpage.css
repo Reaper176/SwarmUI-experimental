@@ -191,6 +191,19 @@ body {
     font-weight: 700;
 }
 
+.prompt-lab-panel-heading {
+    display: flex;
+    flex-direction: column;
+    gap: 0.1rem;
+    min-width: 0;
+}
+
+.prompt-lab-panel-subtitle {
+    color: var(--text-soft);
+    font-size: 0.85rem;
+    line-height: 1.2;
+}
+
 .prompt-lab-actions,
 .prompt-lab-section-actions {
     display: flex;
@@ -280,6 +293,21 @@ body {
     width: 100%;
     min-height: 4rem;
     margin-bottom: 0.55rem;
+}
+
+.prompt-lab-primary-actions {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    gap: 0.4rem;
+    border-bottom: 1px solid var(--light-border);
+    margin-bottom: 0.65rem;
+    padding-bottom: 0.55rem;
+}
+
+.prompt-lab-primary-actions .basic-button {
+    min-height: 2rem;
+    padding: 0.25rem 0.55rem;
 }
 
 .prompt-lab-wildcard-values {
