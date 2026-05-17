@@ -96,7 +96,7 @@ public static class LodestoneInterrogatorAPI
         Session session,
         [API.APIParameter("Data URL containing base64 image data.")] string image,
         [API.APIParameter("Minimum tag probability threshold, clamped to 0.0 through 1.0.")] double threshold = 0.35,
-        [API.APIParameter("Maximum number of tags to return, clamped to 1 through 300.")] int maxTags = 80)
+        [API.APIParameter("Maximum number of tags to return, clamped to 1 through 1000.")] int maxTags = 80)
     {
         if (string.IsNullOrWhiteSpace(image))
         {

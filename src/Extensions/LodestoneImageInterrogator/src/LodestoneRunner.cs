@@ -23,7 +23,7 @@ public static class LodestoneRunner
     private const int MinimumMaxTags = 1;
 
     /// <summary>Maximum accepted tag count.</summary>
-    private const int MaximumMaxTags = 300;
+    private const int MaximumMaxTags = 1000;
 
     /// <summary>Runs Lodestone interrogation for a browser image data URL.</summary>
     public static async Task<JObject> Interrogate(string image, double threshold, int maxTags)
