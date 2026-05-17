@@ -12,6 +12,10 @@ class PromptLab {
         this.searchRenderTimeouts = {};
         this.pendingGenerateMetadata = null;
         this.autoSaveTimeout = null;
+        this.layoutDrag = null;
+        this.workspaceResizeFrame = null;
+        this.contextWidth = parseInt(getCookie('promptlab_context_width') || '-1');
+        this.libraryHeight = parseInt(getCookie('promptlab_library_height') || '-1');
         this.sectionState = {
             wildcard_editor: false,
             fragment_editor: false,
@@ -39,7 +43,94 @@ class PromptLab {
         this.enablePromptDrop(getRequiredElementById('prompt_lab_positive'));
         this.enablePromptDrop(getRequiredElementById('prompt_lab_negative'));
         this.applyAllSectionStates();
+        this.initResizableLayout();
         this.load();
+    }
+
+    /** Initializes the Prompt Lab splitter bars. */
+    initResizableLayout() {
+        this.wrapper = getRequiredElementById('prompt_lab_wrapper');
+        this.workspace = getRequiredElementById('prompt_lab_workspace');
+        this.editor = getRequiredElementById('prompt_lab_editor');
+        this.context = getRequiredElementById('prompt_lab_context');
+        this.library = getRequiredElementById('prompt_lab_library');
+        this.workspaceSplitter = getRequiredElementById('prompt_lab_workspace_splitter');
+        this.librarySplitter = getRequiredElementById('prompt_lab_library_splitter');
+        let startDrag = (kind, e) => {
+            if (window.innerWidth < 900) {
+                return;
+            }
+            this.layoutDrag = kind;
+            e.preventDefault();
+        };
+        this.workspaceSplitter.addEventListener('mousedown', e => startDrag('workspace', e), true);
+        this.workspaceSplitter.addEventListener('touchstart', e => startDrag('workspace', e), true);
+        this.librarySplitter.addEventListener('mousedown', e => startDrag('library', e), true);
+        this.librarySplitter.addEventListener('touchstart', e => startDrag('library', e), true);
+        let moveDrag = (e, x, y) => {
+            if (!this.layoutDrag) {
+                return;
+            }
+            if (this.layoutDrag == 'workspace') {
+                let bounds = this.workspace.getBoundingClientRect();
+                let width = bounds.right - x - 8;
+                this.contextWidth = Math.min(Math.max(width, 280), Math.max(280, bounds.width - 420));
+                setCookie('promptlab_context_width', this.contextWidth, 365);
+            }
+            else if (this.layoutDrag == 'library') {
+                let bounds = this.wrapper.getBoundingClientRect();
+                let height = bounds.bottom - y - 8;
+                this.libraryHeight = Math.min(Math.max(height, 160), Math.max(160, bounds.height - 240));
+                setCookie('promptlab_library_height', this.libraryHeight, 365);
+            }
+            this.applyResizableLayout();
+            e.preventDefault();
+        };
+        document.addEventListener('mousemove', e => moveDrag(e, e.clientX, e.clientY));
+        document.addEventListener('touchmove', e => {
+            if (e.touches.length > 0) {
+                moveDrag(e, e.touches.item(0).clientX, e.touches.item(0).clientY);
+            }
+        });
+        document.addEventListener('mouseup', () => this.layoutDrag = null);
+        document.addEventListener('touchend', () => this.layoutDrag = null);
+        let tabButton = document.getElementById('promptlabtabbutton');
+        if (tabButton) {
+            tabButton.addEventListener('click', () => this.scheduleResizableLayout());
+        }
+        addEventListener('resize', () => this.scheduleResizableLayout());
+        this.scheduleResizableLayout();
+    }
+
+    /** Schedules a Prompt Lab layout reflow. */
+    scheduleResizableLayout() {
+        if (this.workspaceResizeFrame) {
+            return;
+        }
+        this.workspaceResizeFrame = requestAnimationFrame(() => {
+            this.workspaceResizeFrame = null;
+            this.applyResizableLayout();
+        });
+    }
+
+    /** Applies Prompt Lab splitter sizes. */
+    applyResizableLayout() {
+        if (!this.workspace || !this.library) {
+            return;
+        }
+        if (window.innerWidth < 900) {
+            this.wrapper.style.gridTemplateRows = '';
+            this.workspace.style.gridTemplateColumns = '';
+            return;
+        }
+        let wrapperBounds = this.wrapper.getBoundingClientRect();
+        let workspaceBounds = this.workspace.getBoundingClientRect();
+        let libraryHeight = this.libraryHeight == -1 ? Math.round(wrapperBounds.height * 0.36) : this.libraryHeight;
+        let contextWidth = this.contextWidth == -1 ? Math.round(workspaceBounds.width * 0.38) : this.contextWidth;
+        libraryHeight = Math.min(Math.max(libraryHeight, 160), Math.max(160, wrapperBounds.height - 240));
+        contextWidth = Math.min(Math.max(contextWidth, 280), Math.max(280, workspaceBounds.width - 420));
+        this.wrapper.style.gridTemplateRows = `minmax(0, 1fr) 5px ${libraryHeight}px`;
+        this.workspace.style.gridTemplateColumns = `minmax(25rem, 1fr) 5px ${contextWidth}px`;
     }
 
     /** Toggles a Prompt Lab collapsible section. */

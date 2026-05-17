@@ -163,8 +163,8 @@ body {
 
 .prompt-lab-wrapper {
     display: grid;
-    grid-template-rows: minmax(0, 1fr) minmax(13rem, 0.42fr);
-    gap: 0.7rem;
+    grid-template-rows: minmax(0, 1fr) 5px minmax(13rem, 18rem);
+    gap: 0;
     height: 100%;
     padding: 0.7rem;
     min-height: 0;
@@ -172,8 +172,8 @@ body {
 
 .prompt-lab-workspace {
     display: grid;
-    grid-template-columns: minmax(25rem, 1.35fr) minmax(18rem, 0.85fr);
-    gap: 0.7rem;
+    grid-template-columns: minmax(25rem, 1fr) 5px minmax(18rem, 24rem);
+    gap: 0;
     min-height: 0;
 }
 
@@ -183,6 +183,16 @@ body {
     border: 1px solid var(--light-border);
     background: var(--background);
     padding: 0.65rem;
+}
+
+.prompt-lab-workspace-splitter {
+    cursor: col-resize;
+    margin: 0 0.35rem;
+}
+
+.prompt-lab-library-splitter {
+    cursor: row-resize;
+    margin: 0.35rem 0;
 }
 
 .prompt-lab-library {
@@ -218,6 +228,7 @@ body {
 }
 
 .prompt-lab-library-content {
+    height: 100%;
     min-height: 0;
     overflow: hidden;
 }
@@ -228,9 +239,10 @@ body {
     overflow: hidden;
 }
 
-.prompt-lab-library-tab.active {
+.prompt-lab-library-content > .prompt-lab-library-tab.active {
     display: grid;
     grid-template-rows: auto minmax(0, 1fr);
+    height: 100%;
 }
 
 .prompt-lab-library-tab-actions {
@@ -490,6 +502,11 @@ body {
 
     .prompt-lab-workspace {
         grid-template-columns: 1fr;
+    }
+
+    .prompt-lab-workspace-splitter,
+    .prompt-lab-library-splitter {
+        display: none;
     }
 
     .prompt-lab-library-info {
