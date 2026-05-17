@@ -12,6 +12,18 @@ class PromptLab {
         this.searchRenderTimeouts = {};
         this.pendingGenerateMetadata = null;
         this.autoSaveTimeout = null;
+        this.sectionState = {
+            saved_prompts: true,
+            fragments: false,
+            wildcards: false,
+            history: false,
+            wildcard_editor: false,
+            fragment_editor: false,
+            detected_wildcards: true,
+            preview: true,
+            warnings: false,
+            diff: false
+        };
 
         // Stores the exact results shown by Preview Wildcards.
         this.lastWildcardPreviewRequestKey = null;
@@ -30,7 +42,40 @@ class PromptLab {
         promptTabComplete.enableFor(getRequiredElementById('prompt_lab_negative'));
         this.enablePromptDrop(getRequiredElementById('prompt_lab_positive'));
         this.enablePromptDrop(getRequiredElementById('prompt_lab_negative'));
+        this.applyAllSectionStates();
         this.load();
+    }
+
+    /** Toggles a Prompt Lab collapsible section. */
+    toggleSection(section) {
+        this.sectionState[section] = !this.sectionState[section];
+        this.applySectionState(section);
+    }
+
+    /** Forces a Prompt Lab collapsible section open or closed. */
+    setSectionOpen(section, isOpen) {
+        this.sectionState[section] = !!isOpen;
+        this.applySectionState(section);
+    }
+
+    /** Applies all Prompt Lab collapsible section states. */
+    applyAllSectionStates() {
+        for (let section of Object.keys(this.sectionState)) {
+            this.applySectionState(section);
+        }
+    }
+
+    /** Applies one Prompt Lab collapsible section state. */
+    applySectionState(section) {
+        let body = document.getElementById(`prompt_lab_section_${section}_body`);
+        let state = document.getElementById(`prompt_lab_section_${section}_state`);
+        let isOpen = this.sectionState[section] == true;
+        if (body) {
+            body.style.display = isOpen ? '' : 'none';
+        }
+        if (state) {
+            state.innerText = isOpen ? '-' : '+';
+        }
     }
 
     /** Enables dropping Prompt Lab text into a prompt field. */
@@ -66,7 +111,13 @@ class PromptLab {
         }
         this.searchRenderTimeouts[kind] = setTimeout(() => {
             this.searchRenderTimeouts[kind] = null;
-            if (kind == 'prompts') {
+            if (kind == 'all') {
+                this.renderPromptList();
+                this.renderFragmentList();
+                this.renderWildcardList();
+                this.renderHistoryList();
+            }
+            else if (kind == 'prompts') {
                 this.renderPromptList();
             }
             else if (kind == 'fragments') {
@@ -257,6 +308,15 @@ class PromptLab {
         return (items || []).slice().sort((a, b) => Number(b.favorite || false) - Number(a.favorite || false) || (a.name || '').localeCompare(b.name || ''));
     }
 
+    /** Gets a lower-case search string for a list, falling back to the shared library search. */
+    getListSearch(localSearchId) {
+        let localSearch = (document.getElementById(localSearchId)?.value || '').trim();
+        if (localSearch) {
+            return localSearch.toLowerCase();
+        }
+        return (document.getElementById('prompt_lab_search')?.value || '').trim().toLowerCase();
+    }
+
     /** Renders the prompt compare selector. */
     renderCompareSelect() {
         let select = document.getElementById('prompt_lab_compare_select');
@@ -425,7 +485,7 @@ class PromptLab {
         if (!list) {
             return;
         }
-        let search = (document.getElementById('prompt_lab_fragment_search')?.value || '').toLowerCase();
+        let search = this.getListSearch('prompt_lab_fragment_search');
         let html = '';
         let fragments = this.sortedWithFavorites(this.data.fragments);
         for (let fragment of fragments) {
@@ -561,7 +621,7 @@ class PromptLab {
         if (!list) {
             return;
         }
-        let search = (document.getElementById('prompt_lab_wildcard_search')?.value || '').toLowerCase();
+        let search = this.getListSearch('prompt_lab_wildcard_search');
         let html = '';
         let wildcards = this.sortedWithFavorites(this.data.wildcards);
         for (let wildcard of wildcards) {
@@ -603,10 +663,15 @@ class PromptLab {
             return;
         }
         let history = (this.data.history || []).slice().sort((a, b) => (b.created_at || 0) - (a.created_at || 0)).slice(0, 25);
+        let search = this.getListSearch('prompt_lab_history_search');
         let html = '';
         for (let item of history) {
             let title = item.name || 'Recent Prompt';
             let preview = (item.positive || '').substring(0, 60);
+            let text = `${title} ${item.positive || ''} ${item.negative || ''}`.toLowerCase();
+            if (search && !text.includes(search)) {
+                continue;
+            }
             html += `<button class="prompt-lab-list-item" onclick="promptLab.loadHistoryPrompt('${escapeHtmlNoBr(escapeJsString(item.id))}')">${escapeHtml(title)} <span class="prompt-lab-history-preview">${escapeHtml(preview)}</span></button>`;
         }
         list.innerHTML = html || '<div class="prompt-lab-empty translate">No recent prompts.</div>';
@@ -800,6 +865,7 @@ class PromptLab {
         let negative = escapeHtml(getRequiredElementById('prompt_lab_negative').value || '');
         previewBox.innerHTML = `<div>Positive chars: ${diagnostics.positive_chars} | Negative chars: ${diagnostics.negative_chars}</div><br><b>Positive</b><br>${positive}<br><br><b>Negative</b><br>${negative}`;
         warningBox.innerHTML = this.renderWarnings(diagnostics.warnings);
+        this.setSectionOpen('warnings', diagnostics.warnings.length > 0);
         diffBox.innerHTML = this.renderCurrentDiff();
     }
 
@@ -899,6 +965,7 @@ class PromptLab {
             let diagnostics = this.getPromptDiagnostics();
             let warnings = diagnostics.warnings.concat(data.warnings || []);
             warningBox.innerHTML = this.renderWarnings(warnings);
+            this.setSectionOpen('warnings', warnings.length > 0);
         });
     }
 
