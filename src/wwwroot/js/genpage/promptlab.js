@@ -17,8 +17,6 @@ class PromptLab {
         this.contextWidth = parseInt(getCookie('promptlab_context_width') || '-1');
         this.libraryHeight = parseInt(getCookie('promptlab_library_height') || '-1');
         this.sectionState = {
-            wildcard_editor: false,
-            fragment_editor: false,
             detected_wildcards: true,
             preview: true,
             warnings: false,
@@ -96,7 +94,14 @@ class PromptLab {
         document.addEventListener('touchend', () => this.layoutDrag = null);
         let tabButton = document.getElementById('promptlabtabbutton');
         if (tabButton) {
-            tabButton.addEventListener('click', () => this.scheduleResizableLayout());
+            tabButton.addEventListener('shown.bs.tab', () => this.scheduleResizableLayout());
+            tabButton.addEventListener('click', () => setTimeout(() => this.scheduleResizableLayout(), 1));
+        }
+        let libraryTabs = document.getElementById('promptlablibrarytabcollection');
+        if (libraryTabs) {
+            for (let tab of libraryTabs.getElementsByTagName('a')) {
+                tab.addEventListener('shown.bs.tab', () => this.scheduleResizableLayout());
+            }
         }
         addEventListener('resize', () => this.scheduleResizableLayout());
         this.scheduleResizableLayout();
@@ -129,8 +134,8 @@ class PromptLab {
         let contextWidth = this.contextWidth == -1 ? Math.round(workspaceBounds.width * 0.38) : this.contextWidth;
         libraryHeight = Math.min(Math.max(libraryHeight, 160), Math.max(160, wrapperBounds.height - 240));
         contextWidth = Math.min(Math.max(contextWidth, 280), Math.max(280, workspaceBounds.width - 420));
-        this.wrapper.style.gridTemplateRows = `minmax(0, 1fr) 5px ${libraryHeight}px`;
-        this.workspace.style.gridTemplateColumns = `minmax(25rem, 1fr) 5px ${contextWidth}px`;
+        this.wrapper.style.gridTemplateRows = `minmax(0, 1fr) 0.7rem ${libraryHeight}px`;
+        this.workspace.style.gridTemplateColumns = `minmax(25rem, 1fr) 0.7rem ${contextWidth}px`;
     }
 
     /** Toggles a Prompt Lab collapsible section. */

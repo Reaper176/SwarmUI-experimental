@@ -19,33 +19,6 @@
                 <button class="basic-button translate" onclick="promptLab.sendToGenerate()">Send to Generate</button>
                 <button class="basic-button translate" onclick="promptLab.previewWildcards()">Preview Variations</button>
             </div>
-
-            <div class="prompt-lab-section" data-prompt-lab-section="wildcard_editor">
-                <button type="button" class="prompt-lab-section-header" onclick="promptLab.toggleSection('wildcard_editor')">
-                    <span class="prompt-lab-section-title translate">Wildcard Set Editor</span>
-                    <span class="prompt-lab-section-state" id="prompt_lab_section_wildcard_editor_state">+</span>
-                </button>
-                <div class="prompt-lab-section-body" id="prompt_lab_section_wildcard_editor_body">
-                    <input class="auto-text prompt-lab-title" id="prompt_lab_wildcard_name" placeholder="Wildcard name" />
-                    <textarea class="auto-text prompt-lab-wildcard-values" id="prompt_lab_wildcard_values" placeholder="Wildcard values, one per line"></textarea>
-                    <input class="auto-text" id="prompt_lab_wildcard_tags" placeholder="Wildcard tags, comma-separated" />
-                    <button class="basic-button translate" onclick="promptLab.insertSelectedWildcard()">Insert Token</button>
-                </div>
-            </div>
-
-            <div class="prompt-lab-section" data-prompt-lab-section="fragment_editor">
-                <button type="button" class="prompt-lab-section-header" onclick="promptLab.toggleSection('fragment_editor')">
-                    <span class="prompt-lab-section-title translate">Fragment Editor</span>
-                    <span class="prompt-lab-section-state" id="prompt_lab_section_fragment_editor_state">+</span>
-                </button>
-                <div class="prompt-lab-section-body" id="prompt_lab_section_fragment_editor_body">
-                    <input class="auto-text prompt-lab-title" id="prompt_lab_fragment_name" placeholder="Fragment name" />
-                    <textarea class="auto-text prompt-lab-fragment-text" id="prompt_lab_fragment_text" placeholder="Fragment text"></textarea>
-                    <input class="auto-text" id="prompt_lab_fragment_category" placeholder="Fragment category" />
-                    <input class="auto-text" id="prompt_lab_fragment_tags" placeholder="Fragment tags, comma-separated" />
-                    <button class="basic-button translate" onclick="promptLab.insertSelectedFragment()">Insert Fragment</button>
-                </div>
-            </div>
         </div>
         <div class="prompt-lab-workspace-splitter splitter-bar" id="prompt_lab_workspace_splitter"></div>
         <div class="prompt-lab-column prompt-lab-preview" id="prompt_lab_context">
@@ -168,9 +141,19 @@
                     <button class="basic-button translate" onclick="promptLab.deleteFragment()">Delete</button>
                     <button class="basic-button translate" onclick="promptLab.toggleFragmentFavorite()">Favorite</button>
                 </div>
-                <div class="prompt-lab-library-body" id="prompt_lab_section_fragments_body">
-                    <input class="auto-text prompt-lab-search" id="prompt_lab_fragment_search" placeholder="Search fragments" oninput="promptLab.scheduleSearchRender('fragments')" />
-                    <div id="prompt_lab_fragment_list" class="prompt-lab-list"></div>
+                <div class="prompt-lab-library-body prompt-lab-library-editor-body" id="prompt_lab_section_fragments_body">
+                    <div class="prompt-lab-library-list-pane">
+                        <input class="auto-text prompt-lab-search" id="prompt_lab_fragment_search" placeholder="Search fragments" oninput="promptLab.scheduleSearchRender('fragments')" />
+                        <div id="prompt_lab_fragment_list" class="prompt-lab-list"></div>
+                    </div>
+                    <div class="prompt-lab-library-editor-pane">
+                        <div class="prompt-lab-library-editor-title translate">Fragment Editor</div>
+                        <input class="auto-text prompt-lab-title" id="prompt_lab_fragment_name" placeholder="Fragment name" />
+                        <textarea class="auto-text prompt-lab-fragment-text" id="prompt_lab_fragment_text" placeholder="Fragment text"></textarea>
+                        <input class="auto-text" id="prompt_lab_fragment_category" placeholder="Fragment category" />
+                        <input class="auto-text" id="prompt_lab_fragment_tags" placeholder="Fragment tags, comma-separated" />
+                        <button class="basic-button translate" onclick="promptLab.insertSelectedFragment()">Insert Fragment</button>
+                    </div>
                 </div>
             </div>
             <div class="tab-pane prompt-lab-library-tab" id="Prompt-Lab-Wildcards-Tab" role="tabpanel">
@@ -180,9 +163,18 @@
                     <button class="basic-button translate" onclick="promptLab.deleteWildcardSet()">Delete</button>
                     <button class="basic-button translate" onclick="promptLab.toggleWildcardFavorite()">Favorite</button>
                 </div>
-                <div class="prompt-lab-library-body" id="prompt_lab_section_wildcards_body">
-                    <input class="auto-text prompt-lab-search" id="prompt_lab_wildcard_search" placeholder="Search wildcards" oninput="promptLab.scheduleSearchRender('wildcards')" />
-                    <div id="prompt_lab_wildcard_list" class="prompt-lab-list"></div>
+                <div class="prompt-lab-library-body prompt-lab-library-editor-body" id="prompt_lab_section_wildcards_body">
+                    <div class="prompt-lab-library-list-pane">
+                        <input class="auto-text prompt-lab-search" id="prompt_lab_wildcard_search" placeholder="Search wildcards" oninput="promptLab.scheduleSearchRender('wildcards')" />
+                        <div id="prompt_lab_wildcard_list" class="prompt-lab-list"></div>
+                    </div>
+                    <div class="prompt-lab-library-editor-pane">
+                        <div class="prompt-lab-library-editor-title translate">Wildcard Set Editor</div>
+                        <input class="auto-text prompt-lab-title" id="prompt_lab_wildcard_name" placeholder="Wildcard name" />
+                        <textarea class="auto-text prompt-lab-wildcard-values" id="prompt_lab_wildcard_values" placeholder="Wildcard values, one per line"></textarea>
+                        <input class="auto-text" id="prompt_lab_wildcard_tags" placeholder="Wildcard tags, comma-separated" />
+                        <button class="basic-button translate" onclick="promptLab.insertSelectedWildcard()">Insert Token</button>
+                    </div>
                 </div>
             </div>
             <div class="tab-pane prompt-lab-library-tab" id="Prompt-Lab-History-Tab" role="tabpanel">
