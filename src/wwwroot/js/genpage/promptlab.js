@@ -12,6 +12,11 @@ class PromptLab {
         this.searchRenderTimeouts = {};
         this.pendingGenerateMetadata = null;
         this.autoSaveTimeout = null;
+        this.workflowSteps = ['library', 'write', 'reuse', 'preview', 'generate'];
+        this.workflowStep = localStorage.getItem('prompt_lab_workflow_step') || 'library';
+        if (!this.workflowSteps.includes(this.workflowStep)) {
+            this.workflowStep = 'library';
+        }
         this.sectionState = {
             saved_prompts: true,
             fragments: false,
@@ -43,7 +48,49 @@ class PromptLab {
         this.enablePromptDrop(getRequiredElementById('prompt_lab_positive'));
         this.enablePromptDrop(getRequiredElementById('prompt_lab_negative'));
         this.applyAllSectionStates();
+        this.applyWorkflowStep();
         this.load();
+    }
+
+    /** Sets the active Prompt Lab workflow step. */
+    setWorkflowStep(step) {
+        if (!this.workflowSteps.includes(step)) {
+            return;
+        }
+        this.workflowStep = step;
+        localStorage.setItem('prompt_lab_workflow_step', step);
+        this.applyWorkflowStep();
+    }
+
+    /** Applies the active Prompt Lab workflow step to layout and relevant sections. */
+    applyWorkflowStep() {
+        let wrapper = document.getElementById('prompt_lab_wrapper');
+        if (wrapper) {
+            wrapper.dataset.workflowStep = this.workflowStep;
+        }
+        for (let button of document.querySelectorAll('[data-prompt-lab-workflow-step]')) {
+            button.classList.toggle('prompt-lab-workflow-step-active', button.dataset.promptLabWorkflowStep == this.workflowStep);
+        }
+        if (this.workflowStep == 'library') {
+            this.setSectionOpen('saved_prompts', true);
+            this.setSectionOpen('fragments', false);
+            this.setSectionOpen('wildcards', false);
+            this.setSectionOpen('history', false);
+        }
+        else if (this.workflowStep == 'write') {
+            this.setSectionOpen('wildcard_editor', false);
+            this.setSectionOpen('fragment_editor', false);
+        }
+        else if (this.workflowStep == 'reuse') {
+            this.setSectionOpen('fragments', true);
+            this.setSectionOpen('wildcards', true);
+            this.setSectionOpen('wildcard_editor', true);
+            this.setSectionOpen('fragment_editor', true);
+        }
+        else if (this.workflowStep == 'preview' || this.workflowStep == 'generate') {
+            this.setSectionOpen('detected_wildcards', true);
+            this.setSectionOpen('preview', true);
+        }
     }
 
     /** Toggles a Prompt Lab collapsible section. */

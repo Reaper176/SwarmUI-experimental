@@ -169,6 +169,69 @@ body {
     padding: 0.7rem;
 }
 
+.prompt-lab-wrapper[data-workflow-step="library"],
+.prompt-lab-wrapper[data-workflow-step="reuse"] {
+    grid-template-columns: minmax(16rem, 0.85fr) minmax(28rem, 1.35fr);
+}
+
+.prompt-lab-wrapper[data-workflow-step="write"] {
+    grid-template-columns: minmax(30rem, 1fr);
+}
+
+.prompt-lab-wrapper[data-workflow-step="preview"],
+.prompt-lab-wrapper[data-workflow-step="generate"] {
+    grid-template-columns: minmax(28rem, 1.25fr) minmax(18rem, 0.9fr);
+}
+
+.prompt-lab-workflow {
+    grid-column: 1 / -1;
+    display: grid;
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+    gap: 0.45rem;
+}
+
+.prompt-lab-workflow-step {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.35rem;
+    min-height: 2.25rem;
+    border: 1px solid var(--light-border);
+    background: var(--button-background);
+    color: var(--button-text);
+}
+
+.prompt-lab-workflow-step:hover {
+    background: var(--button-background-hover);
+    color: var(--button-foreground-hover);
+}
+
+.prompt-lab-workflow-step-active {
+    border-color: var(--emphasis);
+    background: color-mix(in srgb, var(--button-background) 72%, var(--emphasis));
+}
+
+.prompt-lab-workflow-number {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 1.25rem;
+    height: 1.25rem;
+    border: 1px solid var(--light-border);
+    border-radius: 50%;
+    font-size: 0.8rem;
+    font-weight: 700;
+}
+
+.prompt-lab-wrapper[data-workflow-step="library"] .prompt-lab-preview,
+.prompt-lab-wrapper[data-workflow-step="write"] .prompt-lab-library,
+.prompt-lab-wrapper[data-workflow-step="write"] .prompt-lab-preview,
+.prompt-lab-wrapper[data-workflow-step="reuse"] .prompt-lab-preview,
+.prompt-lab-wrapper[data-workflow-step="preview"] .prompt-lab-library,
+.prompt-lab-wrapper[data-workflow-step="generate"] .prompt-lab-library {
+    display: none;
+}
+
 .prompt-lab-column {
     min-height: 0;
     overflow: auto;
@@ -189,6 +252,23 @@ body {
 .prompt-lab-panel-title {
     font-size: 1.05rem;
     font-weight: 700;
+}
+
+.prompt-lab-workflow-help {
+    color: var(--text-soft);
+    margin-bottom: 0.5rem;
+}
+
+.prompt-lab-workflow-nav {
+    display: flex;
+    justify-content: space-between;
+    gap: 0.5rem;
+    margin-top: 0.55rem;
+}
+
+.prompt-lab-next-button {
+    width: 100%;
+    margin-top: 0.2rem;
 }
 
 .prompt-lab-actions,
@@ -387,6 +467,9 @@ body {
 
 @media (max-width: 900px) {
     .prompt-lab-wrapper {
+        grid-template-columns: 1fr;
+    }
+    .prompt-lab-workflow {
         grid-template-columns: 1fr;
     }
 }
