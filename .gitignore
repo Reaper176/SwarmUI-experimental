@@ -6,6 +6,7 @@ obj/
 .idea/
 *.user
 *.suo
+*.csproj.lscache
 Properties/
 .dotnet/
 .aspnet/
