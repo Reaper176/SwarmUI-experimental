@@ -1,28 +1,6 @@
 @model GeneratePageModel
 
-<div class="prompt-lab-wrapper" id="prompt_lab_wrapper">
-    <div class="prompt-lab-workflow">
-        <button type="button" class="prompt-lab-workflow-step" data-prompt-lab-workflow-step="library" onclick="promptLab.setWorkflowStep('library')">
-            <span class="prompt-lab-workflow-number">1</span>
-            <span class="translate">Library</span>
-        </button>
-        <button type="button" class="prompt-lab-workflow-step" data-prompt-lab-workflow-step="write" onclick="promptLab.setWorkflowStep('write')">
-            <span class="prompt-lab-workflow-number">2</span>
-            <span class="translate">Write</span>
-        </button>
-        <button type="button" class="prompt-lab-workflow-step" data-prompt-lab-workflow-step="reuse" onclick="promptLab.setWorkflowStep('reuse')">
-            <span class="prompt-lab-workflow-number">3</span>
-            <span class="translate">Reuse</span>
-        </button>
-        <button type="button" class="prompt-lab-workflow-step" data-prompt-lab-workflow-step="preview" onclick="promptLab.setWorkflowStep('preview')">
-            <span class="prompt-lab-workflow-number">4</span>
-            <span class="translate">Preview</span>
-        </button>
-        <button type="button" class="prompt-lab-workflow-step" data-prompt-lab-workflow-step="generate" onclick="promptLab.setWorkflowStep('generate')">
-            <span class="prompt-lab-workflow-number">5</span>
-            <span class="translate">Generate</span>
-        </button>
-    </div>
+<div class="prompt-lab-wrapper">
     <div class="prompt-lab-column prompt-lab-library">
         <div class="prompt-lab-panel-header">
             <span class="prompt-lab-panel-title translate">Library</span>
@@ -34,7 +12,6 @@
         <label class="prompt-lab-autosave"><input type="checkbox" id="prompt_lab_autosave" autocomplete="off"> Auto Save</label>
         <input id="prompt_lab_import_file" type="file" accept="application/json,.json" class="prompt-lab-hidden-file" onchange="promptLab.importLibraryFile(this)" />
         <input class="auto-text prompt-lab-search" id="prompt_lab_search" placeholder="Search library" oninput="promptLab.scheduleSearchRender('all')" />
-        <div class="prompt-lab-workflow-help translate">Pick a saved prompt or start a new one, then continue to writing.</div>
 
         <div class="prompt-lab-section" data-prompt-lab-section="saved_prompts">
             <button type="button" class="prompt-lab-section-header" onclick="promptLab.toggleSection('saved_prompts')">
@@ -100,7 +77,6 @@
                 <div id="prompt_lab_history_list" class="prompt-lab-list"></div>
             </div>
         </div>
-        <button class="basic-button prompt-lab-next-button translate" onclick="promptLab.setWorkflowStep('write')">Continue to Write</button>
     </div>
     <div class="prompt-lab-column prompt-lab-editor">
         <div class="prompt-lab-editor-header">
@@ -111,7 +87,6 @@
                 <button class="basic-button translate" onclick="promptLab.resetPrompt()">Reset</button>
             </div>
         </div>
-        <div class="prompt-lab-workflow-help translate">Write the core prompt here. Reusable fragments and wildcard tools are available in the next step.</div>
         <textarea class="auto-text prompt-lab-textarea" id="prompt_lab_positive" placeholder="Positive prompt" oninput="promptLab.refreshPreview(); promptLab.scheduleAutoSave()"></textarea>
         <textarea class="auto-text prompt-lab-textarea prompt-lab-negative" id="prompt_lab_negative" placeholder="Negative prompt" oninput="promptLab.refreshPreview(); promptLab.scheduleAutoSave()"></textarea>
         <input class="auto-text prompt-lab-tags" id="prompt_lab_tags" placeholder="Tags, comma-separated" oninput="promptLab.scheduleAutoSave()" />
@@ -143,10 +118,6 @@
                 <button class="basic-button translate" onclick="promptLab.insertSelectedFragment()">Insert Fragment</button>
             </div>
         </div>
-        <div class="prompt-lab-workflow-nav">
-            <button class="basic-button translate" onclick="promptLab.setWorkflowStep('library')">Back to Library</button>
-            <button class="basic-button translate" onclick="promptLab.setWorkflowStep('reuse')">Continue to Reuse</button>
-        </div>
     </div>
     <div class="prompt-lab-column prompt-lab-preview">
         <div class="prompt-lab-panel-header">
@@ -157,7 +128,6 @@
                 <button class="basic-button translate" onclick="promptLab.generateWildcardCombinations()">Generate</button>
             </div>
         </div>
-        <div class="prompt-lab-workflow-help translate">Preview wildcard expansions, check warnings, then send or generate when the result looks right.</div>
         <div class="prompt-lab-section-actions prompt-lab-export-actions">
             <button class="basic-button translate" onclick="promptLab.exportWildcardCombinations('txt')">Export Text</button>
             <button class="basic-button translate" onclick="promptLab.exportWildcardCombinations('json')">Export JSON</button>
@@ -214,10 +184,6 @@
                 <select class="auto-dropdown prompt-lab-compare-select" id="prompt_lab_compare_select" onchange="promptLab.refreshPreview()"></select>
                 <div id="prompt_lab_diff" class="prompt-lab-output"></div>
             </div>
-        </div>
-        <div class="prompt-lab-workflow-nav">
-            <button class="basic-button translate" onclick="promptLab.setWorkflowStep('reuse')">Back to Reuse</button>
-            <button class="basic-button translate" onclick="promptLab.setWorkflowStep('generate')">Review Generate</button>
         </div>
     </div>
 </div>
