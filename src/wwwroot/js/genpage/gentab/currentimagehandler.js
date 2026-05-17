@@ -2281,7 +2281,6 @@ function imageEditingBuildToolRail() {
             button.type = 'button';
             button.style.backgroundImage = `url(imgs/${tool.icon}.png)`;
             button.setAttribute('aria-label', tool.name);
-            button.title = tool.hotkey ? `${tool.name}\nHotKey: ${tool.hotkey.toUpperCase()}` : tool.name;
             button.addEventListener('click', () => {
                 imageEditingTabEditor.activateTool(tool.id);
                 imageEditingRefreshToolButtons();
@@ -2321,7 +2320,6 @@ function imageEditingBuildToolButtons() {
         }
         button.innerText = label;
         button.setAttribute('aria-label', tool.name);
-        button.title = tool.description;
         button.addEventListener('click', () => {
             imageEditingTabEditor.activateTool(tool.id);
             imageEditingRefreshToolButtons();
@@ -2351,7 +2349,7 @@ function imageEditingBuildSelectionToolButtons() {
         button.className = 'basic-button imageediting_tool_button translate';
         button.type = 'button';
         button.innerText = tool.name;
-        button.title = tool.description;
+        button.setAttribute('aria-label', tool.name);
         button.addEventListener('click', () => {
             imageEditingTabEditor.activateTool(tool.id);
             imageEditingRefreshToolButtons();
@@ -2381,7 +2379,6 @@ function imageEditingBuildOptionButtons() {
         button.type = 'button';
         button.innerText = option.key;
         button.setAttribute('aria-label', option.key);
-        button.title = option.key;
         button.addEventListener('click', () => {
             option.action();
         });

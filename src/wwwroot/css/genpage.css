@@ -2513,6 +2513,9 @@ mark.model-search-highlight {
 .image-editor-info-bubble-title {
     font-weight: bold;
 }
+.image-editor-info-bubble {
+    pointer-events: none;
+}
 .image-editor-info-bubble-description {
     max-width: 400px;
     white-space: wrap;

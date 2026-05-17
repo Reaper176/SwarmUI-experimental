@@ -20,7 +20,7 @@ class ImageEditorTool {
     }
 
     makeDivs() {
-        this.infoBubble = createDiv(null, 'sui-popover');
+        this.infoBubble = createDiv(null, 'sui-popover image-editor-info-bubble');
         this.infoBubble.innerHTML = `<div class="image-editor-info-bubble-title">${escapeHtml(this.name)}</div><div class="image-editor-info-bubble-description">${escapeHtml(this.description)}</div>`;
         this.div = document.createElement('div');
         this.div.className = 'image-editor-tool';
@@ -28,9 +28,7 @@ class ImageEditorTool {
         this.div.style.backgroundImage = `url(imgs/${this.icon}.png)`;
         this.div.addEventListener('click', () => this.onClick());
         this.div.addEventListener('mouseenter', () => {
-            this.infoBubble.style.top = `${this.div.offsetTop}px`;
-            this.infoBubble.style.left = `${this.div.offsetLeft + this.div.clientWidth + 5}px`;
-            this.infoBubble.classList.add('sui-popover-visible');
+            this.showInfoBubble();
         });
         this.div.addEventListener('mouseleave', () => {
             this.infoBubble.classList.remove('sui-popover-visible');
@@ -41,6 +39,18 @@ class ImageEditorTool {
         this.configDiv.className = 'image-editor-tool-bottombar';
         this.configDiv.style.display = 'none';
         this.editor.bottomBar.appendChild(this.configDiv);
+    }
+
+    /** Shows the non-interactive hover hint next to this tool button. */
+    showInfoBubble() {
+        let rect = this.div.getBoundingClientRect();
+        this.infoBubble.classList.add('sui-popover-visible');
+        let targetX = rect.right + 5;
+        let targetY = rect.top;
+        let x = Math.min(targetX, window.innerWidth - this.infoBubble.offsetWidth - 10);
+        let y = Math.min(targetY, window.innerHeight - this.infoBubble.offsetHeight - 10);
+        this.infoBubble.style.left = `${Math.max(0, x)}px`;
+        this.infoBubble.style.top = `${Math.max(0, y)}px`;
     }
 
     onClick() {
