@@ -71,7 +71,7 @@ public class ComfyUISelfStartBackend : ComfyUIAPIAbstractBackend
     public static bool IsComfyModelFileEmitted = false;
 
     /// <summary>Names of folders in comfy paths that should be blindly forwarded to correct for Comfy not properly propagating base_path without manual forwards. Can also have ';' separated list of additional paths to forward to the same folder name.</summary>
-    public static List<string> FoldersToForwardInComfyPath = ["unet", "diffusion_models", "gligen", "ipadapter", "yolov8", "tensorrt", "clipseg", "style_models", "latent_upscale_models"];
+    public static List<string> FoldersToForwardInComfyPath = ["unet", "diffusion_models", "gligen", "ipadapter", "yolov8", "tensorrt", "clipseg", "sam3", "style_models", "latent_upscale_models"];
 
     /// <summary>List of functions that modify the comfy paths YAML data. The simplest no-op impl is: <c>string MyFunc(string yaml) { return yaml; }</c></summary>
     public static List<Func<string, string>> ModifyComfyYaml = [];
@@ -129,25 +129,30 @@ public class ComfyUISelfStartBackend : ComfyUIAPIAbstractBackend
     ];
 
     /// <summary>Downloads or updates the named relevant ComfyUI custom node repo.</summary>
-    public async Task<ComfyUISelfStartBackend[]> EnsureNodeRepo(string url, bool skipPipCache = false, bool doRestart = true)
+    public async Task<ComfyUISelfStartBackend[]> EnsureNodeRepo(string url, bool skipPipCache = false, bool doRestart = true, bool runInstallScript = false)
     {
         AddLoadStatus($"Will ensure node repo '{url}'...");
         string nodePath = Path.GetFullPath(ComfyUIBackendExtension.Folder + "/DLNodes");
         string folderName = url.AfterLast('/');
+        string folderPath = $"{nodePath}/{folderName}";
         if (!Directory.Exists($"{nodePath}/{folderName}"))
         {
             AddLoadStatus($"Node folder '{folderName}' does not exist, will clone it...");
             string response = await Utilities.RunGitProcess($"clone {url}", nodePath);
             AddLoadStatus($"Node clone response for {folderName}: {response.Trim()}");
-            string reqFile = $"{nodePath}/{folderName}/requirements.txt";
-            ComfyUISelfStartBackend[] backends = [.. Program.Backends.RunningBackendsOfType<ComfyUISelfStartBackend>()];
-            if (File.Exists(reqFile) && backends.Any())
+        }
+        string reqFile = $"{folderPath}/requirements.txt";
+        string installFile = $"{folderPath}/install.py";
+        ComfyUISelfStartBackend[] backends = [.. Program.Backends.RunningBackendsOfType<ComfyUISelfStartBackend>()];
+        if ((File.Exists(reqFile) || (runInstallScript && File.Exists(installFile))) && backends.Any())
+        {
+            AddLoadStatus("Will shutdown any/all comfy backends to allow an install...");
+            Task[] tasks = [.. backends.Select(b => Program.Backends.ShutdownBackendCleanly(b.BackendData))];
+            await Task.WhenAll(tasks);
+            AddLoadStatus("Pre-shutdown done.");
+            try
             {
-                AddLoadStatus("Will shutdown any/all comfy backends to allow an install...");
-                Task[] tasks = [.. backends.Select(b => Program.Backends.ShutdownBackendCleanly(b.BackendData))];
-                await Task.WhenAll(tasks);
-                AddLoadStatus("Pre-shutdown done.");
-                try
+                if (File.Exists(reqFile))
                 {
                     AddLoadStatus($"Will install requirements file {reqFile}...");
                     string path = Path.GetFullPath(reqFile);
@@ -160,24 +165,45 @@ public class ComfyUISelfStartBackend : ComfyUIAPIAbstractBackend
                     Process p = backends.FirstOrDefault().DoPythonCall($"-s -m pip install{cacheOption} -r {path}");
                     NetworkBackendUtils.ReportLogsFromProcess(p, $"ComfyUI (Requirements Install - {folderName})", "");
                     await p.WaitForExitAsync(Program.GlobalProgramCancel);
+                    if (p.ExitCode != 0)
+                    {
+                        throw new Exception($"Requirements install exited with code {p.ExitCode}.");
+                    }
                     AddLoadStatus($"Requirement install {reqFile} done.");
                 }
-                catch (Exception ex)
+                if (runInstallScript && File.Exists(installFile))
                 {
-                    Logs.Error($"Failed to install comfy backend node requirements: {ex.ReadableString()}");
-                    AddLoadStatus($"Error during requirements installation.");
-                }
-                if (doRestart)
-                {
-                    AddLoadStatus($"Will re-start any backends shut down by the install...");
-                    foreach (ComfyUISelfStartBackend backend in backends)
+                    AddLoadStatus($"Will run install script {installFile}...");
+                    string path = Path.GetFullPath(installFile);
+                    if (path.Contains(' '))
                     {
-                        AddLoadStatus($"Will re-start backend {backend.BackendData.ID}...");
-                        Program.Backends.DoInitBackend(backend.BackendData);
+                        path = $"\"{path}\"";
                     }
+                    Process p = backends.FirstOrDefault().DoPythonCall($"-s {path}", Path.GetFullPath(folderPath));
+                    NetworkBackendUtils.ReportLogsFromProcess(p, $"ComfyUI (Install Script - {folderName})", "");
+                    await p.WaitForExitAsync(Program.GlobalProgramCancel);
+                    if (p.ExitCode != 0)
+                    {
+                        throw new Exception($"Install script exited with code {p.ExitCode}.");
+                    }
+                    AddLoadStatus($"Install script {installFile} done.");
                 }
-                return backends;
             }
+            catch (Exception ex)
+            {
+                Logs.Error($"Failed to install comfy backend node dependencies: {ex.ReadableString()}");
+                AddLoadStatus($"Error during node dependency installation.");
+            }
+            if (doRestart)
+            {
+                AddLoadStatus($"Will re-start any backends shut down by the install...");
+                foreach (ComfyUISelfStartBackend backend in backends)
+                {
+                    AddLoadStatus($"Will re-start backend {backend.BackendData.ID}...");
+                    Program.Backends.DoInitBackend(backend.BackendData);
+                }
+            }
+            return backends;
         }
         return null;
     }
@@ -323,7 +349,7 @@ public class ComfyUISelfStartBackend : ComfyUIAPIAbstractBackend
     }
 
     /// <summary>Runs a generic python call for the current comfy backend.</summary>
-    public Process DoPythonCall(string call)
+    public Process DoPythonCall(string call, string workingDirectory = null)
     {
         Logs.Debug($"Will do Comfy Python call: {call}");
         ProcessStartInfo start = new()
@@ -331,6 +357,10 @@ public class ComfyUISelfStartBackend : ComfyUIAPIAbstractBackend
             RedirectStandardOutput = true,
             RedirectStandardError = true
         };
+        if (!string.IsNullOrWhiteSpace(workingDirectory))
+        {
+            start.WorkingDirectory = workingDirectory;
+        }
         NetworkBackendUtils.ConfigurePythonExeFor((SettingsRaw as ComfyUISelfStartSettings).StartScript, "ComfyUI", start, out _, out string forcePrior);
         start.Arguments = $"{forcePrior} {call.Trim()}".Trim();
         return Process.Start(start);

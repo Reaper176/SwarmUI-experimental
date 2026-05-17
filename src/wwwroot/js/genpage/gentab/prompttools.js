@@ -79,7 +79,7 @@ class PromptTabCompleteClass {
                     return this.getOrderedMatches(yolomodels.map(m => `yolo-${m}`), prefixLow);
                 }
             }
-            return ['\nSpecify before the ">" some text to match against in the image, like "<segment:face>".', '\nCan also do "<segment:text,creativity,threshold>" eg "face,0.6,0.5" where creativity is InitImageCreativity, and threshold is mask matching threshold for CLIP-Seg.', '\nYou can use a negative threshold value like "<segment:face,0.6,-0.5>" to invert the mask.', '\nYou may use the "yolo-" prefix to use a YOLOv8 seg model,', '\nFor more advanced usages and a link to relevant docs, click the "+" button next to the prompt box, then "Auto Segment Refinement".'];
+            return ['\nSpecify before the ">" some text to match against in the image, like "<segment:face>".', '\nCan also do "<segment:text,creativity,threshold>" eg "face,0.6,0.5" where creativity is InitImageCreativity, and threshold is mask matching threshold for CLIP-Seg.', '\nYou can use a negative threshold value like "<segment:face,0.6,-0.5>" to invert the mask.', '\nYou may use the "sam3-" prefix to use SAM3 text segmentation, or the "yolo-" prefix to use a YOLOv8 seg model,', '\nFor more advanced usages and a link to relevant docs, click the "+" button next to the prompt box, then "Auto Segment Refinement".'];
         });
         this.registerPrefix('setvar[var_name]', 'Store text for reference later in the prompt', (prefix) => { 
             return ['\nSave the content of the tag into the named variable. eg "<setvar[colors]: red and blue>", then use like "<var:colors>"', '\nVariables can include the results of other tags. eg "<setvar[expression]: <random: smiling|frowning|crying>>"', '\nReference stored values later in the prompt with the <var:> tag', '\nThe setvar tag emits a copy the variable value in place. You can not do this with eg "<setvar[colors,false]: red and blue>"'];
@@ -441,8 +441,8 @@ class PromptPlusButton {
         this.noOverlap = false;
         this.segmentModalOther = getRequiredElementById('text_prompt_segment_other_inputs');
         this.segmentModalOther.innerHTML =
-            makeGenericPopover('text_prompt_segment_model', 'Prompt Syntax: Segment Model', 'Model', "What model to find the segment with.\nBy default, CLIP-Seg is a special model that uses text prompt matching.\nYou may instead use a YOLOv8 model.", '')
-            + makeDropdownInput(null, 'text_prompt_segment_model', '', 'Segment Model', '', ['CLIP-Seg'], 'CLIP-Seg', false, true, ['CLIP-Seg (Match by prompting)'])
+            makeGenericPopover('text_prompt_segment_model', 'Prompt Syntax: Segment Model', 'Model', "What model to find the segment with.\nBy default, CLIP-Seg is a special model that uses text prompt matching.\nYou may instead use SAM3 or a YOLOv8 model.", '')
+            + makeDropdownInput(null, 'text_prompt_segment_model', '', 'Segment Model', '', ['CLIP-Seg', 'SAM3'], 'CLIP-Seg', false, true, ['CLIP-Seg (Match by prompting)', 'SAM3 (Match by prompting)'])
             + makeGenericPopover('text_prompt_segment_textmatch', 'Prompt Syntax: Segment Text Match', 'Text', "The text to match against in the image.\nDoesn't apply when using a YOLO model.\nFor example, 'face' or 'the man's face'", '')
             + makeTextInput(null, 'text_prompt_segment_textmatch', '', 'Text Match', '', '', 'normal', '', false, false, true)
             + makeGenericPopover('text_prompt_segment_yoloid', 'Prompt Syntax: Segment YOLO ID', 'Number', 'The ID of the match within the YOLO result to use.\nDefault of 0 means all matches.\nIf you set to 1, it will use the first match it finds (eg the first face in a group of faces).', '')
@@ -575,7 +575,7 @@ class PromptPlusButton {
     }
 
     segmentModalClear() {
-        let html = '<option value="CLIP-Seg">CLIP-Seg (Match by prompting)</option>\n';
+        let html = '<option value="CLIP-Seg">CLIP-Seg (Match by prompting)</option>\n<option value="SAM3">SAM3 (Match by prompting)</option>\n';
         let modelList = rawGenParamTypesFromServer.filter(p => p.id == 'yolomodelinternal');
         if (modelList && modelList.length > 0) {
             let yolomodels = modelList[0].values;
@@ -603,8 +603,8 @@ class PromptPlusButton {
     }
 
     segmentModalProcessChanges() {
-        let isCliPSeg = this.segmentModalModelSelect.value == 'CLIP-Seg';
-        if (isCliPSeg) {
+        let isTextSegmenter = this.segmentModalModelSelect.value == 'CLIP-Seg' || this.segmentModalModelSelect.value == 'SAM3';
+        if (isTextSegmenter) {
             findParentOfClass(this.segmentModalTextMatch, 'auto-input').style.display = '';
             findParentOfClass(this.segmentModalYoloId, 'auto-input').style.display = 'none';
             findParentOfClass(this.segmentModalClassIds, 'auto-input').style.display = 'none';
@@ -617,9 +617,9 @@ class PromptPlusButton {
             findParentOfClass(this.segmentModalYoloId, 'auto-input').style.display = '';
             findParentOfClass(this.segmentModalClassIds, 'auto-input').style.display = '';
         }
-        if (isCliPSeg && !this.segmentModalTextMatch.value.trim()) {
+        if (isTextSegmenter && !this.segmentModalTextMatch.value.trim()) {
             this.segmentModalAddButton.disabled = true;
-            this.segmentModalErrorBox.innerText = translate("Text Match is required when using CLIP-Seg");
+            this.segmentModalErrorBox.innerText = translate("Text Match is required when using a text segmenter");
         }
         else {
             this.segmentModalAddButton.disabled = false;
@@ -631,6 +631,9 @@ class PromptPlusButton {
         let modelText = this.segmentModalModelSelect.value;
         if (modelText == "CLIP-Seg") {
             modelText = this.segmentModalTextMatch.value.trim();
+        }
+        else if (modelText == "SAM3") {
+            modelText = `sam3-${this.segmentModalTextMatch.value.trim()}`;
         }
         else { // YOLO
             if (parseInt(this.segmentModalYoloId.value) > 0) {

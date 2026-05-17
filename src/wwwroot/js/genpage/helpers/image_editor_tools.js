@@ -24,6 +24,7 @@ class ImageEditorTool {
         this.infoBubble.innerHTML = `<div class="image-editor-info-bubble-title">${escapeHtml(this.name)}</div><div class="image-editor-info-bubble-description">${escapeHtml(this.description)}</div>`;
         this.div = document.createElement('div');
         this.div.className = 'image-editor-tool';
+        this.div.classList.add(`image-editor-tool-${this.id}`);
         this.div.style.backgroundImage = `url(imgs/${this.icon}.png)`;
         this.div.addEventListener('click', () => this.onClick());
         this.div.addEventListener('mouseenter', () => {
@@ -98,6 +99,10 @@ class ImageEditorTool {
     }
 
     onRightMouseDown(e) {
+        return false;
+    }
+
+    onContextMenu(e) {
         return false;
     }
 
@@ -2788,9 +2793,9 @@ class ImageEditorToolPicker extends ImageEditorTempTool {
 }
 
 /**
- * Shared base class for SAM2-based mask tools (warmup, clear mask, request tracking).
+ * Shared base class for SAM3-based mask tools (warmup, clear mask, request tracking).
  */
-class ImageEditorToolSam2Base extends ImageEditorTool {
+class ImageEditorToolSam3Base extends ImageEditorTool {
     constructor(editor, id, icon, name, description, hotkey = null) {
         super(editor, id, icon, name, description, hotkey);
         this.cursor = 'crosshair';
@@ -2803,7 +2808,7 @@ class ImageEditorToolSam2Base extends ImageEditorTool {
         <div class="image-editor-tool-block tool-block-nogrow">
             <button class="basic-button id-clear-mask">Clear Mask</button>
         </div>`;
-        this.warmupHTML = `<div class="image-editor-tool-block tool-block-nogrow" style="opacity:0.8; font-style:italic;">Warming up SAM2 model...</div>`;
+        this.warmupHTML = `<div class="image-editor-tool-block tool-block-nogrow" style="opacity:0.8; font-style:italic;">Warming up SAM3 model...</div>`;
         this.showControls();
         this.isMaskOnly = true;
         this.div.style.display = 'none';
@@ -2827,7 +2832,7 @@ class ImageEditorToolSam2Base extends ImageEditorTool {
 
     setActive() {
         super.setActive();
-        if (!this.modelWarmed && !this.isWarmingUp && currentBackendFeatureSet.includes('sam2') && this.editor.getFinalImageData?.()) {
+        if (!this.modelWarmed && !this.isWarmingUp && currentBackendFeatureSet.includes('sam3') && this.editor.getFinalImageData?.()) {
             this.triggerWarmup();
         }
     }
@@ -2874,7 +2879,7 @@ class ImageEditorToolSam2Base extends ImageEditorTool {
         this.showControls();
     }
 
-    /** Returns the image data and coordinate offset for SAM2 requests, cropped to the selection if active. */
+    /** Returns the image data and coordinate offset for SAM3 requests, cropped to the selection if active. */
     getImageForSam() {
         let bounds = this.editor.getSelectionBounds();
         let width, height;
@@ -2889,7 +2894,7 @@ class ImageEditorToolSam2Base extends ImageEditorTool {
         return { image: image, offsetX: bounds.x, offsetY: bounds.y, width: width, height: height };
     }
 
-    /** Returns the general mask request inputs for SAM2 requests, cropped to the selection if active. */
+    /** Returns the general mask request inputs for SAM3 requests, cropped to the selection if active. */
     getGeneralMaskRequestInputs() {
         let samInput = this.getImageForSam();
         let genData = getGenInput();
@@ -2905,7 +2910,7 @@ class ImageEditorToolSam2Base extends ImageEditorTool {
         return [genData, samInput];
     }
 
-    /** Applies a SAM2 mask result image to the active mask layer, handling selection cropping if active. */
+    /** Applies a SAM3 mask result image to the active mask layer, handling selection cropping if active. */
     applyMaskResult(maskImg) {
         if (!this.editor.activeLayer || !this.editor.activeLayer.isMask) {
             return;
@@ -2943,14 +2948,30 @@ class ImageEditorToolSam2Base extends ImageEditorTool {
 }
 
 /**
- * The SAM2 Point Segmentation tool - click to place positive/negative points and auto-generate a mask.
+ * The SAM3 Point Segmentation tool - click to place positive/negative points and auto-generate a mask.
  */
-class ImageEditorToolSam2Points extends ImageEditorToolSam2Base {
+class ImageEditorToolSam3Points extends ImageEditorToolSam3Base {
     constructor(editor) {
-        super(editor, 'sam2points', 'crosshair', 'SAM2 Points', 'Left click to add positive points. Right click to add negative points.\nEach click regenerates the mask.\nRequires SAM2 to be installed.\nHotKey: Y', 'y');
+        super(editor, 'sam3points', 'crosshair', 'SAM3 Points', 'Left click to add positive points. Right click to add negative points.\nEach click regenerates the mask.\nRequires SAM3 to be installed.\nHotKey: Y', 'y');
         // TODO: This map is a pretty iffy way to do things, probably stray persistence.
         this.layerPoints = new Map();
         this.pendingMaskUpdate = false;
+        this.controlsHTML = `
+        <div class="image-editor-tool-block tool-block-nogrow">
+            <button class="basic-button id-clear-mask">Clear Mask</button>
+            <button class="basic-button id-clear-points">Clear Points</button>
+        </div>`;
+        this.showControls();
+    }
+
+    showControls() {
+        super.showControls();
+        let clearPointsButton = this.configDiv.querySelector('.id-clear-points');
+        if (clearPointsButton) {
+            clearPointsButton.addEventListener('click', () => {
+                this.clearPoints();
+            });
+        }
     }
 
     getActivePoints() {
@@ -2962,6 +2983,20 @@ class ImageEditorToolSam2Points extends ImageEditorToolSam2Base {
             this.layerPoints.set(layer.id, { positive: [], negative: [] });
         }
         return this.layerPoints.get(layer.id);
+    }
+
+    clearPoints() {
+        let maskLayer = this.editor.activeLayer;
+        if (!maskLayer || !maskLayer.isMask) {
+            return;
+        }
+        let points = this.getActivePoints();
+        points.positive = [];
+        points.negative = [];
+        this.activeRequestId = ++this.requestSerial;
+        this.maskRequestInFlight = false;
+        this.pendingMaskUpdate = false;
+        this.editor.queueOverlayRedraw();
     }
 
     clearMaskAndEndRequest() {
@@ -3021,6 +3056,14 @@ class ImageEditorToolSam2Points extends ImageEditorToolSam2Base {
     }
 
     onRightMouseDown(e) {
+        e.preventDefault();
+        e.stopPropagation();
+        return true;
+    }
+
+    onContextMenu(e) {
+        e.preventDefault();
+        e.stopPropagation();
         return true;
     }
 
@@ -3029,6 +3072,10 @@ class ImageEditorToolSam2Points extends ImageEditorToolSam2Base {
     }
 
     onMouseDown(e) {
+        if (e.button == 2) {
+            e.preventDefault();
+            e.stopPropagation();
+        }
         if (this.isWarmingUp || (e.button != 0 && e.button != 2)) {
             return;
         }
@@ -3074,8 +3121,8 @@ class ImageEditorToolSam2Points extends ImageEditorToolSam2Base {
     }
 
     queueMaskUpdate() {
-        if (!currentBackendFeatureSet.includes('sam2')) {
-            $('#sam2_installer').modal('show');
+        if (!currentBackendFeatureSet.includes('sam3')) {
+            $('#sam3_installer').modal('show');
             return;
         }
         if (this.getActivePoints().positive.length == 0) {
@@ -3133,11 +3180,11 @@ class ImageEditorToolSam2Points extends ImageEditorToolSam2Base {
 }
 
 /**
- * The SAM2 Bounding Box segmentation tool - drag to define a box and auto-generate a mask.
+ * The SAM3 Bounding Box segmentation tool - drag to define a box and auto-generate a mask.
  */
-class ImageEditorToolSam2BBox extends ImageEditorToolSam2Base {
+class ImageEditorToolSam3BBox extends ImageEditorToolSam3Base {
     constructor(editor) {
-        super(editor, 'sam2bbox', 'bbox', 'SAM2 BBox', 'Click and drag to create a bounding box. Release to generate mask.\nRequires SAM2 to be installed.', null);
+        super(editor, 'sam3bbox', 'bbox', 'SAM3 BBox', 'Click and drag to create a bounding box. Release to generate mask.\nRequires SAM3 to be installed.', null);
         this.bboxStartX = null;
         this.bboxStartY = null;
         this.bboxEndX = null;
@@ -3202,8 +3249,8 @@ class ImageEditorToolSam2BBox extends ImageEditorToolSam2Base {
     }
 
     requestMaskUpdate() {
-        if (!currentBackendFeatureSet.includes('sam2')) {
-            $('#sam2_installer').modal('show');
+        if (!currentBackendFeatureSet.includes('sam3')) {
+            $('#sam3_installer').modal('show');
             return;
         }
         if (this.bboxStartX == null || this.bboxEndX == null) {
@@ -3243,6 +3290,125 @@ class ImageEditorToolSam2BBox extends ImageEditorToolSam2Base {
                     return;
                 }
                 this.maskRequestInFlight = false;
+                if (!this.editor.activeLayer || !this.editor.activeLayer.isMask) {
+                    return;
+                }
+                this.applyMaskResult(newImg);
+            };
+            newImg.src = data.image;
+        });
+    }
+}
+
+/**
+ * The SAM3 text prompt segmentation tool - generates a mask from a text description.
+ */
+class ImageEditorToolSam3Text extends ImageEditorToolSam3Base {
+    constructor(editor) {
+        super(editor, 'sam3text', 'wand', 'SAM3 Text', 'Type a text description to generate a matching mask.\nRequires SAM3 to be installed.', null);
+        this.textPrompt = '';
+        this.confidence = 0.2;
+        this.showControls();
+    }
+
+    showControls() {
+        this.configDiv.innerHTML = `
+        <div class="image-editor-tool-block image-editor-sam3-text-block">
+            <label>Prompt:&nbsp;</label>
+            <input type="text" class="auto-text id-sam3-text-prompt" value="${escapeHtml(this.textPrompt || '')}" placeholder="object to mask">
+        </div>
+        <div class="image-editor-tool-block id-sam3-confidence-block">
+            <label>Confidence:&nbsp;</label>
+            <input type="number" style="width: 4rem;" class="auto-number id-sam3-confidence1" min="0.01" max="1" step="0.01" value="${this.confidence}">
+            <div class="auto-slider-range-wrapper" style="${getRangeStyle(this.confidence, 0.01, 1)}">
+                <input type="range" style="flex-grow: 2;" class="auto-slider-range id-sam3-confidence2" min="0.01" max="1" step="0.01" value="${this.confidence}" oninput="updateRangeStyle(arguments[0])" onchange="updateRangeStyle(arguments[0])">
+            </div>
+        </div>
+        <div class="image-editor-tool-block tool-block-nogrow">
+            <button class="basic-button id-generate-mask">Generate Mask</button>
+            <button class="basic-button id-clear-mask">Clear Mask</button>
+        </div>`;
+        this.promptInput = this.configDiv.querySelector('.id-sam3-text-prompt');
+        enableSliderForBox(this.configDiv.querySelector('.id-sam3-confidence-block'));
+        this.confidenceNumber = this.configDiv.querySelector('.id-sam3-confidence1');
+        this.confidenceSelector = this.configDiv.querySelector('.id-sam3-confidence2');
+        this.promptInput.addEventListener('input', () => {
+            this.textPrompt = this.promptInput.value;
+        });
+        this.confidenceNumber.addEventListener('change', () => {
+            this.updateConfidence();
+        });
+        this.confidenceSelector.addEventListener('change', () => {
+            this.updateConfidence();
+        });
+        this.promptInput.addEventListener('keydown', e => {
+            if (e.key == 'Enter') {
+                this.requestMaskUpdate();
+                e.preventDefault();
+            }
+        });
+        this.configDiv.querySelector('.id-generate-mask').addEventListener('click', () => {
+            this.requestMaskUpdate();
+        });
+        this.configDiv.querySelector('.id-clear-mask').addEventListener('click', () => {
+            this.onClearMask();
+        });
+    }
+
+    /**
+     * Updates the SAM3 text confidence value from the paired control.
+     */
+    updateConfidence() {
+        let confidence = parseFloat(this.confidenceNumber ? this.confidenceNumber.value : this.confidence);
+        if (!Number.isFinite(confidence)) {
+            confidence = 0.2;
+        }
+        confidence = Math.max(0.01, Math.min(1, confidence));
+        this.confidence = confidence;
+        if (this.confidenceNumber) {
+            this.confidenceNumber.value = this.confidence;
+        }
+        if (this.confidenceSelector) {
+            this.confidenceSelector.value = this.confidence;
+        }
+    }
+
+    addWarmupGenData(genData, cx, cy) {
+        genData['samsegmentprompt'] = 'object';
+        genData['samsegmentconfidence'] = `${this.confidence}`;
+    }
+
+    requestMaskUpdate() {
+        if (!currentBackendFeatureSet.includes('sam3')) {
+            $('#sam3_installer').modal('show');
+            return;
+        }
+        let prompt = (this.promptInput ? this.promptInput.value : this.textPrompt || '').trim();
+        this.textPrompt = prompt;
+        if (!prompt) {
+            doNoticePopover('Enter a SAM3 text prompt first.', 'notice-pop-red');
+            return;
+        }
+        this.maskRequestInFlight = true;
+        let requestId = ++this.requestSerial;
+        this.activeRequestId = requestId;
+        let [genData] = this.getGeneralMaskRequestInputs();
+        this.updateConfidence();
+        genData['samsegmentprompt'] = prompt;
+        genData['samsegmentconfidence'] = `${this.confidence}`;
+        makeWSRequestT2I('GenerateText2ImageWS', genData, data => {
+            if (requestId != this.activeRequestId) {
+                return;
+            }
+            this.maskRequestInFlight = false;
+            if (!data.image) {
+                return;
+            }
+            let newImg = new Image();
+            newImg.onload = () => {
+                if (requestId != this.activeRequestId) {
+                    return;
+                }
                 if (!this.editor.activeLayer || !this.editor.activeLayer.isMask) {
                     return;
                 }

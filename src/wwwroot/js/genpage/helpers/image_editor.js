@@ -990,8 +990,9 @@ class ImageEditor {
         this.addTool(new ImageEditorToolShape(this));
         this.pickerTool = new ImageEditorToolPicker(this, 'picker', 'paintbrush', 'Color Picker', 'Pick a color from the image.');
         this.addTool(this.pickerTool);
-        this.addTool(new ImageEditorToolSam2Points(this));
-        this.addTool(new ImageEditorToolSam2BBox(this));
+        this.addTool(new ImageEditorToolSam3Points(this));
+        this.addTool(new ImageEditorToolSam3BBox(this));
+        this.addTool(new ImageEditorToolSam3Text(this));
         this.activateTool('brush');
         this.maxHistory = 15;
         $('#image_editor_debug_modal').on('hidden.bs.modal', () => {
@@ -1258,11 +1259,15 @@ class ImageEditor {
     }
 
     activeElementIsAnInput() {
-        return document.activeElement.tagName == 'INPUT' || document.activeElement.tagName == 'TEXTAREA';
+        let activeElement = document.activeElement;
+        return activeElement && (activeElement.tagName == 'INPUT' || activeElement.tagName == 'TEXTAREA' || activeElement.tagName == 'SELECT' || activeElement.isContentEditable);
     }
 
     onKeyDown(e) {
         if (!this.active) {
+            return;
+        }
+        if (this.activeElementIsAnInput()) {
             return;
         }
         if (e.key == 'Alt') {
@@ -1274,15 +1279,15 @@ class ImageEditor {
             this.undoOnce();
         }
         // TODO: Expose a keydown event to tools rather than this global handler only
-        if (e.ctrlKey && e.key == 'c' && !this.activeElementIsAnInput() && this.activeTool && this.activeTool.id == 'select') {
+        if (e.ctrlKey && e.key == 'c' && this.activeTool && this.activeTool.id == 'select') {
             this.copySelectionToClipboard(this.activeTool.copyMode == 'layer');
             e.preventDefault();
         }
-        if (e.ctrlKey && e.key == 'v' && !this.activeElementIsAnInput()) {
+        if (e.ctrlKey && e.key == 'v') {
             e.preventDefault();
             this.pasteSelectionFromClipboard();
         }
-        if (e.key == 'Delete' && !this.activeElementIsAnInput() && this.activeTool && this.activeLayer) {
+        if (e.key == 'Delete' && this.activeTool && this.activeLayer) {
             if (this.activeTool.id == 'general') {
                 e.preventDefault();
                 this.removeLayer(this.activeLayer);
@@ -2340,14 +2345,14 @@ class ImageEditor {
         this.addLayer(maskLayer, true);
         this.realWidth = img.naturalWidth;
         this.realHeight = img.naturalHeight;
-        if (this.tools['sam2points']) {
-            this.tools['sam2points'].layerPoints = new Map();
+        if (this.tools['sam3points']) {
+            this.tools['sam3points'].layerPoints = new Map();
         }
-        if (this.tools['sam2bbox']) {
-            this.tools['sam2bbox'].bboxStartX = null;
-            this.tools['sam2bbox'].bboxStartY = null;
-            this.tools['sam2bbox'].bboxEndX = null;
-            this.tools['sam2bbox'].bboxEndY = null;
+        if (this.tools['sam3bbox']) {
+            this.tools['sam3bbox'].bboxStartX = null;
+            this.tools['sam3bbox'].bboxStartY = null;
+            this.tools['sam3bbox'].bboxEndX = null;
+            this.tools['sam3bbox'].bboxEndY = null;
         }
         this.offsetX = 0
         this.offsetY = 0;

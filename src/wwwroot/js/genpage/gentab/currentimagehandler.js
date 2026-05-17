@@ -1551,6 +1551,7 @@ let imageEditingInlineColorPicker = null;
 let imageEditingTabEditor = null;
 let imageEditingToolButtons = {};
 let imageEditingSelectionToolButtons = {};
+let imageEditingToolRailButtons = {};
 let imageEditingSplittersWired = false;
 let imageEditingLeftSidebarDrag = false;
 let imageEditingRightSidebarDrag = false;
@@ -1569,6 +1570,17 @@ let imageEditingSelectionEffectsWired = false;
 let imageEditingToneBalanceRanges = ['shadows', 'midtones', 'highlights'];
 let imageEditingToneBalanceChannels = ['r', 'g', 'b'];
 let imageEditingSelectionToolIds = ['select', 'ellipse-select', 'lasso-select', 'polygon-select', 'magic-wand', 'color-select', 'crop'];
+let imageEditingToolGroupDefinitions = [
+    { id: 'paint', label: 'Paint', toolIds: ['brush', 'eraser', 'paintbucket', 'shape', 'picker'] },
+    { id: 'select', label: 'Select', toolIds: ['select', 'ellipse-select', 'lasso-select', 'polygon-select', 'magic-wand', 'color-select'] },
+    { id: 'transform', label: 'Transform', toolIds: ['move', 'crop'] },
+    { id: 'ai_mask', label: 'AI Mask', toolIds: ['sam3points', 'sam3bbox', 'sam3text'] }
+];
+let imageEditingPaintToolIds = ['brush', 'eraser', 'paintbucket', 'shape', 'picker'];
+let imageEditingSelectionContextToolIds = ['select', 'ellipse-select', 'lasso-select', 'polygon-select', 'magic-wand', 'color-select'];
+let imageEditingCropContextToolIds = ['crop'];
+let imageEditingTransformContextToolIds = ['move'];
+let imageEditingAiMaskContextToolIds = ['sam3points', 'sam3bbox', 'sam3text'];
 let imageEditingLayerAdjustmentDefinitions = [
     { key: 'saturation', property: 'saturation', defaultValue: 1, sliderMin: 0, sliderMax: 200, sliderDefault: 100, sliderToProperty: value => value / 100, propertyToSlider: value => Math.round(value * 100), format: value => `${value}%`, contextId: 'imageediting_layer_saturation_context' },
     { key: 'light_value', property: 'lightValue', defaultValue: 1, sliderMin: 0, sliderMax: 200, sliderDefault: 100, sliderToProperty: value => value / 100, propertyToSlider: value => Math.round(value * 100), format: value => `${value}%`, contextId: 'imageediting_layer_light_value_context' },
@@ -1633,6 +1645,13 @@ function imageEditingGetToolButtonsArea() {
 }
 
 /**
+ * Gets the Image Editing grouped tool rail.
+ */
+function imageEditingGetToolRail() {
+    return document.getElementById('imageediting_tool_rail');
+}
+
+/**
  * Gets the Image Editing option button container.
  */
 function imageEditingGetOptionButtonsArea() {
@@ -1649,6 +1668,18 @@ function imageEditingGetPenOptionsMount() {
 
 function imageEditingGetPenOptionsEmpty() {
     return document.getElementById('imageediting_pen_options_empty');
+}
+
+function imageEditingGetActiveToolOptionsHeader() {
+    return document.getElementById('imageediting_active_tool_options_header');
+}
+
+function imageEditingGetActiveToolOptionsMount() {
+    return document.getElementById('imageediting_active_tool_options_mount');
+}
+
+function imageEditingGetActiveToolOptionsEmpty() {
+    return document.getElementById('imageediting_active_tool_options_empty');
 }
 
 /**
@@ -2066,6 +2097,16 @@ function imageEditingEnsureSplittersWired() {
 }
 
 /**
+ * Shows or hides an Image Editing input group.
+ */
+function imageEditingSetInputGroupVisible(element, visible) {
+    if (!element || !element.parentElement) {
+        return;
+    }
+    element.parentElement.style.display = visible ? '' : 'none';
+}
+
+/**
  * Refreshes tool button visibility and active-state markers.
  */
 function imageEditingRefreshToolButtons() {
@@ -2091,10 +2132,26 @@ function imageEditingRefreshToolButtons() {
         button.style.display = tool ? '' : 'none';
         button.classList.toggle('imageediting_tool_button_active', imageEditingTabEditor.activeTool && imageEditingTabEditor.activeTool.id == toolId);
     }
+    for (let [toolId, button] of Object.entries(imageEditingToolRailButtons)) {
+        let tool = imageEditingTabEditor.tools[toolId];
+        if (!tool) {
+            button.style.display = 'none';
+            continue;
+        }
+        if (tool.div && tool.div.style.display == 'none') {
+            button.style.display = 'none';
+        }
+        else {
+            button.style.display = '';
+        }
+        button.classList.toggle('imageediting_tool_icon_button_active', imageEditingTabEditor.activeTool && imageEditingTabEditor.activeTool.id == toolId);
+    }
     if (imageEditingTabEditor.activeTool && typeof imageEditingTabEditor.activeTool.color == 'string' && imageEditingTabEditor.activeTool.color != imageEditingColor) {
         imageEditingSetColor(imageEditingTabEditor.activeTool.color);
     }
     imageEditingRefreshPenOptions();
+    imageEditingRefreshActiveToolOptions();
+    imageEditingRefreshContextPanel();
 }
 
 function imageEditingSetupPenOptions() {
@@ -2149,6 +2206,93 @@ function imageEditingRefreshPenOptions() {
     }
     empty.style.display = 'none';
     mount.appendChild(imageEditingTabEditor.activeTool.penOptionsDiv);
+}
+
+function imageEditingRefreshActiveToolOptions() {
+    let mount = imageEditingGetActiveToolOptionsMount();
+    let empty = imageEditingGetActiveToolOptionsEmpty();
+    if (!mount || !empty) {
+        return;
+    }
+    let tool = imageEditingTabEditor ? imageEditingTabEditor.activeTool : null;
+    if (!tool || !tool.configDiv || tool.configDiv.children.length <= 0) {
+        empty.style.display = '';
+        return;
+    }
+    empty.style.display = 'none';
+    if (tool.configDiv.parentElement != mount) {
+        mount.appendChild(tool.configDiv);
+    }
+}
+
+/**
+ * Refreshes which control sections appear in the Image Editing context panel.
+ */
+function imageEditingRefreshContextPanel() {
+    if (!imageEditingTabEditor || !imageEditingTabEditor.activeTool) {
+        return;
+    }
+    let toolId = imageEditingTabEditor.activeTool.id;
+    let isPaint = imageEditingPaintToolIds.includes(toolId);
+    let isSelection = imageEditingSelectionContextToolIds.includes(toolId);
+    let isCrop = imageEditingCropContextToolIds.includes(toolId);
+    let isTransform = imageEditingTransformContextToolIds.includes(toolId);
+    let isAiMask = imageEditingAiMaskContextToolIds.includes(toolId);
+    imageEditingSetInputGroupVisible(imageEditingGetToolsHeader(), false);
+    imageEditingSetInputGroupVisible(imageEditingGetActiveToolOptionsHeader(), true);
+    imageEditingSetInputGroupVisible(imageEditingGetPenOptionsHeader(), isPaint || isAiMask);
+    imageEditingSetInputGroupVisible(imageEditingGetActionsHeader(), isTransform || isAiMask);
+    imageEditingSetInputGroupVisible(imageEditingGetLayerOptionsHeader(), true);
+    imageEditingSetInputGroupVisible(imageEditingGetImageOptionsHeader(), isPaint || isTransform);
+    imageEditingSetInputGroupVisible(imageEditingGetSelectionCropHeader(), isSelection || isCrop);
+    imageEditingSetInputGroupVisible(imageEditingGetEffectsPresetsHeader(), isPaint || isTransform);
+}
+
+/**
+ * Builds the grouped icon rail for the Image Editing tab.
+ */
+function imageEditingBuildToolRail() {
+    if (!imageEditingTabEditor) {
+        return;
+    }
+    let rail = imageEditingGetToolRail();
+    if (!rail) {
+        return;
+    }
+    rail.innerHTML = '';
+    imageEditingToolRailButtons = {};
+    for (let group of imageEditingToolGroupDefinitions) {
+        let groupDiv = document.createElement('div');
+        groupDiv.className = 'imageediting_tool_rail_group';
+        let label = document.createElement('div');
+        label.className = 'imageediting_tool_rail_group_label translate';
+        label.innerText = group.label;
+        groupDiv.appendChild(label);
+        let buttonGrid = document.createElement('div');
+        buttonGrid.className = 'imageediting_tool_rail_grid';
+        for (let toolId of group.toolIds) {
+            let tool = imageEditingTabEditor.tools[toolId];
+            if (!tool || tool.isTempTool) {
+                continue;
+            }
+            let button = document.createElement('button');
+            button.className = 'basic-button imageediting_tool_icon_button';
+            button.classList.add(`imageediting_tool_icon_button_${tool.id}`);
+            button.type = 'button';
+            button.style.backgroundImage = `url(imgs/${tool.icon}.png)`;
+            button.setAttribute('aria-label', tool.name);
+            button.title = tool.hotkey ? `${tool.name}\nHotKey: ${tool.hotkey.toUpperCase()}` : tool.name;
+            button.addEventListener('click', () => {
+                imageEditingTabEditor.activateTool(tool.id);
+                imageEditingRefreshToolButtons();
+            });
+            buttonGrid.appendChild(button);
+            imageEditingToolRailButtons[tool.id] = button;
+        }
+        groupDiv.appendChild(buttonGrid);
+        rail.appendChild(groupDiv);
+    }
+    imageEditingRefreshToolButtons();
 }
 
 /**
@@ -3424,6 +3568,7 @@ function imageEditingEnsureEditorReady() {
     imageEditingTabEditor.unhideParams = () => {
     };
     imageEditingTabEditor.leftBar.style.display = 'none';
+    imageEditingTabEditor.bottomBar.style.display = 'none';
     imageEditingTabEditor.rightResizeBar = null;
     let rightSidebarContent = imageEditingGetRightSidebarContent();
     if (rightSidebarContent) {
@@ -3488,6 +3633,7 @@ function imageEditingEnsureEditorReady() {
         };
     }
     imageEditingBuildToolButtons();
+    imageEditingBuildToolRail();
     imageEditingBuildSelectionToolButtons();
     imageEditingBuildOptionButtons();
     imageEditingSetupPenOptions();
@@ -3527,6 +3673,7 @@ function imageEditingEnsureUiReady() {
     imageEditingApplyLeftSidebarWidth();
     imageEditingApplyRightSidebarWidth();
     imageEditingApplyInputSectionState();
+    imageEditingRefreshContextPanel();
     imageEditingRefreshLayerOpacityControl();
     imageEditingRefreshSelectionControls();
     imageEditingRefreshCropControls();
@@ -3657,14 +3804,14 @@ async function openGenerateTabEditorForEditorData(sourceEditor, actionLabel = 'S
     imageEditor.realHeight = sourceEditor.realHeight;
     imageEditor.finalOffsetX = sourceEditor.finalOffsetX;
     imageEditor.finalOffsetY = sourceEditor.finalOffsetY;
-    if (imageEditor.tools['sam2points']) {
-        imageEditor.tools['sam2points'].layerPoints = new Map();
+    if (imageEditor.tools['sam3points']) {
+        imageEditor.tools['sam3points'].layerPoints = new Map();
     }
-    if (imageEditor.tools['sam2bbox']) {
-        imageEditor.tools['sam2bbox'].bboxStartX = null;
-        imageEditor.tools['sam2bbox'].bboxStartY = null;
-        imageEditor.tools['sam2bbox'].bboxEndX = null;
-        imageEditor.tools['sam2bbox'].bboxEndY = null;
+    if (imageEditor.tools['sam3bbox']) {
+        imageEditor.tools['sam3bbox'].bboxStartX = null;
+        imageEditor.tools['sam3bbox'].bboxStartY = null;
+        imageEditor.tools['sam3bbox'].bboxEndX = null;
+        imageEditor.tools['sam3bbox'].bboxEndY = null;
     }
     let activeLayerIndex = sourceEditor.layers.indexOf(sourceEditor.activeLayer);
     for (let sourceLayer of sourceEditor.layers) {

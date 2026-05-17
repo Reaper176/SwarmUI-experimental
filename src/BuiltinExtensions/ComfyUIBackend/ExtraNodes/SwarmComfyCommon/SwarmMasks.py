@@ -197,12 +197,20 @@ class SwarmMaskGrow:
     DESCRIPTION = "Expands the contents of the max, such that masked (white) areas grow and cover the unmasked (black) areas by the number of pixels specified in 'grow'."
 
     def grow(self, mask, grow):
-        while mask.ndim < 4:
-            mask = mask.unsqueeze(0)
+        orig_ndim = mask.ndim
+        if mask.ndim == 2:
+            mask = mask.unsqueeze(0).unsqueeze(0)
+        elif mask.ndim == 3:
+            mask = mask.unsqueeze(1)
+        elif mask.ndim == 4 and mask.shape[1] != 1:
+            mask = torch.max(mask, dim=1, keepdim=True).values
         mask = mask.to(device=main_device)
         # iterate rather than all at once - this avoids padding and runs much faster for large sizes
         for _ in range((grow + 1) // 2):
             mask = torch.nn.functional.max_pool2d(mask, kernel_size=3, stride=1, padding=1)
+        mask = mask.squeeze(1)
+        if orig_ndim == 2:
+            mask = mask.squeeze(0)
         return (mask.to(device=intermediate_device),)
 
 
@@ -236,14 +244,21 @@ class SwarmMaskBlur:
     def blur(self, mask, blur_radius, sigma):
         if blur_radius == 0:
             return (mask,)
+        orig_ndim = mask.ndim
+        if mask.ndim == 2:
+            mask = mask.unsqueeze(0).unsqueeze(0)
+        elif mask.ndim == 3:
+            mask = mask.unsqueeze(1)
+        elif mask.ndim == 4 and mask.shape[1] != 1:
+            mask = torch.max(mask, dim=1, keepdim=True).values
         mask = mask.to(device=main_device)
         kernel_size = blur_radius * 2 + 1
         kernel = gaussian_kernel(kernel_size, sigma, device=mask.device).repeat(1, 1, 1).unsqueeze(1)
-        while mask.ndim < 4:
-            mask = mask.unsqueeze(0)
         padded_mask = torch.nn.functional.pad(mask, (blur_radius,blur_radius,blur_radius,blur_radius), 'reflect')
         blurred = torch.nn.functional.conv2d(padded_mask, kernel, padding=kernel_size // 2, groups=1)[:,:,blur_radius:-blur_radius, blur_radius:-blur_radius]
-        blurred = blurred.squeeze(0).squeeze(0)
+        blurred = blurred.squeeze(1)
+        if orig_ndim == 2:
+            blurred = blurred.squeeze(0)
         mask = mask.to(device=intermediate_device)
         return (blurred.to(device=intermediate_device),)
 

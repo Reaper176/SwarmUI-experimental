@@ -20,8 +20,8 @@ Guide to the image editor tool system in `src/wwwroot/js/genpage/helpers/image_e
 - `ImageEditorTool` - Base class. Creates `this.div` (toolbar button) and `this.configDiv` (bottom bar config area) via `makeDivs()`. Has lifecycle methods: `setActive()`, `setInactive()`, `draw()`, mouse handlers, `onLayerChanged()`.
 - `ImageEditorTempTool` - Extends base. Overrides `makeDivs()` with a no-op, so `this.div` is **undefined**. Used for hidden sub-tools (e.g., the eyedropper color picker tool). Any code accessing `.div` on a tool must null-check for this case.
 - `ImageEditorToolWithColor` - Extends base. Adds color control support: `getColorControlsHTML()`, `wireColorControls()`, `setColor(col)`, and color-aware `onLayerChanged()` with dual mask/image color memory. Tools that need a color picker (Brush, Bucket, Shape) extend this.
-- `ImageEditorToolSam2Base` - Extends base. Shared SAM2 warmup/clear-mask/request-tracking logic. Subclasses override `addWarmupGenData(genData, cx, cy)` and optionally `onClearMask()`. SAM2Points and SAM2BBox extend this.
-- Concrete tools extend the appropriate base: `ImageEditorToolBrush`/`ImageEditorToolBucket`/`ImageEditorToolShape` extend `ImageEditorToolWithColor`; `ImageEditorToolSam2Points`/`ImageEditorToolSam2BBox` extend `ImageEditorToolSam2Base`; others extend `ImageEditorTool`.
+- `ImageEditorToolSam3Base` - Extends base. Shared SAM3 warmup/clear-mask/request-tracking logic. Subclasses override `addWarmupGenData(genData, cx, cy)` and optionally `onClearMask()`. SAM3Points and SAM3BBox extend this.
+- Concrete tools extend the appropriate base: `ImageEditorToolBrush`/`ImageEditorToolBucket`/`ImageEditorToolShape` extend `ImageEditorToolWithColor`; `ImageEditorToolSam3Points`/`ImageEditorToolSam3BBox` extend `ImageEditorToolSam3Base`; others extend `ImageEditorTool`.
 
 ### Tool Registration
 

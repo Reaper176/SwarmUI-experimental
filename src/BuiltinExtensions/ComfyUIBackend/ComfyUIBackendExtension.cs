@@ -57,7 +57,8 @@ public class ComfyUIBackendExtension : Extension
         ["MiDaS-DepthMapPreprocessor"] = "controlnetpreprocessors",
         ["RIFE VFI"] = "frameinterps",
         ["GIMMVFI_interpolate"] = "frameinterps_gimmvfi",
-        ["Sam2Segmentation"] = "sam2",
+        ["SAM3Segmentation"] = "sam3",
+        ["SAM3Grounding"] = "sam3",
         ["SwarmYoloDetection"] = "yolov8",
         ["PixArtCheckpointLoader"] = "extramodelspixart",
         ["SanaCheckpointLoader"] = "extramodelssana",
@@ -108,10 +109,10 @@ public class ComfyUIBackendExtension : Extension
             FeaturesSupported.UnionWith(["frameinterps_gimmvfi"]);
             FeaturesDiscardIfNotFound.UnionWith(["frameinterps_gimmvfi"]);
         }
-        if (Directory.Exists($"{FilePath}DLNodes/ComfyUI-segment-anything-2"))
+        if (Directory.Exists($"{FilePath}DLNodes/ComfyUI-SAM3"))
         {
-            FeaturesSupported.UnionWith(["sam2"]);
-            FeaturesDiscardIfNotFound.UnionWith(["sam2"]);
+            FeaturesSupported.UnionWith(["sam3"]);
+            FeaturesDiscardIfNotFound.UnionWith(["sam3"]);
         }
         if (Directory.Exists($"{FilePath}DLNodes/ComfyUI_bitsandbytes_NF4"))
         {
@@ -575,35 +576,6 @@ public class ComfyUIBackendExtension : Extension
             {
                 T2IParamTypes.ConcatDropdownValsClean(ref SetClipDevices, overrideClipDevice.Select(m => $"{m}"));
             }
-            if (rawObjectInfo.TryGetValue("Sam2AutoSegmentation", out JToken nodeData))
-            {
-                foreach (string size in new string[] { "base_plus", "large", "small" })
-                {
-                    ControlNetPreprocessors[$"Segment Anything 2 Global Autosegment {size}"] = new JObject()
-                    {
-                        ["swarm_custom"] = true,
-                        ["output"] = "SWARM:NODE_1,1",
-                        ["nodes"] = new JArray()
-                        {
-                            new JObject()
-                            {
-                                ["class_type"] = "DownloadAndLoadSAM2Model",
-                                ["inputs"] = Sam2ModelInputs(size, "automaskgenerator")
-                            },
-                            new JObject()
-                            {
-                                ["class_type"] = "Sam2AutoSegmentation",
-                                ["node_data"] = nodeData,
-                                ["inputs"] = new JObject()
-                                {
-                                    ["sam2_model"] = "SWARM:NODE_0",
-                                    ["image"] = "SWARM:INPUT_0"
-                                }
-                            }
-                        }
-                    };
-                }
-            }
             foreach ((string key, JToken data) in rawObjectInfo)
             {
                 if (data["category"].ToString() == "image/preprocessors")
@@ -678,34 +650,38 @@ public class ComfyUIBackendExtension : Extension
 
     public static T2IParamGroup ComfyAdvancedGroup;
 
-    public static T2IRegisteredParam<string> Sam2PointCoordsPositive, Sam2PointCoordsNegative, Sam2BBox, Sam2MaskPadding;
+    public static T2IRegisteredParam<string> Sam3PointCoordsPositive, Sam3PointCoordsNegative, Sam3BBox, Sam3MaskPadding, Sam3SegmentPrompt, Sam3SegmentConfidence;
 
-    /// <summary>Creates the standard input set for a DownloadAndLoadSAM2Model node.</summary>
-    public static JObject Sam2ModelInputs(string size = "base_plus", string segmentor = "single_image")
+    /// <summary>Creates the standard input set for a LoadSAM3Model node.</summary>
+    public static JObject Sam3ModelInputs()
     {
         return new JObject()
         {
-            ["model"] = $"sam2_hiera_{size}.safetensors",
-            ["segmentor"] = segmentor,
-            ["device"] = "cuda", // TODO: This should really be decided by the python, not by swarm's workflow generator - the python knows what the GPU supports, swarm does not
-            ["precision"] = "bf16"
+            ["precision"] = "auto",
+            ["compile"] = false
         };
     }
 
     /// <inheritdoc/>
     public override void OnInit()
     {
-        Sam2PointCoordsPositive = T2IParamTypes.Register<string>(new("SAM2 Positive Points", "Internal: JSON list of positive point coordinates for SAM2 point masking.",
-            "[]", IgnoreIf: "[]", FeatureFlag: "sam2", VisibleNormally: false, ExtraHidden: true, DoNotSave: true, DoNotPreview: true, AlwaysRetain: true, Toggleable: true
+        Sam3PointCoordsPositive = T2IParamTypes.Register<string>(new("SAM3 Positive Points", "Internal: JSON list of positive point coordinates for SAM3 point masking.",
+            "[]", IgnoreIf: "[]", FeatureFlag: "sam3", VisibleNormally: false, ExtraHidden: true, DoNotSave: true, DoNotPreview: true, AlwaysRetain: true, Toggleable: true
             ));
-        Sam2PointCoordsNegative = T2IParamTypes.Register<string>(new("SAM2 Negative Points", "Internal: JSON list of negative point coordinates for SAM2 point masking.",
-            "[]", IgnoreIf: "[]", FeatureFlag: "sam2", VisibleNormally: false, ExtraHidden: true, DoNotSave: true, DoNotPreview: true, AlwaysRetain: true, Toggleable: true
+        Sam3PointCoordsNegative = T2IParamTypes.Register<string>(new("SAM3 Negative Points", "Internal: JSON list of negative point coordinates for SAM3 point masking.",
+            "[]", IgnoreIf: "[]", FeatureFlag: "sam3", VisibleNormally: false, ExtraHidden: true, DoNotSave: true, DoNotPreview: true, AlwaysRetain: true, Toggleable: true
             ));
-        Sam2BBox = T2IParamTypes.Register<string>(new("SAM2 BBox", "Internal: JSON bounding box [x1,y1,x2,y2] for SAM2 bbox masking.",
-            "", IgnoreIf: "", FeatureFlag: "sam2", VisibleNormally: false, ExtraHidden: true, DoNotSave: true, DoNotPreview: true, AlwaysRetain: true, Toggleable: true
+        Sam3BBox = T2IParamTypes.Register<string>(new("SAM3 BBox", "Internal: JSON bounding box [x1,y1,x2,y2] for SAM3 bbox masking.",
+            "", IgnoreIf: "", FeatureFlag: "sam3", VisibleNormally: false, ExtraHidden: true, DoNotSave: true, DoNotPreview: true, AlwaysRetain: true, Toggleable: true
             ));
-        Sam2MaskPadding = T2IParamTypes.Register<string>(new("SAM2 Mask Padding", "Internal: Number of pixels to dilate/expand the SAM2 mask boundary.",
-            "0", IgnoreIf: "0", FeatureFlag: "sam2", VisibleNormally: false, ExtraHidden: true, DoNotSave: true, DoNotPreview: true, AlwaysRetain: true, Toggleable: true
+        Sam3MaskPadding = T2IParamTypes.Register<string>(new("SAM3 Mask Padding", "Internal: Number of pixels to dilate/expand the SAM3 mask boundary.",
+            "0", IgnoreIf: "0", FeatureFlag: "sam3", VisibleNormally: false, ExtraHidden: true, DoNotSave: true, DoNotPreview: true, AlwaysRetain: true, Toggleable: true
+            ));
+        Sam3SegmentPrompt = T2IParamTypes.Register<string>(new("SAM3 Segment Prompt", "Internal: text prompt for SAM3 image editor text masking.",
+            "", IgnoreIf: "", FeatureFlag: "sam3", VisibleNormally: false, ExtraHidden: true, DoNotSave: true, DoNotPreview: true, AlwaysRetain: true, Toggleable: true
+            ));
+        Sam3SegmentConfidence = T2IParamTypes.Register<string>(new("SAM3 Segment Confidence", "Internal: confidence threshold for SAM3 image editor text masking.",
+            "0.2", IgnoreIf: "0.2", FeatureFlag: "sam3", VisibleNormally: false, ExtraHidden: true, DoNotSave: true, DoNotPreview: true, AlwaysRetain: true, Toggleable: true
             ));
         UseIPAdapterForRevision = T2IParamTypes.Register<string>(new("Use IP-Adapter", $"Select an IP-Adapter model to use IP-Adapter for image-prompt input handling.\nModels will automatically be downloaded when you first use them.\nNote if you use a custom model, you must also set your CLIP-Vision Model under Advanced Model Addons, otherwise CLIP Vision G will be presumed.\n<a target=\"_blank\" href=\"{Utilities.RepoDocsRoot}/Features/ImagePrompting.md\">See more docs here.</a>",
             "None", IgnoreIf: "None", FeatureFlag: "ipadapter", GetValues: _ => IPAdapterModels, Group: T2IParamTypes.GroupImagePrompting, OrderPriority: 15, ChangeWeight: 1

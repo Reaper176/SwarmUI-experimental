@@ -401,8 +401,46 @@ body {
     min-height: 0;
     height: auto;
 }
+#ImageEditing .imageediting_tool_workspace {
+    display: grid;
+    grid-template-columns: 5.4rem minmax(0, 1fr);
+    gap: 0.5rem;
+    min-height: 0;
+}
+#ImageEditing .imageediting_tool_rail {
+    display: flex;
+    flex-direction: column;
+    gap: 0.6rem;
+    min-width: 0;
+}
+#ImageEditing .imageediting_context_panel {
+    min-width: 0;
+}
+#ImageEditing .imageediting_tool_rail_group {
+    border: 1px solid var(--light-border);
+    border-radius: 0.4rem;
+    background-color: var(--background-panel-subtle);
+    padding: 0.35rem;
+}
+#ImageEditing .imageediting_tool_rail_group_label {
+    color: var(--text-soft);
+    font-size: 0.75rem;
+    font-weight: 700;
+    line-height: 1.1;
+    margin-bottom: 0.35rem;
+    text-align: center;
+}
+#ImageEditing .imageediting_tool_rail_grid {
+    display: grid;
+    grid-template-columns: repeat(2, 2rem);
+    gap: 0.25rem;
+    justify-content: center;
+}
 #ImageEditing .imageediting_input_group {
     margin-bottom: 0.75rem;
+}
+#ImageEditing .imageediting_context_panel .imageediting_input_group {
+    margin-bottom: 0.6rem;
 }
 #ImageEditing .imageediting_input_group > div:first-child {
     margin-bottom: 0.35rem;
@@ -421,6 +459,9 @@ body {
 }
 #ImageEditing .imageediting_section_header:hover {
     background-color: var(--button-background-hover);
+}
+#ImageEditing .imageediting_context_panel .imageediting_section_header {
+    padding: 0.28rem 0.42rem;
 }
 #ImageEditing #imageediting_tools_header {
     background-color: color-mix(in srgb, var(--button-background) 72%, var(--green)) !important;
@@ -525,6 +566,49 @@ body {
 }
 #ImageEditing .imageediting_pen_options_body .image-editor-tool-block {
     width: 100%;
+}
+#ImageEditing .imageediting_active_tool_options_body {
+    display: flex;
+    flex-direction: column;
+    gap: 0.45rem;
+}
+#ImageEditing .imageediting_active_tool_options_mount {
+    display: flex;
+    flex-direction: column;
+    gap: 0.45rem;
+}
+#ImageEditing .imageediting_active_tool_options_body .image-editor-tool-bottombar {
+    display: flex;
+    flex-direction: column;
+    gap: 0.45rem;
+    width: 100%;
+    height: auto;
+    padding-left: 0;
+    justify-content: flex-start;
+}
+#ImageEditing .imageediting_active_tool_options_body .image-editor-tool-block {
+    width: 100%;
+    min-height: 32px;
+    box-sizing: border-box;
+}
+#ImageEditing .imageediting_active_tool_options_body .image-editor-sam3-text-block input {
+    flex-grow: 1;
+    min-width: 0;
+}
+#ImageEditing .imageediting_active_tool_options_body .image-editor-tool-settings-dropdown {
+    width: 100%;
+    height: auto;
+}
+#ImageEditing .imageediting_active_tool_options_body .image-editor-tool-settings-summary {
+    min-height: 32px;
+}
+#ImageEditing .imageediting_active_tool_options_body .image-editor-tool-settings-panel {
+    position: static;
+    width: 100%;
+    max-width: 100%;
+    margin-top: 0.35rem;
+    box-shadow: none;
+    box-sizing: border-box;
 }
 #ImageEditing .imageediting_pen_options_body .id-preset-block,
 #ImageEditing .imageediting_pen_options_body .id-preset-buttons-block {
@@ -714,6 +798,184 @@ body {
 #ImageEditing .imageediting_tool_button_active {
     background-color: var(--danger-button-background-hover);
 }
+#ImageEditing .imageediting_tool_icon_button {
+    width: 2rem;
+    height: 2rem;
+    min-width: 2rem;
+    padding: 0;
+    border-radius: 0.4rem;
+    background-repeat: no-repeat;
+    background-position: center;
+    background-size: 1.45rem 1.45rem;
+}
+#ImageEditing .imageediting_tool_icon_button_sam3text,
+.image-editor-tool-sam3text {
+    position: relative;
+    background-image: none !important;
+}
+#ImageEditing .imageediting_tool_icon_button_select,
+#ImageEditing .imageediting_tool_icon_button_ellipse-select,
+#ImageEditing .imageediting_tool_icon_button_lasso-select,
+#ImageEditing .imageediting_tool_icon_button_polygon-select,
+#ImageEditing .imageediting_tool_icon_button_magic-wand,
+#ImageEditing .imageediting_tool_icon_button_color-select,
+.image-editor-tool-select,
+.image-editor-tool-ellipse-select,
+.image-editor-tool-lasso-select,
+.image-editor-tool-polygon-select,
+.image-editor-tool-magic-wand,
+.image-editor-tool-color-select {
+    position: relative;
+    overflow: hidden;
+    color: var(--text);
+    background-image: none !important;
+}
+#ImageEditing .imageediting_tool_icon_button_select::before,
+#ImageEditing .imageediting_tool_icon_button_ellipse-select::before,
+#ImageEditing .imageediting_tool_icon_button_lasso-select::before,
+#ImageEditing .imageediting_tool_icon_button_polygon-select::before,
+#ImageEditing .imageediting_tool_icon_button_magic-wand::before,
+#ImageEditing .imageediting_tool_icon_button_color-select::before,
+#ImageEditing .imageediting_tool_icon_button_select::after,
+#ImageEditing .imageediting_tool_icon_button_ellipse-select::after,
+#ImageEditing .imageediting_tool_icon_button_lasso-select::after,
+#ImageEditing .imageediting_tool_icon_button_polygon-select::after,
+#ImageEditing .imageediting_tool_icon_button_magic-wand::after,
+#ImageEditing .imageediting_tool_icon_button_color-select::after,
+.image-editor-tool-select::before,
+.image-editor-tool-ellipse-select::before,
+.image-editor-tool-lasso-select::before,
+.image-editor-tool-polygon-select::before,
+.image-editor-tool-magic-wand::before,
+.image-editor-tool-color-select::before,
+.image-editor-tool-select::after,
+.image-editor-tool-ellipse-select::after,
+.image-editor-tool-lasso-select::after,
+.image-editor-tool-polygon-select::after,
+.image-editor-tool-magic-wand::after,
+.image-editor-tool-color-select::after {
+    content: '';
+    position: absolute;
+    box-sizing: border-box;
+    pointer-events: none;
+}
+#ImageEditing .imageediting_tool_icon_button_select::before,
+.image-editor-tool-select::before {
+    left: 24%;
+    top: 28%;
+    width: 52%;
+    height: 44%;
+    border: 2px dashed currentColor;
+}
+#ImageEditing .imageediting_tool_icon_button_ellipse-select::before,
+.image-editor-tool-ellipse-select::before {
+    left: 22%;
+    top: 25%;
+    width: 56%;
+    height: 50%;
+    border: 2px dashed currentColor;
+    border-radius: 50%;
+}
+#ImageEditing .imageediting_tool_icon_button_lasso-select::before,
+.image-editor-tool-lasso-select::before {
+    left: 21%;
+    top: 24%;
+    width: 58%;
+    height: 50%;
+    border: 2px dashed currentColor;
+    border-radius: 58% 42% 62% 38%;
+    transform: rotate(-15deg);
+}
+#ImageEditing .imageediting_tool_icon_button_lasso-select::after,
+.image-editor-tool-lasso-select::after {
+    left: 61%;
+    top: 63%;
+    width: 22%;
+    height: 2px;
+    background: currentColor;
+    transform: rotate(28deg);
+    transform-origin: left center;
+}
+#ImageEditing .imageediting_tool_icon_button_polygon-select::before,
+.image-editor-tool-polygon-select::before {
+    left: 23%;
+    top: 24%;
+    width: 54%;
+    height: 50%;
+    border: 2px solid currentColor;
+    transform: skewX(-12deg) rotate(-5deg);
+}
+#ImageEditing .imageediting_tool_icon_button_polygon-select::after,
+.image-editor-tool-polygon-select::after {
+    left: 20%;
+    top: 21%;
+    width: 5px;
+    height: 5px;
+    border-radius: 50%;
+    background: currentColor;
+    box-shadow: 15px -2px 0 currentColor, 31px 9px 0 currentColor, 23px 27px 0 currentColor, 3px 24px 0 currentColor;
+}
+#ImageEditing .imageediting_tool_icon_button_magic-wand::before,
+.image-editor-tool-magic-wand::before {
+    left: 45%;
+    top: 25%;
+    width: 3px;
+    height: 56%;
+    border-radius: 999px;
+    background: currentColor;
+    transform: rotate(42deg);
+}
+#ImageEditing .imageediting_tool_icon_button_magic-wand::after,
+.image-editor-tool-magic-wand::after {
+    left: 23%;
+    top: 20%;
+    width: 5px;
+    height: 5px;
+    border-radius: 50%;
+    background: currentColor;
+    box-shadow: 10px -5px 0 -1px currentColor, 17px 4px 0 -1px currentColor, -2px 12px 0 -1px currentColor;
+}
+#ImageEditing .imageediting_tool_icon_button_color-select::before,
+.image-editor-tool-color-select::before {
+    left: 41%;
+    top: 21%;
+    width: 5px;
+    height: 56%;
+    border-radius: 999px;
+    background: currentColor;
+    transform: rotate(42deg);
+}
+#ImageEditing .imageediting_tool_icon_button_color-select::after,
+.image-editor-tool-color-select::after {
+    left: 25%;
+    top: 55%;
+    width: 18%;
+    height: 18%;
+    border: 2px solid currentColor;
+    border-radius: 50%;
+    box-shadow: 12px -20px 0 -2px currentColor;
+}
+#ImageEditing .imageediting_tool_icon_button_sam3text::before,
+.image-editor-tool-sam3text::before {
+    content: 'T';
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--text);
+    font-size: 1.25rem;
+    font-weight: 800;
+    line-height: 1;
+}
+#ImageEditing .imageediting_tool_icon_button_active {
+    background-color: var(--danger-button-background-hover);
+    border-color: var(--box-selected-border);
+}
+#ImageEditing .imageediting_tool_icon_button:focus-visible {
+    outline: 2px solid var(--box-selected-border-stronger);
+    outline-offset: 2px;
+}
 #ImageEditing .imageediting_permanent_controls {
     padding: 0.5rem;
     border-top: 1px solid var(--light-border);
@@ -762,12 +1024,16 @@ body {
 #ImageEditing .imageediting_editor_sidebar_content .image_editor_rightbar {
     display: flex;
     flex-direction: column;
+    gap: 0.35rem;
     width: 100%;
     height: 100%;
 }
 #ImageEditing .imageediting_editor_sidebar_content .image_editor_newlayer_button {
     width: calc(100% - 0.2rem);
-    margin-bottom: 0.35rem;
+    margin: 0;
+    min-height: 2rem;
+    padding: 0.35rem 0.45rem;
+    border-radius: 0.4rem;
     font-size: 11px;
     line-height: 1.2;
 }
@@ -783,10 +1049,15 @@ body {
     height: auto;
     aspect-ratio: 1 / 1;
     margin-bottom: 0.4rem;
+    border-radius: 0.4rem;
+    overflow: hidden;
 }
 #ImageEditing .imageediting_editor_sidebar_content .image_editor_layer_preview canvas {
     width: 100%;
     height: 100%;
+}
+#ImageEditing .imageediting_editor_sidebar_content .image_editor_layer_preview-active {
+    border-color: var(--box-selected-border);
 }
 .imageediting_zoom_controls {
     display: flex;

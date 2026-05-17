@@ -23,3 +23,9 @@ try:
 except ImportError:
     print("Error: [Swarm] Yolo not available")
     traceback.print_exc()
+try:
+    from . import SwarmTunableOp
+    NODE_CLASS_MAPPINGS.update(SwarmTunableOp.NODE_CLASS_MAPPINGS)
+except ImportError:
+    print("Error: [Swarm] TunableOp helper not available")
+    traceback.print_exc()

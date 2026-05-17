@@ -1243,15 +1243,15 @@ public class WorkflowGeneratorSteps
                 g.FinalNegativePrompt = [refNode, 2];
             }
         }, -6);
-        #region SAM2 Masking
+        #region SAM3 Masking
         AddStep(g =>
         {
-            if (!g.UserInput.TryGet(ComfyUIBackendExtension.Sam2PointCoordsPositive, out string coords) || string.IsNullOrWhiteSpace(coords) || coords == "[]")
+            if (!g.UserInput.TryGet(ComfyUIBackendExtension.Sam3PointCoordsPositive, out string coords) || string.IsNullOrWhiteSpace(coords) || coords == "[]")
             {
                 return;
             }
             string negCoords = null;
-            if (g.UserInput.TryGet(ComfyUIBackendExtension.Sam2PointCoordsNegative, out string negCoordsRaw) && !string.IsNullOrWhiteSpace(negCoordsRaw) && negCoordsRaw != "[]")
+            if (g.UserInput.TryGet(ComfyUIBackendExtension.Sam3PointCoordsNegative, out string negCoordsRaw) && !string.IsNullOrWhiteSpace(negCoordsRaw) && negCoordsRaw != "[]")
             {
                 negCoords = negCoordsRaw;
             }
@@ -1260,20 +1260,34 @@ public class WorkflowGeneratorSteps
             {
                 return;
             }
-            string modelNode = g.CreateNode("DownloadAndLoadSAM2Model", ComfyUIBackendExtension.Sam2ModelInputs());
+            string modelNode = g.CreateNode("LoadSAM3Model", ComfyUIBackendExtension.Sam3ModelInputs());
+            string posNode = g.CreateNode("SwarmSam3PointsFromJson", new JObject()
+            {
+                ["image"] = imageNodeActual,
+                ["points_json"] = coords,
+                ["is_foreground"] = true
+            });
             JObject segInputs = new()
             {
-                ["sam2_model"] = NodePath(modelNode, 0),
+                ["sam3_model_config"] = NodePath(modelNode, 0),
                 ["image"] = imageNodeActual,
-                ["keep_model_loaded"] = true,
-                ["coordinates_positive"] = coords
+                ["positive_points"] = NodePath(posNode, 0),
+                ["refinement_iterations"] = 0,
+                ["use_multimask"] = true,
+                ["output_best_mask"] = true
             };
             if (negCoords is not null)
             {
-                segInputs["coordinates_negative"] = negCoords;
+                string negNode = g.CreateNode("SwarmSam3PointsFromJson", new JObject()
+                {
+                    ["image"] = imageNodeActual,
+                    ["points_json"] = negCoords,
+                    ["is_foreground"] = false
+                });
+                segInputs["negative_points"] = NodePath(negNode, 0);
             }
-            string segNode = g.CreateNode("Sam2Segmentation", segInputs);
-            string postNode = g.CreateNode("SwarmSam2MaskPostProcess", new JObject()
+            string segNode = g.CreateNode("SAM3Segmentation", segInputs);
+            string postNode = g.CreateNode("SwarmSam3MaskPostProcess", new JObject()
             {
                 ["mask"] = NodePath(segNode, 0),
                 ["fill_holes"] = true,
@@ -1288,7 +1302,7 @@ public class WorkflowGeneratorSteps
         }, -5.8);
         AddStep(g =>
         {
-            if (!g.UserInput.TryGet(ComfyUIBackendExtension.Sam2BBox, out string bboxJson) || string.IsNullOrWhiteSpace(bboxJson))
+            if (!g.UserInput.TryGet(ComfyUIBackendExtension.Sam3BBox, out string bboxJson) || string.IsNullOrWhiteSpace(bboxJson))
             {
                 return;
             }
@@ -1297,20 +1311,23 @@ public class WorkflowGeneratorSteps
             {
                 return;
             }
-            string modelNode = g.CreateNode("DownloadAndLoadSAM2Model", ComfyUIBackendExtension.Sam2ModelInputs());
-            string bboxNode = g.CreateNode("SwarmSam2BBoxFromJson", new JObject()
+            string modelNode = g.CreateNode("LoadSAM3Model", ComfyUIBackendExtension.Sam3ModelInputs());
+            string bboxNode = g.CreateNode("SwarmSam3BBoxFromJson", new JObject()
             {
+                ["image"] = imageNodeActual,
                 ["bbox_json"] = bboxJson
             });
             JObject segInputs = new()
             {
-                ["sam2_model"] = NodePath(modelNode, 0),
+                ["sam3_model_config"] = NodePath(modelNode, 0),
                 ["image"] = imageNodeActual,
-                ["keep_model_loaded"] = true,
-                ["bboxes"] = NodePath(bboxNode, 0)
+                ["box"] = NodePath(bboxNode, 0),
+                ["refinement_iterations"] = 0,
+                ["use_multimask"] = true,
+                ["output_best_mask"] = true
             };
-            string segNode = g.CreateNode("Sam2Segmentation", segInputs);
-            string postNode = g.CreateNode("SwarmSam2MaskPostProcess", new JObject()
+            string segNode = g.CreateNode("SAM3Segmentation", segInputs);
+            string postNode = g.CreateNode("SwarmSam3MaskPostProcess", new JObject()
             {
                 ["mask"] = NodePath(segNode, 0),
                 ["fill_holes"] = true,
@@ -1323,6 +1340,45 @@ public class WorkflowGeneratorSteps
             new WGNodeData([maskNode, 0], g, WGNodeData.DT_IMAGE, g.CurrentCompat()).SaveOutput(null, null, "9");
             g.SkipFurtherSteps = true;
         }, -5.7);
+        AddStep(g =>
+        {
+            if (!g.UserInput.TryGet(ComfyUIBackendExtension.Sam3SegmentPrompt, out string segmentPrompt) || string.IsNullOrWhiteSpace(segmentPrompt))
+            {
+                return;
+            }
+            JArray imageNodeActual = g.BasicInputImage?.Path;
+            if (imageNodeActual is null)
+            {
+                return;
+            }
+            double confidenceThreshold = 0.2;
+            if (g.UserInput.TryGet(ComfyUIBackendExtension.Sam3SegmentConfidence, out string confidenceRaw)
+                && double.TryParse(confidenceRaw, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out double parsedConfidence))
+            {
+                confidenceThreshold = Math.Clamp(parsedConfidence, 0.01, 1.0);
+            }
+            string modelNode = g.CreateNode("LoadSAM3Model", ComfyUIBackendExtension.Sam3ModelInputs());
+            string segNode = g.CreateNode("SAM3Grounding", new JObject()
+            {
+                ["sam3_model_config"] = NodePath(modelNode, 0),
+                ["image"] = imageNodeActual,
+                ["confidence_threshold"] = confidenceThreshold,
+                ["text_prompt"] = segmentPrompt,
+                ["max_detections"] = -1
+            });
+            string postNode = g.CreateNode("SwarmSam3MaskPostProcess", new JObject()
+            {
+                ["mask"] = NodePath(segNode, 0),
+                ["fill_holes"] = true,
+                ["hole_kernel_size"] = 5
+            });
+            string maskNode = g.CreateNode("MaskToImage", new JObject()
+            {
+                ["mask"] = NodePath(postNode, 0)
+            });
+            new WGNodeData([maskNode, 0], g, WGNodeData.DT_IMAGE, g.CurrentCompat()).SaveOutput(null, null, "9");
+            g.SkipFurtherSteps = true;
+        }, -5.6);
         #endregion
         #endregion
         #region Sampler
@@ -1686,6 +1742,24 @@ public class WorkflowGeneratorSteps
                                 ["class_filter"] = classFilter,
                                 ["sort_order"] = g.UserInput.Get(T2IParamTypes.SegmentSortOrder, "left-right"),
                                 ["threshold"] = Math.Abs(part.Strength)
+                            });
+                        }
+                        else if (dataText.StartsWith("sam3-"))
+                        {
+                            string sam3ModelNode = g.CreateNode("LoadSAM3Model", ComfyUIBackendExtension.Sam3ModelInputs());
+                            string sam3SegmentNode = g.CreateNode("SAM3Grounding", new JObject()
+                            {
+                                ["sam3_model_config"] = NodePath(sam3ModelNode, 0),
+                                ["image"] = g.CurrentMedia.Path,
+                                ["confidence_threshold"] = Math.Abs(part.Strength),
+                                ["text_prompt"] = dataText.After("sam3-"),
+                                ["max_detections"] = -1
+                            });
+                            newSegmentNode = g.CreateNode("SwarmSam3MaskPostProcess", new JObject()
+                            {
+                                ["mask"] = NodePath(sam3SegmentNode, 0),
+                                ["fill_holes"] = true,
+                                ["hole_kernel_size"] = 5
                             });
                         }
                         else
