@@ -46,7 +46,7 @@ public class DetailDaemonExtension : Extension
         int order = 0;
         DetailAmount = T2IParamTypes.Register<double>(new($"{Prefix}Detail Amount",
             "[Detail Daemon]\nMain detail adjustment amount. Positive values lower sigmas during the selected portion of sampling, generally increasing detail.",
-            "0.1", Min: -5, Max: 5, Step: 0.01, Group: DetailDaemonGroup, FeatureFlag: FeatureId,
+            "0.1", Min: -2, Max: 2, Step: 0.01, Group: DetailDaemonGroup, FeatureFlag: FeatureId,
             ViewType: ParamViewType.SLIDER, OrderPriority: order++, Examples: ["0", "0.1", "0.25", "0.5", "1"]));
         Start = T2IParamTypes.Register<double>(new($"{Prefix}Start",
             "[Detail Daemon]\nFraction of sampling progress where adjustment starts.",
