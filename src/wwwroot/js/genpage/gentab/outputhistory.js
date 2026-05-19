@@ -270,7 +270,7 @@ function tryAddSavedImageToHistory(savedPath, metadata = null) {
     if (!fullSrc || imageHistoryHasFile(fullSrc) || !imageHistoryCanIncludePath(fullSrc)) {
         return false;
     }
-    let sortBy = localStorage.getItem('image_history_sort_by') ?? window.userFeatureToggles?.imageHistoryDefaultSort ?? 'Name';
+    let sortBy = normalizeImageHistorySortBy(localStorage.getItem('image_history_sort_by') ?? window.userFeatureToggles?.imageHistoryDefaultSort ?? 'Name');
     if (sortBy == 'FileSize') {
         return false;
     }
@@ -281,7 +281,8 @@ function tryAddSavedImageToHistory(savedPath, metadata = null) {
         src: relativeName,
         metadata: metadata || '{}',
         file_size: 0,
-        file_time: Math.floor(Date.now() / 1000)
+        file_time: Math.floor(Date.now() / 1000),
+        file_created_time: Math.floor(Date.now() / 1000)
     }])[0];
     let reverse = localStorage.getItem('image_history_sort_reverse') == 'true';
     let files = imageHistoryBrowser.lastFiles ? [...imageHistoryBrowser.lastFiles, mappedFile] : [mappedFile];
@@ -502,6 +503,11 @@ function ensureImageHistoryHeaderControlsReady(sortBy, reverse, allowAnims, show
     let showHiddenElem = document.getElementById('image_history_show_hidden');
     if (!sortElem || !sortReverseElem || !allowAnimsElem || !showHiddenElem) {
         return null;
+    }
+    let normalizedSortBy = normalizeImageHistorySortBy(sortBy);
+    if (normalizedSortBy != sortBy) {
+        localStorage.setItem('image_history_sort_by', normalizedSortBy);
+        sortBy = normalizedSortBy;
     }
     sortElem.value = sortBy;
     if (!sortElem.value) {
@@ -1296,12 +1302,16 @@ function orderHistoryFilesForDisplay(files) {
 function mapHistoryFiles(prefix, files) {
     return files.map(file => {
         let fullSrc = `${prefix}${file.src}`;
-        return { 'name': fullSrc, 'data': { 'src': getHistoryImageSrc(fullSrc), 'fullsrc': fullSrc, 'name': file.src, 'metadata': file.metadata, 'file_size': file.file_size || 0, 'file_time': file.file_time || 0 } };
+        return { 'name': fullSrc, 'data': { 'src': getHistoryImageSrc(fullSrc), 'fullsrc': fullSrc, 'name': file.src, 'metadata': file.metadata, 'file_size': file.file_size || 0, 'file_time': file.file_time || 0, 'file_created_time': file.file_created_time || 0 } };
     });
 }
 
+function normalizeImageHistorySortBy(sortBy) {
+    return sortBy == 'Date' ? 'DateEdited' : sortBy;
+}
+
 function imageHistorySortSupportedByServer(sortBy) {
-    return sortBy == 'Name' || sortBy == 'Date';
+    return sortBy == 'Name' || sortBy == 'DateCreated' || sortBy == 'DateEdited';
 }
 
 function getImageHistorySortNumber(file, sortBy) {
@@ -1359,8 +1369,15 @@ function sortHistoryFilesForDisplay(files, sortBy, reverse) {
         }
         return files;
     }
-    if (sortBy == 'Date') {
+    if (sortBy == 'Date' || sortBy == 'DateEdited') {
         files.sort((a, b) => (b.data?.file_time || 0) - (a.data?.file_time || 0));
+        if (reverse) {
+            files.reverse();
+        }
+        return files;
+    }
+    if (sortBy == 'DateCreated') {
+        files.sort((a, b) => (b.data?.file_created_time || 0) - (a.data?.file_created_time || 0));
         if (reverse) {
             files.reverse();
         }
@@ -2321,7 +2338,7 @@ async function deleteSelectedHistoryImages() {
 function listOutputHistoryFolderAndFiles(path, isRefresh, callback, depth, onError = null) {
     ensureImageHistoryBrowserShellReady();
     let requestStart = performance.now();
-    let sortBy = localStorage.getItem('image_history_sort_by') ?? window.userFeatureToggles?.imageHistoryDefaultSort ?? 'Name';
+    let sortBy = normalizeImageHistorySortBy(localStorage.getItem('image_history_sort_by') ?? window.userFeatureToggles?.imageHistoryDefaultSort ?? 'Name');
     let reverse = localStorage.getItem('image_history_sort_reverse') == 'true';
     let allowAnims = localStorage.getItem('image_history_allow_anims') != 'false';
     let showHidden = imageHistoryShowHidden;
@@ -2343,7 +2360,7 @@ function listOutputHistoryFolderAndFiles(path, isRefresh, callback, depth, onErr
     if (useFastFirst || path != '' || isRefresh) {
         clearImageHistoryBackgroundWatchdog();
     }
-    let serverSortBy = imageHistorySortSupportedByServer(sortBy) ? sortBy : 'Date';
+    let serverSortBy = imageHistorySortSupportedByServer(sortBy) ? sortBy : 'DateEdited';
     let serverReverse = imageHistorySortSupportedByServer(sortBy) ? reverse : false;
     let request = { 'path': path, 'depth': depth, 'sortBy': serverSortBy, 'sortReverse': serverReverse, 'includeHidden': showHidden };
     if (useFastFirst) {
@@ -2395,8 +2412,9 @@ function listOutputHistoryFolderAndFiles(path, isRefresh, callback, depth, onErr
 }
 
 function queueFullImageHistoryLoad(path, depth, sortBy, reverse, showHidden) {
+    sortBy = normalizeImageHistorySortBy(sortBy);
     let requestKey = getImageHistoryRequestKey(path, depth, sortBy, reverse, showHidden);
-    let serverSortBy = imageHistorySortSupportedByServer(sortBy) ? sortBy : 'Date';
+    let serverSortBy = imageHistorySortSupportedByServer(sortBy) ? sortBy : 'DateEdited';
     let serverReverse = imageHistorySortSupportedByServer(sortBy) ? reverse : false;
     let backgroundToken = ++imageHistoryBackgroundLoadToken;
     imageHistoryBackgroundRequestKey = requestKey;
@@ -2661,7 +2679,7 @@ function selectOutputInHistory(image, div) {
 }
 
 let imageHistoryBrowser = new GenPageBrowserClass('image_history', listOutputHistoryFolderAndFiles, 'imagehistorybrowser', window.userFeatureToggles?.imageHistoryDefaultView || 'Thumbnails', describeOutputFile, selectOutputInHistory,
-    `<label for="image_history_sort_by">Sort:</label> <select id="image_history_sort_by"><option>Name</option><option>Date</option><option>Rating</option><option>Resolution</option><option>Model</option><option>Seed</option><option value="FileSize">File Size</option></select> <input type="checkbox" id="image_history_sort_reverse"> <label for="image_history_sort_reverse">Reverse</label> &emsp; <input type="checkbox" id="image_history_allow_anims" checked autocomplete="off"> <label for="image_history_allow_anims">Allow Animation</label> &emsp; <input type="checkbox" id="image_history_show_hidden" autocomplete="off"> <label for="image_history_show_hidden">Show Hidden</label> <button type="button" id="image_history_rescan_metadata" class="refresh-button" onclick="rescanImageHistoryMetadata()">Rescan Metadata</button> <span id="image_history_bulk_controls" class="image-history-bulk-controls"><span id="image_history_selected_count" class="image-history-selected-count">0 selected</span> <button type="button" id="image_history_select_all" class="refresh-button" onclick="selectAllImageHistory()">Select All</button> <button type="button" id="image_history_clear_selection" class="refresh-button" onclick="clearSelectedImageHistory()">Clear</button> <button type="button" id="image_history_compare_selected" class="refresh-button" onclick="compareSelectedImageHistory()">Compare</button> <button type="button" id="image_history_copy_paths_selected" class="refresh-button" onclick="copySelectedImageHistoryPaths()">Copy Paths</button> <button type="button" id="image_history_contact_sheet_selected" class="refresh-button" onclick="createSelectedImageHistoryContactSheet()">Contact Sheet</button> <button type="button" id="image_history_set_rating_selected" class="refresh-button" onclick="setSelectedImageHistoryRatingPrompt()">Set Rating</button> <button type="button" id="image_history_add_tags_selected" class="refresh-button" onclick="setSelectedImageHistoryTagsPrompt('add')">Add Tags</button> <button type="button" id="image_history_remove_tags_selected" class="refresh-button" onclick="setSelectedImageHistoryTagsPrompt('remove')">Remove Tags</button> <button type="button" id="image_history_set_notes_selected" class="refresh-button" onclick="setSelectedImageHistoryNotesPrompt()">Set Notes</button> <button type="button" id="image_history_copy_to_selected" class="refresh-button" onclick="moveSelectedImageHistoryPrompt('copy')">Copy To</button> <button type="button" id="image_history_move_to_selected" class="refresh-button" onclick="moveSelectedImageHistoryPrompt('move')">Move To</button> <button type="button" id="image_history_export_metadata_selected" class="refresh-button" onclick="exportSelectedImageHistoryMetadata()">Export Metadata</button> <button type="button" id="image_history_send_prompt_lab_selected" class="refresh-button" onclick="sendSelectedImageHistoryToPromptLab()">Send to Prompt Lab</button> <button type="button" id="image_history_star_selected" class="refresh-button" onclick="starSelectedImageHistory()">Star Selected</button> <button type="button" id="image_history_unstar_selected" class="refresh-button" onclick="unstarSelectedImageHistory()">Unstar Selected</button> <button type="button" id="image_history_hide_selected" class="refresh-button" onclick="hideSelectedImageHistory()">Hide Selected</button> <button type="button" id="image_history_unhide_selected" class="refresh-button" onclick="unhideSelectedImageHistory()">Unhide Selected</button> <button type="button" id="image_history_delete_selected" class="interrupt-button" onclick="deleteSelectedImageHistory()">Delete Selected</button></span> <span id="image_history_request_status" class="image-history-request-status" data-state="idle"><span id="image_history_request_status_text" class="image-history-request-status-text"></span> <button type="button" id="image_history_retry_button" class="refresh-button" style="display:none;">Retry</button></span>`);
+    `<label for="image_history_sort_by">Sort:</label> <select id="image_history_sort_by"><option>Name</option><option value="DateCreated">Date-Created</option><option value="DateEdited">Date-Edited</option><option>Rating</option><option>Resolution</option><option>Model</option><option>Seed</option><option value="FileSize">File Size</option></select> <input type="checkbox" id="image_history_sort_reverse"> <label for="image_history_sort_reverse">Reverse</label> &emsp; <input type="checkbox" id="image_history_allow_anims" checked autocomplete="off"> <label for="image_history_allow_anims">Allow Animation</label> &emsp; <input type="checkbox" id="image_history_show_hidden" autocomplete="off"> <label for="image_history_show_hidden">Show Hidden</label> <button type="button" id="image_history_rescan_metadata" class="refresh-button" onclick="rescanImageHistoryMetadata()">Rescan Metadata</button> <span id="image_history_bulk_controls" class="image-history-bulk-controls"><span id="image_history_selected_count" class="image-history-selected-count">0 selected</span> <button type="button" id="image_history_select_all" class="refresh-button" onclick="selectAllImageHistory()">Select All</button> <button type="button" id="image_history_clear_selection" class="refresh-button" onclick="clearSelectedImageHistory()">Clear</button> <button type="button" id="image_history_compare_selected" class="refresh-button" onclick="compareSelectedImageHistory()">Compare</button> <button type="button" id="image_history_copy_paths_selected" class="refresh-button" onclick="copySelectedImageHistoryPaths()">Copy Paths</button> <button type="button" id="image_history_contact_sheet_selected" class="refresh-button" onclick="createSelectedImageHistoryContactSheet()">Contact Sheet</button> <button type="button" id="image_history_set_rating_selected" class="refresh-button" onclick="setSelectedImageHistoryRatingPrompt()">Set Rating</button> <button type="button" id="image_history_add_tags_selected" class="refresh-button" onclick="setSelectedImageHistoryTagsPrompt('add')">Add Tags</button> <button type="button" id="image_history_remove_tags_selected" class="refresh-button" onclick="setSelectedImageHistoryTagsPrompt('remove')">Remove Tags</button> <button type="button" id="image_history_set_notes_selected" class="refresh-button" onclick="setSelectedImageHistoryNotesPrompt()">Set Notes</button> <button type="button" id="image_history_copy_to_selected" class="refresh-button" onclick="moveSelectedImageHistoryPrompt('copy')">Copy To</button> <button type="button" id="image_history_move_to_selected" class="refresh-button" onclick="moveSelectedImageHistoryPrompt('move')">Move To</button> <button type="button" id="image_history_export_metadata_selected" class="refresh-button" onclick="exportSelectedImageHistoryMetadata()">Export Metadata</button> <button type="button" id="image_history_send_prompt_lab_selected" class="refresh-button" onclick="sendSelectedImageHistoryToPromptLab()">Send to Prompt Lab</button> <button type="button" id="image_history_star_selected" class="refresh-button" onclick="starSelectedImageHistory()">Star Selected</button> <button type="button" id="image_history_unstar_selected" class="refresh-button" onclick="unstarSelectedImageHistory()">Unstar Selected</button> <button type="button" id="image_history_hide_selected" class="refresh-button" onclick="hideSelectedImageHistory()">Hide Selected</button> <button type="button" id="image_history_unhide_selected" class="refresh-button" onclick="unhideSelectedImageHistory()">Unhide Selected</button> <button type="button" id="image_history_delete_selected" class="interrupt-button" onclick="deleteSelectedImageHistory()">Delete Selected</button></span> <span id="image_history_request_status" class="image-history-request-status" data-state="idle"><span id="image_history_request_status_text" class="image-history-request-status-text"></span> <button type="button" id="image_history_retry_button" class="refresh-button" style="display:none;">Retry</button></span>`);
 imageHistoryBrowser.maxPreBuild = IMAGE_HISTORY_FAST_FIRST_LIMIT;
 imageHistoryBrowser.filterMatcher = imageHistoryFilterMatches;
 imageHistoryBrowser.folderSelectedEvent = () => {

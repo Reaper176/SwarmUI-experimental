@@ -231,6 +231,8 @@ public class GridGeneratorExtension : Extension
                             Directory.CreateDirectory(dir);
                         }
                         File.WriteAllBytes(targetPath, image.ActualFileTask is not null ? image.ActualFileTask.Result.RawData : image.File.RawData);
+                        string root = Utilities.CombinePathWithAbsolute(Environment.CurrentDirectory, data.Session.User.OutputDirectory);
+                        OutputMetadataTracker.UpsertHistoryIndexForFile(targetPath.Replace('\\', '/'), root, data.Session.User.Settings.StarNoFolders);
                         if (set.Grid.PublishMetadata && (!string.IsNullOrWhiteSpace(metadata) || !string.IsNullOrWhiteSpace(metaExtra)))
                         {
                             metadata ??= "{}";
@@ -391,6 +393,9 @@ public class GridGeneratorExtension : Extension
 
         public JObject SaveConfig = null;
 
+        /// <summary>History notification payload for a completed web-page grid.</summary>
+        public JObject GridHistoryEntry = null;
+
         public Task[] GetActive()
         {
             lock (UpdateLock)
@@ -442,6 +447,35 @@ public class GridGeneratorExtension : Extension
         folderName = CleanFolderName(folderName);
         bool exists = File.Exists($"{session.User.OutputDirectory}/{folderName}/index.html");
         return new JObject() { ["exists"] = exists };
+    }
+
+    private static JObject RegisterWebGridHistory(Session session, T2IParamInput baseParams, string outputFolderName)
+    {
+        try
+        {
+            string root = Utilities.CombinePathWithAbsolute(Environment.CurrentDirectory, session.User.OutputDirectory);
+            string indexPath = Utilities.CombinePathWithAbsolute(root, outputFolderName, "index.html").Replace('\\', '/');
+            if (!File.Exists(indexPath))
+            {
+                Logs.Warning($"Grid Generator could not add web grid '{outputFolderName}' to history because index.html was not found.");
+                return null;
+            }
+            T2IParamInput metadataParams = baseParams.Clone();
+            metadataParams.NoUnusedParams = true;
+            metadataParams.ExtraMeta["grid_output_type"] = "web_page";
+            metadataParams.ExtraMeta["grid_output_folder"] = outputFolderName;
+            string metadata = T2IParamInput.MetadataToString(metadataParams.GenFullMetadataObject());
+            File.WriteAllText($"{indexPath.BeforeLast('.')}.swarm.json", metadata);
+            OutputMetadataTracker.RemoveMetadataFor(indexPath);
+            OutputMetadataTracker.UpsertHistoryIndexForFile(indexPath, root, session.User.Settings.StarNoFolders);
+            string prefix = Program.ServerSettings.Paths.AppendUserNameToOutputPath ? $"View/{session.User.UserID}/" : "Output/";
+            return new JObject() { ["history_image"] = $"{prefix}{outputFolderName}/index.html", ["metadata"] = metadata };
+        }
+        catch (Exception ex)
+        {
+            Logs.Warning($"Grid Generator failed to add web grid '{outputFolderName}' to history: {ex.ReadableString()}");
+            return null;
+        }
     }
 
     public static FontCollection MainFontCollection;
@@ -631,6 +665,10 @@ public class GridGeneratorExtension : Extension
                 Logs.Verbose("Saved to file, send over websocket...");
                 await socket.SendJson(new JObject() { ["image"] = url, ["batch_index"] = $"{batchId}", ["request_id"] = $"{grid.InitialParams.UserRequestId}", ["metadata"] = string.IsNullOrWhiteSpace(metadata) ? null : metadata }, API.WebsocketTimeout);
             }
+            if (grid.OutputType == Grid.OutputyTypeEnum.WEB_PAGE && !dryRun)
+            {
+                data.GridHistoryEntry = RegisterWebGridHistory(session, baseParams, outputFolderName);
+            }
         }
         catch (Exception ex)
         {
@@ -661,7 +699,12 @@ public class GridGeneratorExtension : Extension
         claim.Complete(gens: 1);
         claim.Dispose();
         await sendStatus();
-        await socket.SendJson(new JObject() { ["success"] = "complete" }, API.WebsocketTimeout);
+        JObject success = new() { ["success"] = "complete" };
+        if (data.GridHistoryEntry is not null)
+        {
+            success.Merge(data.GridHistoryEntry);
+        }
+        await socket.SendJson(success, API.WebsocketTimeout);
         return null;
     }
 }

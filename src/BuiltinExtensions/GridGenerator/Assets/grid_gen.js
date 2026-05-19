@@ -405,8 +405,19 @@ class GridGenClass {
         let path = this.lastPath;
         let images = {};
         let discardable = {};
+        let requestIds = new Set();
+        let cleanupInterruptedGridPreviews = () => {
+            mainGenHandler.cleanupTrackedImagesOnClose(images, discardable, batch_id);
+            mainGenHandler.cleanupGeneratingCardsForRequestIds(requestIds, batch_id);
+        };
         makeWSRequestT2I('GridGenRun', inData, data => {
-            mainGenHandler.internalHandleData(data, images, discardable, timeLastGenHit, inData.baseParams, null, null, false);
+            if (data.request_id) {
+                requestIds.add(data.request_id);
+            }
+            if (data.gen_progress?.request_id) {
+                requestIds.add(data.gen_progress.request_id);
+            }
+            mainGenHandler.internalHandleData(data, images, discardable, timeLastGenHit, inData.baseParams, null, null, false, batch_id);
             if (data.image) {
                 generatedCount++;
                 let timeProgress = Math.round((Date.now() - startTime) / 1000);
@@ -425,6 +436,10 @@ class GridGenClass {
                 }
             }
             else if (data.success) {
+                if (data.history_image && typeof notifyImageHistorySavedPath == 'function') {
+                    notifyImageHistorySavedPath(data.history_image, data.metadata);
+                }
+                cleanupInterruptedGridPreviews();
                 if (type == 'Web Page') {
                     this.outInfoBox.innerHTML = `<b>Completed!</b> Output saved to <a href="${getImageOutPrefix()}/Grids/${path}/index.html" target="_blank">${getImageOutPrefix()}/Grids/<code>${path}</code></a>`;
                 }
@@ -432,6 +447,11 @@ class GridGenClass {
                     this.outInfoBox.innerHTML = `<b>Completed!</b>`;
                 }
                 playCompletionAudio();
+            }
+        }, e => {
+            cleanupInterruptedGridPreviews();
+            if (mainGenHandler.interrupted < batch_id) {
+                showError(e);
             }
         });
     }

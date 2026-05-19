@@ -259,6 +259,53 @@ class GenerateHandler {
         return true;
     }
 
+    /** Cleans up tracked image previews when a generation socket closes or reports completion after an interrupt. */
+    cleanupTrackedImagesOnClose(images, discardable, batch_id) {
+        let removeInterrupted = getUserSetting('ui.removeinterruptedgens', false);
+        let wasInterrupted = this.interrupted >= batch_id;
+        for (let [index, img] of Object.entries(images)) {
+            let div = this.getDiv(img);
+            if (!div) {
+                delete images[index];
+                continue;
+            }
+            if (wasInterrupted && removeInterrupted) {
+                div.remove();
+                delete images[index];
+                continue;
+            }
+            let replacement = this.findCompletedImageForRequest(discardable, div.dataset.request_id);
+            if (replacement && replacement.image && replacement.image != img.image) {
+                this.setImageFor(img, replacement.image);
+                img.image = replacement.image;
+                if (replacement.metadata) {
+                    img.metadata = replacement.metadata;
+                    div.dataset.metadata = replacement.metadata;
+                }
+            }
+            let keepPreview = this.finalizeLingeringPreview(img, div.dataset.request_id, wasInterrupted);
+            if (keepPreview) {
+                discardable[index] = img;
+            }
+            else {
+                div.remove();
+            }
+            delete images[index];
+        }
+    }
+
+    /** Removes any still-generating batch cards for the given request IDs after an interrupted generation. */
+    cleanupGeneratingCardsForRequestIds(requestIds, batch_id) {
+        if (!getUserSetting('ui.removeinterruptedgens', false) || this.interrupted < batch_id || !requestIds || requestIds.size == 0) {
+            return;
+        }
+        for (let div of this.batchDiv.querySelectorAll('.image-block')) {
+            if (div.dataset.is_generating == 'true' && requestIds.has(div.dataset.request_id)) {
+                div.remove();
+            }
+        }
+    }
+
     internalHandleData(data, images, discardable, timeLastGenHit, actualInput, socketId, socket, isPreview, batch_id, previewState = null, retryPreview = null) {
         if ('socket_intention' in data && data.socket_intention == 'close' && socket) {
             this.debugTrack('socket-close', {
@@ -278,37 +325,7 @@ class GenerateHandler {
                     return;
                 }
             }
-            let removeInterrupted = getUserSetting('ui.removeinterruptedgens', false);
-            let wasInterrupted = this.interrupted >= batch_id;
-            for (let [index, img] of Object.entries(images)) {
-                let div = this.getDiv(img);
-                if (!div) {
-                    delete images[index];
-                    continue;
-                }
-                if (wasInterrupted && removeInterrupted) {
-                    div.remove();
-                    delete images[index];
-                    continue;
-                }
-                let replacement = this.findCompletedImageForRequest(discardable, div.dataset.request_id);
-                if (replacement && replacement.image && replacement.image != img.image) {
-                    this.setImageFor(img, replacement.image);
-                    img.image = replacement.image;
-                    if (replacement.metadata) {
-                        img.metadata = replacement.metadata;
-                        div.dataset.metadata = replacement.metadata;
-                    }
-                }
-                let keepPreview = this.finalizeLingeringPreview(img, div.dataset.request_id, wasInterrupted);
-                if (keepPreview) {
-                    discardable[index] = img;
-                }
-                else {
-                    div.remove();
-                }
-                delete images[index];
-            }
+            this.cleanupTrackedImagesOnClose(images, discardable, batch_id);
             playCompletionAudio();
             return;
         }

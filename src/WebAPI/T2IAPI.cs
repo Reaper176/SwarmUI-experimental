@@ -756,7 +756,7 @@ public static class T2IAPI
         "mp3", "aac", "wav", "flac" // audio
     ];
 
-    public enum ImageHistorySortMode { Name, Date, Rating, Resolution, Model, Seed, FileSize }
+    public enum ImageHistorySortMode { Name, Date, DateCreated, DateEdited, Rating, Resolution, Model, Seed, FileSize }
 
     private static bool MetadataIsHidden(OutputMetadataTracker.OutputMetadataEntry metadata)
     {
@@ -849,16 +849,21 @@ public static class T2IAPI
         }
     }
 
-    private static long GetHistoryFileSize(string file)
+    private static ImageHistoryHelper GetImageHistoryHelper(string name, string file, string root, bool starNoFolders)
     {
+        OutputMetadataTracker.OutputMetadataEntry metadata = OutputMetadataTracker.GetMetadataFor(file, root, starNoFolders);
+        long fileSize = 0;
+        long fileCreatedTime = 0;
         try
         {
-            return new FileInfo(file).Length;
+            FileInfo info = new(file);
+            fileSize = info.Length;
+            fileCreatedTime = ((DateTimeOffset)info.CreationTimeUtc).ToUnixTimeSeconds();
         }
         catch (Exception)
         {
-            return 0;
         }
+        return new(name, metadata, fileSize, fileCreatedTime);
     }
 
     /// <summary>Sorts history index entries with the requested sort mode.</summary>
@@ -868,9 +873,13 @@ public static class T2IAPI
         {
             entries.Sort((a, b) => b.RelativePath.CompareTo(a.RelativePath));
         }
-        else if (sortBy == ImageHistorySortMode.Date)
+        else if (sortBy == ImageHistorySortMode.Date || sortBy == ImageHistorySortMode.DateEdited)
         {
             entries.Sort((a, b) => b.FileTime.CompareTo(a.FileTime));
+        }
+        else if (sortBy == ImageHistorySortMode.DateCreated)
+        {
+            entries.Sort((a, b) => b.FileCreatedTime.CompareTo(a.FileCreatedTime));
         }
         else if (sortBy == ImageHistorySortMode.Rating)
         {
@@ -981,6 +990,10 @@ public static class T2IAPI
             string starPath = session.User.Settings.StarNoFolders ? $"Starred/{f.RelativePath.Replace("/", "")}" : $"Starred/{f.RelativePath}";
             return !included.Contains(starPath);
         })];
+        if (sortBy == ImageHistorySortMode.DateCreated && files.Any(f => f.FileCreatedTime <= 0))
+        {
+            return null;
+        }
         files = SortHistoryIndexEntries(files, sortBy, sortReverse);
         long timeEnd = Environment.TickCount64;
         Logs.Verbose($"Listed {files.Count} indexed images from {folders.Count} indexed folder entries in {(timeEnd - timeStart) / 1000.0:0.###} seconds.");
@@ -990,7 +1003,7 @@ public static class T2IAPI
             ["files"] = JToken.FromObject(files.Take(limit).Select(f =>
             {
                 string src = requestPrefix == "" ? f.RelativePath : f.RelativePath[requestPrefix.Length..];
-                return new JObject() { ["src"] = src, ["metadata"] = f.Metadata, ["file_size"] = f.FileSize, ["file_time"] = f.FileTime };
+                return new JObject() { ["src"] = src, ["metadata"] = f.Metadata, ["file_size"] = f.FileSize, ["file_time"] = f.FileTime, ["file_created_time"] = f.FileCreatedTime };
             }).ToList()),
             ["perf"] = new JObject()
             {
@@ -1122,9 +1135,13 @@ public static class T2IAPI
                 {
                     list.Sort((a, b) => b.Name.CompareTo(a.Name));
                 }
-                else if (sortBy == ImageHistorySortMode.Date)
+                else if (sortBy == ImageHistorySortMode.Date || sortBy == ImageHistorySortMode.DateEdited)
                 {
                     list.Sort((a, b) => b.Metadata.FileTime.CompareTo(a.Metadata.FileTime));
+                }
+                else if (sortBy == ImageHistorySortMode.DateCreated)
+                {
+                    list.Sort((a, b) => b.FileCreatedTime.CompareTo(a.FileCreatedTime));
                 }
                 else if (sortBy == ImageHistorySortMode.Rating)
                 {
@@ -1185,7 +1202,7 @@ public static class T2IAPI
                         .OrderDescending()
                         .Take(startupLimit - files.Count);
                     files.AddRange(orderedFiles
-                        .Select(f => new ImageHistoryHelper(prefix + f.AfterLast('/'), OutputMetadataTracker.GetMetadataFor(f, root, starNoFolders), GetHistoryFileSize(f)))
+                        .Select(f => GetImageHistoryHelper(prefix + f.AfterLast('/'), f, root, starNoFolders))
                         .Where(f => f.Metadata is not null)
                         .Where(f => includeHidden || !MetadataIsHidden(f.Metadata)));
                     if (files.Count >= startupLimit || subDepth <= 0)
@@ -1303,7 +1320,7 @@ public static class T2IAPI
                     }
                     List<string> subFiles = [.. Directory.EnumerateFiles(actualPath).Take(localLimit)];
                     IEnumerable<string> newFileNames = subFiles.Select(f => f.Replace('\\', '/')).Where(isAllowed).Where(f => !f.AfterLast('/').StartsWithFast('.') && extensions.Contains(f.AfterLast('.')) && !f.EndsWith(".swarmpreview.jpg") && !f.EndsWith(".swarmpreview.webp"));
-                    List<ImageHistoryHelper> localFiles = [.. newFileNames.Select(f => new ImageHistoryHelper(prefix + f.AfterLast('/'), OutputMetadataTracker.GetMetadataFor(f, root, starNoFolders), GetHistoryFileSize(f))).Where(f => f.Metadata is not null).Where(f => includeHidden || !MetadataIsHidden(f.Metadata))];
+                    List<ImageHistoryHelper> localFiles = [.. newFileNames.Select(f => GetImageHistoryHelper(prefix + f.AfterLast('/'), f, root, starNoFolders)).Where(f => f.Metadata is not null).Where(f => includeHidden || !MetadataIsHidden(f.Metadata))];
                     int leftOver = Interlocked.Add(ref remaining, -localFiles.Count);
                     sortList(localFiles);
                     filesConc.TryAdd(localId, localFiles);
@@ -1336,7 +1353,7 @@ public static class T2IAPI
             return new JObject()
             {
                 ["folders"] = JToken.FromObject(dirs.Union(finalDirs.Keys).ToList()),
-                ["files"] = JToken.FromObject(files.Take(maxInHistory).Select(f => new JObject() { ["src"] = f.Name, ["metadata"] = f.Metadata.Metadata, ["file_size"] = f.FileSize, ["file_time"] = f.Metadata.FileTime }).ToList()),
+                ["files"] = JToken.FromObject(files.Take(maxInHistory).Select(f => new JObject() { ["src"] = f.Name, ["metadata"] = f.Metadata.Metadata, ["file_size"] = f.FileSize, ["file_time"] = f.Metadata.FileTime, ["file_created_time"] = f.FileCreatedTime }).ToList()),
                 ["perf"] = new JObject()
                 {
                     ["total_ms"] = timeEnd - timeStart,
@@ -1361,7 +1378,7 @@ public static class T2IAPI
         }
     }
 
-    public record struct ImageHistoryHelper(string Name, OutputMetadataTracker.OutputMetadataEntry Metadata, long FileSize);
+    public record struct ImageHistoryHelper(string Name, OutputMetadataTracker.OutputMetadataEntry Metadata, long FileSize, long FileCreatedTime);
 
     /// <summary>Currently running background history index warm-up jobs.</summary>
     public static ConcurrentDictionary<string, byte> ImageHistoryIndexWarmups = [];
@@ -1464,7 +1481,7 @@ public static class T2IAPI
     public static async Task<JObject> ListImages(Session session,
         [API.APIParameter("The folder path to start the listing in. Use an empty string for root.")] string path,
         [API.APIParameter("Maximum depth (number of recursive folders) to search.")] int depth,
-        [API.APIParameter("What to sort the list by - `Name`, `Date`, `Rating`, `Resolution`, `Model`, `Seed`, or `FileSize`.")] string sortBy = "Name",
+        [API.APIParameter("What to sort the list by - `Name`, `DateCreated`, `DateEdited`, `Date`, `Rating`, `Resolution`, `Model`, `Seed`, or `FileSize`. `Date` is accepted as an alias for `DateEdited`.")] string sortBy = "Name",
         [API.APIParameter("If true, the sorting should be done in reverse.")] bool sortReverse = false,
         [API.APIParameter("If true, include images marked as hidden.")] bool includeHidden = false,
         [API.APIParameter("If true, return only a bounded startup slice biased toward newest work.")] bool fastFirst = false,

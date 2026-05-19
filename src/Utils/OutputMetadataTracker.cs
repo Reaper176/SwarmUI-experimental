@@ -60,6 +60,9 @@ public static class OutputMetadataTracker
         /// <summary>Best available file modified timestamp.</summary>
         public long FileTime { get; set; }
 
+        /// <summary>Best available file created timestamp.</summary>
+        public long FileCreatedTime { get; set; }
+
         /// <summary>File size in bytes.</summary>
         public long FileSize { get; set; }
 
@@ -325,6 +328,7 @@ public static class OutputMetadataTracker
             ILiteCollection<OutputHistoryIndexState> historyIndexStates = ldb.GetCollection<OutputHistoryIndexState>("output_history_state");
             historyIndex.EnsureIndex(e => e.Folder);
             historyIndex.EnsureIndex(e => e.FileTime);
+            historyIndex.EnsureIndex(e => e.FileCreatedTime);
             historyIndex.EnsureIndex(e => e.Extension);
             return new(folder, new(), ldb, ldb.GetCollection<OutputMetadataEntry>("output_metadata"), ldb.GetCollection<OutputPreviewEntry>("output_previews"), historyIndex, historyIndexStates);
         }
@@ -503,6 +507,14 @@ public static class OutputMetadataTracker
         catch (Exception)
         {
         }
+        long fileCreatedTime = 0;
+        try
+        {
+            fileCreatedTime = ((DateTimeOffset)File.GetCreationTimeUtc(file)).ToUnixTimeSeconds();
+        }
+        catch (Exception)
+        {
+        }
         JObject parsed = null;
         try
         {
@@ -519,6 +531,7 @@ public static class OutputMetadataTracker
             Extension = extension,
             Metadata = metadata.Metadata,
             FileTime = metadata.FileTime,
+            FileCreatedTime = fileCreatedTime,
             FileSize = fileSize,
             IsHidden = GetMetadataBool(parsed, "is_hidden"),
             IsStarred = GetMetadataBool(parsed, "is_starred"),
