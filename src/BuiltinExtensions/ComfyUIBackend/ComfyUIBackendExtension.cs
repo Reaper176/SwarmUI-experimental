@@ -613,9 +613,9 @@ public class ComfyUIBackendExtension : Extension
 
     public static T2IRegisteredParam<string> CustomWorkflowParam, SamplerParam, SchedulerParam, RefinerSamplerParam, RefinerSchedulerParam, RefinerUpscaleMethod, UseIPAdapterForRevision, IPAdapterWeightType, VideoPreviewType, VideoFrameInterpolationMethod, GligenModel, YoloModelInternal, PreferredDType, UseStyleModel, TeaCacheMode, EasyCacheMode, SetClipDevice;
 
-    public static T2IRegisteredParam<bool> AITemplateParam, DebugRegionalPrompting, ShiftedLatentAverageInit, UseCfgZeroStar, UseTCFG;
+    public static T2IRegisteredParam<bool> AITemplateParam, DebugRegionalPrompting, ShiftedLatentAverageInit, UseCfgZeroStar, UseTCFG, DetailDaemonSmooth;
 
-    public static T2IRegisteredParam<double> IPAdapterWeight, IPAdapterStart, IPAdapterEnd, SelfAttentionGuidanceScale, SelfAttentionGuidanceSigmaBlur, PerturbedAttentionGuidanceScale, StyleModelMergeStrength, StyleModelApplyStart, StyleModelMultiplyStrength, RescaleCFGMultiplier, TeaCacheThreshold, TeaCacheStart, NunchakuCacheThreshold, EasyCacheThreshold, EasyCacheStart, EasyCacheEnd, RenormCFG, NormalizedAttentionGuidanceScale, NormalizedAttentionGuidanceAlpha, NormalizedAttentionGuidanceTau;
+    public static T2IRegisteredParam<double> IPAdapterWeight, IPAdapterStart, IPAdapterEnd, SelfAttentionGuidanceScale, SelfAttentionGuidanceSigmaBlur, PerturbedAttentionGuidanceScale, StyleModelMergeStrength, StyleModelApplyStart, StyleModelMultiplyStrength, RescaleCFGMultiplier, TeaCacheThreshold, TeaCacheStart, NunchakuCacheThreshold, EasyCacheThreshold, EasyCacheStart, EasyCacheEnd, RenormCFG, NormalizedAttentionGuidanceScale, NormalizedAttentionGuidanceAlpha, NormalizedAttentionGuidanceTau, DetailDaemonAmount, DetailDaemonStart, DetailDaemonEnd, DetailDaemonBias, DetailDaemonExponent, DetailDaemonStartOffset, DetailDaemonEndOffset, DetailDaemonFade, DetailDaemonCFGScaleOverride;
 
     public static T2IRegisteredParam<int> RefinerHyperTile, VideoFrameInterpolationMultiplier;
 
@@ -648,7 +648,7 @@ public class ComfyUIBackendExtension : Extension
 
     public static ConcurrentDictionary<string, JToken> ControlNetPreprocessors = new() { ["None"] = null };
 
-    public static T2IParamGroup ComfyAdvancedGroup;
+    public static T2IParamGroup ComfyAdvancedGroup, DetailDaemonGroup;
 
     public static T2IRegisteredParam<string> Sam3PointCoordsPositive, Sam3PointCoordsNegative, Sam3BBox, Sam3MaskPadding, Sam3SegmentPrompt, Sam3SegmentConfidence;
 
@@ -722,6 +722,37 @@ public class ComfyUIBackendExtension : Extension
             ));
         SchedulerParam = T2IParamTypes.Register<string>(new("Scheduler", "Scheduler type (for ComfyUI backends).\nGoes with the Sampler parameter above.",
             "normal", Toggleable: true, FeatureFlag: "comfyui", Group: T2IParamTypes.GroupSampling, OrderPriority: -4, CanSectionalize: true, GetValues: (_) => Schedulers
+            ));
+        DetailDaemonGroup = new("Detail Daemon", Toggles: true, Open: false, IsAdvanced: true, OrderPriority: 11.5, Description: "Native SwarmKSampler support for Detail Daemon sigma adjustment. Based on Jonseed's ComfyUI-Detail-Daemon, from muerrilla's original Detail Daemon concept.");
+        DetailDaemonAmount = T2IParamTypes.Register<double>(new("[DD] Detail Amount", "[Detail Daemon] Main detail adjustment amount. Positive values lower sigmas during the selected portion of sampling, generally increasing detail.",
+            "0.1", Min: -2, Max: 2, Step: 0.01, Group: DetailDaemonGroup, FeatureFlag: "comfyui", ViewType: ParamViewType.SLIDER, OrderPriority: 1, Examples: ["0", "0.1", "0.25", "0.5", "1"]
+            ));
+        DetailDaemonStart = T2IParamTypes.Register<double>(new("[DD] Start", "[Detail Daemon] Fraction of sampling progress where adjustment starts.",
+            "0.2", Min: 0, Max: 1, Step: 0.01, Group: DetailDaemonGroup, FeatureFlag: "comfyui", ViewType: ParamViewType.SLIDER, OrderPriority: 2
+            ));
+        DetailDaemonEnd = T2IParamTypes.Register<double>(new("[DD] End", "[Detail Daemon] Fraction of sampling progress where adjustment ends.",
+            "0.8", Min: 0, Max: 1, Step: 0.01, Group: DetailDaemonGroup, FeatureFlag: "comfyui", ViewType: ParamViewType.SLIDER, OrderPriority: 3
+            ));
+        DetailDaemonBias = T2IParamTypes.Register<double>(new("[DD] Bias", "[Detail Daemon] Moves the peak adjustment earlier or later between Start and End.",
+            "0.5", Min: 0, Max: 1, Step: 0.01, Group: DetailDaemonGroup, FeatureFlag: "comfyui", ViewType: ParamViewType.SLIDER, OrderPriority: 4
+            ));
+        DetailDaemonExponent = T2IParamTypes.Register<double>(new("[DD] Exponent", "[Detail Daemon] Changes the curve shape of the adjustment schedule.",
+            "1", Min: 0, Max: 10, Step: 0.05, Group: DetailDaemonGroup, FeatureFlag: "comfyui", ViewType: ParamViewType.SLIDER, OrderPriority: 5
+            ));
+        DetailDaemonStartOffset = T2IParamTypes.Register<double>(new("[DD] Start Offset", "[Detail Daemon] Adjustment amount before Start. Usually leave at 0.",
+            "0", Min: -1, Max: 1, Step: 0.01, Group: DetailDaemonGroup, FeatureFlag: "comfyui", ViewType: ParamViewType.SLIDER, OrderPriority: 6, IsAdvanced: true
+            ));
+        DetailDaemonEndOffset = T2IParamTypes.Register<double>(new("[DD] End Offset", "[Detail Daemon] Adjustment amount after End. Usually leave at 0.",
+            "0", Min: -1, Max: 1, Step: 0.01, Group: DetailDaemonGroup, FeatureFlag: "comfyui", ViewType: ParamViewType.SLIDER, OrderPriority: 7, IsAdvanced: true
+            ));
+        DetailDaemonFade = T2IParamTypes.Register<double>(new("[DD] Fade", "[Detail Daemon] Reduces the full adjustment curve.",
+            "0", Min: 0, Max: 1, Step: 0.05, Group: DetailDaemonGroup, FeatureFlag: "comfyui", ViewType: ParamViewType.SLIDER, OrderPriority: 8, IsAdvanced: true
+            ));
+        DetailDaemonSmooth = T2IParamTypes.Register<bool>(new("[DD] Smooth", "[Detail Daemon] Smooth the adjustment curve.",
+            "true", Group: DetailDaemonGroup, FeatureFlag: "comfyui", OrderPriority: 9, IsAdvanced: true
+            ));
+        DetailDaemonCFGScaleOverride = T2IParamTypes.Register<double>(new("[DD] CFG Scale Override", "[Detail Daemon] If enabled and greater than 0, overrides the CFG scale used by Detail Daemon. Leave disabled or 0 to use the generation CFG scale.",
+            "0", Min: 0, Max: 100, Step: 0.5, Group: DetailDaemonGroup, FeatureFlag: "comfyui", Toggleable: true, OrderPriority: 10, IsAdvanced: true
             ));
         AITemplateParam = T2IParamTypes.Register<bool>(new("Enable AITemplate", "If checked, enables AITemplate for ComfyUI generations (UNet only). Only compatible with some GPUs.",
             "false", IgnoreIf: "false", FeatureFlag: "aitemplate", Group: T2IParamTypes.GroupAlternateGuidance, ChangeWeight: 5

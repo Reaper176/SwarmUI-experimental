@@ -259,6 +259,132 @@ def stitch_latent_tensors(original_size, tiles, scale_factor=8):
     return result
 
 
+# Detail Daemon schedule and sigma-adjustment behavior are ported from Jonseed's
+# MIT-licensed ComfyUI-Detail-Daemon, based on muerrilla's original sd-webui Detail Daemon concept.
+def make_detail_daemon_schedule(steps, start, end, bias, amount, exponent, start_offset, end_offset, fade, smooth):
+    start = min(start, end)
+    mid = start + bias * (end - start)
+    multipliers = np.zeros(steps)
+    start_idx, mid_idx, end_idx = [int(round(x * (steps - 1))) for x in [start, mid, end]]
+    start_values = np.linspace(0, 1, mid_idx - start_idx + 1)
+    if smooth:
+        start_values = 0.5 * (1 - np.cos(start_values * np.pi))
+    start_values = start_values ** exponent
+    if start_values.any():
+        start_values *= amount - start_offset
+    start_values += start_offset
+    end_values = np.linspace(1, 0, end_idx - mid_idx + 1)
+    if smooth:
+        end_values = 0.5 * (1 - np.cos(end_values * np.pi))
+    end_values = end_values ** exponent
+    if end_values.any():
+        end_values *= amount - end_offset
+    end_values += end_offset
+    multipliers[start_idx:mid_idx + 1] = start_values
+    multipliers[mid_idx:end_idx + 1] = end_values
+    multipliers[:start_idx] = start_offset
+    multipliers[end_idx + 1:] = end_offset
+    multipliers *= 1 - fade
+    return multipliers
+
+
+def get_detail_daemon_schedule_value(sigma, sigmas, schedule):
+    sched_len = len(schedule)
+    if sched_len < 2 or len(sigmas) < 2 or sigma <= 0 or not (sigmas[-1] <= sigma <= sigmas[0]):
+        return 0.0
+    deltas = (sigmas[:-1] - sigma).abs()
+    idx = int(deltas.argmin())
+    if (idx == 0 and sigma >= sigmas[0]) or (idx == sched_len - 1 and sigma <= sigmas[-2]) or deltas[idx] == 0:
+        return schedule[idx].item()
+    idxlow, idxhigh = (idx, idx - 1) if sigma > sigmas[idx] else (idx + 1, idx)
+    low_sigma, high_sigma = sigmas[idxlow], sigmas[idxhigh]
+    if high_sigma - low_sigma == 0:
+        return schedule[idxlow].item()
+    ratio = ((sigma - low_sigma) / (high_sigma - low_sigma)).clamp(0, 1)
+    return torch.lerp(schedule[idxlow], schedule[idxhigh], ratio).item()
+
+
+def detail_daemon_wrap_model(model, sigmas, cfg, detail_daemon):
+    amount = float(detail_daemon.get("detail_amount", 0.0))
+    if amount == 0.0 or len(sigmas) < 2:
+        return model
+    sigmas_cpu = sigmas.detach().clone().cpu()
+    schedule = torch.tensor(make_detail_daemon_schedule(
+        len(sigmas_cpu) - 1,
+        float(detail_daemon.get("start", 0.2)),
+        float(detail_daemon.get("end", 0.8)),
+        float(detail_daemon.get("bias", 0.5)),
+        amount,
+        float(detail_daemon.get("exponent", 1.0)),
+        float(detail_daemon.get("start_offset", 0.0)),
+        float(detail_daemon.get("end_offset", 0.0)),
+        float(detail_daemon.get("fade", 0.0)),
+        bool(detail_daemon.get("smooth", True)),
+    ), dtype=torch.float32, device="cpu")
+    sigma_max = float(sigmas_cpu[0])
+    sigma_min = float(sigmas_cpu[-1]) + 1e-05
+    cfg_scale_override = float(detail_daemon.get("cfg_scale_override", 0.0))
+    cfg_scale = cfg_scale_override if cfg_scale_override > 0 else float(cfg)
+    old_wrapper = model.model_options.get("model_function_wrapper")
+
+    def model_function_wrapper(apply_model, args):
+        timestep = args["timestep"]
+        sigma_float = float(timestep.max().detach().cpu())
+        if not (sigma_min <= sigma_float <= sigma_max):
+            if old_wrapper:
+                return old_wrapper(apply_model, args)
+            return apply_model(args["input"], timestep, **args["c"])
+        adjustment = get_detail_daemon_schedule_value(sigma_float, sigmas_cpu, schedule) * 0.1
+        adjusted_timestep = timestep * max(1e-06, 1.0 - adjustment * cfg_scale)
+        new_args = args.copy()
+        new_args["timestep"] = adjusted_timestep
+        if old_wrapper:
+            return old_wrapper(apply_model, new_args)
+        return apply_model(new_args["input"], adjusted_timestep, **new_args["c"])
+
+    wrapped = model.clone()
+    wrapped.set_model_unet_function_wrapper(model_function_wrapper)
+    return wrapped
+
+
+class SwarmDetailDaemonOptions:
+    @classmethod
+    def INPUT_TYPES(s):
+        return {
+            "required": {
+                "detail_amount": ("FLOAT", {"default": 0.1, "min": -2.0, "max": 2.0, "step": 0.01}),
+                "start": ("FLOAT", {"default": 0.2, "min": 0.0, "max": 1.0, "step": 0.01}),
+                "end": ("FLOAT", {"default": 0.8, "min": 0.0, "max": 1.0, "step": 0.01}),
+                "bias": ("FLOAT", {"default": 0.5, "min": 0.0, "max": 1.0, "step": 0.01}),
+                "exponent": ("FLOAT", {"default": 1.0, "min": 0.0, "max": 10.0, "step": 0.05}),
+                "start_offset": ("FLOAT", {"default": 0.0, "min": -1.0, "max": 1.0, "step": 0.01}),
+                "end_offset": ("FLOAT", {"default": 0.0, "min": -1.0, "max": 1.0, "step": 0.01}),
+                "fade": ("FLOAT", {"default": 0.0, "min": 0.0, "max": 1.0, "step": 0.05}),
+                "smooth": ("BOOLEAN", {"default": True}),
+                "cfg_scale_override": ("FLOAT", {"default": 0.0, "min": 0.0, "max": 100.0, "step": 0.5, "round": 0.01}),
+            }
+        }
+
+    CATEGORY = "SwarmUI/sampling"
+    RETURN_TYPES = ("SWARM_DETAIL_DAEMON_OPTIONS",)
+    FUNCTION = "make_options"
+    DESCRIPTION = "Options plug for SwarmKSampler native Detail Daemon sigma adjustment. Based on Jonseed's ComfyUI-Detail-Daemon, from muerrilla's original Detail Daemon concept."
+
+    def make_options(self, detail_amount, start, end, bias, exponent, start_offset, end_offset, fade, smooth, cfg_scale_override):
+        return ({
+            "detail_amount": detail_amount,
+            "start": start,
+            "end": end,
+            "bias": bias,
+            "exponent": exponent,
+            "start_offset": start_offset,
+            "end_offset": end_offset,
+            "fade": fade,
+            "smooth": smooth,
+            "cfg_scale_override": cfg_scale_override,
+        },)
+
+
 class SwarmKSampler:
     @classmethod
     def INPUT_TYPES(s):
@@ -285,6 +411,9 @@ class SwarmKSampler:
                 "previews": (["default", "none", "one", "second", "iterate", "animate"], ),
                 "tile_sample": ("BOOLEAN", {"default": False}),
                 "tile_size": ("INT", {"default": 1024, "min": 256, "max": 4096}),
+            },
+            "optional": {
+                "detail_daemon": ("SWARM_DETAIL_DAEMON_OPTIONS",),
             }
         }
 
@@ -293,7 +422,7 @@ class SwarmKSampler:
     FUNCTION = "run_sampling"
     DESCRIPTION = "Works like a vanilla Comfy KSamplerAdvanced, but with extra inputs for advanced features such as sigma scale, tiling, previews, etc."
 
-    def sample(self, model, noise_seed, steps, cfg, sampler_name, scheduler, positive, negative, latent_image, start_at_step, end_at_step, var_seed, var_seed_strength, sigma_max, sigma_min, rho, add_noise, return_with_leftover_noise, previews):
+    def sample(self, model, noise_seed, steps, cfg, sampler_name, scheduler, positive, negative, latent_image, start_at_step, end_at_step, var_seed, var_seed_strength, sigma_max, sigma_min, rho, add_noise, return_with_leftover_noise, previews, detail_daemon=None):
         device = comfy.model_management.get_torch_device()
         latent_samples = latent_image["samples"]
         latent_samples = comfy.sample.fix_empty_latent_channels(model, latent_samples)
@@ -352,15 +481,29 @@ class SwarmKSampler:
         out = latent_image.copy()
         if steps > 0:
             callback = make_swarm_sampler_callback(steps, device, model, previews)
+            sample_model = model
+            if detail_daemon is not None:
+                sampler = comfy.samplers.KSampler(model, steps=steps, device=model.load_device, sampler=sampler_name, scheduler=scheduler, denoise=1.0, model_options=model.model_options)
+                active_sigmas = sigmas if sigmas is not None else sampler.sigmas
+                if end_at_step is not None and end_at_step < (len(active_sigmas) - 1):
+                    active_sigmas = active_sigmas[:end_at_step + 1].clone()
+                    if return_with_leftover_noise == "disable":
+                        active_sigmas[-1] = 0
+                if start_at_step is not None:
+                    if start_at_step < (len(active_sigmas) - 1):
+                        active_sigmas = active_sigmas[start_at_step:]
+                    else:
+                        return (out, )
+                sample_model = detail_daemon_wrap_model(model, active_sigmas, cfg, detail_daemon)
 
-            samples = comfy.sample.sample(model, noise, steps, cfg, sampler_name, scheduler, positive, negative, latent_samples,
+            samples = comfy.sample.sample(sample_model, noise, steps, cfg, sampler_name, scheduler, positive, negative, latent_samples,
                                     denoise=1.0, disable_noise=disable_noise, start_step=start_at_step, last_step=end_at_step,
                                     force_full_denoise=return_with_leftover_noise == "disable", noise_mask=noise_mask, sigmas=sigmas, callback=callback, seed=noise_seed)
             out["samples"] = samples
         return (out, )
 
     # tiled sample version of sample function
-    def tiled_sample(self, model, noise_seed, steps, cfg, sampler_name, scheduler, positive, negative, latent_image, start_at_step, end_at_step, var_seed, var_seed_strength, sigma_max, sigma_min, rho, add_noise, return_with_leftover_noise, previews, tile_size):
+    def tiled_sample(self, model, noise_seed, steps, cfg, sampler_name, scheduler, positive, negative, latent_image, start_at_step, end_at_step, var_seed, var_seed_strength, sigma_max, sigma_min, rho, add_noise, return_with_leftover_noise, previews, tile_size, detail_daemon=None):
         out = latent_image.copy()
         # split image into tiles
         latent_samples = latent_image["samples"]
@@ -368,20 +511,21 @@ class SwarmKSampler:
         # resample each tile using self.sample
         resampled_tiles = []
         for coords, tile in tiles:
-            resampled_tile = self.sample(model, noise_seed, steps, cfg, sampler_name, scheduler, positive, negative, {"samples": tile}, start_at_step, end_at_step, var_seed, var_seed_strength, sigma_max, sigma_min, rho, add_noise, return_with_leftover_noise, previews)
+            resampled_tile = self.sample(model, noise_seed, steps, cfg, sampler_name, scheduler, positive, negative, {"samples": tile}, start_at_step, end_at_step, var_seed, var_seed_strength, sigma_max, sigma_min, rho, add_noise, return_with_leftover_noise, previews, detail_daemon)
             resampled_tiles.append((coords, resampled_tile[0]["samples"]))
         # stitch the tiles to get the final upscaled image
         result = stitch_latent_tensors(latent_samples.shape, resampled_tiles)
         out["samples"] = result
         return (out,)
 
-    def run_sampling(self, model, noise_seed, steps, cfg, sampler_name, scheduler, positive, negative, latent_image, start_at_step, end_at_step, var_seed, var_seed_strength, sigma_max, sigma_min, rho, add_noise, return_with_leftover_noise, previews, tile_sample,  tile_size):
+    def run_sampling(self, model, noise_seed, steps, cfg, sampler_name, scheduler, positive, negative, latent_image, start_at_step, end_at_step, var_seed, var_seed_strength, sigma_max, sigma_min, rho, add_noise, return_with_leftover_noise, previews, tile_sample,  tile_size, detail_daemon=None):
         if tile_sample:
-            return self.tiled_sample(model, noise_seed, steps, cfg, sampler_name, scheduler, positive, negative, latent_image, start_at_step, end_at_step, var_seed, var_seed_strength, sigma_max, sigma_min, rho, add_noise, return_with_leftover_noise, previews, tile_size)
+            return self.tiled_sample(model, noise_seed, steps, cfg, sampler_name, scheduler, positive, negative, latent_image, start_at_step, end_at_step, var_seed, var_seed_strength, sigma_max, sigma_min, rho, add_noise, return_with_leftover_noise, previews, tile_size, detail_daemon)
         else:
-            return self.sample(model, noise_seed, steps, cfg, sampler_name, scheduler, positive, negative, latent_image, start_at_step, end_at_step, var_seed, var_seed_strength, sigma_max, sigma_min, rho, add_noise, return_with_leftover_noise, previews)
+            return self.sample(model, noise_seed, steps, cfg, sampler_name, scheduler, positive, negative, latent_image, start_at_step, end_at_step, var_seed, var_seed_strength, sigma_max, sigma_min, rho, add_noise, return_with_leftover_noise, previews, detail_daemon)
 
 
 NODE_CLASS_MAPPINGS = {
+    "SwarmDetailDaemonOptions": SwarmDetailDaemonOptions,
     "SwarmKSampler": SwarmKSampler,
 }
