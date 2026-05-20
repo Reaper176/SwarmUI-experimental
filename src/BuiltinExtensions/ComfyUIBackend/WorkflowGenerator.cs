@@ -1474,6 +1474,23 @@ public partial class WorkflowGenerator
             inputs["previews"] = UserInput.Get(T2IParamTypes.NoPreviews) ? "none" : previews ?? DefaultPreviews;
             inputs["tile_sample"] = doTiled;
             inputs["tile_size"] = FinalLoadedModel.StandardWidth <= 0 ? 768 : FinalLoadedModel.StandardWidth;
+            if (UserInput.TryGet(ComfyUIBackendExtension.DetailDaemonAmount, out double detailDaemonAmount))
+            {
+                string detailDaemonOptions = CreateNode("SwarmDetailDaemonOptions", new JObject()
+                {
+                    ["detail_amount"] = detailDaemonAmount,
+                    ["start"] = UserInput.Get(ComfyUIBackendExtension.DetailDaemonStart, 0.2),
+                    ["end"] = UserInput.Get(ComfyUIBackendExtension.DetailDaemonEnd, 0.8),
+                    ["bias"] = UserInput.Get(ComfyUIBackendExtension.DetailDaemonBias, 0.5),
+                    ["exponent"] = UserInput.Get(ComfyUIBackendExtension.DetailDaemonExponent, 1),
+                    ["start_offset"] = UserInput.Get(ComfyUIBackendExtension.DetailDaemonStartOffset, 0),
+                    ["end_offset"] = UserInput.Get(ComfyUIBackendExtension.DetailDaemonEndOffset, 0),
+                    ["fade"] = UserInput.Get(ComfyUIBackendExtension.DetailDaemonFade, 0),
+                    ["smooth"] = UserInput.Get(ComfyUIBackendExtension.DetailDaemonSmooth, true),
+                    ["cfg_scale_override"] = UserInput.Get(ComfyUIBackendExtension.DetailDaemonCFGScaleOverride, 0)
+                });
+                inputs["detail_daemon"] = NodePath(detailDaemonOptions, 0);
+            }
             created = CreateNode("SwarmKSampler", inputs, firstId);
         }
         else
