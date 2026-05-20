@@ -2,6 +2,12 @@ I have made this fork to add some basic functionality to the ui.
 
 # Added Functionality
 
+## Weight interpretation and normalization options
+
+<img width="454" height="193" alt="image" src="https://github.com/user-attachments/assets/14c76743-70b3-4402-b39d-0fd693741c2b" />
+
+<br/>
+
 ## Added proper lora scheduling.
 new field under the loras when you select them
 
