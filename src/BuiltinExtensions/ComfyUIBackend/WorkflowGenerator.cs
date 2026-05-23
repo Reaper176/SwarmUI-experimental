@@ -2773,6 +2773,10 @@ public partial class WorkflowGenerator
 
     public record struct RegionHelper(JArray PartCond, JArray Mask);
 
+    public record class AttentionCoupleRegion(JArray Cond, JArray Mask);
+
+    public record class AttentionCouplePlan(JArray BaseCond, JArray BaseMask, List<AttentionCoupleRegion> Regions);
+
     public bool ShouldZeroNegative()
     {
         if (UserInput.Get(T2IParamTypes.ZeroNegative, false))
@@ -2787,6 +2791,37 @@ public partial class WorkflowGenerator
             }
         }
         return false;
+    }
+
+    public bool SupportsAttentionCoupleRegionalPrompting()
+    {
+        string compat = CurrentCompatClass();
+        if (compat == T2IModelClassSorter.CompatAnima.ID || compat == T2IModelClassSorter.CompatSdxl.ID || compat == T2IModelClassSorter.CompatSdxlRefiner.ID)
+        {
+            return true;
+        }
+        string modelId = CurrentModelClass()?.ID ?? "";
+        return modelId.StartsWith("stable-diffusion-v1") || modelId.StartsWith("stable-diffusion-v2");
+    }
+
+    public JArray CreateRegionalPromptMask(PromptRegion.Part part)
+    {
+        string regionNode = CreateNode("SwarmSquareMaskFromPercent", new JObject()
+        {
+            ["x"] = part.X,
+            ["y"] = part.Y,
+            ["width"] = part.Width,
+            ["height"] = part.Height,
+            ["strength"] = Math.Abs(part.Strength)
+        });
+        if (part.Strength < 0)
+        {
+            regionNode = CreateNode("InvertMask", new JObject()
+            {
+                ["mask"] = NodePath(regionNode, 0)
+            });
+        }
+        return [regionNode, 0];
     }
 
     /// <summary>Creates a "CLIPTextEncode" or equivalent node for the given input, applying prompt-given conditioning modifiers as relevant.</summary>
@@ -2858,22 +2893,7 @@ public partial class WorkflowGenerator
         {
             JArray subClip = part.ContextID <= 1 ? clip : CreateHookLorasForConfinement(part.ContextID, clip);
             JArray partCond = CreateConditioningLine(part.Prompt, subClip, model, isPositive);
-            string regionNode = CreateNode("SwarmSquareMaskFromPercent", new JObject()
-            {
-                ["x"] = part.X,
-                ["y"] = part.Y,
-                ["width"] = part.Width,
-                ["height"] = part.Height,
-                ["strength"] = Math.Abs(part.Strength)
-            });
-            if (part.Strength < 0)
-            {
-                regionNode = CreateNode("InvertMask", new JObject()
-                {
-                    ["mask"] = NodePath(regionNode, 0)
-                });
-            }
-            RegionHelper region = new(partCond, [regionNode, 0]);
+            RegionHelper region = new(partCond, CreateRegionalPromptMask(part));
             regions.Add(region);
             if (lastMergedMask is null)
             {
