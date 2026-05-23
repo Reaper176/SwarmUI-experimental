@@ -2854,6 +2854,10 @@ public partial class WorkflowGenerator
         {
             throw new SwarmUserErrorException($"Regional Prompting Method 'Attention Couple' only supports SD1, SD2, SDXL, SDXL Refiner, and Anima models. Current model is '{CurrentModelClass()?.Name ?? "Unknown"}'.");
         }
+        if (IsVideoModel() || IsCascade())
+        {
+            throw new SwarmUserErrorException("Regional Prompting Method 'Attention Couple' does not support video or Stable Cascade models.");
+        }
         if (UserInput.Get(ComfyUIBackendExtension.GligenModel, "None") != "None")
         {
             throw new SwarmUserErrorException("Regional Prompting Method 'Attention Couple' cannot be combined with GLIGEN Model. Set one of them back to its default value.");
