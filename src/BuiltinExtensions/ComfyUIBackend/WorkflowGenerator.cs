@@ -90,6 +90,7 @@ public partial class WorkflowGenerator
         FinalTrimLatent = null,
         LoadingModel = null, LoadingClip = null, LoadingVAE = null;
 
+    /// <summary>Pending Attention Couple regional prompt plan to apply to the next sampler model.</summary>
     public AttentionCouplePlan PendingAttentionCouplePlan = null;
 
     [Obsolete("Use BasicInputImage instead.")]
@@ -2779,10 +2780,13 @@ public partial class WorkflowGenerator
         return first;
     }
 
+    /// <summary>Helper for standard regional prompt conditioning and mask pairs.</summary>
     public record struct RegionHelper(JArray PartCond, JArray Mask);
 
+    /// <summary>Helper for Attention Couple regional prompt conditioning and mask pairs.</summary>
     public record class AttentionCoupleRegion(JArray Cond, JArray Mask);
 
+    /// <summary>Prepared Attention Couple data to apply to a sampler model.</summary>
     public record class AttentionCouplePlan(JArray BaseCond, JArray BaseMask, List<AttentionCoupleRegion> Regions);
 
     public bool ShouldZeroNegative()
@@ -2801,6 +2805,7 @@ public partial class WorkflowGenerator
         return false;
     }
 
+    /// <summary>Returns whether the current model supports Attention Couple regional prompting.</summary>
     public bool SupportsAttentionCoupleRegionalPrompting()
     {
         string compat = CurrentCompatClass();
@@ -2812,6 +2817,7 @@ public partial class WorkflowGenerator
         return modelId.StartsWith("stable-diffusion-v1") || modelId.StartsWith("stable-diffusion-v2");
     }
 
+    /// <summary>Creates a mask for a rectangular regional prompt part.</summary>
     public JArray CreateRegionalPromptMask(PromptRegion.Part part)
     {
         string regionNode = CreateNode("SwarmSquareMaskFromPercent", new JObject()
@@ -2832,6 +2838,7 @@ public partial class WorkflowGenerator
         return [regionNode, 0];
     }
 
+    /// <summary>Saves a regional prompt debug mask if debug output is enabled.</summary>
     public void DebugRegionalPromptMask(JArray mask)
     {
         if (UserInput.Get(ComfyUIBackendExtension.DebugRegionalPrompting))
@@ -2844,6 +2851,7 @@ public partial class WorkflowGenerator
         }
     }
 
+    /// <summary>Creates a pending Attention Couple regional prompt plan.</summary>
     public AttentionCouplePlan CreateAttentionCouplePlan(PromptRegion regionalizer, PromptRegion.Part[] parts, JArray clip, T2IModel model, bool isPositive)
     {
         if (!isPositive)
@@ -2937,6 +2945,7 @@ public partial class WorkflowGenerator
         return new(baseCond, baseMask, cleanedRegions);
     }
 
+    /// <summary>Applies an Attention Couple regional prompt plan to the given model path.</summary>
     public JArray ApplyAttentionCouplePlanToModel(JArray model, AttentionCouplePlan plan)
     {
         if (plan is null || plan.Regions.Count == 0)
