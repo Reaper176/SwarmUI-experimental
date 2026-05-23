@@ -611,7 +611,7 @@ public class ComfyUIBackendExtension : Extension
         }
     }
 
-    public static T2IRegisteredParam<string> CustomWorkflowParam, SamplerParam, SchedulerParam, RefinerSamplerParam, RefinerSchedulerParam, RefinerUpscaleMethod, UseIPAdapterForRevision, IPAdapterWeightType, VideoPreviewType, VideoFrameInterpolationMethod, GligenModel, YoloModelInternal, PreferredDType, UseStyleModel, TeaCacheMode, EasyCacheMode, SetClipDevice;
+    public static T2IRegisteredParam<string> CustomWorkflowParam, SamplerParam, SchedulerParam, RefinerSamplerParam, RefinerSchedulerParam, RefinerUpscaleMethod, UseIPAdapterForRevision, IPAdapterWeightType, VideoPreviewType, VideoFrameInterpolationMethod, GligenModel, RegionalPromptingMethod, YoloModelInternal, PreferredDType, UseStyleModel, TeaCacheMode, EasyCacheMode, SetClipDevice;
 
     public static T2IRegisteredParam<bool> AITemplateParam, DebugRegionalPrompting, ShiftedLatentAverageInit, UseCfgZeroStar, UseTCFG, DetailDaemonSmooth;
 
@@ -813,6 +813,10 @@ public class ComfyUIBackendExtension : Extension
         }
         DebugRegionalPrompting = T2IParamTypes.Register<bool>(new("Debug Regional Prompting", "If checked, outputs masks from regional prompting for debug reasons.",
             "false", IgnoreIf: "false", FeatureFlag: "comfyui", VisibleNormally: false, Group: T2IParamTypes.GroupRegionalPrompting
+            ));
+        RegionalPromptingMethod = T2IParamTypes.Register<string>(new("Regional Prompting Method", "How to apply '<region:>' prompt syntax.\n'Standard' uses Swarm's masked conditioning behavior.\n'Attention Couple' patches cross-attention for supported models and may give stronger regional separation.",
+            "Standard", IgnoreIf: "Standard", FeatureFlag: "comfyui", Group: T2IParamTypes.GroupRegionalPrompting, IsAdvanced: true, OrderPriority: -6,
+            GetValues: (_) => ["Standard", "Attention Couple"]
             ));
         RefinerHyperTile = T2IParamTypes.Register<int>(new("Refiner HyperTile", "The size of hypertiles to use for the refining stage.\nHyperTile is a technique to speed up sampling of large images by tiling the image and batching the tiles.\nThis is useful when using SDv1 models as the refiner. SDXL-Base models do not benefit as much.",
             "256", Min: 64, Max: 2048, Step: 32, Toggleable: true, IsAdvanced: true, FeatureFlag: "comfyui", ViewType: ParamViewType.POT_SLIDER, Group: T2IParamTypes.GroupAdvancedSampling, OrderPriority: 20
