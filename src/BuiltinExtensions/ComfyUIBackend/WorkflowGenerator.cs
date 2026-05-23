@@ -1328,6 +1328,12 @@ public partial class WorkflowGenerator
                 }
             }
         }
+        AttentionCouplePlan attentionCouplePlan = PendingAttentionCouplePlan;
+        if (attentionCouplePlan is not null)
+        {
+            model = ApplyAttentionCouplePlanToModel(model, attentionCouplePlan);
+            PendingAttentionCouplePlan = null;
+        }
         if (imgNeg is not null && IsOmniGen())
         {
             if (UserInput.TryGet(T2IParamTypes.IP2PCFG2, out double cfg2))
@@ -2925,6 +2931,32 @@ public partial class WorkflowGenerator
             cleanedRegions.Add(new(regionCond, cleanedMask));
         }
         return new(baseCond, baseMask, cleanedRegions);
+    }
+
+    public JArray ApplyAttentionCouplePlanToModel(JArray model, AttentionCouplePlan plan)
+    {
+        if (plan is null || plan.Regions.Count == 0)
+        {
+            return model;
+        }
+        if (plan.Regions.Count > 8)
+        {
+            throw new SwarmUserErrorException("Regional Prompting Method 'Attention Couple' currently supports up to 8 regions.");
+        }
+        JObject inputs = new()
+        {
+            ["model"] = model,
+            ["base_cond"] = plan.BaseCond,
+            ["base_mask"] = plan.BaseMask,
+            ["regions_json"] = "[]"
+        };
+        for (int i = 0; i < plan.Regions.Count; i++)
+        {
+            inputs[$"cond_{i + 1}"] = plan.Regions[i].Cond;
+            inputs[$"mask_{i + 1}"] = plan.Regions[i].Mask;
+        }
+        string patched = CreateNode("SwarmAttentionCouple", inputs);
+        return [patched, 0];
     }
 
     /// <summary>Creates a "CLIPTextEncode" or equivalent node for the given input, applying prompt-given conditioning modifiers as relevant.</summary>
