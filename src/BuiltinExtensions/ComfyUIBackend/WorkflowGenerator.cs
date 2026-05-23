@@ -90,6 +90,8 @@ public partial class WorkflowGenerator
         FinalTrimLatent = null,
         LoadingModel = null, LoadingClip = null, LoadingVAE = null;
 
+    public AttentionCouplePlan PendingAttentionCouplePlan = null;
+
     [Obsolete("Use BasicInputImage instead.")]
     public JArray FinalInputImage
     {
@@ -2824,6 +2826,107 @@ public partial class WorkflowGenerator
         return [regionNode, 0];
     }
 
+    public void DebugRegionalPromptMask(JArray mask)
+    {
+        if (UserInput.Get(ComfyUIBackendExtension.DebugRegionalPrompting))
+        {
+            string imgNode = CreateNode("MaskToImage", new JObject()
+            {
+                ["mask"] = mask
+            });
+            new WGNodeData([imgNode, 0], this, WGNodeData.DT_IMAGE, CurrentCompat()).SaveOutput(null, null);
+        }
+    }
+
+    public AttentionCouplePlan CreateAttentionCouplePlan(PromptRegion regionalizer, PromptRegion.Part[] parts, JArray clip, T2IModel model, bool isPositive)
+    {
+        if (!isPositive)
+        {
+            return null;
+        }
+        if (!SupportsAttentionCoupleRegionalPrompting())
+        {
+            throw new SwarmUserErrorException($"Regional Prompting Method 'Attention Couple' only supports SD1, SD2, SDXL, SDXL Refiner, and Anima models. Current model is '{CurrentModelClass()?.Name ?? "Unknown"}'.");
+        }
+        if (UserInput.Get(ComfyUIBackendExtension.GligenModel, "None") != "None")
+        {
+            throw new SwarmUserErrorException("Regional Prompting Method 'Attention Couple' cannot be combined with GLIGEN Model. Set one of them back to its default value.");
+        }
+        JArray lastMergedMask = null;
+        List<AttentionCoupleRegion> regions = [];
+        foreach (PromptRegion.Part part in parts)
+        {
+            JArray subClip = part.ContextID <= 1 ? clip : CreateHookLorasForConfinement(part.ContextID, clip);
+            JArray partCond = CreateConditioningLine(part.Prompt, subClip, model, true);
+            JArray regionMask = CreateRegionalPromptMask(part);
+            regions.Add(new(partCond, regionMask));
+            if (lastMergedMask is null)
+            {
+                lastMergedMask = regionMask;
+            }
+            else
+            {
+                string overlapped = CreateNode("SwarmOverMergeMasksForOverlapFix", new JObject()
+                {
+                    ["mask_a"] = lastMergedMask,
+                    ["mask_b"] = regionMask
+                });
+                lastMergedMask = [overlapped, 0];
+            }
+        }
+        string globalMask = CreateNode("SwarmSquareMaskFromPercent", new JObject()
+        {
+            ["x"] = 0,
+            ["y"] = 0,
+            ["width"] = 1,
+            ["height"] = 1,
+            ["strength"] = 1
+        });
+        string maskBackground = CreateNode("SwarmExcludeFromMask", new JObject()
+        {
+            ["main_mask"] = NodePath(globalMask, 0),
+            ["exclude_mask"] = lastMergedMask
+        });
+        string backgroundPrompt = string.IsNullOrWhiteSpace(regionalizer.BackgroundPrompt) ? regionalizer.GlobalPrompt : regionalizer.BackgroundPrompt;
+        double globalStrength = UserInput.Get(T2IParamTypes.GlobalRegionFactor, 0.5);
+        JArray baseCond = CreateConditioningLine(backgroundPrompt, clip, model, true);
+        if (globalStrength != 1)
+        {
+            string baseStrength = CreateNode("ConditioningSetAreaStrength", new JObject()
+            {
+                ["conditioning"] = baseCond,
+                ["strength"] = globalStrength
+            });
+            baseCond = [baseStrength, 0];
+        }
+        List<AttentionCoupleRegion> cleanedRegions = [];
+        JArray baseMask = [maskBackground, 0];
+        DebugRegionalPromptMask(baseMask);
+        foreach (AttentionCoupleRegion region in regions)
+        {
+            string overlapped = CreateNode("SwarmCleanOverlapMasksExceptSelf", new JObject()
+            {
+                ["mask_self"] = region.Mask,
+                ["mask_merged"] = lastMergedMask
+            });
+            JArray cleanedMask = [overlapped, 0];
+            DebugRegionalPromptMask(cleanedMask);
+            JArray regionCond = region.Cond;
+            double regionStrength = 1 - globalStrength;
+            if (regionStrength != 1)
+            {
+                string regionStrengthNode = CreateNode("ConditioningSetAreaStrength", new JObject()
+                {
+                    ["conditioning"] = regionCond,
+                    ["strength"] = regionStrength
+                });
+                regionCond = [regionStrengthNode, 0];
+            }
+            cleanedRegions.Add(new(regionCond, cleanedMask));
+        }
+        return new(baseCond, baseMask, cleanedRegions);
+    }
+
     /// <summary>Creates a "CLIPTextEncode" or equivalent node for the given input, applying prompt-given conditioning modifiers as relevant.</summary>
     public JArray CreateConditioning(string prompt, JArray clip, T2IModel model, bool isPositive, string firstId = null, bool isRefiner = false, bool isVideo = false, bool isVideoSwap = false)
     {
@@ -2858,6 +2961,15 @@ public partial class WorkflowGenerator
         if (parts.IsEmpty())
         {
             return globalCond;
+        }
+        if (UserInput.Get(ComfyUIBackendExtension.RegionalPromptingMethod, "Standard") == "Attention Couple")
+        {
+            if (!isPositive)
+            {
+                return globalCond;
+            }
+            PendingAttentionCouplePlan = CreateAttentionCouplePlan(regionalizer, parts, clip, model, true);
+            return PendingAttentionCouplePlan.BaseCond;
         }
         string gligenModel = UserInput.Get(ComfyUIBackendExtension.GligenModel, "None");
         if (gligenModel != "None")
