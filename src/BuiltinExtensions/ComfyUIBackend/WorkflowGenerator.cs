@@ -2907,8 +2907,9 @@ public partial class WorkflowGenerator
         });
         string backgroundPrompt = string.IsNullOrWhiteSpace(regionalizer.BackgroundPrompt) ? regionalizer.GlobalPrompt : regionalizer.BackgroundPrompt;
         double globalStrength = UserInput.Get(T2IParamTypes.GlobalRegionFactor, 0.5);
+        bool applyAreaStrength = globalStrength != 1;
         JArray baseCond = CreateConditioningLine(backgroundPrompt, clip, model, true);
-        if (globalStrength != 1)
+        if (applyAreaStrength)
         {
             string baseStrength = CreateNode("ConditioningSetAreaStrength", new JObject()
             {
@@ -2931,7 +2932,7 @@ public partial class WorkflowGenerator
             DebugRegionalPromptMask(cleanedMask);
             JArray regionCond = region.Cond;
             double regionStrength = 1 - globalStrength;
-            if (regionStrength != 1)
+            if (applyAreaStrength && regionStrength != 1)
             {
                 string regionStrengthNode = CreateNode("ConditioningSetAreaStrength", new JObject()
                 {
