@@ -274,6 +274,15 @@
         - SDXL and models like it responds very strongly to regional prompts.
     - Regional prompts can use `<lora:` syntax to add a lora uniquely embedded in that region.
 
+### Regional Prompting Method
+
+- In Advanced parameters under Regional Prompting, `Regional Prompting Method` can be set to `Attention Couple`.
+    - `Standard` is the default and uses Swarm's existing masked-conditioning workflow.
+    - `Attention Couple` patches model cross-attention for supported models and can give stronger regional separation.
+    - Attention Couple only applies to positive prompt regions. Negative prompts remain global.
+    - Attention Couple currently supports SD1/SD2-style models, SDXL, SDXL Refiner, and Anima.
+    - Attention Couple cannot be combined with GLIGEN regional prompting.
+
 ## Regional Object Prompting
 
 ![img](/docs/images/sdxl_object_catdog.jpg)
