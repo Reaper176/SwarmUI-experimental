@@ -715,6 +715,53 @@ function normalizeImageHistoryFilterField(field) {
     return aliases[field] || field;
 }
 
+let imageHistoryCompiledFilterText = null;
+let imageHistoryCompiledFilterTerms = [];
+
+/**
+ * Compiles a history filter once per input string so each image does not repeat the same parsing work.
+ */
+function compileImageHistoryFilterQuery(filter) {
+    if (imageHistoryCompiledFilterText == filter) {
+        return imageHistoryCompiledFilterTerms;
+    }
+    imageHistoryCompiledFilterText = filter;
+    imageHistoryCompiledFilterTerms = [];
+    let rawTerms = splitImageHistoryFilterQuery(filter);
+    for (let term of rawTerms) {
+        let fieldSplit = term.indexOf(':');
+        if (fieldSplit > 0) {
+            let field = normalizeImageHistoryFilterField(term.substring(0, fieldSplit).toLowerCase());
+            let value = term.substring(fieldSplit + 1).toLowerCase();
+            if (!value) {
+                continue;
+            }
+            imageHistoryCompiledFilterTerms.push({ field, value, raw: term.toLowerCase() });
+        }
+        else {
+            imageHistoryCompiledFilterTerms.push({ field: null, value: term.toLowerCase(), raw: term.toLowerCase() });
+        }
+    }
+    return imageHistoryCompiledFilterTerms;
+}
+
+/**
+ * Returns searchable text for object, string, or fallback entry descriptions.
+ */
+function getImageHistorySearchableText(desc, searchable) {
+    let allFields = '';
+    if (typeof searchable == 'string') {
+        allFields = searchable;
+    }
+    else if (typeof searchable == 'object') {
+        allFields = searchable.allFields || searchable.all_fields || Object.values(searchable).join(' ');
+    }
+    else if (searchable != null) {
+        allFields = `${searchable}`;
+    }
+    return `${allFields} ${desc.description || ''} ${desc.name || ''} ${desc.display || ''}`.toLowerCase();
+}
+
 function imageHistoryNumericFilterMatches(fieldText, value) {
     let match = value.match(/^(>=|<=|>|<|=)(-?\d+(?:\.\d+)?)$/);
     if (!match) {
@@ -773,19 +820,15 @@ function imageHistoryFilterMatches(desc, filter) {
         return true;
     }
     let searchable = desc.searchable || {};
-    let allFields = `${searchable.allFields || ''}`.toLowerCase();
-    let terms = splitImageHistoryFilterQuery(filter);
+    let allFields = getImageHistorySearchableText(desc, searchable);
+    let terms = compileImageHistoryFilterQuery(filter);
     for (let term of terms) {
-        let fieldSplit = term.indexOf(':');
-        if (fieldSplit > 0) {
-            let field = normalizeImageHistoryFilterField(term.substring(0, fieldSplit).toLowerCase());
-            let value = term.substring(fieldSplit + 1).toLowerCase();
-            if (!value) {
-                continue;
-            }
+        if (term.field) {
+            let field = term.field;
+            let value = term.value;
             let fieldText = searchable[field];
             if (fieldText == null) {
-                if (!allFields.includes(term.toLowerCase())) {
+                if (!allFields.includes(term.raw)) {
                     return false;
                 }
                 continue;
@@ -808,7 +851,7 @@ function imageHistoryFilterMatches(desc, filter) {
                 return false;
             }
         }
-        else if (!allFields.includes(term.toLowerCase())) {
+        else if (!allFields.includes(term.value)) {
             return false;
         }
     }
@@ -1398,7 +1441,7 @@ function replaceHistoryBrowserContents(path, folders, mapped) {
     if (!imageHistoryBrowser) {
         return;
     }
-    imageHistoryBrowser.lastListCache = { folder: path, folders, files: mapped };
+    imageHistoryBrowser.lastListCache = { folder: path, folders, files: mapped, filter: imageHistoryBrowser.filterServerSide ? imageHistoryBrowser.filter : '' };
     imageHistoryBrowser.build(path, folders, mapped);
 }
 
@@ -2342,6 +2385,7 @@ function listOutputHistoryFolderAndFiles(path, isRefresh, callback, depth, onErr
     let reverse = localStorage.getItem('image_history_sort_reverse') == 'true';
     let allowAnims = localStorage.getItem('image_history_allow_anims') != 'false';
     let showHidden = imageHistoryShowHidden;
+    let filter = imageHistoryBrowser?.filter || '';
     let controlElems = ensureImageHistoryHeaderControlsReady(sortBy, reverse, allowAnims, showHidden);
     if (controlElems) {
         sortBy = controlElems.sortElem.value;
@@ -2353,7 +2397,7 @@ function listOutputHistoryFolderAndFiles(path, isRefresh, callback, depth, onErr
     let isRetryLoad = imageHistoryNextLoadIsRetry;
     imageHistoryNextLoadIsRetry = false;
     let loadToken = ++imageHistoryLoadToken;
-    let useFastFirst = imageHistoryStartupStage == 'pending' && path == '' && !isRefresh;
+    let useFastFirst = imageHistoryStartupStage == 'pending' && path == '' && !isRefresh && !filter;
     if (!useFastFirst) {
         cancelImageHistoryBackgroundLoad();
     }
@@ -2363,6 +2407,9 @@ function listOutputHistoryFolderAndFiles(path, isRefresh, callback, depth, onErr
     let serverSortBy = imageHistorySortSupportedByServer(sortBy) ? sortBy : 'DateEdited';
     let serverReverse = imageHistorySortSupportedByServer(sortBy) ? reverse : false;
     let request = { 'path': path, 'depth': depth, 'sortBy': serverSortBy, 'sortReverse': serverReverse, 'includeHidden': showHidden };
+    if (filter) {
+        request.filter = filter;
+    }
     if (isRefresh) {
         request.forceScan = true;
     }
@@ -2472,7 +2519,7 @@ function buttonsForImage(fullsrc, src, metadata, parsedMetadata = null, isCurren
     let mediaType = getMediaType(src);
     let buttons = [];
     if (permissions.hasPermission('user_star_images') && !isDataImage) {
-        let getMeta = (metadata) => metadata ? (JSON.parse(metadata) || {}) : {};
+        let getMeta = (metadata) => metadata ? parseHistoryMetadata(metadata) : {};
         let metaParsed = getMeta(metadata);
         let isStarred = (e) => {
             let currentMeta = getMeta(e?.dataset?.metadata);
@@ -2721,6 +2768,7 @@ let imageHistoryBrowser = new GenPageBrowserClass('image_history', listOutputHis
 imageHistoryBrowser.allowMultiSelect = true;
 imageHistoryBrowser.maxPreBuild = IMAGE_HISTORY_FAST_FIRST_LIMIT;
 imageHistoryBrowser.filterMatcher = imageHistoryFilterMatches;
+imageHistoryBrowser.filterServerSide = true;
 imageHistoryBrowser.folderSelectedEvent = () => {
     clearImageHistorySelection();
 };

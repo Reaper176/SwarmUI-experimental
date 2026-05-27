@@ -279,6 +279,7 @@ class GenPageBrowserClass {
         this.updateFailedEvent = null;
         this.filterMatcher = null;
         this.filterSorter = null;
+        this.filterServerSide = false;
         this.filterUpdateTimeout = null;
         this.filterUpdateDelayMs = 250;
         this.lastFiles = [];
@@ -608,11 +609,13 @@ class GenPageBrowserClass {
         }
         let folder = this.folder;
         let parseContent = (folders, files) => {
-            this.lastListCache = { folder, folders, files };
+            let filter = this.filterServerSide ? this.filter : '';
+            this.lastListCache = { folder, folders, files, filter };
             this.build(folder, folders, files);
             this.completeUpdate(callback);
         };
-        if (!isRefresh && this.lastListCache && this.lastListCache.folder == folder) {
+        let canUseListCache = !isRefresh && this.lastListCache && this.lastListCache.folder == folder && (!this.filterServerSide || this.lastListCache.filter == this.filter);
+        if (canUseListCache) {
             parseContent(this.lastListCache.folders, this.lastListCache.files);
             return;
         }

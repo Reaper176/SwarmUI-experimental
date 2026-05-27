@@ -852,6 +852,255 @@ public static class T2IAPI
         }
     }
 
+    /// <summary>Splits an image history filter query into terms while preserving quoted text.</summary>
+    private static List<string> SplitImageHistoryFilterQuery(string filter)
+    {
+        List<string> terms = [];
+        string current = "";
+        char quote = '\0';
+        foreach (char character in filter ?? "")
+        {
+            if ((character == '"' || character == '\'') && (quote == '\0' || quote == character))
+            {
+                quote = quote == character ? '\0' : character;
+                continue;
+            }
+            if (quote == '\0' && char.IsWhiteSpace(character))
+            {
+                if (!string.IsNullOrWhiteSpace(current))
+                {
+                    terms.Add(current.Trim());
+                }
+                current = "";
+                continue;
+            }
+            current += character;
+        }
+        if (!string.IsNullOrWhiteSpace(current))
+        {
+            terms.Add(current.Trim());
+        }
+        return terms;
+    }
+
+    /// <summary>Normalizes aliases for image history structured search fields.</summary>
+    private static string NormalizeImageHistoryFilterField(string field)
+    {
+        return field switch
+        {
+            "fav" => "favorite",
+            "starred" => "favorite",
+            "hide" => "hidden",
+            "is_hidden" => "hidden",
+            "tag" => "tags",
+            "neg" => "negative",
+            "negativeprompt" => "negative",
+            "loras" => "lora",
+            "res" => "resolution",
+            "file_size" => "filesize",
+            "size" => "filesize",
+            "final_width" => "finalwidth",
+            "final_height" => "finalheight",
+            "prompt_lab" => "promptlab",
+            "prompt_lab_id" => "promptlab",
+            "ext" => "filetype",
+            "file_type" => "filetype",
+            "has_metadata" => "has",
+            "wildcard_values" => "wildcard",
+            _ => field
+        };
+    }
+
+    /// <summary>Compiles image history filter terms for repeated matching.</summary>
+    private static List<(string Field, string Value, string Raw)> CompileImageHistoryFilterQuery(string filter)
+    {
+        List<(string Field, string Value, string Raw)> terms = [];
+        foreach (string term in SplitImageHistoryFilterQuery(filter))
+        {
+            int fieldSplit = term.IndexOf(':');
+            if (fieldSplit > 0)
+            {
+                string field = NormalizeImageHistoryFilterField(term[..fieldSplit].ToLowerFast());
+                string value = term[(fieldSplit + 1)..].ToLowerFast();
+                if (!string.IsNullOrWhiteSpace(value))
+                {
+                    terms.Add((field, value, term.ToLowerFast()));
+                }
+            }
+            else
+            {
+                string value = term.ToLowerFast();
+                if (!string.IsNullOrWhiteSpace(value))
+                {
+                    terms.Add((null, value, value));
+                }
+            }
+        }
+        return terms;
+    }
+
+    /// <summary>Returns searchable text for a boolean history filter field.</summary>
+    private static string ImageHistoryBoolSearchText(bool value, string trueWord, string falseWord)
+    {
+        return value ? $"true yes {trueWord}" : $"false no {falseWord}";
+    }
+
+    /// <summary>Returns searchable text for an indexed history field.</summary>
+    private static string GetIndexedHistoryFilterField(OutputMetadataTracker.OutputHistoryIndexEntry entry, string field)
+    {
+        return field switch
+        {
+            "name" => entry.RelativePath.AfterLast('/'),
+            "path" => entry.RelativePath,
+            "folder" => entry.Folder ?? "",
+            "type" or "filetype" => entry.Extension ?? "",
+            "filesize" => entry.FileSize.ToString(),
+            "date" => $"{DateTimeOffset.FromUnixTimeSeconds(Math.Max(0, entry.FileTime)):O} {entry.RelativePath}",
+            "metadata" or "prompt" or "negative" or "lora" or "vae" or "sampler" or "scheduler" or "resolution" or "width" or "height" or "finalwidth" or "finalheight" or "steps" or "cfg" or "notes" or "tags" or "session" or "wildcard" or "promptlab" => entry.Metadata ?? "",
+            "model" => entry.Model ?? "",
+            "seed" => entry.Seed.ToString(),
+            "rating" => entry.Rating.ToString(),
+            "hidden" => ImageHistoryBoolSearchText(entry.IsHidden, "hidden", "visible"),
+            "favorite" => ImageHistoryBoolSearchText(entry.IsStarred || entry.RelativePath.StartsWith("Starred/"), "starred favorite", "unstarred"),
+            "has" => ImageHistoryBoolSearchText(!string.IsNullOrWhiteSpace(entry.Metadata), "metadata", "none"),
+            _ => null
+        };
+    }
+
+    /// <summary>Returns searchable text for a scanned history field.</summary>
+    private static string GetScannedHistoryFilterField(ImageHistoryHelper entry, string field)
+    {
+        bool isStarred = entry.Name.StartsWith("Starred/");
+        bool isHidden = MetadataIsHidden(entry.Metadata);
+        return field switch
+        {
+            "name" => entry.Name.AfterLast('/'),
+            "path" => entry.Name,
+            "folder" => entry.Name.Contains('/') ? entry.Name.BeforeLast('/') : "",
+            "type" or "filetype" => entry.Name.AfterLast('.').ToLowerFast(),
+            "filesize" => entry.FileSize.ToString(),
+            "date" => $"{DateTimeOffset.FromUnixTimeSeconds(Math.Max(0, entry.Metadata?.FileTime ?? 0)):O} {entry.Name}",
+            "metadata" or "prompt" or "negative" or "lora" or "vae" or "sampler" or "scheduler" or "resolution" or "width" or "height" or "finalwidth" or "finalheight" or "steps" or "cfg" or "notes" or "tags" or "session" or "wildcard" or "promptlab" => entry.Metadata?.Metadata ?? "",
+            "model" => MetadataModel(entry.Metadata),
+            "seed" => MetadataSeed(entry.Metadata).ToString(),
+            "rating" => MetadataRating(entry.Metadata).ToString(),
+            "hidden" => ImageHistoryBoolSearchText(isHidden, "hidden", "visible"),
+            "favorite" => ImageHistoryBoolSearchText(isStarred, "starred favorite", "unstarred"),
+            "has" => ImageHistoryBoolSearchText(!string.IsNullOrWhiteSpace(entry.Metadata?.Metadata), "metadata", "none"),
+            _ => null
+        };
+    }
+
+    /// <summary>Checks a numeric comparison term against a field value, or null when the term is not numeric.</summary>
+    private static bool? ImageHistoryNumericFilterMatches(string fieldText, string value)
+    {
+        string op = value.StartsWith(">=") || value.StartsWith("<=") ? value[..2] : value.Length > 0 && "<>=".Contains(value[0]) ? value[..1] : null;
+        if (op is null || !double.TryParse(value[op.Length..], out double expected) || !double.TryParse(fieldText, out double actual))
+        {
+            return null;
+        }
+        return op switch
+        {
+            ">=" => actual >= expected,
+            "<=" => actual <= expected,
+            ">" => actual > expected,
+            "<" => actual < expected,
+            _ => actual == expected
+        };
+    }
+
+    /// <summary>Checks a date comparison term against a field value, or null when the term is not a date comparison.</summary>
+    private static bool? ImageHistoryDateFilterMatches(string fieldText, string value)
+    {
+        string op = value.StartsWith(">=") || value.StartsWith("<=") ? value[..2] : value.Length > 0 && "<>=".Contains(value[0]) ? value[..1] : null;
+        if (op is null || !DateTimeOffset.TryParse(value[op.Length..], out DateTimeOffset expected))
+        {
+            return null;
+        }
+        int split = fieldText.IndexOf(' ');
+        string actualText = split < 0 ? fieldText : fieldText[..split];
+        if (!DateTimeOffset.TryParse(actualText, out DateTimeOffset actual))
+        {
+            return false;
+        }
+        return op switch
+        {
+            ">=" => actual >= expected,
+            "<=" => actual <= expected,
+            ">" => actual > expected,
+            "<" => actual < expected,
+            _ => actual == expected
+        };
+    }
+
+    /// <summary>Checks whether searchable history text matches compiled filter terms.</summary>
+    private static bool ImageHistoryFilterMatches(string allFields, Func<string, string> getField, List<(string Field, string Value, string Raw)> filterTerms)
+    {
+        if (filterTerms.Count == 0)
+        {
+            return true;
+        }
+        allFields = (allFields ?? "").ToLowerFast();
+        foreach ((string field, string value, string raw) in filterTerms)
+        {
+            if (field is null)
+            {
+                if (!allFields.Contains(value))
+                {
+                    return false;
+                }
+                continue;
+            }
+            string fieldText = getField(field);
+            if (fieldText is null)
+            {
+                if (!allFields.Contains(raw))
+                {
+                    return false;
+                }
+                continue;
+            }
+            fieldText = fieldText.ToLowerFast();
+            bool? numericMatch = ImageHistoryNumericFilterMatches(fieldText, value);
+            if (numericMatch is not null)
+            {
+                if (numericMatch != true)
+                {
+                    return false;
+                }
+                continue;
+            }
+            bool? dateMatch = ImageHistoryDateFilterMatches(fieldText, value);
+            if (dateMatch is not null)
+            {
+                if (dateMatch != true)
+                {
+                    return false;
+                }
+                continue;
+            }
+            if (!fieldText.Contains(value))
+            {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    /// <summary>Checks whether an indexed history entry matches compiled filter terms.</summary>
+    private static bool IndexedImageHistoryFilterMatches(OutputMetadataTracker.OutputHistoryIndexEntry entry, List<(string Field, string Value, string Raw)> filterTerms)
+    {
+        string allFields = $"{entry.RelativePath} {entry.Extension} {entry.Metadata} {entry.Model} {entry.Seed} {entry.Rating}";
+        return ImageHistoryFilterMatches(allFields, field => GetIndexedHistoryFilterField(entry, field), filterTerms);
+    }
+
+    /// <summary>Checks whether a scanned history entry matches compiled filter terms.</summary>
+    private static bool ScannedImageHistoryFilterMatches(ImageHistoryHelper entry, List<(string Field, string Value, string Raw)> filterTerms)
+    {
+        string allFields = $"{entry.Name} {entry.Metadata?.Metadata} {MetadataModel(entry.Metadata)} {MetadataSeed(entry.Metadata)} {MetadataRating(entry.Metadata)}";
+        return ImageHistoryFilterMatches(allFields, field => GetScannedHistoryFilterField(entry, field), filterTerms);
+    }
+
     private static ImageHistoryHelper GetImageHistoryHelper(string name, string file, string root, bool starNoFolders)
     {
         OutputMetadataTracker.OutputMetadataEntry metadata = OutputMetadataTracker.GetMetadataFor(file, root, starNoFolders);
@@ -912,7 +1161,7 @@ public static class T2IAPI
     }
 
     /// <summary>Attempts to answer a history list request from the persistent history index.</summary>
-    private static JObject TryGetListFromHistoryIndex(Session session, string rawRefPath, int depth, ImageHistorySortMode sortBy, bool sortReverse, bool includeHidden, bool fastFirst, int fastFirstLimit, int maxInHistory, long timeStart)
+    private static JObject TryGetListFromHistoryIndex(Session session, string rawRefPath, int depth, ImageHistorySortMode sortBy, bool sortReverse, bool includeHidden, bool fastFirst, int fastFirstLimit, int maxInHistory, List<(string Field, string Value, string Raw)> filterTerms, long timeStart)
     {
         string root = Utilities.CombinePathWithAbsolute(Environment.CurrentDirectory, session.User.OutputDirectory);
         int limit = fastFirst ? Math.Max(1, Math.Min(fastFirstLimit, maxInHistory)) : maxInHistory;
@@ -949,6 +1198,10 @@ public static class T2IAPI
         foreach (OutputMetadataTracker.OutputHistoryIndexEntry entry in indexed)
         {
             if (!includeHidden && entry.IsHidden)
+            {
+                continue;
+            }
+            if (filterTerms.Count > 0 && !IndexedImageHistoryFilterMatches(entry, filterTerms))
             {
                 continue;
             }
@@ -1033,16 +1286,17 @@ public static class T2IAPI
         OutputMetadataTracker.UpsertHistoryIndexForFile(path.Replace('\\', '/'), root, starNoFolders);
     }
 
-    private static JObject GetListAPIInternal(Session session, string rawPath, string root, HashSet<string> extensions, Func<string, bool> isAllowed, int depth, ImageHistorySortMode sortBy, bool sortReverse, bool includeHidden, bool fastFirst = false, int fastFirstLimit = 128, bool forceScan = false)
+    private static JObject GetListAPIInternal(Session session, string rawPath, string root, HashSet<string> extensions, Func<string, bool> isAllowed, int depth, ImageHistorySortMode sortBy, bool sortReverse, bool includeHidden, bool fastFirst = false, int fastFirstLimit = 128, bool forceScan = false, string filter = "")
     {
         int maxInHistory = session.User.Settings.MaxImagesInHistory;
         int maxScanned = session.User.Settings.MaxImagesScannedInHistory;
-        Logs.Verbose($"User {session.User.UserID} wants to list images in '{rawPath}', maxDepth={depth}, sortBy={sortBy}, reverse={sortReverse}, includeHidden={includeHidden}, fastFirst={fastFirst}, fastFirstLimit={fastFirstLimit}, maxInHistory={maxInHistory}, maxScanned={maxScanned}");
+        List<(string Field, string Value, string Raw)> filterTerms = CompileImageHistoryFilterQuery(filter);
+        Logs.Verbose($"User {session.User.UserID} wants to list images in '{rawPath}', maxDepth={depth}, sortBy={sortBy}, reverse={sortReverse}, includeHidden={includeHidden}, fastFirst={fastFirst}, fastFirstLimit={fastFirstLimit}, maxInHistory={maxInHistory}, maxScanned={maxScanned}, filterTerms={filterTerms.Count}");
         long timeStart = Environment.TickCount64;
         long dirScanMs = 0;
         long fileScanMs = 0;
         long finalSortMs = 0;
-        int limit = sortBy == ImageHistorySortMode.Name ? maxInHistory : Math.Max(maxInHistory, maxScanned);
+        int limit = sortBy == ImageHistorySortMode.Name && filterTerms.Count == 0 ? maxInHistory : Math.Max(maxInHistory, maxScanned);
         (string path, string consoleError, string userError) = WebServer.CheckFilePath(root, rawPath);
         path = UserImageHistoryHelper.GetRealPathFor(session.User, path, root: root);
         if (consoleError is not null)
@@ -1069,7 +1323,7 @@ public static class T2IAPI
                 OutputMetadataTracker.RemoveHistoryIndexForPrefix(root, rawRefPath);
             }
             TryStartImageHistoryIndexWarmup(session, root, path, rawRefPath);
-            JObject indexedResult = forceScan ? null : TryGetListFromHistoryIndex(session, rawRefPath, depth, sortBy, sortReverse, includeHidden, fastFirst, fastFirstLimit, maxInHistory, timeStart);
+            JObject indexedResult = forceScan ? null : TryGetListFromHistoryIndex(session, rawRefPath, depth, sortBy, sortReverse, includeHidden, fastFirst, fastFirstLimit, maxInHistory, filterTerms, timeStart);
             if (indexedResult is not null)
             {
                 return indexedResult;
@@ -1212,7 +1466,8 @@ public static class T2IAPI
                     files.AddRange(orderedFiles
                         .Select(f => GetImageHistoryHelper(prefix + f.AfterLast('/'), f, root, starNoFolders))
                         .Where(f => f.Metadata is not null)
-                        .Where(f => includeHidden || !MetadataIsHidden(f.Metadata)));
+                        .Where(f => includeHidden || !MetadataIsHidden(f.Metadata))
+                        .Where(f => filterTerms.Count == 0 || ScannedImageHistoryFilterMatches(f, filterTerms)));
                     if (files.Count >= startupLimit || subDepth <= 0)
                     {
                         return;
@@ -1311,10 +1566,11 @@ public static class T2IAPI
                 ConcurrentDictionary<int, List<ImageHistoryHelper>> filesConc = [];
                 int id = 0;
                 int remaining = limit;
+                int remainingScans = filterTerms.Count == 0 ? 0 : maxScanned;
                 Parallel.ForEach(dirs.Append(""), new ParallelOptions() { MaxDegreeOfParallelism = 5, CancellationToken = Program.GlobalProgramCancel }, folder =>
                 {
                     int localId = Interlocked.Increment(ref id);
-                    int localLimit = Interlocked.CompareExchange(ref remaining, 0, 0);
+                    int localLimit = filterTerms.Count == 0 ? Interlocked.CompareExchange(ref remaining, 0, 0) : Interlocked.CompareExchange(ref remainingScans, 0, 0);
                     if (localLimit <= 0)
                     {
                         return;
@@ -1328,8 +1584,8 @@ public static class T2IAPI
                     }
                     List<string> subFiles = [.. Directory.EnumerateFiles(actualPath).Take(localLimit)];
                     IEnumerable<string> newFileNames = subFiles.Select(f => f.Replace('\\', '/')).Where(isAllowed).Where(f => !f.AfterLast('/').StartsWithFast('.') && extensions.Contains(f.AfterLast('.')) && !f.EndsWith(".swarmpreview.jpg") && !f.EndsWith(".swarmpreview.webp"));
-                    List<ImageHistoryHelper> localFiles = [.. newFileNames.Select(f => GetImageHistoryHelper(prefix + f.AfterLast('/'), f, root, starNoFolders)).Where(f => f.Metadata is not null).Where(f => includeHidden || !MetadataIsHidden(f.Metadata))];
-                    int leftOver = Interlocked.Add(ref remaining, -localFiles.Count);
+                    List<ImageHistoryHelper> localFiles = [.. newFileNames.Select(f => GetImageHistoryHelper(prefix + f.AfterLast('/'), f, root, starNoFolders)).Where(f => f.Metadata is not null).Where(f => includeHidden || !MetadataIsHidden(f.Metadata)).Where(f => filterTerms.Count == 0 || ScannedImageHistoryFilterMatches(f, filterTerms))];
+                    int leftOver = filterTerms.Count == 0 ? Interlocked.Add(ref remaining, -localFiles.Count) : Interlocked.Add(ref remainingScans, -subFiles.Count);
                     sortList(localFiles);
                     filesConc.TryAdd(localId, localFiles);
                     if (leftOver <= 0)
@@ -1494,14 +1750,15 @@ public static class T2IAPI
         [API.APIParameter("If true, include images marked as hidden.")] bool includeHidden = false,
         [API.APIParameter("If true, return only a bounded startup slice biased toward newest work.")] bool fastFirst = false,
         [API.APIParameter("Maximum number of files to return when fastFirst is enabled.")] int fastFirstLimit = 128,
-        [API.APIParameter("If true, bypass the persistent history index and scan the folder directly.")] bool forceScan = false)
+        [API.APIParameter("If true, bypass the persistent history index and scan the folder directly.")] bool forceScan = false,
+        [API.APIParameter("Optional text or field:value filter to apply server-side before limiting results.")] string filter = "")
     {
         if (!Enum.TryParse(sortBy, true, out ImageHistorySortMode sortMode))
         {
             return new JObject() { ["error"] = $"Invalid sort mode '{sortBy}'." };
         }
         string root = Utilities.CombinePathWithAbsolute(Environment.CurrentDirectory, session.User.OutputDirectory);
-        return GetListAPIInternal(session, path, root, HistoryExtensions, f => true, depth, sortMode, sortReverse, includeHidden, fastFirst, fastFirstLimit, forceScan);
+        return GetListAPIInternal(session, path, root, HistoryExtensions, f => true, depth, sortMode, sortReverse, includeHidden, fastFirst, fastFirstLimit, forceScan, filter);
     }
 
     [API.APIDescription("Rescan cached image history metadata for a folder.", "{ \"success\": true, \"indexed\": 10, \"skipped\": 0 }")]
