@@ -320,6 +320,7 @@ public class ComfyUISelfStartBackend : ComfyUIAPIAbstractBackend
                     controlnet: {buildSection(rootFixed, Program.ServerSettings.Paths.SDControlNetsFolder + ";ControlNet")}
                     model_patches: {buildSection(rootFixed, Program.ServerSettings.Paths.SDControlNetsFolder + ";ControlNet;model_patches")}
                     clip: {buildSection(rootFixed, Program.ServerSettings.Paths.SDClipFolder + ";clip;CLIP")}
+                    text_encoders: {buildSection(rootFixed, Program.ServerSettings.Paths.SDClipFolder + ";text_encoders;clip;CLIP")}
                     clip_vision: {buildSection(rootFixed, Program.ServerSettings.Paths.SDClipVisionFolder + ";clip_vision")}
 
                 """;
