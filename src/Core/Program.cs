@@ -442,20 +442,32 @@ public class Program
             T2IModelSets[key].Shutdown();
         }
         T2IModelSets.Clear();
-        try
+        void ensureModelDirectory(string path)
         {
-            string modelRoot = ServerSettings.Paths.ActualModelRoot;
-            foreach (string path in ServerSettings.Paths.SDModelFolder.Split(';'))
+            if (Directory.Exists(path))
             {
-                Directory.CreateDirectory(Utilities.CombinePathWithAbsolute(modelRoot, path));
+                return;
             }
-            Directory.CreateDirectory($"{modelRoot}/upscale_models");
-            Directory.CreateDirectory($"{modelRoot}/clip");
+            try
+            {
+                Directory.CreateDirectory(path);
+            }
+            catch (IOException ex)
+            {
+                if (Directory.Exists(path))
+                {
+                    return;
+                }
+                Logs.Error($"Failed to create directories for models. You may need to check your ModelRoot or SDModelFolder settings. {ex.Message}");
+            }
         }
-        catch (IOException ex)
+        string actualModelRoot = ServerSettings.Paths.ActualModelRoot;
+        foreach (string path in ServerSettings.Paths.SDModelFolder.Split(';'))
         {
-            Logs.Error($"Failed to create directories for models. You may need to check your ModelRoot or SDModelFolder settings. {ex.Message}");
+            ensureModelDirectory(Utilities.CombinePathWithAbsolute(actualModelRoot, path));
         }
+        ensureModelDirectory($"{actualModelRoot}/upscale_models");
+        ensureModelDirectory($"{actualModelRoot}/clip");
         string[] roots = [.. ServerSettings.Paths.ModelRoot.Split(';').Where(p => !string.IsNullOrWhiteSpace(p))];
         if (roots.Length == 0)
         {
@@ -494,8 +506,8 @@ public class Program
             }
             handler.FolderPaths = [.. result.Keys];
         }
-        Directory.CreateDirectory(ServerSettings.Paths.ActualModelRoot + "/tensorrt");
-        Directory.CreateDirectory(ServerSettings.Paths.ActualModelRoot + "/diffusion_models");
+        ensureModelDirectory(actualModelRoot + "/tensorrt");
+        ensureModelDirectory(actualModelRoot + "/diffusion_models");
         T2IModelSets["Stable-Diffusion"] = new() { ModelType = "Stable-Diffusion" };
         buildPathList(ServerSettings.Paths.SDModelFolder + ";tensorrt;diffusion_models;unet", T2IModelSets["Stable-Diffusion"]);
         T2IModelSets["VAE"] = new() { ModelType = "VAE" };
