@@ -173,8 +173,8 @@ class ImageHistoryWindowManager {
 let imageHistoryWindowManager = new ImageHistoryWindowManager();
 
 /** Registers a media button for extensions. 'mediaTypes' filters by type eg ['audio'], null means all. 'isDefault' promotes to visible (vs More dropdown). 'showInHistory' controls whether button appears in the History panel. */
-function registerMediaButton(name, action, title = '', mediaTypes = null, isDefault = false, showInHistory = true, href = null, is_download = false, can_multi = false, multi_only = false) {
-    registeredMediaButtons.push({ name, action, title, mediaTypes, isDefault, showInHistory, href, is_download, can_multi, multi_only });
+function registerMediaButton(name, action, title = '', mediaTypes = null, isDefault = false, showInHistory = true, href = null, is_download = false, can_multi = false, multi_only = false, max_selected = null) {
+    registeredMediaButtons.push({ name, action, title, mediaTypes, isDefault, showInHistory, href, is_download, can_multi, multi_only, max_selected });
 }
 
 function getHistoryImageSrc(fullSrc) {
@@ -2472,6 +2472,15 @@ function buttonsForImage(fullsrc, src, metadata, parsedMetadata = null, isCurren
     let mediaType = getMediaType(src);
     let buttons = [];
     if (permissions.hasPermission('user_star_images') && !isDataImage) {
+        let getMeta = (metadata) => metadata ? (JSON.parse(metadata) || {}) : {};
+        let metaParsed = getMeta(metadata);
+        let isStarred = (e) => {
+            let currentMeta = getMeta(e?.dataset?.metadata);
+            if (Object.keys(currentMeta).length == 0) {
+                currentMeta = metaParsed;
+            }
+            return currentMeta.is_starred;
+        };
         buttons.push({
             label: parsedMetadata.is_starred ? 'Unstar' : 'Star',
             title: 'Star or unstar this image - starred images get moved to a separate folder and highlighted.',
@@ -2484,7 +2493,8 @@ function buttonsForImage(fullsrc, src, metadata, parsedMetadata = null, isCurren
             label: 'Enable Starred',
             title: 'Marks all selected images as starred if they are not already',
             onclick: (e) => {
-                if (!parsedMetadata.is_starred) {
+                // TODO: Pull the reference from the event, not from register context - or register specifically as a bulk handler
+                if (!isStarred(e)) {
                     toggleStar(fullsrc, src);
                 }
             },
@@ -2492,10 +2502,10 @@ function buttonsForImage(fullsrc, src, metadata, parsedMetadata = null, isCurren
             multi_only: true
         });
         buttons.push({
-            label: 'Disabled Starred',
+            label: 'Disable Starred',
             title: 'Marks all selected images as NOT starred if they are currently starred',
             onclick: (e) => {
-                if (parsedMetadata.is_starred) {
+                if (isStarred(e)) {
                     toggleStar(fullsrc, src);
                 }
             },
@@ -2566,6 +2576,29 @@ function buttonsForImage(fullsrc, src, metadata, parsedMetadata = null, isCurren
             can_multi: true
         });
     }
+    if (mediaType == 'image' || mediaType == 'video') {
+        buttons.push({
+            label: 'Compare',
+            title: 'Compare 2 images or 2 videos',
+            onclick: (e) => {
+                // TODO: Give browsers.js a real "run once with the full selection" bulk handler
+                let items = imageHistoryBrowser.getMultiSelectedFiles().map(f => ({ src: f.data.src, mediaType: getMediaType(f.data.src), metadata: f.data.metadata }));
+                let valid = imageCompareHelper.evaluateSelection(items);
+                if (valid.state != 'ready') {
+                    showError(valid.reason || 'Cannot compare current selection.');
+                    return;
+                }
+                if (imageCompareHelper.isShowingPair(items[0], items[1])) {
+                    return;
+                }
+                imageCompareHelper.reset();
+                imageCompareHelper.showComparison(items[0], items[1]);
+            },
+            can_multi: true,
+            multi_only: true,
+            max_selected: 2
+        });
+    }
     for (let reg of registeredMediaButtons) {
         if ((isCurrentImage || reg.showInHistory) && (!reg.mediaTypes || reg.mediaTypes.includes(mediaType))) {
             buttons.push({
@@ -2575,6 +2608,8 @@ function buttonsForImage(fullsrc, src, metadata, parsedMetadata = null, isCurren
                 is_download: reg.is_download,
                 can_multi: reg.can_multi,
                 multi_only: reg.multi_only,
+                max_selected: reg.max_selected,
+                media_types: reg.mediaTypes,
                 onclick: () => reg.action(src)
             });
         }
@@ -2683,6 +2718,7 @@ function selectOutputInHistory(image, div) {
 
 let imageHistoryBrowser = new GenPageBrowserClass('image_history', listOutputHistoryFolderAndFiles, 'imagehistorybrowser', window.userFeatureToggles?.imageHistoryDefaultView || 'Thumbnails', describeOutputFile, selectOutputInHistory,
     `<label for="image_history_sort_by">Sort:</label> <select id="image_history_sort_by"><option>Name</option><option value="DateCreated">Date-Created</option><option value="DateEdited">Date-Edited</option><option>Rating</option><option>Resolution</option><option>Model</option><option>Seed</option><option value="FileSize">File Size</option></select> <input type="checkbox" id="image_history_sort_reverse"> <label for="image_history_sort_reverse">Reverse</label> &emsp; <input type="checkbox" id="image_history_allow_anims" checked autocomplete="off"> <label for="image_history_allow_anims">Allow Animation</label> &emsp; <input type="checkbox" id="image_history_show_hidden" autocomplete="off"> <label for="image_history_show_hidden">Show Hidden</label> <button type="button" id="image_history_rescan_metadata" class="refresh-button" onclick="rescanImageHistoryMetadata()">Rescan Metadata</button> <span id="image_history_bulk_controls" class="image-history-bulk-controls"><span id="image_history_selected_count" class="image-history-selected-count">0 selected</span> <button type="button" id="image_history_select_all" class="refresh-button" onclick="selectAllImageHistory()">Select All</button> <button type="button" id="image_history_clear_selection" class="refresh-button" onclick="clearSelectedImageHistory()">Clear</button> <button type="button" id="image_history_compare_selected" class="refresh-button" onclick="compareSelectedImageHistory()">Compare</button> <button type="button" id="image_history_copy_paths_selected" class="refresh-button" onclick="copySelectedImageHistoryPaths()">Copy Paths</button> <button type="button" id="image_history_contact_sheet_selected" class="refresh-button" onclick="createSelectedImageHistoryContactSheet()">Contact Sheet</button> <button type="button" id="image_history_set_rating_selected" class="refresh-button" onclick="setSelectedImageHistoryRatingPrompt()">Set Rating</button> <button type="button" id="image_history_add_tags_selected" class="refresh-button" onclick="setSelectedImageHistoryTagsPrompt('add')">Add Tags</button> <button type="button" id="image_history_remove_tags_selected" class="refresh-button" onclick="setSelectedImageHistoryTagsPrompt('remove')">Remove Tags</button> <button type="button" id="image_history_set_notes_selected" class="refresh-button" onclick="setSelectedImageHistoryNotesPrompt()">Set Notes</button> <button type="button" id="image_history_copy_to_selected" class="refresh-button" onclick="moveSelectedImageHistoryPrompt('copy')">Copy To</button> <button type="button" id="image_history_move_to_selected" class="refresh-button" onclick="moveSelectedImageHistoryPrompt('move')">Move To</button> <button type="button" id="image_history_export_metadata_selected" class="refresh-button" onclick="exportSelectedImageHistoryMetadata()">Export Metadata</button> <button type="button" id="image_history_send_prompt_lab_selected" class="refresh-button" onclick="sendSelectedImageHistoryToPromptLab()">Send to Prompt Lab</button> <button type="button" id="image_history_star_selected" class="refresh-button" onclick="starSelectedImageHistory()">Star Selected</button> <button type="button" id="image_history_unstar_selected" class="refresh-button" onclick="unstarSelectedImageHistory()">Unstar Selected</button> <button type="button" id="image_history_hide_selected" class="refresh-button" onclick="hideSelectedImageHistory()">Hide Selected</button> <button type="button" id="image_history_unhide_selected" class="refresh-button" onclick="unhideSelectedImageHistory()">Unhide Selected</button> <button type="button" id="image_history_delete_selected" class="interrupt-button" onclick="deleteSelectedImageHistory()">Delete Selected</button></span> <span id="image_history_request_status" class="image-history-request-status" data-state="idle"><span id="image_history_request_status_text" class="image-history-request-status-text"></span> <button type="button" id="image_history_retry_button" class="refresh-button" style="display:none;">Retry</button></span>`);
+imageHistoryBrowser.allowMultiSelect = true;
 imageHistoryBrowser.maxPreBuild = IMAGE_HISTORY_FAST_FIRST_LIMIT;
 imageHistoryBrowser.filterMatcher = imageHistoryFilterMatches;
 imageHistoryBrowser.folderSelectedEvent = () => {

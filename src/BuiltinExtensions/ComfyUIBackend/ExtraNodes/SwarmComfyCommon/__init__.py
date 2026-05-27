@@ -1,6 +1,6 @@
-import os, folder_paths
+import os, folder_paths, traceback
 
-from . import SwarmAnimaLLLite, SwarmAttentionCouple, SwarmBlending, SwarmClipSeg, SwarmImages, SwarmInternalUtil, SwarmKSampler, SwarmLoadImageB64, SwarmLoraLoader, SwarmMasks, SwarmSaveImageWS, SwarmTiling, SwarmExtractLora, SwarmUnsampler, SwarmLatents, SwarmInputNodes, SwarmTextHandling, SwarmReference, SwarmMath, SwarmSam3, SwarmAudio
+from . import SwarmAnimaLLLite, SwarmAttentionCouple, SwarmBlending, SwarmImages, SwarmInternalUtil, SwarmKSampler, SwarmLoadImageB64, SwarmLoraLoader, SwarmMasks, SwarmSaveImageWS, SwarmTiling, SwarmExtractLora, SwarmUnsampler, SwarmLatents, SwarmInputNodes, SwarmTextHandling, SwarmReference, SwarmMath, SwarmSam3, SwarmAudio, SwarmVideo
 
 WEB_DIRECTORY = "./web"
 
@@ -8,7 +8,6 @@ NODE_CLASS_MAPPINGS = (
     SwarmAnimaLLLite.NODE_CLASS_MAPPINGS
     | SwarmAttentionCouple.NODE_CLASS_MAPPINGS
     | SwarmBlending.NODE_CLASS_MAPPINGS
-    | SwarmClipSeg.NODE_CLASS_MAPPINGS
     | SwarmImages.NODE_CLASS_MAPPINGS
     | SwarmInternalUtil.NODE_CLASS_MAPPINGS
     | SwarmKSampler.NODE_CLASS_MAPPINGS
@@ -26,11 +25,19 @@ NODE_CLASS_MAPPINGS = (
     | SwarmMath.NODE_CLASS_MAPPINGS
     | SwarmSam3.NODE_CLASS_MAPPINGS
     | SwarmAudio.NODE_CLASS_MAPPINGS
+    | SwarmVideo.NODE_CLASS_MAPPINGS
 )
 
 NODE_DISPLAY_NAME_MAPPINGS = (
     SwarmAnimaLLLite.NODE_DISPLAY_NAME_MAPPINGS
 )
+
+try:
+    from . import SwarmClipSeg
+    NODE_CLASS_MAPPINGS.update(SwarmClipSeg.NODE_CLASS_MAPPINGS)
+except:
+    print("Error: SwarmClipSeg failed to import")
+    traceback.print_exc()
 
 # TODO: Why is there no comfy core register method? 0.o
 def register_model_folder(name):
