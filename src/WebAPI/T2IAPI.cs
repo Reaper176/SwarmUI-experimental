@@ -1030,7 +1030,7 @@ public static class T2IAPI
         OutputMetadataTracker.UpsertHistoryIndexForFile(path.Replace('\\', '/'), root, starNoFolders);
     }
 
-    private static JObject GetListAPIInternal(Session session, string rawPath, string root, HashSet<string> extensions, Func<string, bool> isAllowed, int depth, ImageHistorySortMode sortBy, bool sortReverse, bool includeHidden, bool fastFirst = false, int fastFirstLimit = 128)
+    private static JObject GetListAPIInternal(Session session, string rawPath, string root, HashSet<string> extensions, Func<string, bool> isAllowed, int depth, ImageHistorySortMode sortBy, bool sortReverse, bool includeHidden, bool fastFirst = false, int fastFirstLimit = 128, bool forceScan = false)
     {
         int maxInHistory = session.User.Settings.MaxImagesInHistory;
         int maxScanned = session.User.Settings.MaxImagesScannedInHistory;
@@ -1060,8 +1060,13 @@ public static class T2IAPI
             {
                 rawRefPath = "";
             }
+            if (forceScan)
+            {
+                OutputMetadataTracker.RemoveHistoryIndexPrefixComplete(root, rawRefPath);
+                OutputMetadataTracker.RemoveHistoryIndexForPrefix(root, rawRefPath);
+            }
             TryStartImageHistoryIndexWarmup(session, root, path, rawRefPath);
-            JObject indexedResult = TryGetListFromHistoryIndex(session, rawRefPath, depth, sortBy, sortReverse, includeHidden, fastFirst, fastFirstLimit, maxInHistory, timeStart);
+            JObject indexedResult = forceScan ? null : TryGetListFromHistoryIndex(session, rawRefPath, depth, sortBy, sortReverse, includeHidden, fastFirst, fastFirstLimit, maxInHistory, timeStart);
             if (indexedResult is not null)
             {
                 return indexedResult;
@@ -1485,14 +1490,15 @@ public static class T2IAPI
         [API.APIParameter("If true, the sorting should be done in reverse.")] bool sortReverse = false,
         [API.APIParameter("If true, include images marked as hidden.")] bool includeHidden = false,
         [API.APIParameter("If true, return only a bounded startup slice biased toward newest work.")] bool fastFirst = false,
-        [API.APIParameter("Maximum number of files to return when fastFirst is enabled.")] int fastFirstLimit = 128)
+        [API.APIParameter("Maximum number of files to return when fastFirst is enabled.")] int fastFirstLimit = 128,
+        [API.APIParameter("If true, bypass the persistent history index and scan the folder directly.")] bool forceScan = false)
     {
         if (!Enum.TryParse(sortBy, true, out ImageHistorySortMode sortMode))
         {
             return new JObject() { ["error"] = $"Invalid sort mode '{sortBy}'." };
         }
         string root = Utilities.CombinePathWithAbsolute(Environment.CurrentDirectory, session.User.OutputDirectory);
-        return GetListAPIInternal(session, path, root, HistoryExtensions, f => true, depth, sortMode, sortReverse, includeHidden, fastFirst, fastFirstLimit);
+        return GetListAPIInternal(session, path, root, HistoryExtensions, f => true, depth, sortMode, sortReverse, includeHidden, fastFirst, fastFirstLimit, forceScan);
     }
 
     [API.APIDescription("Rescan cached image history metadata for a folder.", "{ \"success\": true, \"indexed\": 10, \"skipped\": 0 }")]

@@ -450,7 +450,6 @@ public abstract class ComfyUIAPIAbstractBackend : AbstractT2IBackend
                             case "status": // queuing
                                 break;
                             default:
-                                Logs.Verbose($"Ignore type {json["type"]}");
                                 break;
                         }
                     }

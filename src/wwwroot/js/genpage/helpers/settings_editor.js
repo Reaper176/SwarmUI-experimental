@@ -89,6 +89,9 @@ function buildSettingsMenu(container, data, prefix, tracker) {
             else {
                 tracker.altered[key] = value;
             }
+            if ((key == 'promptsplitindicator' || key == 'promptsplitindicatortextlabels') && typeof refreshPromptSplitIndicators == 'function') {
+                refreshPromptSplitIndicators();
+            }
             let count = Object.keys(tracker.altered).length;
             getRequiredElementById(`${prefix}edit_count`).innerText = count;
             confirmer.style.display = count == 0 ? 'none' : 'block';
@@ -281,7 +284,12 @@ sessionReadyCallbacks.push(loadSettingsEditor);
 function save_user_settings() {
     genericRequest('ChangeUserSettings', { settings: userSettingsData.altered }, data => {
         getRequiredElementById(`usersettings_confirmer`).style.display = 'none';
-        loadUserSettings(applyDefaultDoNotSaveSetting);
+        loadUserSettings(() => {
+            applyDefaultDoNotSaveSetting();
+            if (typeof refreshPromptSplitIndicators == 'function') {
+                refreshPromptSplitIndicators();
+            }
+        });
         loadUserData();
         if (window.notesTab && typeof window.notesTab.onUserSettingsSaved == 'function') {
             window.notesTab.onUserSettingsSaved();

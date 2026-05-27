@@ -232,7 +232,8 @@ public class GridGeneratorExtension : Extension
                         }
                         File.WriteAllBytes(targetPath, image.ActualFileTask is not null ? image.ActualFileTask.Result.RawData : image.File.RawData);
                         string root = Utilities.CombinePathWithAbsolute(Environment.CurrentDirectory, data.Session.User.OutputDirectory);
-                        OutputMetadataTracker.UpsertHistoryIndexForFile(targetPath.Replace('\\', '/'), root, data.Session.User.Settings.StarNoFolders);
+                        string indexTargetPath = Utilities.CombinePathWithAbsolute(Environment.CurrentDirectory, targetPath).Replace('\\', '/');
+                        OutputMetadataTracker.UpsertHistoryIndexForFile(indexTargetPath, root, data.Session.User.Settings.StarNoFolders);
                         if (set.Grid.PublishMetadata && (!string.IsNullOrWhiteSpace(metadata) || !string.IsNullOrWhiteSpace(metaExtra)))
                         {
                             metadata ??= "{}";
@@ -284,7 +285,6 @@ public class GridGeneratorExtension : Extension
             if (data.SaveConfig is not null && runner.Grid.OutputType == Grid.OutputyTypeEnum.WEB_PAGE)
             {
                 File.WriteAllBytes($"{runner.BasePath}/swarm_save_config.json", data.SaveConfig.ToString().EncodeUTF8());
-                LoadableHistoryList.TryRemove(data.Session.User.UserID, out _);
             }
         };
     }
@@ -315,7 +315,6 @@ public class GridGeneratorExtension : Extension
         if (gridName.StartsWith("history/"))
         {
             await T2IAPI.DeleteImage(session, $"Grids/{gridName.After('/')}/swarm_save_config.json");
-            LoadableHistoryList.TryRemove(session.User.UserID, out _);
             return new JObject() { ["success"] = true };
         }
         session.User.DeleteGenericData("gridgenerator", gridName);
@@ -333,29 +332,37 @@ public class GridGeneratorExtension : Extension
         return new JObject() { ["data"] = data.ParseToJson() };
     }
 
-    public ConcurrentDictionary<string, string[]> LoadableHistoryList = new();
-
     public async Task<JObject> GridGenListData(Session session)
     {
         List<string> data = session.User.ListAllGenericData("gridgenerator");
         data.AddRange(Program.Sessions.GenericSharedUser.ListAllGenericData("gridgenerator"));
-        string[] history = LoadableHistoryList.GetOrCreate(session.User.UserID, () =>
+        List<string> history = [];
+        string root = Utilities.CombinePathWithAbsolute(Environment.CurrentDirectory, session.User.OutputDirectory);
+        string gridsRoot = Utilities.CombinePathWithAbsolute(root, "Grids");
+        try
         {
-            List<string> results = [];
-            try
+            if (Directory.Exists(gridsRoot))
             {
-                foreach (string dir in Directory.EnumerateDirectories($"{session.User.OutputDirectory}/Grids/").OrderByDescending(Directory.GetCreationTimeUtc))
+                foreach (string file in Directory.EnumerateFiles(gridsRoot, "swarm_save_config.json", SearchOption.AllDirectories).OrderByDescending(File.GetCreationTimeUtc))
                 {
-                    if (File.Exists($"{dir}/swarm_save_config.json"))
+                    string dir = Path.GetDirectoryName(file)?.Replace('\\', '/');
+                    if (string.IsNullOrWhiteSpace(dir))
                     {
-                        results.Add(dir.Replace('\\', '/').Trim('/').AfterLast('/'));
+                        continue;
+                    }
+                    string relative = Path.GetRelativePath(gridsRoot, dir).Replace('\\', '/').Trim('/');
+                    if (!string.IsNullOrWhiteSpace(relative))
+                    {
+                        history.Add(relative);
                     }
                 }
             }
-            catch (Exception) { }
-            return [.. results];
-        });
-        return new JObject() { ["data"] = JArray.FromObject(data.ToArray()), ["history"] = JArray.FromObject(history) };
+        }
+        catch (Exception ex)
+        {
+            Logs.Debug($"Failed to list Grid Generator history for user '{session.User.UserID}': {ex.ReadableString()}");
+        }
+        return new JObject() { ["data"] = JArray.FromObject(data.ToArray()), ["history"] = JArray.FromObject(history.ToArray()) };
     }
 
     public class GridCallData
@@ -445,7 +452,8 @@ public class GridGeneratorExtension : Extension
     public async Task<JObject> GridGenDoesExist(Session session, string folderName)
     {
         folderName = CleanFolderName(folderName);
-        bool exists = File.Exists($"{session.User.OutputDirectory}/{folderName}/index.html");
+        string root = Utilities.CombinePathWithAbsolute(Environment.CurrentDirectory, session.User.OutputDirectory);
+        bool exists = File.Exists(Utilities.CombinePathWithAbsolute(root, folderName, "index.html"));
         return new JObject() { ["exists"] = exists };
     }
 

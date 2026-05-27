@@ -23,7 +23,7 @@ git clone https://github.com/comfyanonymous/ComfyUI
 cd ComfyUI
 
 # Try to find a good python executable, and dodge unsupported python versions
-for pyvers in python3.11 python3.12 python3.10 python3 python
+for pyvers in python3.12 python3.11 python3.10 python3 python
 do
     python=`which $pyvers`
     if [ "$python" != "" ]; then

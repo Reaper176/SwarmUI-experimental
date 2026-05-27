@@ -261,6 +261,12 @@ public class Settings : AutoConfiguration
         [ConfigComment("How many minutes to wait after the last generation before automatically freeing up system RAM (to prevent issues with other programs).\nThis has the downside of causing models to fully load from data drive at next usage.\nUse a decimal number to free after seconds.\nDefaults to 60 minutes (one hour).\nSet to -1 to disable.")]
         public double ClearSystemRAMAfterMinutes = 60;
 
+        [ConfigComment("If true, automatically free backend VRAM immediately after all generation queues have gone idle.\nThis has the downside of forcing models to reload to VRAM for the next generation.\nDefaults to false.")]
+        public bool ClearVRAMAfterEveryBatch = false;
+
+        [ConfigComment("If true, automatically free backend system RAM immediately after all generation queues have gone idle.\nThis has the downside of forcing models to fully reload from disk for the next generation.\nDefaults to false.")]
+        public bool ClearSystemRAMAfterEveryBatch = false;
+
         [ConfigComment("If true, any time you load the UI, trigger a server refresh.\nIf false, only triggers a refresh if you restart Swarm or trigger a refresh manually from the Quick Tools menu.\nDefaults to true.")]
         public bool AlwaysRefreshOnLoad = true;
 
@@ -625,6 +631,13 @@ public class Settings : AutoConfiguration
 
         [ConfigComment("How many lines of text to display in the standard prompt box before cutting off to a scroll bar.\nActual size in practice tends to be a few lines shorter due to browser and font variations.\nDefault is 10.")]
         public int MaxPromptLines = 10; // TODO: UserUI
+
+        [ConfigComment("How to visually show prompt conditioning split points in the Generate tab prompt boxes.\n'none' disables the indicator.\n'background' colors each split section behind the text.\n'underline' underlines each split section.\n'gutter' shows compact split labels beside the prompt box.")]
+        [ManualSettingsOptions(Vals = ["none", "background", "underline", "gutter"], ManualNames = ["None", "Soft Background Sections", "Colored Underlines", "Gutter Markers"])]
+        public string PromptSplitIndicator = "none";
+
+        [ConfigComment("If enabled, prompt split indicators include visible text labels such as '--forced-break--' between split sections. Useful when color alone is hard to distinguish.")]
+        public bool PromptSplitIndicatorTextLabels = false;
 
         public class VAEsData : AutoConfiguration
         {

@@ -87,6 +87,91 @@ public static class UtilAPI
 
     private static readonly string[] SkippablePromptSyntax = ["segment", "object", "region", "clear", "extend"];
 
+    /// <summary>Builds display ranges for prompt split indicators. Ranges are based on the raw prompt text so the browser can map them back onto the textarea content.</summary>
+    private static JObject BuildPromptSplitMetadata(string text, CliplikeTokenizer tokenizer)
+    {
+        JArray segments = [];
+        JArray breaks = [];
+        int segmentIndex = 0;
+
+        void addSegment(int start, int end, int tokens, string reason)
+        {
+            if (end <= start)
+            {
+                return;
+            }
+            segments.Add(new JObject()
+            {
+                ["start"] = start,
+                ["end"] = end,
+                ["tokens"] = tokens,
+                ["index"] = segmentIndex++,
+                ["reason"] = reason
+            });
+        }
+
+        void addBreak(int start, int end, string type)
+        {
+            breaks.Add(new JObject()
+            {
+                ["start"] = start,
+                ["end"] = end,
+                ["type"] = type
+            });
+        }
+
+        void addSection(int start, int end, string endReason)
+        {
+            int segmentStart = start;
+            int tokenCount = 0;
+            foreach (System.Text.RegularExpressions.Match match in CliplikeTokenizer.Splitter.Matches(text[start..end]))
+            {
+                if (string.IsNullOrWhiteSpace(match.Value))
+                {
+                    continue;
+                }
+                int wordStart = start + match.Index;
+                int wordEnd = wordStart + match.Length;
+                int wordTokens = tokenizer.Encode(match.Value).Length;
+                if (tokenCount > 0 && tokenCount + wordTokens > 75)
+                {
+                    addSegment(segmentStart, wordStart, tokenCount, "token_limit");
+                    segmentStart = wordStart;
+                    tokenCount = 0;
+                }
+                tokenCount += wordTokens;
+                if (tokenCount >= 75)
+                {
+                    addSegment(segmentStart, wordEnd, tokenCount, "token_limit");
+                    segmentStart = wordEnd;
+                    tokenCount = 0;
+                }
+            }
+            addSegment(segmentStart, end, tokenCount, endReason);
+        }
+
+        int sectionStart = 0;
+        while (sectionStart <= text.Length)
+        {
+            int breakAt = text.IndexOf("<break>", sectionStart, StringComparison.Ordinal);
+            int sectionEnd = breakAt == -1 ? text.Length : breakAt;
+            addSection(sectionStart, sectionEnd, breakAt == -1 ? "end" : "forced");
+            if (breakAt == -1)
+            {
+                break;
+            }
+            int splitEnd = breakAt + "<break>".Length;
+            addBreak(breakAt, splitEnd, "forced");
+            sectionStart = splitEnd;
+        }
+
+        return new JObject()
+        {
+            ["segments"] = segments,
+            ["breaks"] = breaks
+        };
+    }
+
     [API.APIDescription("Count the CLIP-like tokens in a given text prompt.", "\"count\": 0")]
     public static async Task<JObject> CountTokens(
         [API.APIParameter("The text to tokenize.")] string text,
@@ -94,6 +179,7 @@ public static class UtilAPI
         [API.APIParameter("What tokenization set to use.")] string tokenset = "clip",
         [API.APIParameter("If true, process weighting (like `(word:1.5)`). If false, don't process that.")] bool weighting = true)
     {
+        string rawText = text;
         if (skipPromptSyntax)
         {
             foreach (string str in SkippablePromptSyntax)
@@ -118,7 +204,7 @@ public static class UtilAPI
         }
         string[] sections = text.Split("<break>");
         int biggest = sections.Select(text => tokenizer.EncodeWithWeighting(text).Length).Max();
-        return new JObject() { ["count"] = biggest };
+        return new JObject() { ["count"] = biggest, ["split_data"] = BuildPromptSplitMetadata(rawText, tokenizer) };
     }
 
     [API.APIDescription("Tokenize some prompt text and get thorough detail about it.",

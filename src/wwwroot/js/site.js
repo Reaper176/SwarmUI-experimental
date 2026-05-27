@@ -305,10 +305,282 @@ function triggerChangeFor(elem) {
     }
 }
 
+function getPromptSplitIndicatorMode() {
+    return `${internalSiteJsGetUserSetting('promptsplitindicator', 'none')}`.toLowerCase();
+}
+
+function getPromptSplitIndicatorTextLabelsEnabled() {
+    return internalSiteJsGetUserSetting('promptsplitindicatortextlabels', false) == true;
+}
+
+let promptSplitResizeListenerAdded = false;
+
+function requestPromptSplitOverlaySync(elem, layout = false) {
+    if (!elem) {
+        return;
+    }
+    if (layout) {
+        elem.dataset.promptSplitNeedsLayoutSync = 'true';
+    }
+    if (elem.dataset.promptSplitSyncQueued == 'true') {
+        return;
+    }
+    elem.dataset.promptSplitSyncQueued = 'true';
+    requestAnimationFrame(() => {
+        delete elem.dataset.promptSplitSyncQueued;
+        let needsLayout = elem.dataset.promptSplitNeedsLayoutSync == 'true';
+        delete elem.dataset.promptSplitNeedsLayoutSync;
+        syncPromptSplitOverlay(elem, needsLayout);
+    });
+}
+
+function syncPromptSplitOverlayScroll(elem) {
+    let wrapper = getPromptSplitEditor(elem);
+    if (!wrapper) {
+        return;
+    }
+    let overlayContent = wrapper.querySelector('.prompt-split-overlay-content');
+    if (overlayContent) {
+        overlayContent.style.transform = `translate(${-elem.scrollLeft}px, ${-elem.scrollTop}px)`;
+    }
+}
+
+function syncAllPromptSplitOverlayLayouts() {
+    for (let elem of document.querySelectorAll('textarea[data-last-prompt-split-data]')) {
+        requestPromptSplitOverlaySync(elem, true);
+    }
+}
+
+function getPromptSplitEditor(elem) {
+    if (!elem) {
+        return null;
+    }
+    if (elem.dataset.promptSplitOverlayAttached == 'true') {
+        return document.getElementById(elem.dataset.promptSplitEditorId);
+    }
+    return elem.closest('.prompt-split-editor');
+}
+
+function ensurePromptSplitOverlay(elem) {
+    if (!elem) {
+        return null;
+    }
+    let existing = getPromptSplitEditor(elem);
+    if (existing) {
+        return existing;
+    }
+    let wrapper = document.createElement('div');
+    let overlay = document.createElement('div');
+    overlay.className = 'prompt-split-overlay';
+    let overlayContent = document.createElement('div');
+    overlayContent.className = 'prompt-split-overlay-content';
+    overlay.appendChild(overlayContent);
+    let gutter = document.createElement('div');
+    gutter.className = 'prompt-split-gutter';
+    if (elem.classList.contains('alt_prompt_textbox') && elem.parentElement?.classList.contains('alt_prompt_textboxes')) {
+        wrapper.id = `prompt_split_editor_${elem.id || randSeed()}`;
+        wrapper.className = 'prompt-split-editor prompt-split-editor-attached';
+        elem.parentElement.classList.add('prompt-split-container');
+        elem.parentElement.appendChild(wrapper);
+        elem.dataset.promptSplitOverlayAttached = 'true';
+        elem.dataset.promptSplitEditorId = wrapper.id;
+    }
+    else {
+        wrapper.className = 'prompt-split-editor';
+        elem.parentElement.insertBefore(wrapper, elem);
+        wrapper.appendChild(elem);
+        elem.dataset.promptSplitOverlayWrapped = 'true';
+    }
+    wrapper.appendChild(overlay);
+    wrapper.appendChild(gutter);
+    elem.addEventListener('scroll', () => requestPromptSplitOverlaySync(elem));
+    if (!promptSplitResizeListenerAdded) {
+        promptSplitResizeListenerAdded = true;
+        window.addEventListener('resize', syncAllPromptSplitOverlayLayouts);
+    }
+    return wrapper;
+}
+
+function syncPromptSplitOverlay(elem, layout = false) {
+    let wrapper = getPromptSplitEditor(elem);
+    if (!wrapper) {
+        return;
+    }
+    let overlay = wrapper.querySelector('.prompt-split-overlay');
+    if (!overlay) {
+        return;
+    }
+    let metricKey = `${elem.offsetLeft}|${elem.offsetTop}|${elem.offsetWidth}|${elem.offsetHeight}|${elem.clientWidth}|${elem.clientHeight}`;
+    if (layout || elem.dataset.promptSplitMetricKey != metricKey) {
+        elem.dataset.promptSplitMetricKey = metricKey;
+        if (elem.dataset.promptSplitOverlayAttached == 'true') {
+            wrapper.style.left = `${elem.offsetLeft}px`;
+            wrapper.style.top = `${elem.offsetTop}px`;
+            wrapper.style.width = `${elem.offsetWidth}px`;
+            wrapper.style.height = `${elem.offsetHeight}px`;
+        }
+        overlay.style.width = `${elem.clientWidth}px`;
+        overlay.style.height = `${elem.clientHeight}px`;
+    }
+    if (layout || elem.dataset.promptSplitStyleSynced != 'true') {
+        elem.dataset.promptSplitStyleSynced = 'true';
+        let style = getComputedStyle(elem);
+        overlay.style.font = style.font;
+        overlay.style.lineHeight = style.lineHeight;
+        overlay.style.letterSpacing = style.letterSpacing;
+        overlay.style.padding = style.padding;
+        overlay.style.border = '0';
+        overlay.style.borderRadius = style.borderRadius;
+        overlay.style.whiteSpace = 'pre-wrap';
+        overlay.style.overflowWrap = style.overflowWrap;
+        overlay.style.wordBreak = style.wordBreak;
+    }
+    syncPromptSplitOverlayScroll(elem);
+}
+
+function clearPromptSplitOverlay(elem) {
+    let wrapper = getPromptSplitEditor(elem);
+    if (!wrapper) {
+        return;
+    }
+    wrapper.classList.remove('prompt-split-active', 'prompt-split-labels-active', 'prompt-split-mode-background', 'prompt-split-mode-underline', 'prompt-split-mode-gutter');
+    let overlay = wrapper.querySelector('.prompt-split-overlay-content');
+    let gutter = wrapper.querySelector('.prompt-split-gutter');
+    if (overlay) {
+        overlay.innerHTML = '';
+    }
+    if (gutter) {
+        gutter.innerHTML = '';
+    }
+}
+
+function getPromptSplitBreakTitle(event) {
+    return event.breakType == 'newline' ? 'Line break' : 'Forced split';
+}
+
+function getPromptSplitBreakLabel(event) {
+    return '--forced-break--';
+}
+
+function buildPromptSplitOverlayHtml(text, splitData) {
+    let events = [];
+    for (let segment of splitData?.segments || []) {
+        events.push({ type: 'segment', start: segment.start, end: segment.end, index: segment.index, tokens: segment.tokens });
+    }
+    for (let forcedBreak of splitData?.breaks || []) {
+        events.push({ type: 'break', start: forcedBreak.start, end: forcedBreak.end, breakType: forcedBreak.type || 'forced' });
+    }
+    events = events
+        .map(event => ({ ...event, start: Math.max(0, Math.min(text.length, event.start)), end: Math.max(0, Math.min(text.length, event.end)) }))
+        .filter(event => event.end > event.start)
+        .sort((a, b) => a.start - b.start || (a.type == 'break' ? -1 : 1));
+    let html = '';
+    let cursor = 0;
+    let fallbackIndex = 0;
+    function appendSegment(start, end, segment) {
+        if (end <= start) {
+            return;
+        }
+        let index = segment?.index ?? fallbackIndex;
+        let titleTokens = segment?.tokens == null ? '' : `: ${segment.tokens} token(s)`;
+        let className = `prompt-split-segment prompt-split-segment-${index % 6}`;
+        for (let part of text.substring(start, end).split(/(\r\n|\n|\r)/)) {
+            if (part == '') {
+                continue;
+            }
+            if (part == '\n' || part == '\r' || part == '\r\n') {
+                html += '<br>';
+            }
+            else {
+                html += `<span class="${className}" title="Split section${titleTokens}">${escapeHtml(part)}</span>`;
+            }
+        }
+    }
+    for (let event of events) {
+        let start = Math.max(cursor, event.start);
+        if (event.end <= cursor) {
+            continue;
+        }
+        if (cursor < event.start) {
+            appendSegment(cursor, event.start, { index: fallbackIndex });
+        }
+        if (event.type == 'break') {
+            let title = getPromptSplitBreakTitle(event);
+            html += `<span class="prompt-split-break prompt-split-break-${event.breakType}" title="${title}">${escapeHtml(text.substring(start, event.end))}</span>`;
+        }
+        else {
+            appendSegment(start, event.end, event);
+            fallbackIndex = (event.index ?? fallbackIndex) + 1;
+        }
+        cursor = event.end;
+    }
+    if (cursor < text.length) {
+        appendSegment(cursor, text.length, { index: fallbackIndex });
+    }
+    return html || '&nbsp;';
+}
+
+function buildPromptSplitGutterHtml(text, splitData) {
+    let markers = [];
+    let labelsEnabled = getPromptSplitIndicatorTextLabelsEnabled();
+    for (let segment of splitData?.segments || []) {
+        if (segment.index > 0 && segment.reason == 'token_limit') {
+            markers.push({ label: labelsEnabled ? '--forced-break--' : '75', start: segment.start, title: `Automatic 75-token split (${segment.tokens} token section)` });
+        }
+    }
+    for (let forcedBreak of splitData?.breaks || []) {
+        let isNewline = (forcedBreak.type || 'forced') == 'newline';
+        markers.push({ label: labelsEnabled ? '--forced-break--' : isNewline ? 'line' : 'break', start: forcedBreak.start, title: isNewline ? 'Line break' : 'Forced split from <break>' });
+    }
+    markers.sort((a, b) => a.start - b.start);
+    let length = Math.max(1, text.length);
+    return markers.map(marker => {
+        let top = Math.max(0, Math.min(92, (marker.start / length) * 100));
+        return `<span class="prompt-split-gutter-marker" style="top:${top}%" title="${escapeHtml(marker.title)}">${escapeHtml(marker.label)}</span>`;
+    }).join('');
+}
+
+function updatePromptSplitOverlay(elem, splitData) {
+    let mode = getPromptSplitIndicatorMode();
+    if (mode == 'none' || !splitData) {
+        clearPromptSplitOverlay(elem);
+        return;
+    }
+    let wrapper = ensurePromptSplitOverlay(elem);
+    if (!wrapper) {
+        return;
+    }
+    wrapper.classList.remove('prompt-split-labels-active', 'prompt-split-mode-background', 'prompt-split-mode-underline', 'prompt-split-mode-gutter');
+    wrapper.classList.add('prompt-split-active', `prompt-split-mode-${mode}`);
+    if (getPromptSplitIndicatorTextLabelsEnabled()) {
+        wrapper.classList.add('prompt-split-labels-active');
+    }
+    let overlay = wrapper.querySelector('.prompt-split-overlay');
+    let overlayContent = wrapper.querySelector('.prompt-split-overlay-content');
+    let gutter = wrapper.querySelector('.prompt-split-gutter');
+    if (!overlayContent && overlay) {
+        overlayContent = document.createElement('div');
+        overlayContent.className = 'prompt-split-overlay-content';
+        overlay.appendChild(overlayContent);
+    }
+    overlayContent.innerHTML = buildPromptSplitOverlayHtml(elem.value, splitData);
+    gutter.innerHTML = mode == 'gutter' || getPromptSplitIndicatorTextLabelsEnabled() ? buildPromptSplitGutterHtml(elem.value, splitData) : '';
+    requestPromptSplitOverlaySync(elem, true);
+}
+
+function refreshPromptSplitIndicators() {
+    for (let elem of document.querySelectorAll('textarea')) {
+        if (elem.dataset.lastPromptSplitData) {
+            updatePromptSplitOverlay(elem, JSON.parse(elem.dataset.lastPromptSplitData));
+        }
+    }
+}
+
 function textPromptDoCount(elem, countElem = null, prefix = '') {
     let tokenCount = countElem ?? elem.parentElement.querySelector('.auto-input-prompt-tokencount');
     if (!permissions.hasPermission('use_tokenizer')) {
         tokenCount.innerText = '';
+        clearPromptSplitOverlay(elem);
         return;
     }
     function countTokens() {
@@ -316,6 +588,14 @@ function textPromptDoCount(elem, countElem = null, prefix = '') {
         genericRequest('CountTokens', { text: elem.value, skipPromptSyntax: true }, data => {
             let chunks = Math.max(75, Math.ceil(data.count / 75) * 75);
             tokenCount.innerText = `${prefix}${data.count}/${chunks}`;
+            if (data.split_data) {
+                elem.dataset.lastPromptSplitData = JSON.stringify(data.split_data);
+                updatePromptSplitOverlay(elem, data.split_data);
+            }
+            else {
+                delete elem.dataset.lastPromptSplitData;
+                clearPromptSplitOverlay(elem);
+            }
             delete elem.dataset.has_token_count_running;
             if (elem.dataset.needs_token_recount) {
                 delete elem.dataset.needs_token_recount;
@@ -833,6 +1113,9 @@ function dynamicSizeTextBox(elem, min=15, altMax = null) {
     let fontSize = parseFloat(window.getComputedStyle(elem).fontSize);
     let roundedHeight = roundTo(height, fontSize);
     elem.style.height = `calc(min(${maxHeight}rem, ${Math.max(roundedHeight, min) + 5}px))`;
+    if (elem.dataset.lastPromptSplitData) {
+        requestPromptSplitOverlaySync(elem, true);
+    }
     if (jitterDebug) {
         console.error(`JitterDebug dynamicSizeTextBox: ${elem.id} height adjust: ${height} yield ${roundedHeight} max ${maxHeight} min ${min}, now ${elem.scrollHeight} db ${elem.offsetHeight} and ${elem.clientHeight}`);
     }

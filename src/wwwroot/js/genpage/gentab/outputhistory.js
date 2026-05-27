@@ -2363,6 +2363,9 @@ function listOutputHistoryFolderAndFiles(path, isRefresh, callback, depth, onErr
     let serverSortBy = imageHistorySortSupportedByServer(sortBy) ? sortBy : 'DateEdited';
     let serverReverse = imageHistorySortSupportedByServer(sortBy) ? reverse : false;
     let request = { 'path': path, 'depth': depth, 'sortBy': serverSortBy, 'sortReverse': serverReverse, 'includeHidden': showHidden };
+    if (isRefresh) {
+        request.forceScan = true;
+    }
     if (useFastFirst) {
         request.fastFirst = true;
         request.fastFirstLimit = IMAGE_HISTORY_FAST_FIRST_LIMIT;
