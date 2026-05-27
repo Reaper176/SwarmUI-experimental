@@ -570,7 +570,7 @@ public partial class WorkflowGenerator
 
         public string GetQwen3_600mModel()
         {
-            return RequireClipModel("qwen_3_600m.safetensors", "https://huggingface.co/circlestone-labs/Anima/resolve/main/split_files/text_encoders/qwen_3_06b_base.safetensors", "cd2a512003e2f9f3cd3c32a9c3573f820bb28c940f73c57b1ddaa983d9223eba", T2IParamTypes.QwenModel);
+            return RequireClipModel("qwen_3_06b_base.safetensors", "https://huggingface.co/circlestone-labs/Anima/resolve/main/split_files/text_encoders/qwen_3_06b_base.safetensors", "cd2a512003e2f9f3cd3c32a9c3573f820bb28c940f73c57b1ddaa983d9223eba", T2IParamTypes.QwenModel);
         }
 
         public string GetQwen3_4bModel()
