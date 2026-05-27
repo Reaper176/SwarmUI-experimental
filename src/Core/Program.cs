@@ -446,7 +446,10 @@ public class Program
         {
             try
             {
-                Utilities.EnsureDirectory(path);
+                if (!Utilities.EnsureDirectory(path))
+                {
+                    Logs.Warning($"Model directory path '{path}' already exists as a non-directory file or broken symlink.");
+                }
             }
             catch (IOException ex)
             {

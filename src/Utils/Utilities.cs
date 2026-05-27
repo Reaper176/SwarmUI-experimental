@@ -701,22 +701,44 @@ public static class Utilities
     /// <summary>Reusable general web client with a very long timeout, for <see cref="DownloadFile"/> in particular to use.</summary>
     public static HttpClient DownloaderWebClient = NetworkBackendUtils.MakeHttpClient(120);
 
-    /// <summary>Creates a directory if needed, treating existing symlinked directories as valid.</summary>
-    public static void EnsureDirectory(string path)
+    /// <summary>Returns true if a filesystem entry exists at the path, including a dangling symlink.</summary>
+    public static bool PathExistsIncludingSymlink(string path)
+    {
+        if (Directory.Exists(path) || File.Exists(path))
+        {
+            return true;
+        }
+        try
+        {
+            return new FileInfo(path).LinkTarget is not null || new DirectoryInfo(path).LinkTarget is not null;
+        }
+        catch (Exception)
+        {
+            return false;
+        }
+    }
+
+    /// <summary>Creates a directory if needed. Returns false if a non-directory entry already exists at the path.</summary>
+    public static bool EnsureDirectory(string path)
     {
         if (Directory.Exists(path))
         {
-            return;
+            return true;
         }
         try
         {
             Directory.CreateDirectory(path);
+            return true;
         }
         catch (IOException)
         {
             if (Directory.Exists(path))
             {
-                return;
+                return true;
+            }
+            if (PathExistsIncludingSymlink(path))
+            {
+                return false;
             }
             throw;
         }

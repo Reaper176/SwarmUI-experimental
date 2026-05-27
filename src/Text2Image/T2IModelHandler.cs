@@ -260,12 +260,20 @@ public class T2IModelHandler
         }
         try
         {
+            List<string> usableFolderPaths = [];
             foreach (string path in FolderPaths)
             {
-                Utilities.EnsureDirectory(path);
+                if (Utilities.EnsureDirectory(path))
+                {
+                    usableFolderPaths.Add(path);
+                }
+                else
+                {
+                    Logs.Warning($"Skipping {ModelType} model path '{path}' because a non-directory file or broken symlink exists there.");
+                }
             }
             ConcurrentDictionary<string, T2IModel> newModels = new();
-            foreach (string path in FolderPaths)
+            foreach (string path in usableFolderPaths)
             {
                 AddAllFromFolder(path, "", newModels);
             }
