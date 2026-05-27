@@ -164,7 +164,7 @@ public class ComfyUIBackendExtension : Extension
             string path = Utilities.CombinePathWithAbsolute(root, subpath);
             if (createDir)
             {
-                Directory.CreateDirectory(path);
+                Utilities.EnsureDirectory(path);
             }
             else if (!Directory.Exists(path))
             {

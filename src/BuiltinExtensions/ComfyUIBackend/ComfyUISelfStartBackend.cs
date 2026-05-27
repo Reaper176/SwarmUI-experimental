@@ -335,9 +335,9 @@ public class ComfyUISelfStartBackend : ComfyUIAPIAbstractBackend
                 custom_nodes: {buildSection(ComfyUIBackendExtension.Folder, $"{Path.GetFullPath(ComfyUIBackendExtension.Folder + "/DLNodes")};{Path.GetFullPath(ComfyUIBackendExtension.Folder + "/ExtraNodes")};{CustomNodePaths.Select(Path.GetFullPath).JoinString(";")}")}
 
             """;
-            Directory.CreateDirectory(Utilities.CombinePathWithAbsolute(roots[0], Program.ServerSettings.Paths.SDClipVisionFolder.Split(';')[0]));
-            Directory.CreateDirectory(Utilities.CombinePathWithAbsolute(roots[0], Program.ServerSettings.Paths.SDClipFolder.Split(';')[0]));
-            Directory.CreateDirectory($"{roots[0]}/upscale_models");
+            Utilities.EnsureDirectory(Utilities.CombinePathWithAbsolute(roots[0], Program.ServerSettings.Paths.SDClipVisionFolder.Split(';')[0]));
+            Utilities.EnsureDirectory(Utilities.CombinePathWithAbsolute(roots[0], Program.ServerSettings.Paths.SDClipFolder.Split(';')[0]));
+            Utilities.EnsureDirectory($"{roots[0]}/upscale_models");
             foreach (Func<string, string> yamlModifier in ModifyComfyYaml)
             {
                 yaml = yamlModifier(yaml);

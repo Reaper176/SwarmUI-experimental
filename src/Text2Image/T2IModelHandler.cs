@@ -262,7 +262,7 @@ public class T2IModelHandler
         {
             foreach (string path in FolderPaths)
             {
-                Directory.CreateDirectory(path);
+                Utilities.EnsureDirectory(path);
             }
             ConcurrentDictionary<string, T2IModel> newModels = new();
             foreach (string path in FolderPaths)

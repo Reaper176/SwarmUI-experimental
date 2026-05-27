@@ -199,7 +199,7 @@ public static class AdminAPI
                 {
                     foreach (string subpath in path.Split(';').Where(p => !string.IsNullOrWhiteSpace(p)))
                     {
-                        Directory.CreateDirectory(Utilities.CombinePathWithAbsolute(Program.ServerSettings.Paths.ActualModelRoot, subpath));
+                        Utilities.EnsureDirectory(Utilities.CombinePathWithAbsolute(Program.ServerSettings.Paths.ActualModelRoot, subpath));
                     }
                 }
             }
