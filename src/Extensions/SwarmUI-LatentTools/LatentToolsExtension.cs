@@ -29,8 +29,8 @@ public class LatentToolsExtension : Extension
         InstallableFeatures.RegisterInstallableFeature(new("Latent Tools", FeatureId, "https://github.com/Machines-of-Disruption/latent-tools", "Machines-of-Disruption"));
         ScriptFiles.Add("assets/latent_tools.js");
         ComfyUIBackendExtension.NodeToFeatureMap["LTPreviewLatent"] = FeatureId;
-        ComfyUIBackendExtension.NodeToFeatureMap["LTRandomGaussian"] = FeatureId;
-        ComfyUIBackendExtension.NodeToFeatureMap["LTRandomUniform"] = FeatureId;
+        ComfyUIBackendExtension.NodeToFeatureMap["LTGaussianLatent"] = FeatureId;
+        ComfyUIBackendExtension.NodeToFeatureMap["LTUniformLatent"] = FeatureId;
 
         LatentToolsGroup = new("Latent Tools", Toggles: false, Open: false, IsAdvanced: false, Description: "Installs and configures the latent-tools ComfyUI custom node pack.");
         int order = 0;
@@ -79,13 +79,13 @@ public class LatentToolsExtension : Extension
             string nodeType;
             if (mode == "Gaussian")
             {
-                nodeType = "LTRandomGaussian";
+                nodeType = "LTGaussianLatent";
                 inputs["mean"] = g.UserInput.Get(GaussianMean, 0);
                 inputs["std"] = g.UserInput.Get(GaussianStd, 1);
             }
             else if (mode == "Uniform")
             {
-                nodeType = "LTRandomUniform";
+                nodeType = "LTUniformLatent";
                 inputs["min"] = g.UserInput.Get(UniformMin, -1);
                 inputs["max"] = g.UserInput.Get(UniformMax, 1);
             }

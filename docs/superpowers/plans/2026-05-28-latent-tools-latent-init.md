@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Add Generate tab controls that replace the initial empty image latent with `LTRandomGaussian` or `LTRandomUniform`.
+**Goal:** Add Generate tab controls that replace the initial empty image latent with `LTGaussianLatent` or `LTUniformLatent`.
 
 **Architecture:** Keep the integration entirely inside `LatentToolsExtension.cs`. Register a small parameter group, then add one workflow step after the initial media step and before sampling.
 
@@ -29,7 +29,7 @@
 - [ ] Throw `SwarmUserErrorException` when mode is enabled but `latent_tools` is not installed.
 - [ ] Skip when `Init Image` is set.
 - [ ] Skip when `g.CurrentMedia.DataType` is not `WGNodeData.DT_LATENT_IMAGE`.
-- [ ] Create `LTRandomGaussian` or `LTRandomUniform`.
+- [ ] Create `LTGaussianLatent` or `LTUniformLatent`.
 - [ ] Replace `g.CurrentMedia` with the node output.
 
 ## Task 3: Static Validation
@@ -38,6 +38,6 @@
 - Inspect: `src/Extensions/SwarmUI-LatentTools/LatentToolsExtension.cs`
 - Inspect: `src/Extensions/SwarmUI-LatentTools/assets/latent_tools.js`
 
-- [ ] Run `rg "LTRandomGaussian|LTRandomUniform|LatentInit|Init Image|latent_tools" src/Extensions/SwarmUI-LatentTools`.
+- [ ] Run `rg "LTGaussianLatent|LTUniformLatent|LatentInit|Init Image|latent_tools" src/Extensions/SwarmUI-LatentTools`.
 - [ ] Run `git diff --name-only HEAD~1..HEAD` after commit.
 - [ ] Do not run builds or tests per `AGENTS.md`.

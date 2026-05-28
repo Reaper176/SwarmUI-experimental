@@ -9,7 +9,7 @@ empty image latent with a Gaussian or Uniform random latent.
 ## Scope
 
 - Add Generate parameters under the existing `Latent Tools` group.
-- Support `LTRandomGaussian` and `LTRandomUniform`.
+- Support `LTGaussianLatent` and `LTUniformLatent`.
 - Use Swarm's current width, height, batch size, and seed.
 - Apply only when generating from an empty image latent.
 
@@ -50,7 +50,7 @@ When mode is enabled:
 1. Verify the backend reports `latent_tools`.
 2. Skip if `Init Image` is set.
 3. Skip if the current media is not `LATENT_IMAGE`.
-4. Create either `LTRandomGaussian` or `LTRandomUniform`.
+4. Create either `LTGaussianLatent` or `LTUniformLatent`.
 5. Replace `g.CurrentMedia` with the new latent node path, preserving the
    current image compat class and recording width/height.
 
@@ -69,7 +69,7 @@ Agents do not run SwarmUI builds or tests in this repo. Validation is static:
 
 - Confirm parameters are registered in `LatentToolsExtension.cs`.
 - Confirm `assets/latent_tools.js` still renders the installer button.
-- Confirm workflow step creates only `LTRandomGaussian`/`LTRandomUniform`.
+- Confirm workflow step creates only `LTGaussianLatent`/`LTUniformLatent`.
 - Confirm the step explicitly skips init-image and non-image-latent cases.
 
 Manual developer validation:
