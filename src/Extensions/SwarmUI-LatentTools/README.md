@@ -9,12 +9,22 @@ reshaping, concatenating, and mathematically manipulating latent tensors. It
 also includes numeric helper nodes and a sampler variant that can accept
 additional latent noise.
 
-## Scope
+## Generate Controls
 
-This extension is currently an installer wrapper. It does not add new Generate
-tab controls or modify SwarmUI-generated workflows.
+When latent-tools is installed, this extension adds a `Latent Tools` parameter
+group to the Generate tab.
 
-After installing the feature, use the latent-tools nodes in ComfyUI workflows.
+- `Init Mode`: choose Gaussian, Uniform, or Gaussian + Uniform latent creation.
+- `Blend Mode`: optionally blend single-source modes with Swarm's normal empty
+  latent, or blend Gaussian and Uniform together in two-source mode.
+- `Op`: optionally applies `LTLatentOp` before sampling.
+- `Use LTKSampler`: opt-in only. When checked, Swarm's base sampler node is
+  replaced with `LTKSampler` and the generated Latent Tools latent is passed as
+  `latent_noise`.
+
+`LTKSampler` is intentionally limited to compatible full base text-to-image
+sampling. It will report an error instead of silently replacing unsupported
+sampler setups.
 
 ## Installation
 

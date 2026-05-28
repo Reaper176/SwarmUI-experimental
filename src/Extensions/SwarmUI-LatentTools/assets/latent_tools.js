@@ -22,16 +22,21 @@ function updateLatentToolsModeVisibility() {
         box.style.display = visible ? '' : 'none';
     };
     let mode = getInputVal(modeInput);
-    setVisible('latenttoolschannels', mode == 'Gaussian' || mode == 'Uniform');
-    setVisible('latenttoolsgaussianmean', mode == 'Gaussian');
-    setVisible('latenttoolsgaussianstd', mode == 'Gaussian');
-    setVisible('latenttoolsuniformmin', mode == 'Uniform');
-    setVisible('latenttoolsuniformmax', mode == 'Uniform');
+    let hasLatentInit = mode == 'Gaussian' || mode == 'Uniform' || mode == 'Gaussian + Uniform';
+    setVisible('latenttoolschannels', hasLatentInit);
+    setVisible('latenttoolsgaussianmean', mode == 'Gaussian' || mode == 'Gaussian + Uniform');
+    setVisible('latenttoolsgaussianstd', mode == 'Gaussian' || mode == 'Gaussian + Uniform');
+    setVisible('latenttoolsuniformmin', mode == 'Uniform' || mode == 'Gaussian + Uniform');
+    setVisible('latenttoolsuniformmax', mode == 'Uniform' || mode == 'Gaussian + Uniform');
     let blendModeInput = document.getElementById('input_latenttoolsblendmode');
-    let hasLatentInit = mode == 'Gaussian' || mode == 'Uniform';
     setVisible('latenttoolsblendmode', hasLatentInit);
     let blendMode = blendModeInput ? getInputVal(blendModeInput) : 'Disabled';
     setVisible('latenttoolsblendratio', hasLatentInit && blendMode != 'Disabled');
+    let opModeInput = document.getElementById('input_latenttoolsop');
+    setVisible('latenttoolsop', hasLatentInit);
+    let opMode = opModeInput ? getInputVal(opModeInput) : 'Disabled';
+    setVisible('latenttoolsoparg', hasLatentInit && ['add', 'mul', 'pow', 'clamp_bottom', 'clamp_top', 'mean', 'std'].includes(opMode));
+    setVisible('latenttoolsuseltksampler', hasLatentInit);
 }
 
 postParamBuildSteps.push(() => {
@@ -42,6 +47,10 @@ postParamBuildSteps.push(() => {
     let blendModeInput = document.getElementById('input_latenttoolsblendmode');
     if (blendModeInput) {
         blendModeInput.addEventListener('change', updateLatentToolsModeVisibility);
+    }
+    let opModeInput = document.getElementById('input_latenttoolsop');
+    if (opModeInput) {
+        opModeInput.addEventListener('change', updateLatentToolsModeVisibility);
     }
 });
 
