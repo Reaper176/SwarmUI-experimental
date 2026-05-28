@@ -65,11 +65,13 @@ public static class LodestoneInterrogatorAPI
 
     /// <summary>Runs Lodestone Image Interrogator setup after an explicit user request.</summary>
     [API.APIDescription("Runs Lodestone Image Interrogator setup", "Creates local dependencies and downloads required model files after explicit user request.")]
-    public static async Task<JObject> LodestoneInterrogatorSetup(Session session)
+    public static async Task<JObject> LodestoneInterrogatorSetup(
+        Session session,
+        [API.APIParameter("Backend to install: auto, cuda, rocm, or cpu.")] string backend = "auto")
     {
         try
         {
-            LodestoneSetupStatus status = await LodestoneSetupManager.RunSetup();
+            LodestoneSetupStatus status = await LodestoneSetupManager.RunSetup(backend);
             return new JObject()
             {
                 ["success"] = status.IsReady,

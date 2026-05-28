@@ -23,6 +23,12 @@ public class LodestoneSetupStatus
     /// <summary>Whether the current extension dependency setup marker exists.</summary>
     public bool HasSetupMarker;
 
+    /// <summary>Backend selected for the current dependency setup.</summary>
+    public string Backend = "";
+
+    /// <summary>User-visible backend name selected for the current dependency setup.</summary>
+    public string BackendName = "";
+
     /// <summary>User-visible setup status message.</summary>
     public string Message = "";
 
@@ -37,6 +43,8 @@ public class LodestoneSetupStatus
             ["hasModelFile"] = HasModelFile,
             ["hasVocabFile"] = HasVocabFile,
             ["hasSetupMarker"] = HasSetupMarker,
+            ["backend"] = Backend,
+            ["backendName"] = BackendName,
             ["message"] = Message
         };
     }

@@ -20,6 +20,16 @@
     opacity: 0.85;
 }
 
+.lodestone-interrogator-setup-controls {
+    display: flex;
+    align-items: flex-end;
+    gap: 0.75rem;
+}
+
+.lodestone-interrogator-backend {
+    min-width: 12rem;
+}
+
 .lodestone-interrogator-grid {
     display: grid;
     grid-template-columns: minmax(16rem, 22rem) minmax(18rem, 1fr);

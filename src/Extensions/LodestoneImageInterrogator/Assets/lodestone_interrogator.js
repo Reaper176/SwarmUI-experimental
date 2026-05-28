@@ -42,6 +42,7 @@ class LodestoneInterrogatorHelper
 
         this.status = this.panel.querySelector("[data-lodestone-status]");
         this.setupButton = this.panel.querySelector("[data-lodestone-setup-button]");
+        this.backendInput = this.panel.querySelector("[data-lodestone-backend]");
         this.fileInput = this.panel.querySelector("[data-lodestone-file-input]");
         this.runButton = this.panel.querySelector("[data-lodestone-run-button]");
         this.copyButton = this.panel.querySelector("[data-lodestone-copy-button]");
@@ -63,10 +64,16 @@ class LodestoneInterrogatorHelper
         this.statusError = false;
         this.isReady = false;
         this.isRunning = false;
+        this.readyBackend = "";
+        this.backendWasChanged = false;
 
         if (this.setupButton)
         {
             this.setupButton.addEventListener("click", this.runSetup.bind(this));
+        }
+        if (this.backendInput)
+        {
+            this.backendInput.addEventListener("change", this.onBackendChanged.bind(this));
         }
         if (this.fileInput)
         {
@@ -295,6 +302,11 @@ class LodestoneInterrogatorHelper
             this.statusError = false;
             this.isReady = !!status.isReady;
             this.isRunning = !!status.isSetupRunning;
+            this.readyBackend = status.backend || "";
+            if (!this.backendWasChanged && this.backendInput && this.readyBackend)
+            {
+                this.backendInput.value = this.readyBackend;
+            }
             this.setStatusText(status.message || "Lodestone interrogator status is unknown.");
             this.updateButtonStates();
         }.bind(this), 0, function(error)
@@ -313,11 +325,13 @@ class LodestoneInterrogatorHelper
      */
     runSetup()
     {
+        let backend = this.readBackendSelection();
+        this.backendWasChanged = false;
         this.isRunning = true;
         this.setStatusText("Setting up Lodestone Image Interrogator. This may download about 5.27 GB of model data.");
         this.updateButtonStates();
         this.startSetupStatusPolling();
-        genericRequest("LodestoneInterrogatorSetup", {}, function(data)
+        genericRequest("LodestoneInterrogatorSetup", { backend: backend }, function(data)
         {
             this.stopSetupStatusPolling();
             if (data.status && data.status.message)
@@ -580,14 +594,50 @@ class LodestoneInterrogatorHelper
      */
     updateButtonStates()
     {
+        let selectedBackend = this.readBackendSelection();
+        let backendMatches = this.readyBackend && selectedBackend == this.readyBackend;
         if (this.setupButton)
         {
-            this.setupButton.disabled = !this.statusKnown || this.statusError || this.isReady || this.isRunning;
+            this.setupButton.disabled = !this.statusKnown || this.statusError || (this.isReady && backendMatches) || this.isRunning;
+        }
+        if (this.backendInput)
+        {
+            this.backendInput.disabled = this.isRunning;
         }
         if (this.runButton)
         {
-            this.runButton.disabled = !this.statusKnown || this.statusError || !this.isReady || this.isRunning;
+            this.runButton.disabled = !this.statusKnown || this.statusError || !this.isReady || !backendMatches || this.isRunning;
         }
+    }
+
+    /**
+     * Handles backend selector changes.
+     */
+    onBackendChanged()
+    {
+        this.backendWasChanged = true;
+        if (this.isReady && this.readyBackend && this.readBackendSelection() != this.readyBackend)
+        {
+            this.setStatusText("Setup is required for the selected GPU backend.");
+        }
+        this.updateButtonStates();
+    }
+
+    /**
+     * Reads the selected backend value.
+     */
+    readBackendSelection()
+    {
+        if (!this.backendInput)
+        {
+            return "auto";
+        }
+        let value = `${this.backendInput.value || "auto"}`.trim().toLowerCase();
+        if (value == "cuda" || value == "rocm" || value == "cpu" || value == "auto")
+        {
+            return value;
+        }
+        return "auto";
     }
 
     /**

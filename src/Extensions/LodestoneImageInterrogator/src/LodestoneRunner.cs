@@ -65,7 +65,7 @@ public static class LodestoneRunner
                     "--max-tags",
                     clampedMaxTags.ToString(CultureInfo.InvariantCulture),
                     "--device",
-                    "cuda"
+                    LodestoneSetupManager.GetRuntimeDevice()
                 ],
                 LodestoneSetupManager.RunnerRoot);
 

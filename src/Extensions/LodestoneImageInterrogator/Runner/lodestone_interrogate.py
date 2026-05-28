@@ -8,7 +8,7 @@ Zero dependency on transformers, trainer code, or any internal module.
 Only requires: torch, packaging, safetensors, Pillow, requests.
 
   pip install packaging safetensors Pillow requests
-  pip install --index-url https://repo.amd.com/rocm/whl/gfx110X-dgpu/ torch torchvision
+  pip install torch torchvision
 
 The DINOv3 ViT-H/16+ architecture is implemented directly here, with weights
 loaded from a .safetensors checkpoint.  The state-dict key names match the

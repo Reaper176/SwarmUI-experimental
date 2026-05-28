@@ -5,7 +5,18 @@
             <h4 class="lodestone-interrogator-title translate">Image Interrogator</h4>
             <div class="lodestone-interrogator-status translate" data-lodestone-status>Loading interrogator status...</div>
         </div>
-        <button type="button" class="basic-button lodestone-interrogator-setup-button translate" data-lodestone-setup-button>Setup</button>
+        <div class="lodestone-interrogator-setup-controls">
+            <label class="lodestone-interrogator-field">
+                <span class="translate">GPU Backend</span>
+                <select class="auto-dropdown lodestone-interrogator-backend" data-lodestone-backend>
+                    <option value="auto">Auto / Existing PyTorch</option>
+                    <option value="cuda">NVIDIA CUDA</option>
+                    <option value="rocm">AMD ROCm</option>
+                    <option value="cpu">CPU</option>
+                </select>
+            </label>
+            <button type="button" class="basic-button lodestone-interrogator-setup-button translate" data-lodestone-setup-button>Setup</button>
+        </div>
     </div>
     <div class="lodestone-interrogator-grid">
         <div class="lodestone-interrogator-inputs">

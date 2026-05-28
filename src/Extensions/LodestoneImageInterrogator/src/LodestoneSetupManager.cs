@@ -1,8 +1,12 @@
+using System;
 using System.Diagnostics;
 using System.IO;
 using System.Net.Http;
 using System.Runtime.InteropServices;
 using System.Threading.Tasks;
+using FreneticUtilities.FreneticExtensions;
+using Newtonsoft.Json;
+using Newtonsoft.Json.Linq;
 using SwarmUI.Core;
 using SwarmUI.Utils;
 
@@ -21,10 +25,28 @@ public static class LodestoneSetupManager
     private static string SetupMessageInternal = "";
 
     /// <summary>Current setup marker version. Increment when setup requirements change.</summary>
-    private const string SetupMarkerVersion = "3";
+    private const string SetupMarkerVersion = "4";
 
-    /// <summary>AMD ROCm gfx110X wheel index for Linux AMD GPU installs.</summary>
-    private const string RocmGfx110XWheelIndex = "https://repo.amd.com/rocm/whl/gfx110X-dgpu/";
+    /// <summary>Automatic backend selection value.</summary>
+    public const string BackendAuto = "auto";
+
+    /// <summary>NVIDIA CUDA backend selection value.</summary>
+    public const string BackendCuda = "cuda";
+
+    /// <summary>AMD ROCm backend selection value.</summary>
+    public const string BackendRocm = "rocm";
+
+    /// <summary>CPU backend selection value.</summary>
+    public const string BackendCpu = "cpu";
+
+    /// <summary>PyTorch CUDA wheel index for NVIDIA GPU installs.</summary>
+    private const string CudaWheelIndex = "https://download.pytorch.org/whl/cu130";
+
+    /// <summary>PyTorch ROCm wheel index for Linux AMD GPU installs.</summary>
+    private const string RocmWheelIndex = "https://download.pytorch.org/whl/rocm7.1";
+
+    /// <summary>PyTorch CPU wheel index.</summary>
+    private const string CpuWheelIndex = "https://download.pytorch.org/whl/cpu";
 
     /// <summary>Root folder for the Lodestone Image Interrogator extension source.</summary>
     private static string ExtensionRootInternal = "";
@@ -133,6 +155,7 @@ public static class LodestoneSetupManager
         bool hasModelFile = IsExistingFileValid(modelPath);
         bool hasVocabFile = IsExistingFileValid(vocabPath);
         bool hasSetupMarker = HasCurrentSetupMarker(setupMarkerPath);
+        string backend = hasSetupMarker ? ReadSetupBackend(setupMarkerPath) : "";
         bool isReady = hasPythonEnv && hasModelFile && hasVocabFile && hasSetupMarker;
         return new LodestoneSetupStatus()
         {
@@ -142,13 +165,16 @@ public static class LodestoneSetupManager
             HasModelFile = hasModelFile,
             HasVocabFile = hasVocabFile,
             HasSetupMarker = hasSetupMarker,
-            Message = isSetupRunning && !string.IsNullOrWhiteSpace(setupMessage) ? setupMessage : isReady ? "Ready." : BuildSetupRequiredMessage(hasPythonEnv, hasModelFile, hasVocabFile, hasSetupMarker)
+            Backend = backend,
+            BackendName = GetBackendDisplayName(backend),
+            Message = isSetupRunning && !string.IsNullOrWhiteSpace(setupMessage) ? setupMessage : isReady ? $"Ready ({GetBackendDisplayName(backend)})." : BuildSetupRequiredMessage(hasPythonEnv, hasModelFile, hasVocabFile, hasSetupMarker)
         };
     }
 
     /// <summary>Runs local Lodestone dependency and model setup.</summary>
-    public static async Task<LodestoneSetupStatus> RunSetup()
+    public static async Task<LodestoneSetupStatus> RunSetup(string backend)
     {
+        string normalizedBackend = NormalizeBackend(backend);
         if (!TryMarkSetupRunning())
         {
             LodestoneSetupStatus runningStatus = GetStatus();
@@ -158,10 +184,10 @@ public static class LodestoneSetupManager
 
         try
         {
-            SetSetupMessage("Starting Lodestone Image Interrogator setup.");
-            if (!RuntimeInformation.IsOSPlatform(OSPlatform.Linux))
+            SetSetupMessage($"Starting Lodestone Image Interrogator setup for {GetBackendDisplayName(normalizedBackend)}.");
+            if (normalizedBackend == BackendRocm && !RuntimeInformation.IsOSPlatform(OSPlatform.Linux))
             {
-                throw new InvalidOperationException("Lodestone GPU setup currently targets Linux AMD ROCm gfx110X systems.");
+                throw new InvalidOperationException("Lodestone AMD ROCm setup is only supported on Linux.");
             }
             Directory.CreateDirectory(DataRoot);
             Directory.CreateDirectory(Path.Combine(DataRoot, "models"));
@@ -174,24 +200,165 @@ public static class LodestoneSetupManager
 
             SetSetupMessage("Installing Lodestone Python dependencies.");
             await RunProcessChecked(PythonExePath, ["-m", "pip", "install", "-r", "Runner/requirements.txt"], ExtensionRoot);
-            SetSetupMessage("Installing AMD ROCm PyTorch wheels for gfx110X.");
-            await RunProcessChecked(PythonExePath, ["-m", "pip", "install", "--upgrade", "--force-reinstall", "--index-url", RocmGfx110XWheelIndex, "torch", "torchvision"], ExtensionRoot);
-            SetSetupMessage("Validating Lodestone ROCm GPU dependencies.");
-            await RunProcessChecked(PythonExePath, ["-c", "import torch, packaging, safetensors, PIL, requests; assert torch.cuda.is_available(), 'ROCm GPU is not available to PyTorch'; assert torch.version.hip, 'PyTorch is not a ROCm/HIP build'; print(torch.cuda.get_device_name(0)); print(torch.version.hip)"], ExtensionRoot);
+            await InstallTorchForBackend(normalizedBackend);
+            await ValidateBackend(normalizedBackend);
             SetSetupMessage("Downloading Lodestone model file. This is about 5.27 GB.");
             await DownloadIfMissing("https://huggingface.co/lodestones/taggerine/resolve/main/tagger_proto.safetensors", ModelPath);
             SetSetupMessage("Downloading Lodestone tag vocabulary.");
             await DownloadIfMissing("https://huggingface.co/lodestones/taggerine/resolve/main/tagger_vocab_with_categories_and_alias_updated.json", VocabPath);
-            await File.WriteAllTextAsync(SetupMarkerPath, SetupMarkerVersion, Program.GlobalProgramCancel);
+            await WriteSetupMarker(normalizedBackend);
 
             MarkSetupFinished();
             LodestoneSetupStatus status = GetStatus();
-            status.Message = status.IsReady ? "Setup complete." : "Setup finished, but required files are still missing.";
+            status.Message = status.IsReady ? $"Setup complete for {GetBackendDisplayName(normalizedBackend)}." : "Setup finished, but required files are still missing.";
             return status;
         }
         finally
         {
             MarkSetupFinished();
+        }
+    }
+
+    /// <summary>Returns the runtime device argument for the currently installed backend.</summary>
+    public static string GetRuntimeDevice()
+    {
+        string backend = ReadSetupBackend(SetupMarkerPath);
+        if (backend == BackendCpu)
+        {
+            return BackendCpu;
+        }
+        if (backend == BackendAuto)
+        {
+            return BackendAuto;
+        }
+        return "cuda";
+    }
+
+    /// <summary>Installs PyTorch packages for the selected backend.</summary>
+    private static async Task InstallTorchForBackend(string backend)
+    {
+        if (backend == BackendCuda)
+        {
+            SetSetupMessage("Installing NVIDIA CUDA PyTorch wheels.");
+            await RunProcessChecked(PythonExePath, ["-m", "pip", "install", "--upgrade", "--force-reinstall", "--index-url", CudaWheelIndex, "torch", "torchvision"], ExtensionRoot);
+            return;
+        }
+        if (backend == BackendRocm)
+        {
+            SetSetupMessage("Installing AMD ROCm PyTorch wheels.");
+            await RunProcessChecked(PythonExePath, ["-m", "pip", "install", "--upgrade", "--force-reinstall", "--index-url", RocmWheelIndex, "torch", "torchvision"], ExtensionRoot);
+            return;
+        }
+        if (backend == BackendCpu)
+        {
+            SetSetupMessage("Installing CPU PyTorch wheels.");
+            await RunProcessChecked(PythonExePath, ["-m", "pip", "install", "--upgrade", "--force-reinstall", "--index-url", CpuWheelIndex, "torch", "torchvision"], ExtensionRoot);
+            return;
+        }
+        SetSetupMessage("Installing default PyTorch wheels.");
+        await RunProcessChecked(PythonExePath, ["-m", "pip", "install", "--upgrade", "torch", "torchvision"], ExtensionRoot);
+    }
+
+    /// <summary>Validates PyTorch and the selected backend after package installation.</summary>
+    private static async Task ValidateBackend(string backend)
+    {
+        if (backend == BackendCuda)
+        {
+            SetSetupMessage("Validating NVIDIA CUDA PyTorch dependencies.");
+            await RunProcessChecked(PythonExePath, ["-c", "import torch, packaging, safetensors, PIL, requests; assert torch.cuda.is_available(), 'CUDA GPU is not available to PyTorch'; assert torch.version.cuda, 'PyTorch is not a CUDA build'; print(torch.cuda.get_device_name(0)); print(torch.version.cuda)"], ExtensionRoot);
+            return;
+        }
+        if (backend == BackendRocm)
+        {
+            SetSetupMessage("Validating AMD ROCm PyTorch dependencies.");
+            await RunProcessChecked(PythonExePath, ["-c", "import torch, packaging, safetensors, PIL, requests; assert torch.cuda.is_available(), 'ROCm GPU is not available to PyTorch'; assert torch.version.hip, 'PyTorch is not a ROCm/HIP build'; print(torch.cuda.get_device_name(0)); print(torch.version.hip)"], ExtensionRoot);
+            return;
+        }
+        if (backend == BackendCpu)
+        {
+            SetSetupMessage("Validating CPU PyTorch dependencies.");
+            await RunProcessChecked(PythonExePath, ["-c", "import torch, packaging, safetensors, PIL, requests; assert not torch.version.cuda and not torch.version.hip, 'Expected CPU PyTorch build'; print(torch.__version__)"], ExtensionRoot);
+            return;
+        }
+        SetSetupMessage("Validating default PyTorch dependencies.");
+        await RunProcessChecked(PythonExePath, ["-c", "import torch, packaging, safetensors, PIL, requests; print(torch.__version__); print(torch.cuda.get_device_name(0) if torch.cuda.is_available() else 'cpu')"], ExtensionRoot);
+    }
+
+    /// <summary>Normalizes a backend value from the API or marker file.</summary>
+    public static string NormalizeBackend(string backend)
+    {
+        string normalized = string.IsNullOrWhiteSpace(backend) ? BackendAuto : backend.Trim().ToLowerFast();
+        if (normalized == BackendCuda || normalized == BackendRocm || normalized == BackendCpu || normalized == BackendAuto)
+        {
+            return normalized;
+        }
+        return BackendAuto;
+    }
+
+    /// <summary>Returns a user-visible backend name.</summary>
+    public static string GetBackendDisplayName(string backend)
+    {
+        string normalized = NormalizeBackend(backend);
+        if (normalized == BackendCuda)
+        {
+            return "NVIDIA CUDA";
+        }
+        if (normalized == BackendRocm)
+        {
+            return "AMD ROCm";
+        }
+        if (normalized == BackendCpu)
+        {
+            return "CPU";
+        }
+        return "Auto / Existing PyTorch";
+    }
+
+    /// <summary>Writes the current setup marker after successful dependency setup.</summary>
+    private static async Task WriteSetupMarker(string backend)
+    {
+        JObject marker = new JObject()
+        {
+            ["version"] = SetupMarkerVersion,
+            ["backend"] = NormalizeBackend(backend)
+        };
+        await File.WriteAllTextAsync(SetupMarkerPath, marker.ToString(), Program.GlobalProgramCancel);
+    }
+
+    /// <summary>Reads the backend stored in the setup marker.</summary>
+    public static string ReadSetupBackend(string markerPath)
+    {
+        if (!File.Exists(markerPath))
+        {
+            return "";
+        }
+        try
+        {
+            string markerText = File.ReadAllText(markerPath).Trim();
+            if (markerText.StartsWith('{'))
+            {
+                JObject marker = JObject.Parse(markerText);
+                string version = $"{marker["version"]}";
+                string backend = $"{marker["backend"]}";
+                if (version == SetupMarkerVersion)
+                {
+                    return NormalizeBackend(backend);
+                }
+                return "";
+            }
+            if (markerText == SetupMarkerVersion)
+            {
+                return BackendAuto;
+            }
+            return "";
+        }
+        catch (IOException)
+        {
+            return "";
+        }
+        catch (JsonException)
+        {
+            return "";
         }
     }
 
@@ -226,18 +393,7 @@ public static class LodestoneSetupManager
     /// <summary>Returns whether the dependency setup marker matches this extension version.</summary>
     private static bool HasCurrentSetupMarker(string markerPath)
     {
-        if (!File.Exists(markerPath))
-        {
-            return false;
-        }
-        try
-        {
-            return File.ReadAllText(markerPath).Trim() == SetupMarkerVersion;
-        }
-        catch (IOException)
-        {
-            return false;
-        }
+        return !string.IsNullOrWhiteSpace(ReadSetupBackend(markerPath));
     }
 
     /// <summary>Downloads a remote file to a local target path when it is not already present.</summary>
