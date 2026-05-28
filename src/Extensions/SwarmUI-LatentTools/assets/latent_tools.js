@@ -27,12 +27,21 @@ function updateLatentToolsModeVisibility() {
     setVisible('latenttoolsgaussianstd', mode == 'Gaussian');
     setVisible('latenttoolsuniformmin', mode == 'Uniform');
     setVisible('latenttoolsuniformmax', mode == 'Uniform');
+    let blendModeInput = document.getElementById('input_latenttoolsblendmode');
+    let hasLatentInit = mode == 'Gaussian' || mode == 'Uniform';
+    setVisible('latenttoolsblendmode', hasLatentInit);
+    let blendMode = blendModeInput ? getInputVal(blendModeInput) : 'Disabled';
+    setVisible('latenttoolsblendratio', hasLatentInit && blendMode != 'Disabled');
 }
 
 postParamBuildSteps.push(() => {
     let modeInput = document.getElementById('input_latenttoolsinitmode');
     if (modeInput) {
         modeInput.addEventListener('change', updateLatentToolsModeVisibility);
+    }
+    let blendModeInput = document.getElementById('input_latenttoolsblendmode');
+    if (blendModeInput) {
+        blendModeInput.addEventListener('change', updateLatentToolsModeVisibility);
     }
 });
 

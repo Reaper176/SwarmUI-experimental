@@ -18,11 +18,14 @@ public class LatentToolsExtension : Extension
     /// <summary>Controls which latent-tools random latent source to use.</summary>
     public static T2IRegisteredParam<string> LatentInitMode;
 
+    /// <summary>Controls whether and how to blend the generated latent with Swarm's normal starting latent.</summary>
+    public static T2IRegisteredParam<string> LatentBlendMode;
+
     /// <summary>Number of channels to generate in the latent tensor.</summary>
     public static T2IRegisteredParam<int> LatentChannels;
 
     /// <summary>Distribution controls for Gaussian and Uniform latent initialization.</summary>
-    public static T2IRegisteredParam<double> GaussianMean, GaussianStd, UniformMin, UniformMax;
+    public static T2IRegisteredParam<double> GaussianMean, GaussianStd, UniformMin, UniformMax, LatentBlendRatio;
 
     public override void OnInit()
     {
@@ -31,6 +34,7 @@ public class LatentToolsExtension : Extension
         ComfyUIBackendExtension.NodeToFeatureMap["LTPreviewLatent"] = FeatureId;
         ComfyUIBackendExtension.NodeToFeatureMap["LTGaussianLatent"] = FeatureId;
         ComfyUIBackendExtension.NodeToFeatureMap["LTUniformLatent"] = FeatureId;
+        ComfyUIBackendExtension.NodeToFeatureMap["LTBlendLatent"] = FeatureId;
 
         LatentToolsGroup = new("Latent Tools", Toggles: false, Open: false, IsAdvanced: false, Description: "Installs and configures the latent-tools ComfyUI custom node pack.");
         int order = 0;
@@ -47,6 +51,11 @@ public class LatentToolsExtension : Extension
             "-1", Min: -1000, Max: 1000, Step: 0.0001, Group: LatentToolsGroup, FeatureFlag: FeatureId, OrderPriority: order++, DependNonDefault: LatentInitMode.Type.ID));
         UniformMax = T2IParamTypes.Register<double>(new("[LatentTools] Uniform Max", "Maximum value for Uniform latent initialization.",
             "1", Min: -1000, Max: 1000, Step: 0.0001, Group: LatentToolsGroup, FeatureFlag: FeatureId, OrderPriority: order++, DependNonDefault: LatentInitMode.Type.ID));
+        LatentBlendMode = T2IParamTypes.Register<string>(new("[LatentTools] Blend Mode", "Optionally blends Swarm's normal empty latent with the selected Latent Tools latent.",
+            "Disabled", Group: LatentToolsGroup, FeatureFlag: FeatureId, OrderPriority: order++, IgnoreIf: "Disabled", DependNonDefault: LatentInitMode.Type.ID,
+            GetValues: _ => ["Disabled", "interpolate", "add", "multiply", "abs_max", "abs_min", "max", "min", "sample"]));
+        LatentBlendRatio = T2IParamTypes.Register<double>(new("[LatentTools] Blend Ratio", "Blend ratio used by interpolate and sample blend modes.",
+            "0.5", Min: 0, Max: 1, Step: 0.001, ViewType: ParamViewType.SLIDER, Group: LatentToolsGroup, FeatureFlag: FeatureId, OrderPriority: order++, DependNonDefault: LatentBlendMode.Type.ID));
 
         WorkflowGenerator.AddStep(g =>
         {
@@ -66,6 +75,7 @@ public class LatentToolsExtension : Extension
             {
                 return;
             }
+            WGNodeData swarmLatent = g.CurrentMedia;
             int width = g.UserInput.GetImageWidth();
             int height = g.UserInput.GetImageHeight();
             JObject inputs = new()
@@ -94,7 +104,20 @@ public class LatentToolsExtension : Extension
                 throw new SwarmUserErrorException($"Unknown Latent Tools init mode '{mode}'");
             }
             string latentNode = g.CreateNode(nodeType, inputs);
-            g.CurrentMedia = g.CurrentMedia.WithPath([latentNode, 0], WGNodeData.DT_LATENT_IMAGE, g.CurrentCompat());
+            JArray finalLatent = [latentNode, 0];
+            if (g.UserInput.TryGet(LatentBlendMode, out string blendMode) && blendMode != "Disabled")
+            {
+                string blendNode = g.CreateNode("LTBlendLatent", new JObject()
+                {
+                    ["latent1"] = swarmLatent.Path,
+                    ["latent2"] = finalLatent,
+                    ["mode"] = blendMode,
+                    ["ratio"] = g.UserInput.Get(LatentBlendRatio, 0.5),
+                    ["seed"] = g.UserInput.Get(T2IParamTypes.Seed, 0)
+                });
+                finalLatent = [blendNode, 0];
+            }
+            g.CurrentMedia = g.CurrentMedia.WithPath(finalLatent, WGNodeData.DT_LATENT_IMAGE, g.CurrentCompat());
             g.CurrentMedia.Width = width;
             g.CurrentMedia.Height = height;
         }, -8.75);
