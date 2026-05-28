@@ -20,6 +20,6 @@ public class LatentToolsExtension : Extension
 
         LatentToolsGroup = new("Latent Tools", Toggles: false, Open: false, IsAdvanced: false, Description: "Installs the latent-tools ComfyUI custom node pack.");
         LatentToolsAvailable = T2IParamTypes.Register<bool>(new("[LatentTools] Available", "Internal marker used to show the Latent Tools installer button.",
-            "true", Group: LatentToolsGroup, FeatureFlag: FeatureId, VisibleNormally: false, ExtraHidden: true, IntentionalUnused: true, HideFromMetadata: true, DoNotSave: true));
+            "true", Group: LatentToolsGroup, FeatureFlag: FeatureId, ExtraHidden: true, IntentionalUnused: true, HideFromMetadata: true, DoNotSave: true));
     }
 }
