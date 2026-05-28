@@ -34,6 +34,9 @@ class GenerateHandler {
         if (!curImgElem || autoLoadImagesElem.checked || curImgElem.dataset.batch_id == batchId) {
             this.setCurrentImage(image, metadata, batchId, false, true);
         }
+        if (typeof notifyImageHistorySavedPath == 'function') {
+            notifyImageHistorySavedPath(image, metadata);
+        }
         if ((internalSiteJsGetUserSetting('AutoSwapImagesIncludesFullView', false) || imageFullView.currentBatchId == batchId) && imageFullView.isOpen()) {
             imageFullView.showImage(image, metadata, batchId);
         }

@@ -230,7 +230,12 @@ public class GridGeneratorExtension : Extension
                         {
                             Directory.CreateDirectory(dir);
                         }
-                        File.WriteAllBytes(targetPath, image.ActualFileTask is not null ? image.ActualFileTask.Result.RawData : image.File.RawData);
+                        MediaFile actualFile = image.ActualFileTask is not null ? image.ActualFileTask.Result : image.File;
+                        File.WriteAllBytes(targetPath, actualFile.RawData);
+                        if (!string.IsNullOrWhiteSpace(metadata))
+                        {
+                            File.WriteAllBytes($"{mainpath}.swarm.json", metadata.EncodeUTF8());
+                        }
                         string root = Utilities.CombinePathWithAbsolute(Environment.CurrentDirectory, data.Session.User.OutputDirectory);
                         string indexTargetPath = Utilities.CombinePathWithAbsolute(Environment.CurrentDirectory, targetPath).Replace('\\', '/');
                         OutputMetadataTracker.UpsertHistoryIndexForFile(indexTargetPath, root, data.Session.User.Settings.StarNoFolders);
