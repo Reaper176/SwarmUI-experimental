@@ -1,0 +1,91 @@
+<!-- LodestoneImageInterrogatorTab -->
+<div id="lodestone_interrogator_panel" class="lodestone-interrogator">
+    <div class="lodestone-interrogator-header">
+        <div>
+            <h4 class="lodestone-interrogator-title translate">Image Interrogator</h4>
+            <div class="lodestone-interrogator-status translate" data-lodestone-status>Loading interrogator status...</div>
+        </div>
+        <div class="lodestone-interrogator-setup-controls">
+            <label class="lodestone-interrogator-field">
+                <span class="translate">GPU Backend</span>
+                <select class="auto-dropdown lodestone-interrogator-backend" data-lodestone-backend>
+                    <option value="auto">Auto / Existing PyTorch</option>
+                    <option value="cuda">NVIDIA CUDA</option>
+                    <option value="rocm">AMD ROCm</option>
+                    <option value="cpu">CPU</option>
+                </select>
+            </label>
+            <button type="button" class="basic-button lodestone-interrogator-setup-button translate" data-lodestone-setup-button>Setup</button>
+        </div>
+    </div>
+    <div class="lodestone-interrogator-grid">
+        <div class="lodestone-interrogator-inputs">
+            <div class="lodestone-interrogator-preview" data-lodestone-preview>
+                <span class="translate">No image selected</span>
+            </div>
+            <label class="lodestone-interrogator-field">
+                <span class="translate">Image File</span>
+                <input type="file" accept="image/*" class="lodestone-interrogator-file-input" data-lodestone-file-input>
+            </label>
+            <div class="lodestone-interrogator-options">
+                <label class="lodestone-interrogator-field">
+                    <span class="translate">Threshold</span>
+                    <input type="number" min="0" max="1" step="0.01" value="0.35" class="auto-text lodestone-interrogator-threshold" data-lodestone-threshold>
+                </label>
+                <label class="lodestone-interrogator-field">
+                    <span class="translate">Max Tags</span>
+                    <input type="number" min="1" max="1000" step="1" value="40" class="auto-text lodestone-interrogator-max-tags" data-lodestone-max-tags>
+                </label>
+                <div class="lodestone-interrogator-category-set">
+                    <div class="lodestone-interrogator-category-heading translate">Categories</div>
+                    <label class="lodestone-interrogator-check">
+                        <input type="checkbox" class="lodestone-interrogator-category" value="rating" checked>
+                        <span class="translate">Rating</span>
+                    </label>
+                    <label class="lodestone-interrogator-check">
+                        <input type="checkbox" class="lodestone-interrogator-category" value="character" checked>
+                        <span class="translate">Characters</span>
+                    </label>
+                    <label class="lodestone-interrogator-check">
+                        <input type="checkbox" class="lodestone-interrogator-category" value="general" checked>
+                        <span class="translate">General</span>
+                    </label>
+                    <label class="lodestone-interrogator-check">
+                        <input type="checkbox" class="lodestone-interrogator-category" value="style" checked>
+                        <span class="translate">Style</span>
+                    </label>
+                </div>
+            </div>
+            <button type="button" class="basic-button lodestone-interrogator-run-button translate" data-lodestone-run-button>Interrogate Image</button>
+        </div>
+        <div class="lodestone-interrogator-output">
+            <label class="lodestone-interrogator-field lodestone-interrogator-prompt-field">
+                <span class="translate">Prompt</span>
+                <textarea class="auto-text auto-text-block lodestone-interrogator-prompt" rows="8" data-lodestone-prompt></textarea>
+            </label>
+            <div class="lodestone-interrogator-actions">
+                <button type="button" class="basic-button translate" data-lodestone-copy-button>Copy</button>
+                <button type="button" class="basic-button translate" data-lodestone-replace-button>Replace Prompt</button>
+                <button type="button" class="basic-button translate" data-lodestone-append-button>Append Prompt</button>
+            </div>
+            <div class="lodestone-interrogator-results">
+                <div class="lodestone-interrogator-result-group" data-lodestone-rating-results>
+                    <div class="lodestone-interrogator-result-heading translate">Rating</div>
+                    <div class="lodestone-interrogator-result-list"></div>
+                </div>
+                <div class="lodestone-interrogator-result-group" data-lodestone-character-results>
+                    <div class="lodestone-interrogator-result-heading translate">Characters</div>
+                    <div class="lodestone-interrogator-result-list"></div>
+                </div>
+                <div class="lodestone-interrogator-result-group" data-lodestone-general-results>
+                    <div class="lodestone-interrogator-result-heading translate">General Tags</div>
+                    <div class="lodestone-interrogator-result-list"></div>
+                </div>
+                <div class="lodestone-interrogator-result-group" data-lodestone-style-results>
+                    <div class="lodestone-interrogator-result-heading translate">Style</div>
+                    <div class="lodestone-interrogator-result-list"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
