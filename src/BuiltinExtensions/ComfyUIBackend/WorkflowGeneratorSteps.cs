@@ -1633,7 +1633,7 @@ public class WorkflowGeneratorSteps
                     g.CurrentMedia = g.CurrentMedia.WithPath([id, 0], WGNodeData.DT_LATENT_IMAGE);
                     refinerPassIndex++;
                 }
-                bool doPreUpscaleRefiner = doUspcale && refinerControl > 0 && g.UserInput.Get(T2IParamTypes.RefinerPassBeforeUpscale, false);
+                bool doPreUpscaleRefiner = doUpscale && refinerControl > 0 && g.UserInput.Get(T2IParamTypes.RefinerPassBeforeUpscale, false);
                 if (doPreUpscaleRefiner)
                 {
                     runRefinerPass("22");
