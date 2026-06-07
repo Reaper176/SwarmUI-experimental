@@ -25,10 +25,12 @@ tmp/
 .worktrees/
 /src/Extensions
 /dlbackend
+.agents/
 *.debug
 custom-launch-docker.sh
 dotnet-install.sh
 docker-compose.yml
+swarmui.log
 
 # Python
 __pycache__/
