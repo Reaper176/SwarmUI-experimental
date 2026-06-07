@@ -31,6 +31,7 @@ custom-launch-docker.sh
 dotnet-install.sh
 docker-compose.yml
 swarmui.log
+.env
 
 # Python
 __pycache__/

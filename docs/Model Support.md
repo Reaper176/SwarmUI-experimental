@@ -38,6 +38,7 @@ Old or bad options also tracked listed via [Obscure Model Support](/docs/Obscure
 [Ovis](/docs/Obscure%20Model%20Support.md#ovis) | MMDiT | 2025 | AIDC-AI (Alibaba) | 7B | No | Passable quality, but outclassed on launch |
 [LongCat-Image](/docs/Obscure%20Model%20Support.md#longcat-image) | MMDiT | 2025 | LongCat | 6B | No | Passable quality, but outclassed on launch |
 [Zeta Chroma](/docs/Obscure%20Model%20Support.md#zeta-chroma) | Pixel S3-DiT | 2026 | Lodestone Rock | 6B | No | Modern, Pixel-space Z-Image variant |
+[PixelDiT](/docs/Obscure%20Model%20Support.md#pixeldit) | Pixel DiT | 2026 | NVIDIA | 1.3B | Minimal | Modern, fast, pixel-space, but very bad relative quality on launch |
 
 - **Architecture** is the fundamental machine learning structure used for the model, UNet's were used in the past but DiT (Diffusion Transformers) are the modern choice
 - **Scale** is how big the model is - "B" for "Billion", so for example "2B" means "Two billion parameters".
@@ -629,7 +630,7 @@ For upscaling with SD3, the `Refiner Do Tiling` parameter is highly recommended 
 - It is a 4B model (Officially listed as 3.8B), with a base model and an official turbo distill designed to run fast.
     - The raw base model (FP8) can be downloaded here: [Comfy-Org/Lens](<https://huggingface.co/Comfy-Org/Lens/resolve/main/diffusion_models/lens_mxfp8.safetensors>)
     - The Turbo model (FP8) can be downloaded here: [Comfy-Org/Lens - Turbo](<https://huggingface.co/Comfy-Org/Lens/resolve/main/diffusion_models/lens_turbo_mxfp8.safetensors>)
-    - Or fat BF16 versions [Comfy-Org/Lens - base bf16](<https://huggingface.co/Comfy-Org/Lens/resolve/main/split_files/diffusion_models/lens_bf16.safetensors>) [Comfy-Org/Lens - turbo bf16](<https://huggingface.co/Comfy-Org/Lens/resolve/main/split_files/diffusion_models/lens_turbo_bf16.safetensors>)
+    - Or fat BF16 versions [Comfy-Org/Lens - base bf16](<https://huggingface.co/Comfy-Org/Lens/resolve/main/diffusion_models/lens_bf16.safetensors>) [Comfy-Org/Lens - turbo bf16](<https://huggingface.co/Comfy-Org/Lens/resolve/main/diffusion_models/lens_turbo_bf16.safetensors>)
     - Save in `diffusion_models`
 - Uses the Flux.2 VAE, will be downloaded and handled automatically
 - Uses the GPT-OSS 20B text encoder, will be downloaded and handled automatically
@@ -639,6 +640,26 @@ For upscaling with SD3, the `Refiner Do Tiling` parameter is highly recommended 
     - **CFG Scale:** For Turbo, `1`, for base normal CFG ranges (around `5`)
     - **Steps:** For Turbo, `4` is recommended, `8` works well. For Base, `20` as normal.
     - **Resolution:** Side length `1440` is the official default, but 1024 is a reasonable option. It retains coherence down to about 512 and up to about 2048.
+
+# Ideogram 4
+
+- [Ideogram 4](<https://huggingface.co/ideogram-ai/ideogram-4-fp8>) is supported in SwarmUI!
+- It is a 9B model with an optional split unconditional model
+    - You can download the FP8 here: [Comfy-Org/Ideogram-4 FP8](<https://huggingface.co/Comfy-Org/Ideogram-4/resolve/main/diffusion_models/ideogram4_fp8_scaled.safetensors>)
+    - Or the NVFP4 (5 gigs) here: [Comfy-Org/Ideogram-4 nvfp4](<https://huggingface.co/Comfy-Org/Ideogram-4/resolve/main/diffusion_models/ideogram4_nvfp4_mixed.safetensors>)
+    - The "unconditional" models are here if you want them: [Comfy-Org/Ideogram](<https://huggingface.co/Comfy-Org/Ideogram-4/tree/main/diffusion_models>)
+        - The idea is you use a separate model for the negative half of CFG from the positive half (this is not required, and not currently implemented in SwarmUI)
+- It has built-in-to-the-model censorship, the model itself will try to reject inappropriate prompts.
+- **Parameters:**
+    - **Prompt:** They have an official prompting guide here [Ideogram-OSS: Docs/Prompting](<https://github.com/ideogram-oss/ideogram4/blob/main/docs/prompting.md>)
+        - They suggest long form JSON prompts, and have trained the model to understand features within such as bounding box coordinates as part of the structure
+        - If you don't use JSON it will just censor you almost every time.
+    - **Steps:** They suggest `12` for Turbo, `48` for quality. Anywhere in between is fine.
+    - **CFG:** Standard range around `7`, they suggest using a refiner stage of 1-3 steps at CFG=3.
+    - **Sampler:** Default is fine.
+    - **Scheduler:** Default is fine. They have an official specific custom one, but users have found this to be worse than default.
+    - **Resolution:** Side length `1024` is the default.
+
 
 # Video Models
 

@@ -233,7 +233,7 @@ let metadataKeyFormatCleaners = [];
 let promptCidMatcher = new RegExp('\<(.*?)//cid=\\d+>', 'g');
 
 function formatMetadataEntry(entry) {
-    return `<span class="param_view_block tag-text tag-type-${entry.hash}${entry.added}"><span class="param_view_name" title="${escapeHtmlNoBr(entry.keyTitle)}">${escapeHtml(entry.key)}</span>: ${entry.valueHtml}${entry.extras}</span>`;
+    return `<span class="param_view_block tag-text tag-type-${entry.hash}${entry.added}"><span class="param_view_name" title="${escapeHtmlNoBr(entry.keyTitle)}">${escapeHtml(entry.key)}:</span> ${entry.valueHtml}${entry.extras}</span>`;
 }
 
 function getFormattedMetadataEntries(metadata, finalResolution = null) {
@@ -347,7 +347,7 @@ function getFormattedMetadataEntries(metadata, finalResolution = null) {
             if (schedule) {
                 weight = `${weight} schedule="${schedule}"`;
             }
-            if (loraSectionConfinement && loraSectionConfinement[i] != 0) {
+            if (loraSectionConfinement && loraSectionConfinement[i] > 0) {
                 let name = loraHelper.confinementNames[loraSectionConfinement[i]] || loraSectionConfinement[i];
                 weight = `${weight} (${name})`;
             }
