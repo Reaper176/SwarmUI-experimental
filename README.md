@@ -1,4 +1,4 @@
-I have made this fork to add some basic functionality to the ui.
+I have made this fork to add some basic functionality to the ui. It turned into a lot more than that. This is HIGHLY experimental and has a bunch of vibe coded bs and random un-needed stuff stuck in different places that does nothing because cleanup is boring. Note that everything should still be secure as that is something I check manually to the best of my ability. That being said, breaks can happen, if you install this and something breaks...try again in an hr as I am probably already working on it. If it still does not work submit a issue or pr. <3
 
 # Added Functionality
 
