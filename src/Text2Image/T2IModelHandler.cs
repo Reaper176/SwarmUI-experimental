@@ -41,6 +41,15 @@ public class T2IModelHandler
     /// <summary>Quick internal tracker for unauthorized access errors, to aggregate the warning.</summary>
     public ConcurrentQueue<string> UnathorizedAccessSet = new();
 
+    /// <summary>Paths found during the most recent scan for this model handler that contain risky model-name characters.</summary>
+    public ConcurrentDictionary<string, byte> SpecialCharacterReportPaths = [];
+
+    /// <summary>Lock for writing the shared special-character model path report.</summary>
+    public static LockObject SpecialCharacterReportLock = new();
+
+    /// <summary>Path to the report listing model files and folders with characters that may cause parsing issues.</summary>
+    public static string SpecialCharacterReportPath => $"{Program.DataDir}/Temp/model_special_character_paths.txt";
+
     public record class ModelDatabase(string Folder, T2IModelHandler Handler, LiteDatabase Database, ILiteCollection<ModelMetadataStore> Metadata)
     {
         public volatile int Errors = 0;
@@ -258,6 +267,7 @@ public class T2IModelHandler
         {
             return;
         }
+        SpecialCharacterReportPaths = [];
         try
         {
             List<string> usableFolderPaths = [];
@@ -292,10 +302,49 @@ public class T2IModelHandler
                 Logs.Warning($"Got UnauthorizedAccessException while loading {ModelType} model paths: {UnathorizedAccessSet.Select(m => $"'{m}'").JoinString(", ")}");
                 UnathorizedAccessSet.Clear();
             }
+            WriteSpecialCharacterReport();
         }
         catch (Exception e)
         {
             Logs.Error($"Error while refreshing {ModelType} models: {e}");
+        }
+    }
+
+    /// <summary>Records all file and folder paths for a model name that contain characters known to cause parser issues.</summary>
+    public void RecordSpecialCharacterPaths(T2IModel model)
+    {
+        if (model is null || string.IsNullOrWhiteSpace(model.Name) || string.IsNullOrWhiteSpace(model.OriginatingFolderPath))
+        {
+            return;
+        }
+        string[] nameParts = model.Name.Replace('\\', '/').Split('/', StringSplitOptions.RemoveEmptyEntries);
+        string path = model.OriginatingFolderPath.Replace('\\', '/').TrimEnd('/');
+        foreach (string namePart in nameParts)
+        {
+            path = $"{path}/{namePart}";
+            if (T2IModel.DangerousModelNameChars.ContainsAnyMatch(namePart))
+            {
+                SpecialCharacterReportPaths[path] = 0;
+            }
+        }
+    }
+
+    /// <summary>Writes the shared model special-character path report from every model handler's most recent scan.</summary>
+    public static void WriteSpecialCharacterReport()
+    {
+        lock (SpecialCharacterReportLock)
+        {
+            try
+            {
+                string folder = SpecialCharacterReportPath.BeforeLast('/');
+                Directory.CreateDirectory(folder);
+                string[] paths = [.. Program.T2IModelSets.Values.SelectMany(h => h.SpecialCharacterReportPaths.Keys).Distinct().OrderBy(p => p.ToLowerFast())];
+                File.WriteAllText(SpecialCharacterReportPath, paths.JoinString("\n") + (paths.Length > 0 ? "\n" : ""));
+            }
+            catch (Exception ex)
+            {
+                Logs.Warning($"Failed to write model special-character path report '{SpecialCharacterReportPath}': {ex.ReadableString()}");
+            }
         }
     }
 
