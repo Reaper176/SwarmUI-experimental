@@ -216,9 +216,9 @@ class GenerateHandler {
         return null;
     }
 
-    /** Loads the selected model before a normal generation so cold-storage first runs can emit previews. */
-    preloadCurrentModelForPreviews(callback) {
-        let model = currentModelHelper.curModel || getRequiredElementById('current_model').value;
+    /** Loads the request's model before a normal generation so cold-storage first runs can emit previews. */
+    preloadCurrentModelForPreviews(model, callback) {
+        model = model || currentModelHelper.curModel || getRequiredElementById('current_model').value;
         if (!model) {
             callback();
             return;
@@ -519,13 +519,22 @@ class GenerateHandler {
             return;
         }
         this.beforeGenRun();
+        let actualInput = null;
+        let collectInput = () => {
+            actualInput = this.getGenInput(input_overrides, input_preoverrides);
+            if (window.promptLab?.applyPendingGenerateMetadata) {
+                promptLab.applyPendingGenerateMetadata(actualInput);
+            }
+            if (postCollectRun) {
+                postCollectRun(actualInput);
+            }
+        };
         let run = () => {
             this.resetBatchIfNeeded();
             let images = {};
             let batch_id = this.getBatchId();
             let discardable = {};
             let timeLastGenHit = [Date.now()];
-            let actualInput = this.getGenInput(input_overrides, input_preoverrides);
             let previewState = { hadOutput: false };
             let socket = null;
             let retryPreview = () => {
@@ -565,12 +574,6 @@ class GenerateHandler {
                 }
                 this.hadError(e);
             };
-            if (window.promptLab?.applyPendingGenerateMetadata) {
-                promptLab.applyPendingGenerateMetadata(actualInput);
-            }
-            if (postCollectRun) {
-                postCollectRun(actualInput);
-            }
             if (this.sockets[socketId] && this.sockets[socketId].readyState == WebSocket.OPEN) {
                 this.sockets[socketId].send(JSON.stringify(actualInput));
             }
@@ -579,24 +582,37 @@ class GenerateHandler {
                 this.sockets[socketId] = socket;
             }
         };
-        if (this.validateModel) {
-            if (getRequiredElementById('current_model').value == '') {
+        let runAfterModelCheck = () => {
+            if (!actualInput.model) {
                 this.hadError("Cannot generate, no model selected.");
                 return;
             }
-            currentModelHelper.ensureCurrentModel(() => {
-                if (currentModelHelper.doModelInstallRequiredCheck()) {
-                    return;
-                }
-                if (!isPreview && previewRetryCount == 0) {
-                    this.preloadCurrentModelForPreviews(run);
-                }
-                else {
-                    run();
-                }
-            });
+            if (currentModelHelper.doModelInstallRequiredCheck()) {
+                return;
+            }
+            if (!isPreview && previewRetryCount == 0) {
+                this.preloadCurrentModelForPreviews(actualInput.model, run);
+            }
+            else {
+                run();
+            }
+        };
+        if (this.validateModel) {
+            if (getRequiredElementById('current_model').value == '') {
+                currentModelHelper.ensureCurrentModel(() => {
+                    collectInput();
+                    runAfterModelCheck();
+                });
+            }
+            else {
+                collectInput();
+                currentModelHelper.ensureCurrentModel(() => {
+                    runAfterModelCheck();
+                });
+            }
         }
         else {
+            collectInput();
             run();
         }
     }
