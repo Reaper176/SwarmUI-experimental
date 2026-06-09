@@ -69,15 +69,17 @@ function currentGenString(num_waiting_gens, num_models_loading, num_live_gens, n
     }
     let liveGens = num_live_gens;
     let backendWaits = num_backends_waiting;
+    let modelLoads = num_models_loading;
     if (active_t2i_backends != null && num_waiting_gens > 0) {
         liveGens = Math.min(num_live_gens, active_t2i_backends);
         backendWaits = Math.max(num_waiting_gens - liveGens, 0);
+        modelLoads = Math.min(num_models_loading, num_waiting_gens);
     }
     else {
         liveGens = num_live_gens == num_waiting_gens ? 0 : num_live_gens;
         backendWaits = num_backends_waiting == num_waiting_gens ? 0 : num_backends_waiting;
     }
-    return `${autoBlock(num_waiting_gens, 'generation%')}${autoBlock(backendWaits, 'queued')}${autoBlock(liveGens, 'running')}${autoBlock(num_models_loading, waitingOnModelLoadText.get())}`;
+    return `${autoBlock(num_waiting_gens, 'generation%')}${autoBlock(backendWaits, 'queued')}${autoBlock(liveGens, 'running')}${autoBlock(modelLoads, waitingOnModelLoadText.get())}`;
 }
 
 function updateCurrentStatusDirect(data, backendStatus = null) {
