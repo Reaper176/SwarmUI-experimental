@@ -2,7 +2,7 @@
 function makeWSRequestT2I(url, in_data, callback, errorHandle = null) {
     return makeWSRequest(url, in_data, data => {
         if (data.status) {
-            updateCurrentStatusDirect(data.status);
+            updateCurrentStatusDirect(data.status, data.backend_status);
         }
         else if (data.raw_swarm_data) {
             // we don't use this in js

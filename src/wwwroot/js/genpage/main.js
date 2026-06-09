@@ -6,7 +6,7 @@ let lastImageDir = '';
 
 let lastModelDir = '';
 
-let num_waiting_gens = 0, num_models_loading = 0, num_live_gens = 0, num_backends_waiting = 0;
+let num_waiting_gens = 0, num_models_loading = 0, num_live_gens = 0, num_backends_waiting = 0, num_active_t2i_backends = null;
 
 let shouldApplyDefault = false;
 
@@ -60,26 +60,42 @@ let generatingPreviewsText = translatable('Generating live previews...');
 let waitingOnModelLoadText = translatable('waiting on model load');
 let generatingText = translatable('generating');
 
-function currentGenString(num_waiting_gens, num_models_loading, num_live_gens, num_backends_waiting) {
+function currentGenString(num_waiting_gens, num_models_loading, num_live_gens, num_backends_waiting, active_t2i_backends = null) {
     function autoBlock(num, text) {
         if (num == 0) {
             return '';
         }
         return `<span class="interrupt-line-part">${num} ${text.replaceAll('%', autoS(num))},</span> `;
     }
-    return `${autoBlock(num_waiting_gens, 'current generation%')}${autoBlock(num_live_gens, 'running')}${autoBlock(num_backends_waiting, 'queued')}${autoBlock(num_models_loading, waitingOnModelLoadText.get())}`;
+    let liveGens = num_live_gens;
+    let backendWaits = num_backends_waiting;
+    if (active_t2i_backends != null && num_waiting_gens > 0) {
+        liveGens = Math.min(num_live_gens, active_t2i_backends);
+        backendWaits = Math.max(num_waiting_gens - liveGens, 0);
+    }
+    else {
+        liveGens = num_live_gens == num_waiting_gens ? 0 : num_live_gens;
+        backendWaits = num_backends_waiting == num_waiting_gens ? 0 : num_backends_waiting;
+    }
+    return `${autoBlock(num_waiting_gens, 'generation%')}${autoBlock(backendWaits, 'queued')}${autoBlock(liveGens, 'running')}${autoBlock(num_models_loading, waitingOnModelLoadText.get())}`;
 }
 
-function updateCurrentStatusDirect(data) {
+function updateCurrentStatusDirect(data, backendStatus = null) {
     if (data) {
         num_waiting_gens = data.waiting_gens;
         num_models_loading = data.loading_models;
         num_live_gens = data.live_gens;
         num_backends_waiting = data.waiting_backends;
     }
-    let total = num_waiting_gens + num_models_loading + num_live_gens + num_backends_waiting;
+    if (backendStatus && backendStatus.active_t2i_backend_count != null) {
+        num_active_t2i_backends = backendStatus.active_t2i_backend_count;
+    }
+    let phaseMax = Math.max(num_models_loading, num_live_gens, num_backends_waiting);
+    let total = num_waiting_gens > 0 ? num_waiting_gens : phaseMax;
+    let estimateCount = num_waiting_gens;
     if (isGeneratingPreviews && num_waiting_gens <= getRequiredElementById('usersettings_maxsimulpreviews').value) {
         total = 0;
+        estimateCount = 0;
     }
     getRequiredElementById('alt_interrupt_button').classList.toggle('interrupt-button-none', total == 0);
     let simpleInterruptButton = document.getElementById('simple_interrupt_button');
@@ -93,13 +109,12 @@ function updateCurrentStatusDirect(data) {
     let elem = getRequiredElementById('num_jobs_span');
     let timeEstimate = '';
     let avgGenTime = typeof mainGenHandler.getAverageGenTime == 'function' ? mainGenHandler.getAverageGenTime() : 0;
-    if (total > 0 && avgGenTime > 0) {
-        let estTime = avgGenTime * total;
+    if (estimateCount > 0 && avgGenTime > 0) {
+        let estTime = avgGenTime * estimateCount;
         timeEstimate = ` (est. ${durationStringify(estTime)})`;
     }
-    elem.innerHTML = total == 0 ? (isGeneratingPreviews ? generatingPreviewsText.get() : '') : `${currentGenString(num_waiting_gens, num_models_loading, num_live_gens, num_backends_waiting)} ${timeEstimate}...`;
-    let max = Math.max(num_waiting_gens, num_models_loading, num_live_gens, num_backends_waiting);
-    setPageTitle(total == 0 ? curAutoTitle : `(${max} ${generatingText.get()}) ${curAutoTitle}`);
+    elem.innerHTML = total == 0 ? (isGeneratingPreviews ? generatingPreviewsText.get() : '') : `${currentGenString(num_waiting_gens, num_models_loading, num_live_gens, num_backends_waiting, num_active_t2i_backends)} ${timeEstimate}...`;
+    setPageTitle(total == 0 ? curAutoTitle : `(${total} ${generatingText.get()}) ${curAutoTitle}`);
 }
 
 let doesHaveGenCountUpdateQueued = false;
@@ -148,7 +163,7 @@ function reviseStatusBar() {
             hideUnsupportableParams();
         }
         doesHaveGenCountUpdateQueued = false;
-        updateCurrentStatusDirect(data.status);
+        updateCurrentStatusDirect(data.status, data.backend_status);
         let status;
         if (versionIsWrong) {
             status = { 'class': 'error', 'message': 'The server has updated since you opened the page, please refresh.' };

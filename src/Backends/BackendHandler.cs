@@ -128,95 +128,101 @@ public class BackendHandler
         CurrentBackendStatus = new(() =>
         {
             T2IBackendData[] backends = [.. EnumerateT2IBackends];
+            JObject withBackendUsage(JObject obj)
+            {
+                obj["active_t2i_backend_count"] = backends.Count(b => b.Backend.Status == BackendStatus.RUNNING && b.Usages > 0);
+                obj["active_t2i_backend_usages"] = backends.Where(b => b.Backend.Status == BackendStatus.RUNNING).Sum(b => b.Usages);
+                return obj;
+            }
             if (backends.Length == 0)
             {
-                return new()
+                return withBackendUsage(new()
                 {
                     ["status"] = "empty",
                     ["class"] = "error",
                     ["message"] = "No backends present. You must configure backends in the Backends section of the Server tab before you can continue.",
                     ["any_loading"] = false
-                };
+                });
             }
             if (backends.All(b => !b.Backend.IsEnabled))
             {
-                return new()
+                return withBackendUsage(new()
                 {
                     ["status"] = "all_disabled",
                     ["class"] = "error",
                     ["message"] = "All backends are disabled. You must enable backends in the Backends section of the Server tab before you can continue.",
                     ["any_loading"] = false
-                };
+                });
             }
             BackendStatus[] statuses = [.. backends.Select(b => b.Backend.Status)];
             int loading = statuses.Count(s => s == BackendStatus.LOADING || s == BackendStatus.WAITING);
             if (statuses.Any(s => s == BackendStatus.ERRORED))
             {
-                return new()
+                return withBackendUsage(new()
                 {
                     ["status"] = "errored",
                     ["class"] = "error",
                     ["message"] = "Some backends have errored on the server. Check the server logs for details.",
                     ["any_loading"] = loading > 0
-                };
+                });
             }
             if (statuses.Any(s => s == BackendStatus.RUNNING))
             {
                 if (loading > 0)
                 {
-                    return new()
+                    return withBackendUsage(new()
                     {
                         ["status"] = "some_loading",
                         ["class"] = "warn",
                         ["message"] = "Some backends are ready, but others are still loading...",
                         ["any_loading"] = true
-                    };
+                    });
                 }
-                return new()
+                return withBackendUsage(new()
                 {
                     ["status"] = "running",
                     ["class"] = "",
                     ["message"] = "",
                     ["any_loading"] = false
-                };
+                });
             }
             if (loading > 0)
             {
-                return new()
+                return withBackendUsage(new()
                 {
                     ["status"] = "loading",
                     ["class"] = "soft",
                     ["message"] = "Backends are still loading on the server...",
                     ["any_loading"] = true
-                };
+                });
             }
             if (statuses.Any(s => s == BackendStatus.DISABLED))
             {
-                return new()
+                return withBackendUsage(new()
                 {
                     ["status"] = "disabled",
                     ["class"] = "warn",
                     ["message"] = "Some backends are disabled. Please enable or configure them to continue.",
                     ["any_loading"] = false
-                };
+                });
             }
             if (statuses.Any(s => s == BackendStatus.IDLE))
             {
-                return new()
+                return withBackendUsage(new()
                 {
                     ["status"] = "idle",
                     ["class"] = "warn",
                     ["message"] = "All backends are idle. Cannot generate until at least one backend is running.",
                     ["any_loading"] = false
-                };
+                });
             }
-            return new()
+            return withBackendUsage(new()
             {
                 ["status"] = "unknown",
                 ["class"] = "error",
                 ["message"] = "Something is wrong with your backends. Please check the Backends section of the Server tab, or the server logs.",
                 ["any_loading"] = false
-            };
+            });
         }, TimeSpan.FromSeconds(1));
     }
 

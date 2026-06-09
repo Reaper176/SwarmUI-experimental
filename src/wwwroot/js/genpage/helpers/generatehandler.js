@@ -223,6 +223,10 @@ class GenerateHandler {
             callback();
             return;
         }
+        if (num_models_loading > 0) {
+            callback();
+            return;
+        }
         genericRequest('ListLoadedModels', {}, data => {
             let selectedClean = cleanModelName(model);
             for (let loaded of data.models) {
@@ -528,6 +532,14 @@ class GenerateHandler {
             if (postCollectRun) {
                 postCollectRun(actualInput);
             }
+            this.debugTrack('request-start', {
+                images: actualInput.images,
+                batchsize: actualInput.batchsize,
+                presets: actualInput.presets,
+                isPreview: isPreview,
+                socketId: socketId,
+                previewRetryCount: previewRetryCount
+            });
         };
         let run = () => {
             this.resetBatchIfNeeded();
