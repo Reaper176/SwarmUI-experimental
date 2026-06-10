@@ -563,6 +563,7 @@ public static class ModelsAPI
         }
         int edited = 0;
         JArray errors = [];
+        List<T2IModel> modelsToResave = [];
         foreach (JToken modelToken in models)
         {
             string model = modelToken?.ToString();
@@ -610,12 +611,19 @@ public static class ModelsAPI
                 }
             }
             handler.ResetMetadataFrom(actualModel);
-            _ = Utilities.RunCheckedTask(() => actualModel.ResaveModel(), "model resave");
+            modelsToResave.Add(actualModel);
             edited++;
         }
         if (edited > 0)
         {
             Interlocked.Increment(ref ModelEditID);
+            _ = Utilities.RunCheckedTask(() =>
+            {
+                foreach (T2IModel model in modelsToResave)
+                {
+                    model.ResaveModel();
+                }
+            }, "bulk model resave");
         }
         return new JObject()
         {
