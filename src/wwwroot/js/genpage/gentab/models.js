@@ -129,6 +129,97 @@ let curModelMenuBrowser = null;
 let nativelySupportedModelExtensions = ["safetensors", "sft", "engine", "gguf"];
 let modelIconUrlCache = {};
 let starredModels = null;
+let bulkEditModelFiles = [];
+let bulkEditModelBrowser = null;
+let bulkEditModelWrapper = null;
+
+/** Opens the bulk metadata edit modal for selected LoRA models. */
+function bulkEditModelMetadata(files, browser, wrapper) {
+    bulkEditModelFiles = files || [];
+    bulkEditModelBrowser = browser;
+    bulkEditModelWrapper = wrapper;
+    if (bulkEditModelFiles.length == 0) {
+        showError('No LoRAs selected.');
+        return;
+    }
+    getRequiredElementById('bulk_edit_model_summary').innerText = `${bulkEditModelFiles.length} LoRAs selected. Only enabled fields will be changed.`;
+    let list = getRequiredElementById('bulk_edit_model_list');
+    list.innerHTML = '';
+    for (let file of bulkEditModelFiles) {
+        let entry = createSpan(null, 'bulk-edit-model-list-entry');
+        entry.innerText = file.name;
+        list.appendChild(entry);
+    }
+    for (let id of ['architecture', 'usage_hint', 'trigger_phrase', 'lora_default_weight', 'lora_default_confinement', 'tags']) {
+        getRequiredElementById(`bulk_edit_model_${id}_enabled`).checked = false;
+    }
+    let architectureSelector = getRequiredElementById('bulk_edit_model_architecture');
+    let firstVisibleArchitecture = '';
+    for (let opt of architectureSelector.options) {
+        let slash = opt.value.indexOf('/');
+        let postSlash = slash > 0 ? opt.value.substring(slash + 1) : '';
+        let isVisible = bulkEditModelWrapper.subIds.includes(postSlash);
+        opt.style.display = isVisible ? 'block' : 'none';
+        if (isVisible && !firstVisibleArchitecture) {
+            firstVisibleArchitecture = opt.value;
+        }
+    }
+    if (firstVisibleArchitecture) {
+        architectureSelector.value = firstVisibleArchitecture;
+    }
+    getRequiredElementById('bulk_edit_model_usage_hint').value = '';
+    getRequiredElementById('bulk_edit_model_trigger_phrase').value = '';
+    getRequiredElementById('bulk_edit_model_lora_default_weight').value = '';
+    getRequiredElementById('bulk_edit_model_lora_default_confinement').value = '0';
+    getRequiredElementById('bulk_edit_model_tags_mode').value = 'add';
+    getRequiredElementById('bulk_edit_model_tags').value = '';
+    getRequiredElementById('bulk_edit_model_error').innerText = '';
+    $('#bulk_edit_model_modal').modal('show');
+}
+
+/** Adds a bulk metadata field to the request if its enable checkbox is checked. */
+function bulkEditModelMetadataAddField(fields, id, key = null) {
+    if (!getRequiredElementById(`bulk_edit_model_${id}_enabled`).checked) {
+        return;
+    }
+    fields[key || id] = getRequiredElementById(`bulk_edit_model_${id}`).value;
+}
+
+/** Saves the current bulk metadata patch to the selected LoRA models. */
+function bulkEditModelMetadataSave() {
+    if (!bulkEditModelBrowser || bulkEditModelFiles.length == 0) {
+        showError('No LoRAs selected.');
+        return;
+    }
+    let fields = {};
+    bulkEditModelMetadataAddField(fields, 'architecture');
+    bulkEditModelMetadataAddField(fields, 'usage_hint');
+    bulkEditModelMetadataAddField(fields, 'trigger_phrase');
+    bulkEditModelMetadataAddField(fields, 'lora_default_weight');
+    bulkEditModelMetadataAddField(fields, 'lora_default_confinement');
+    if (getRequiredElementById('bulk_edit_model_tags_enabled').checked) {
+        fields.tags_mode = getRequiredElementById('bulk_edit_model_tags_mode').value;
+        fields.tags = getRequiredElementById('bulk_edit_model_tags').value;
+    }
+    if (Object.keys(fields).length == 0) {
+        getRequiredElementById('bulk_edit_model_error').innerText = 'Enable at least one field to edit.';
+        return;
+    }
+    let request = {
+        subtype: 'LoRA',
+        models: bulkEditModelFiles.map(file => file.name),
+        fields: fields
+    };
+    genericRequest('BulkEditModelMetadata', request, data => {
+        let failed = data.failed || 0;
+        if (failed > 0) {
+            showError(`Bulk metadata edit finished with ${failed} failure(s).`);
+            console.warn('Bulk metadata edit failures:', data.errors || []);
+        }
+        $('#bulk_edit_model_modal').modal('hide');
+        bulkEditModelBrowser.lightRefresh();
+    });
+}
 
 function editModelGetHashNow() {
     if (curModelMenuModel == null) {
@@ -531,6 +622,9 @@ class ModelBrowserWrapper {
         }
         extraHeader += `<label for="models_${subType}_sort_by">Sort:</label> <select id="models_${subType}_sort_by"><option>Name</option><option>Title</option><option>DateCreated</option><option>DateModified</option></select> <input type="checkbox" id="models_${subType}_sort_reverse"> <label for="models_${subType}_sort_reverse">Reverse</label>`;
         this.browser = new GenPageBrowserClass(container, this.listModelFolderAndFiles.bind(this), id, format, this.describeModel.bind(this), this.selectModel.bind(this), extraHeader);
+        if (subType == 'LoRA') {
+            this.browser.allowMultiSelect = true;
+        }
         this.mediaWindowManager = new BrowserMediaWindowManager(8, 2);
         this.browser.enableDescriptionCache = true;
         if (subType != 'Wildcards') {
@@ -1119,6 +1213,9 @@ class ModelBrowserWrapper {
                 promptBox.value += ` <lora:${name}>`;
                 triggerChangeFor(promptBox);
             }, can_multi: true }];
+            if (model.data.local && permissions.hasPermission('edit_model_metadata')) {
+                buttons.push({ label: 'Bulk Edit Metadata', onclick: (files, browser) => bulkEditModelMetadata(files, browser, this), bulk_once: true });
+            }
         }
         let isStarred = this.isStarred(model.data.name);
         let starButton = { label: isStarred ? 'Unstar' : 'Star', onclick: () => { this.toggleStar(model.data.name); } };
