@@ -508,10 +508,11 @@ public static class ModelsAPI
 
     [API.APIDescription("Modifies selected metadata fields on multiple LoRA models. Returns edit counts and per-model errors.", "{ \"success\": true, \"edited\": 2, \"failed\": 0, \"errors\": [] }")]
     public static async Task<JObject> BulkEditModelMetadata(Session session,
-        [API.APIParameter("The model's sub-type. Only `LoRA` is supported.")] string subtype,
-        [API.APIParameter("Exact filepath names of models.")] JArray models,
-        [API.APIParameter("Patch object containing only metadata fields to edit.")] JObject fields)
+        [API.APIParameter("Raw request map containing `subtype`, `models`, and `fields`.")] JObject rawInput)
     {
+        string subtype = rawInput["subtype"]?.ToString();
+        JArray models = rawInput["models"] as JArray;
+        JObject fields = rawInput["fields"] as JObject;
         if (subtype != "LoRA")
         {
             return new JObject() { ["error"] = "Bulk metadata editing currently only supports LoRA models." };
