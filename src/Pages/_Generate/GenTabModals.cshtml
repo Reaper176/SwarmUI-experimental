@@ -164,6 +164,58 @@
         <button type="button" class="btn btn-secondary basic-button translate" onclick="$('#edit_model_modal').modal('hide')">Cancel</button>
     </div>
 @WebUtil.ModalFooter()
+@WebUtil.ModalHeader("bulk_edit_model_modal", "Bulk Edit LoRA Metadata")
+    <div class="modal-body">
+        <div id="bulk_edit_model_summary"></div>
+        <div id="bulk_edit_model_list" class="bulk-edit-model-list"></div>
+        <hr>
+        <div class="bulk-edit-model-row">
+            <label><input type="checkbox" id="bulk_edit_model_architecture_enabled"> Architecture</label>
+            <select id="bulk_edit_model_architecture" class="modal_text_extra">
+                @foreach (T2IModelClass arch in T2IModelClassSorter.ModelClasses.Values.OrderBy(x => x.ID))
+                {
+                    <option value="@arch.ID" class="translate">@arch.Name</option>
+                }
+            </select>
+        </div>
+        <div class="bulk-edit-model-row">
+            <label><input type="checkbox" id="bulk_edit_model_usage_hint_enabled"> Usage Hint</label>
+            <input type="text" id="bulk_edit_model_usage_hint" class="modal_text_extra translate" placeholder="Model Usage Hint" />
+        </div>
+        <div class="bulk-edit-model-row">
+            <label><input type="checkbox" id="bulk_edit_model_trigger_phrase_enabled"> Trigger Phrase</label>
+            <input type="text" id="bulk_edit_model_trigger_phrase" class="modal_text_extra translate" placeholder="Model Trigger Phrase" />
+        </div>
+        <div class="bulk-edit-model-row">
+            <label><input type="checkbox" id="bulk_edit_model_lora_default_weight_enabled"> Default LoRA Weight</label>
+            <input type="number" min="-10" max="10" step="0.05" id="bulk_edit_model_lora_default_weight" class="modal_text_extra translate" placeholder="Default LoRA Weight" />
+        </div>
+        <div class="bulk-edit-model-row">
+            <label><input type="checkbox" id="bulk_edit_model_lora_default_confinement_enabled"> Default LoRA Confinement</label>
+            <select id="bulk_edit_model_lora_default_confinement" class="modal_text_extra translate" placeholder="Default LoRA Confinement">
+                <option value="0">Global</option>
+                <option value="5">Base</option>
+                <option value="1">Refiner</option>
+                <option value="2">Video</option>
+                <option value="3">VideoSwap</option>
+            </select>
+        </div>
+        <div class="bulk-edit-model-row">
+            <label><input type="checkbox" id="bulk_edit_model_tags_enabled"> Tags</label>
+            <select id="bulk_edit_model_tags_mode" class="modal_text_extra translate">
+                <option value="add">Add Tags</option>
+                <option value="remove">Remove Tags</option>
+                <option value="replace">Replace Tags</option>
+            </select>
+            <input type="text" id="bulk_edit_model_tags" class="modal_text_extra translate" placeholder="Model Tags" />
+        </div>
+        <div id="bulk_edit_model_error" class="modal_error_bottom"></div>
+    </div>
+    <div class="modal-footer">
+        <button type="button" class="btn btn-primary basic-button translate" onclick="bulkEditModelMetadataSave()">Save</button>
+        <button type="button" class="btn btn-secondary basic-button translate" onclick="$('#bulk_edit_model_modal').modal('hide')">Cancel</button>
+    </div>
+@WebUtil.ModalFooter()
 @WebUtil.ModalHeader("view_raw_header_modal", """Raw Header for <span id="view_raw_header_modal_title"></span>""")
     <div class="modal-body">
         <div class="view_raw_header_modal_content"><pre id="view_raw_header_modal_content"></pre></div>

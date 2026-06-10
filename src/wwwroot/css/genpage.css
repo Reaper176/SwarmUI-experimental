@@ -4262,3 +4262,32 @@ mark.model-search-highlight {
         text-align: left;
     }
 }
+
+.bulk-edit-model-list {
+    max-height: 8rem;
+    overflow-y: auto;
+    margin-top: 0.5rem;
+    padding: 0.4rem;
+    border: 1px solid var(--light-border);
+    border-radius: 0.25rem;
+    scrollbar-width: thin;
+}
+
+.bulk-edit-model-list-entry {
+    display: block;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.bulk-edit-model-row {
+    display: grid;
+    grid-template-columns: minmax(12rem, 16rem) 1fr;
+    gap: 0.5rem;
+    align-items: center;
+    margin-bottom: 0.5rem;
+}
+
+.bulk-edit-model-row label {
+    margin-bottom: 0;
+}
