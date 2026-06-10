@@ -32,6 +32,7 @@ public static class ModelsAPI
         API.RegisterAPICall(TestPromptFill, false, Permissions.FundamentalModelAccess);
         API.RegisterAPICall(EditWildcard, true, Permissions.EditWildcards);
         API.RegisterAPICall(EditModelMetadata, true, Permissions.EditModelMetadata);
+        API.RegisterAPICall(BulkEditModelMetadata, true, Permissions.EditModelMetadata);
         API.RegisterAPICall(GetModelHeaders, true, Permissions.EditModelMetadata);
         API.RegisterAPICall(DoModelDownloadWS, true, Permissions.DownloadModels);
         API.RegisterAPICall(GetModelHash, true, Permissions.EditModelMetadata);
@@ -464,6 +465,164 @@ public static class ModelsAPI
         WildcardsHelper.WildcardFiles[card.ToLowerFast()] = new WildcardsHelper.Wildcard() { Name = card };
         Interlocked.Increment(ref ModelEditID);
         return new JObject() { ["success"] = true };
+    }
+
+    /// <summary>Parses comma-separated tag text for model metadata edits.</summary>
+    public static string[] ParseBulkModelTags(string tags)
+    {
+        if (string.IsNullOrWhiteSpace(tags))
+        {
+            return [];
+        }
+        return [.. tags.Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries).DistinctBy(t => t.ToLowerFast())];
+    }
+
+    /// <summary>Applies a bulk tag edit to an existing tag set.</summary>
+    public static string[] ApplyBulkModelTags(string[] existing, string mode, string tags)
+    {
+        string[] parsed = ParseBulkModelTags(tags);
+        if (mode == "replace")
+        {
+            return parsed.Length == 0 ? null : parsed;
+        }
+        existing ??= [];
+        if (mode == "remove")
+        {
+            HashSet<string> remove = [.. parsed.Select(t => t.ToLowerFast())];
+            string[] kept = [.. existing.Where(t => !remove.Contains((t ?? "").ToLowerFast()))];
+            return kept.Length == 0 ? null : kept;
+        }
+        List<string> result = [.. existing];
+        HashSet<string> seen = [.. existing.Select(t => (t ?? "").ToLowerFast())];
+        foreach (string tag in parsed)
+        {
+            string lowered = tag.ToLowerFast();
+            if (!seen.Contains(lowered))
+            {
+                result.Add(tag);
+                seen.Add(lowered);
+            }
+        }
+        return result.Count == 0 ? null : [.. result];
+    }
+
+    [API.APIDescription("Modifies selected metadata fields on multiple LoRA models. Returns edit counts and per-model errors.", "{ \"success\": true, \"edited\": 2, \"failed\": 0, \"errors\": [] }")]
+    public static async Task<JObject> BulkEditModelMetadata(Session session,
+        [API.APIParameter("The model's sub-type. Only `LoRA` is supported.")] string subtype,
+        [API.APIParameter("Exact filepath names of models.")] JArray models,
+        [API.APIParameter("Patch object containing only metadata fields to edit.")] JObject fields)
+    {
+        if (subtype != "LoRA")
+        {
+            return new JObject() { ["error"] = "Bulk metadata editing currently only supports LoRA models." };
+        }
+        if (models is null || models.Count == 0)
+        {
+            return new JObject() { ["error"] = "No models selected." };
+        }
+        if (fields is null || !fields.Properties().Any())
+        {
+            return new JObject() { ["error"] = "No metadata fields selected." };
+        }
+        bool hasArchitectureField = fields.TryGetValue("architecture", out JToken architectureToken);
+        string architecture = architectureToken?.ToString();
+        T2IModelClass architectureClass = null;
+        if (hasArchitectureField)
+        {
+            if (string.IsNullOrWhiteSpace(architecture))
+            {
+                return new JObject() { ["error"] = "Invalid architecture." };
+            }
+            architectureClass = T2IModelClassSorter.ModelClasses.GetValueOrDefault(architecture.ToLowerFast());
+            if (architectureClass is null)
+            {
+                return new JObject() { ["error"] = "Invalid architecture." };
+            }
+        }
+        bool hasTagsMode = fields.TryGetValue("tags_mode", out JToken tagsModeToken);
+        string tagsMode = tagsModeToken?.ToString();
+        if (hasTagsMode && tagsMode is not ("add" or "remove" or "replace"))
+        {
+            return new JObject() { ["error"] = "Invalid tag edit mode." };
+        }
+        bool hasSupportedField = architectureClass is not null
+            || fields.ContainsKey("usage_hint")
+            || fields.ContainsKey("trigger_phrase")
+            || fields.ContainsKey("lora_default_weight")
+            || fields.ContainsKey("lora_default_confinement")
+            || hasTagsMode;
+        if (!hasSupportedField)
+        {
+            return new JObject() { ["error"] = "No supported metadata fields selected." };
+        }
+        using ManyReadOneWriteLock.ReadClaim claim = Program.RefreshLock.LockRead();
+        if (!Program.T2IModelSets.TryGetValue("LoRA", out T2IModelHandler handler))
+        {
+            return new JObject() { ["error"] = "LoRA model handler not found." };
+        }
+        int edited = 0;
+        JArray errors = [];
+        foreach (JToken modelToken in models)
+        {
+            string model = modelToken?.ToString();
+            if (string.IsNullOrWhiteSpace(model))
+            {
+                errors.Add(new JObject() { ["model"] = model ?? "", ["error"] = "Model name is empty." });
+                continue;
+            }
+            if (TryGetRefusalForModel(session, model, out JObject refusal))
+            {
+                errors.Add(new JObject() { ["model"] = model, ["error"] = refusal["error"]?.ToString() ?? "Model edit refused." });
+                continue;
+            }
+            if (!handler.Models.TryGetValue(model, out T2IModel actualModel))
+            {
+                errors.Add(new JObject() { ["model"] = model, ["error"] = "Model not found." });
+                continue;
+            }
+            lock (handler.ModificationLock)
+            {
+                if (architectureClass is not null)
+                {
+                    actualModel.ModelClass = architectureClass;
+                }
+                actualModel.Metadata ??= new();
+                if (fields.TryGetValue("usage_hint", out JToken usageHint))
+                {
+                    actualModel.Metadata.UsageHint = usageHint?.ToString();
+                }
+                if (fields.TryGetValue("trigger_phrase", out JToken triggerPhrase))
+                {
+                    actualModel.Metadata.TriggerPhrase = triggerPhrase?.ToString();
+                }
+                if (fields.TryGetValue("lora_default_weight", out JToken loraDefaultWeight))
+                {
+                    actualModel.Metadata.LoraDefaultWeight = loraDefaultWeight?.ToString();
+                }
+                if (fields.TryGetValue("lora_default_confinement", out JToken loraDefaultConfinement))
+                {
+                    actualModel.Metadata.LoraDefaultConfinement = loraDefaultConfinement?.ToString();
+                }
+                if (hasTagsMode)
+                {
+                    actualModel.Metadata.Tags = ApplyBulkModelTags(actualModel.Metadata.Tags, tagsMode, fields["tags"]?.ToString());
+                }
+            }
+            handler.ResetMetadataFrom(actualModel);
+            _ = Utilities.RunCheckedTask(() => actualModel.ResaveModel(), "model resave");
+            edited++;
+        }
+        if (edited > 0)
+        {
+            Interlocked.Increment(ref ModelEditID);
+        }
+        return new JObject()
+        {
+            ["success"] = true,
+            ["edited"] = edited,
+            ["failed"] = errors.Count,
+            ["errors"] = errors
+        };
     }
 
     [API.APIDescription("Modifies the metadata of a model. Returns before the file update is necessarily saved.", "\"success\": true")]
