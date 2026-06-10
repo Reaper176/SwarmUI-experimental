@@ -4291,3 +4291,18 @@ mark.model-search-highlight {
 .bulk-edit-model-row label {
     margin-bottom: 0;
 }
+
+.bulk-edit-model-tags-controls {
+    display: flex;
+    gap: 0.5rem;
+    min-width: 0;
+}
+
+.bulk-edit-model-tags-controls select {
+    flex: 0 0 auto;
+}
+
+.bulk-edit-model-tags-controls input {
+    flex: 1 1 auto;
+    min-width: 0;
+}

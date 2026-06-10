@@ -202,12 +202,14 @@
         </div>
         <div class="bulk-edit-model-row">
             <label><input type="checkbox" id="bulk_edit_model_tags_enabled"> Tags</label>
-            <select id="bulk_edit_model_tags_mode" class="modal_text_extra translate">
-                <option value="add">Add Tags</option>
-                <option value="remove">Remove Tags</option>
-                <option value="replace">Replace Tags</option>
-            </select>
-            <input type="text" id="bulk_edit_model_tags" class="modal_text_extra translate" placeholder="Model Tags" />
+            <div class="bulk-edit-model-tags-controls">
+                <select id="bulk_edit_model_tags_mode" class="modal_text_extra translate">
+                    <option value="add">Add Tags</option>
+                    <option value="remove">Remove Tags</option>
+                    <option value="replace">Replace Tags</option>
+                </select>
+                <input type="text" id="bulk_edit_model_tags" class="modal_text_extra translate" placeholder="Model Tags" />
+            </div>
         </div>
         <div id="bulk_edit_model_error" class="modal_error_bottom"></div>
     </div>
