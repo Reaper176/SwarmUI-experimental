@@ -1573,7 +1573,7 @@ class GenPageBrowserClass {
             let desc = this.describe(file);
             let labels = [];
             for (let button of desc.buttons) {
-                if (button.can_multi && (button.max_selected == null || files.length <= button.max_selected)) {
+                if ((button.can_multi || button.bulk_once) && (button.max_selected == null || files.length <= button.max_selected)) {
                     labels.push(button.label);
                 }
             }
@@ -1635,6 +1635,23 @@ class GenPageBrowserClass {
     runMultiSelectAction(label) {
         let files = this.getMultiSelectedFiles();
         let failed = 0;
+        let firstFile = files.length > 0 ? files[0] : null;
+        if (firstFile) {
+            let firstDesc = this.describe(firstFile);
+            for (let button of firstDesc.buttons || []) {
+                if (button.label == label && button.bulk_once && button.onclick) {
+                    try {
+                        button.onclick(files, this);
+                    }
+                    catch (err) {
+                        console.error('Browser bulk action error:', err);
+                        showError(`Bulk action failed - see console for details.`);
+                    }
+                    this.syncMultiSelectHeader();
+                    return;
+                }
+            }
+        }
         for (let file of files) {
             let div = this.getVisibleEntry(file.name);
             let desc = this.describe(file);
