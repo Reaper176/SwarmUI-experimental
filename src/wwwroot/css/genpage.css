@@ -2053,6 +2053,9 @@ mark.model-search-highlight {
 .param_view_block_model {
     background-color: color-mix(in srgb, transparent 99%, var(--tag-color));
 }
+.param_view_block_parser_warnings {
+    background-color: color-mix(in srgb, transparent 95%, var(--red));
+}
 .extras-wrapper-sideblock span.param_view_block .param_view_name {
     display: inline-block;
     min-width: 6rem;
@@ -2159,6 +2162,9 @@ mark.model-search-highlight {
     height: 100%;
     position: relative;
     margin: auto;
+}
+.imageview_popup_modal_img video {
+    max-width: unset !important;
 }
 .imageview_popup_modal_undertext {
     background-color: var(--background);
@@ -3997,7 +4003,7 @@ mark.model-search-highlight {
     font-size: 80%;
 }
 .ext-danger-license {
-    background-color: rgba(255, 0, 0, 0.03);
+    background-color: rgba(255, 0, 0, 0.2);
 }
 .input_filter_container {
     display: flex;

@@ -93,11 +93,17 @@ function interpretMetadata(metadata) {
     if (metadata) {
         metadata = metadata.trim();
         if (metadata.startsWith('{')) {
-            let json = JSON.parse(metadata);
-            if ('sui_image_params' in json) {
+            let json = null;
+            try {
+                json = JSON.parse(metadata);
+            }
+            catch (e) {
+                console.error(`Error parsing metadata '${metadata}': ${e}`);
+            }
+            if (json && 'sui_image_params' in json) {
                 // It's swarm, we're good
             }
-            else if ("Prompt" in json) {
+            else if (json && "Prompt" in json) {
                 // Fooocus
                 json = remapMetadataKeys(json, fooocusMetadataMap);
                 metadata = JSON.stringify({ 'sui_image_params': json });
@@ -269,6 +275,9 @@ function getFormattedMetadataEntries(metadata, finalResolution = null) {
                     let extras = '';
                     if (key.includes('model') || key.includes('lora') || key.includes('embedding')) {
                         added += ' param_view_block_model';
+                    }
+                    if (key == 'parser_warnings') {
+                        added += ' param_view_block_parser_warnings';
                     }
                     if (key.includes('prompt')) {
                         extras = `<button title="Click to copy" class="basic-button prompt-copy-button" onclick="copyText('${escapeHtmlNoBr(escapeJsString(`${val}`))}');doNoticePopover('Copied!', 'notice-pop-green');">&#x29C9;</button>`;

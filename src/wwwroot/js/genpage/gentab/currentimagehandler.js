@@ -726,8 +726,11 @@ class ImageFullViewHelper {
         if (this.didPasteState) {
             return;
         }
+        let img = this.getImg();
+        if (!img) {
+            return;
+        }
         if (internalSiteJsGetUserSetting('ui.defaulthidemetadatainfullview', false)) {
-            let img = this.getImg();
             let width = img.naturalWidth ?? img.videoWidth;
             let height = img.naturalHeight ?? img.videoHeight;
             let aspectRatio = width / height;
@@ -738,6 +741,16 @@ class ImageFullViewHelper {
             else {
                 this.toggleMetadataVisibility(true);
             }
+        }
+        if (img.tagName == 'VIDEO') {
+            this.detachImg();
+            let container = this.getImgOrContainer();
+            let imagewrap = this.content.querySelector('.imageview_modal_imagewrap');
+            let videoAspectRatio = img.videoWidth / img.videoHeight;
+            let wrapAspectRatio = imagewrap.offsetWidth / imagewrap.offsetHeight;
+            let defaultHeight = Math.min(100, (wrapAspectRatio / videoAspectRatio) * 100);
+            container.style.height = `${defaultHeight}%`;
+            container.style.top = `${(imagewrap.offsetHeight - imagewrap.offsetHeight * defaultHeight / 100) / 2}px`;
         }
     }
 
