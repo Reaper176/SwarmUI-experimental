@@ -283,6 +283,7 @@ def advanced_encode(clip, text, token_normalization, weight_interpretation, toke
     tokens = tokenize_func(text)
     return clip.encode_from_tokens_scheduled(tokens)
 
+KREA2_TEMPLATE = "<|im_start|>system\nDescribe the image by detailing the color, shape, size, texture, quantity, text, spatial relationships of the objects and background:<|im_end|>\n<|im_start|>user\n{}<|im_end|>\n<|im_start|>assistant\n"
 
 class SwarmClipTextEncodeAdvanced:
     @classmethod
@@ -313,24 +314,41 @@ class SwarmClipTextEncodeAdvanced:
     DESCRIPTION = "Acts like the regular CLIPTextEncode, but supports more advanced special features like '<break>', '[from:to:when]', '[alter|nate]', ..."
 
     def encode(self, clip, steps: int, prompt: str, width: int, height: int, target_width: int, target_height: int, guidance: float = -1, llama_template = None, clip_vision_output = None, images = None, token_normalization = "none", weight_interpretation = "comfy"):
-        image_prompt = ""
+        append_images = False
+        prepend_images = False
+        fix_images = True
         if llama_template == "hunyuan_image":
             llama_template = PROMPT_TEMPLATE_ENCODE_VIDEO_I2V
+            fix_images = False
+        elif llama_template == "krea2":
+            llama_template = KREA2_TEMPLATE
+            append_images = True
         elif llama_template == "qwen_image_edit_plus":
             llama_template = PROMPT_TEMPLATE_QWEN_IMAGE_EDIT_PLUS
-            if images is not None:
-                if len(images.shape) == 3:
-                    images = [images]
-                else:
-                    images = [i.unsqueeze(0) for i in images]
-                for i, image in enumerate(images):
-                    image_prompt += f"Picture {i + 1}: <|vision_start|><|image_pad|><|vision_end|>"
+            append_images = True
+            prepend_images = True
+        if images is not None and fix_images:
+            if len(images.shape) == 3:
+                images = [images]
+            else:
+                images = [i.unsqueeze(0) for i in images]
 
         def tokenize(text: str, return_word_ids = False):
             if clip_vision_output is not None:
                 return clip.tokenize(text, return_word_ids=return_word_ids, llama_template=llama_template, image_embeds=clip_vision_output.mm_projected)
             elif images is not None:
-                return clip.tokenize(image_prompt + text, return_word_ids=return_word_ids, llama_template=llama_template, images=images)
+                if append_images:
+                    image_prompt = ""
+                    for i, image in enumerate(images):
+                        if f"input_image_{i + 1}" in text:
+                            text = text.replace(f"input_image_{i + 1}", f"<|vision_start|><|image_pad|><|vision_end|>", 1)
+                        else:
+                            image_prompt += f"Picture {i + 1}: <|vision_start|><|image_pad|><|vision_end|>"
+                    if prepend_images:
+                        text = image_prompt + text
+                    else:
+                        text = text + image_prompt
+                return clip.tokenize(text, return_word_ids=return_word_ids, llama_template=llama_template, images=images)
             else:
                 return clip.tokenize(text, return_word_ids=return_word_ids)
 
