@@ -9,8 +9,14 @@ from math import ceil
 from latent_preview import TAESDPreviewerImpl
 from comfy_execution.utils import get_executing_context
 from comfy_extras.nodes_flux import Flux2Scheduler
-from comfy_extras.nodes_ideogram4 import ideogram4_sigmas
-from comfy_extras.nodes_custom_sampler import Guider_DualModel
+try:
+    from comfy_extras.nodes_custom_sampler import Guider_DualModel
+except ImportError:
+    Guider_DualModel = None
+try:
+    from comfy_extras.nodes_ideogram4 import ideogram4_sigmas
+except ImportError:
+    ideogram4_sigmas = None
 
 def slerp(val, low, high):
     low_norm = low / torch.norm(low, dim=1, keepdim=True)
@@ -263,6 +269,8 @@ def stitch_latent_tensors(original_size, tiles, scale_factor=8):
 #comfy/ComfyUI/comfy/samplers.py - sample
 def samplers_sample(model, noise, positive, negative, cfg, device, sampler, sigmas, model_options={}, latent_image=None, denoise_mask=None, callback=None, disable_pbar=False, seed=None, model_negative=None):
     # Guider_DualModel(model, model_negative) if model_negative is not None else comfy.samplers.CFGGuider(model)
+    if model_negative is not None and Guider_DualModel is None:
+        raise RuntimeError("Separate negative model sampling requires a newer ComfyUI with Guider_DualModel.")
     cfg_guider = Guider_DualModel(model, model_negative) if model_negative is not None else comfy.samplers.CFGGuider(model)
     cfg_guider.set_conds(positive, negative)
     cfg_guider.set_cfg(cfg)
@@ -516,8 +524,12 @@ class SwarmKSampler:
             sigmas[-1] = 0
             sigmas = torch.FloatTensor(sigmas)
         elif scheduler == "ideogram4":
+            if ideogram4_sigmas is None:
+                raise RuntimeError("Ideogram 4 scheduler requires a newer ComfyUI with comfy_extras.nodes_ideogram4.")
             sigmas = ideogram4_sigmas(steps, width * 16, height * 16, 0, 1.75)
         elif scheduler == "ideogram4turbo":
+            if ideogram4_sigmas is None:
+                raise RuntimeError("Ideogram 4 Turbo scheduler requires a newer ComfyUI with comfy_extras.nodes_ideogram4.")
             sigmas = ideogram4_sigmas(steps, width * 16, height * 16, 0.5, 1.75)
         elif sigma_min >= 0 and sigma_max >= 0 and scheduler in ["karras", "exponential"]:
             if sampler_name in ['dpm_2', 'dpm_2_ancestral']:
