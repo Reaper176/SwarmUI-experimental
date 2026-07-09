@@ -85,7 +85,10 @@ public class ComfyUISelfStartBackend : ComfyUIAPIAbstractBackend
         // Example: ["ComfyUI-TeaCache"] = "b3429ef3dea426d2f167e348b44cd2f5a3674e7d"
     };
 
-    public static string SwarmValidatedFrontendVersion = "1.42.11";
+    public static string SwarmValidatedFrontendVersion = "1.45.20";
+
+    /// <summary>The current known version of PyTorch.</summary>
+    public static string CurrentTorchVersion = "2.12.1";
 
     /// <summary>List of known required python packages, as pairs of strings: Item1 is the folder name within python packages to look for, Item2 is the pip install command.</summary>
     public static List<(string, string)> RequiredPythonPackages =
@@ -99,11 +102,10 @@ public class ComfyUISelfStartBackend : ComfyUIAPIAbstractBackend
         ("pydantic_settings", "pydantic-settings"),
         ("comfyui_frontend_package", $"comfyui_frontend_package=={SwarmValidatedFrontendVersion}"),
         ("alembic", "alembic"),
-        ("pyopengl", "pyopengl"),
-        ("glfw", "glfw"),
         ("simpleeval", "simpleeval"),
         ("blake3", "blake3"),
         ("filelock", "filelock"),
+        ("comfy_angle", "comfy-angle"),
         // Other added dependencies
         ("rembg", "rembg"),
         ("onnxruntime", "onnxruntime"), // subdependency of rembg but inexplicably not autoinstalled anymore?
@@ -124,6 +126,7 @@ public class ComfyUISelfStartBackend : ComfyUIAPIAbstractBackend
         ("av", "av", ">=", "14.2.0"),
         ("spandrel", "spandrel", ">=", "0.4.1"),
         ("transformers", "transformers", ">=", "4.57.3"),
+        ("pyopengl", "pyopengl", ">=", "3.1.8"),
         ("ultralytics", "ultralytics", "==", "8.3.197"), // This is hard-pinned due to the malicious 8.3.41 incident, only manual updates when needed until security practices are improved.
         ("pip", "pip", ">=", "25.0") // Don't need latest, just can't be too old, this is mostly just here for a sanity check.
     ];
@@ -750,6 +753,26 @@ public class ComfyUISelfStartBackend : ComfyUIAPIAbstractBackend
     public static Version ParseVersion(string vers)
     {
         return Version.Parse(vers.Before(".dev"));
+    }
+
+    /// <summary>Get the version of a single installed pip package.</summary>
+    public static string GetInstalledPackageVersion(string startScript, string package)
+    {
+        string lib = NetworkBackendUtils.GetProbableLibFolderFor(startScript);
+        if (lib is null || lib.Length < 3 || !Directory.Exists(lib))
+        {
+            return null;
+        }
+        string prefix = $"{package}-";
+        foreach (string dir in Directory.EnumerateDirectories(lib))
+        {
+            string name = dir.Replace('\\', '/').AfterLast('/');
+            if (name.EndsWith(".dist-info") && name.StartsWith(prefix))
+            {
+                return name[prefix.Length..].Before(".dist-info");
+            }
+        }
+        return null;
     }
 
     /// <summary>Strict matcher that will block any muckery, excluding URLs and etc.</summary>

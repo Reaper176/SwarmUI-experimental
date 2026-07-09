@@ -93,7 +93,8 @@ public class T2IModelClassSorter
         CompatPiD = RegisterCompat(new() { ID = "pid", ShortCode = "PiD", LorasTargetTextEnc = false }),
         CompatPixelDiT = RegisterCompat(new() { ID = "pixeldit", ShortCode = "PixDiT", LorasTargetTextEnc = false }),
         CompatIdeogram4 = RegisterCompat(new() { ID = "ideogram-4", ShortCode = "Ideo4", LorasTargetTextEnc = false, VaeFamily = VaeFlux2 }),
-        CompatKrea2 = RegisterCompat(new() { ID = "krea-2", ShortCode = "Krea2", LorasTargetTextEnc = false, VaeFamily = VaeQwenImage }),
+        CompatKrea2 = RegisterCompat(new() { ID = "krea-2", ShortCode = "Krea2", VaeFamily = VaeQwenImage }),
+        CompatBoogu = RegisterCompat(new() { ID = "boogu", ShortCode = "Boogu", LorasTargetTextEnc = false, VaeFamily = VaeFlux1 }),
         // Audio models
         CompatAceStep15 = RegisterCompat(new() { ID = "ace-step-1_5", ShortCode = "Ace15", IsAudioModel = true }),
         // Obscure old random ones
@@ -186,14 +187,18 @@ public class T2IModelClassSorter
         bool isIdeogram4Lora(JObject h) => hasLoraKey(h, "layers.0.adaln_modulation") && hasLoraKey(h, "layers.0.attention.o") && hasLoraKey(h, "layers.0.feed_forward.w3") && hasLoraKey(h, "layers.33.attention.qkv");
         bool isKrea2(JObject h) => hasKey(h, "txtfusion.projector.weight") && hasKey(h, "blocks.0.attn.gate.weight") && hasKey(h, "blocks.0.mod.lin");
         bool isKrea2Lora(JObject h) => (hasLoraKey(h, "blocks.0.attn.gate") && hasLoraKey(h, "blocks.0.mlp.gate"))
-            || (hasLoraKey(h, "text_fusion.layerwise_blocks.0.attn.to_gate") && hasLoraKey(h, "img_in") && hasLoraKey(h, "final_layer.linear"));
+            || (hasLoraKey(h, "text_fusion.layerwise_blocks.0.attn.to_gate") && hasLoraKey(h, "img_in") && hasLoraKey(h, "final_layer.linear"))
+            || (hasLoraKey(h, "lora_unet_txtfusion_refiner_blocks_1_mlp_up") && hasLoraKey(h, "lora_unet_last_linear") && hasLoraKey(h, "lora_unet_blocks_27_mlp_gate"))
+            || (h.ContainsKey("diffusion_model.txtfusion.projector.diff")) || h.ContainsKey("diffusion_model.txtfusion.refiner_blocks.0.attn.wo.diff"); // Special filter-bypass loras target only certain txt weights
         bool isSD35Lora(JObject h) => h.ContainsKey("transformer.transformer_blocks.0.attn.to_k.lora_A.weight") && h.ContainsKey("transformer.transformer_blocks.37.attn.to_out.0.lora_B.weight");
         bool isMochi(JObject h) => hasKey(h, "blocks.0.attn.k_norm_x.weight");
         bool isMochiVae(JObject h) => h.ContainsKey("encoder.layers.4.layers.1.attn_block.attn.qkv.weight") || h.ContainsKey("layers.4.layers.1.attn_block.attn.qkv.weight") || h.ContainsKey("blocks.2.blocks.3.stack.5.weight") || h.ContainsKey("decoder.blocks.2.blocks.3.stack.5.weight");
         bool isLtxv(JObject h) => hasKey(h, "adaln_single.emb.timestep_embedder.linear_1.bias");
         bool isLtxvVae(JObject h) => h.ContainsKey("decoder.conv_in.conv.bias") && h.ContainsKey("decoder.last_time_embedder.timestep_embedder.linear_1.bias");
+        bool isLtxv23Vae(JObject h) => (h.ContainsKey("decoder.conv_in.conv.bias") && !h.ContainsKey("decoder.last_time_embedder.timestep_embedder.linear_1.bias") && !h.ContainsKey("per_channel_statistics.channel"))
+            || (h.ContainsKey("audio_vae.decoder.conv_in.conv.bias") && h.ContainsKey("vocoder.mel_stft.mel_basis") && !isLtxv2(h));
         bool isLtxv2(JObject h) => hasKey(h, "transformer_blocks.1.audio_to_video_attn.k_norm.weight");
-        bool isLtxv23(JObject h) => hasKey(h, "text_embedding_projection.audio_aggregate_embed.weight");
+        bool isLtxv23(JObject h) => hasKey(h, "text_embedding_projection.audio_aggregate_embed.weight") || hasKey(h, "transformer_blocks.1.prompt_scale_shift_table");
         bool isLtxv2Lora(JObject h) => (hasLoraKey(h, "transformer_blocks.0.attn1.to_k") && hasLoraKey(h, "transformer_blocks.0.attn1.to_out.0") && hasLoraKey(h, "transformer_blocks.9.attn2.to_v"))
             || (hasLoraKey(h, "transformer_blocks.0.audio_attn1.to_k") && hasLoraKey(h, "transformer_blocks.0.audio_attn1.to_out.0") && hasLoraKey(h, "transformer_blocks.9.audio_attn1.to_v"));
         bool isSana(JObject h) => h.ContainsKey("attention_y_norm.weight") && h.ContainsKey("blocks.0.attn.proj.weight");
@@ -235,7 +240,8 @@ public class T2IModelClassSorter
         bool isChromaRadiance(JObject h) => hasKey(h, "nerf_image_embedder.embedder.0.bias");
         bool isPiD(JObject h) => h.ContainsKey("net.lq_proj.latent_proj.0.weight") && h.ContainsKey("net.pixel_blocks.0.attn.q_norm.weight") && h.ContainsKey("net.pixel_blocks.0.compress_to_attn.weight");
         bool isPixelDiT(JObject h) => h.ContainsKey("core.pixel_embedder.proj.weight") && h.ContainsKey("core.pixel_blocks.0.attn.q_norm.weight") && h.ContainsKey("core.pixel_blocks.0.compress_to_attn.weight") && !isPiD(h);
-        bool isOmniGen(JObject h) => h.ContainsKey("time_caption_embed.timestep_embedder.linear_2.weight") && h.ContainsKey("context_refiner.0.attn.norm_k.weight");
+        bool isOmniGen(JObject h) => h.ContainsKey("time_caption_embed.timestep_embedder.linear_2.weight") && h.ContainsKey("context_refiner.0.attn.norm_k.weight") && !isBoogu(h);
+        bool isBoogu(JObject h) => hasKey(h, "double_stream_layers.0.img_instruct_attn.processor.img_to_q.weight") && hasKey(h, "double_stream_layers.0.img_instruct_attn.processor.instruct_to_q.weight");
         bool isQwenImage(JObject h) => (h.ContainsKey("time_text_embed.timestep_embedder.linear_1.bias") && h.ContainsKey("img_in.bias") && (h.ContainsKey("transformer_blocks.0.attn.add_k_proj.bias") || h.ContainsKey("transformer_blocks.0.attn.add_qkv_proj.bias")))
             || (h.ContainsKey("model.diffusion_model.time_text_embed.timestep_embedder.linear_1.bias") && h.ContainsKey("model.diffusion_model.img_in.bias") && (h.ContainsKey("model.diffusion_model.transformer_blocks.0.attn.add_k_proj.bias") || h.ContainsKey("model.diffusion_model.transformer_blocks.0.attn.add_qkv_proj.bias")));
         bool isQwenImageEdit2511(JObject h) => h.ContainsKey("__index_timestep_zero__");
@@ -737,6 +743,10 @@ public class T2IModelClassSorter
         {
             return isLtxv2(h) && isLtxv23(h);
         }});
+        Register(new() { ID = "lightricks-ltx-video-2-3/vae", CompatClass = CompatLtxv2, Name = "Lightricks LTX Video 2.3 VAE", StandardWidth = 960, StandardHeight = 960, IsThisModelOfClass = (m, h) =>
+        {
+            return isLtxv23Vae(h);
+        }});
         // ====================== Random Other Models ======================
         Register(new() { ID = "chroma", CompatClass = CompatChroma, Name = "Chroma", StandardWidth = 1024, StandardHeight = 1024, IsThisModelOfClass = (m, h) =>
         {
@@ -863,6 +873,11 @@ public class T2IModelClassSorter
         Register(new() { ID = "longcat-image", CompatClass = CompatLongcatImage, Name = "Longcat Image", StandardWidth = 1024, StandardHeight = 1024, IsThisModelOfClass = (m, h) =>
         {
             return isLongcat(h);
+        }});
+        // ====================== Boogu ======================
+        Register(new() { ID = "boogu", CompatClass = CompatBoogu, Name = "Boogu", StandardWidth = 1024, StandardHeight = 1024, IsThisModelOfClass = (m, h) =>
+        {
+            return isBoogu(h);
         }});
         // ====================== Audio Models ======================
         Register(new() { ID = "ace-step-1_5", CompatClass = CompatAceStep15, Name = "Ace Step 1.5", IsThisModelOfClass = (m, h) =>
@@ -996,7 +1011,7 @@ public class T2IModelClassSorter
             return matchedClass;
         }
         matchedClass = null;
-        bool isLora = header.Properties().Any(p => p.Name.StartsWith("lora_") || p.Name.EndsWith(".lora_A.weight") || p.Name.EndsWith(".lora_A.default.weight") || p.Name.EndsWith(".lora_up.weight") || p.Name.EndsWith(".lora.up.weight") || p.Name.EndsWith(".lokr_w1"));
+        bool isLora = header.Properties().Any(p => p.Name.StartsWith("lora_") || p.Name.EndsWith(".lora_A.weight") || p.Name.EndsWith(".lora_A.default.weight") || p.Name.EndsWith(".lora_up.weight") || p.Name.EndsWith(".lora.up.weight") || p.Name.EndsWith(".lokr_w1") || p.Name.EndsWith(".diff"));
         foreach (T2IModelClass modelClass in ModelClasses.Values)
         {
             if (isLora == modelClass.IsLora && modelClass.IsThisModelOfClass(model, header))

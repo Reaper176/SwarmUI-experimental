@@ -1027,9 +1027,9 @@ public partial class WorkflowGenerator
     public (JArray, JArray, JArray, JArray) BuildInputImageHandling(List<JArray> images, JArray pos, JArray neg, JArray latent)
     {
         JArray imgNeg = null;
-        if (IsKontext() || IsOmniGen() || IsQwenImage() || IsAnyFlux2())
+        if (IsKontext() || IsOmniGen() || IsQwenImage() || IsAnyFlux2() || IsBoogu())
         {
-            if (IsOmniGen() || IsQwenImageEditPlus())
+            if (IsOmniGen() || IsQwenImageEditPlus() || IsBoogu())
             {
                 imgNeg = neg;
             }
@@ -1061,7 +1061,7 @@ public partial class WorkflowGenerator
             }
             if (img is not null)
             {
-                if (IsQwenImageEditPlus())
+                if (IsQwenImageEditPlus() || IsBoogu())
                 {
                     neg = imgNeg;
                 }
@@ -1226,6 +1226,10 @@ public partial class WorkflowGenerator
         else if (IsPiD())
         {
             defsampler ??= "lcm";
+            defscheduler ??= "simple";
+        }
+        else if (IsBoogu())
+        {
             defscheduler ??= "simple";
         }
         // TODO: Registry of model default preferences instead of this
@@ -1582,10 +1586,14 @@ public partial class WorkflowGenerator
                     doesFit = false;
                 }
             }
-            else if (IsQwenImageEditPlus() && promptSize)
+            else if ((IsBoogu() || IsQwenImageEditPlus()) && promptSize)
             {
                 target = 384;
                 doesFit = false;
+            }
+            else if (IsBoogu() && !promptSize)
+            {
+                doesFit = Math.Abs(actual - target) <= 64;
             }
             else if (IsQwenImage())
             {
@@ -2628,7 +2636,7 @@ public partial class WorkflowGenerator
                 ["text"] = prompt
             }, id);
         }
-        else if (IsIdeogram4() || IsKrea2())
+        else if (IsIdeogram4() || IsKrea2() || (IsBoogu() && isPositive))
         {
             JArray imageNode = GetPromptImage(true, true, 0);
             for (int i = 1; i < 10; i++)
@@ -2656,7 +2664,7 @@ public partial class WorkflowGenerator
                 ["target_height"] = height,
                 ["guidance"] = UserInput.Get(T2IParamTypes.FluxGuidanceScale, defaultGuidance),
                 ["images"] = imageNode,
-                ["llama_template"] = "krea2" // TODO: Ideogram preferred template?
+                ["llama_template"] = IsBoogu() ? null : "krea2" // TODO: Ideogram preferred template?
             }, id);
         }
         else if (IsQwenImageEdit() && (isPositive || IsQwenImageEditPlus()) && (qwenImage = GetPromptImage(true, true)) is not null)

@@ -48,6 +48,9 @@ public partial class WorkflowGenerator
     /// <summary>Returns true if the current model is Lightricks LTX Video 2.</summary>
     public bool IsLTXV2() => IsModelCompatClass(T2IModelClassSorter.CompatLtxv2);
 
+    /// <summary>Returns true if the current model is Lightricks LTX Video 2.3.</summary>
+    public bool IsLTXV23() => CurrentModelClass()?.ID == "lightricks-ltx-video-2-3";
+
     /// <summary>Returns true if the current model is Black Forest Labs' Flux.1.</summary>
     public bool IsFlux() => IsModelCompatClass(T2IModelClassSorter.CompatFlux);
 
@@ -156,6 +159,9 @@ public partial class WorkflowGenerator
 
     /// <summary>Returns true if the current model is Krea 2.</summary>
     public bool IsKrea2() => IsModelCompatClass(T2IModelClassSorter.CompatKrea2);
+
+    /// <summary>Returns true if the current model is Boogu.</summary>
+    public bool IsBoogu() => IsModelCompatClass(T2IModelClassSorter.CompatBoogu);
 
     /// <summary>Returns true if the current model is Hunyuan Video (original / v1).</summary>
     public bool IsHunyuanVideo() => IsModelCompatClass(T2IModelClassSorter.CompatHunyuanVideo);
@@ -529,6 +535,22 @@ public partial class WorkflowGenerator
             g.CurrentAudioVae = new WGNodeData([avaeLoader, 0], g, WGNodeData.DT_AUDIOVAE, g.CurrentCompat());
         }
 
+        public void LTXAudioVaeLoad(string knownName)
+        {
+            CommonModels.ModelInfo knownFile = CommonModels.Known[knownName];
+            string vaeFile = knownFile.FileName;
+            if (!Program.T2IModelSets["VAE"].Models.ContainsKey(vaeFile))
+            {
+                knownFile.DownloadNow().Wait();
+                Program.RefreshAllModelSets();
+            }
+            string avaeLoader = g.CreateNode("SwarmLTXVAudioVAELoader", new JObject()
+            {
+                ["vae_name"] = vaeFile.Replace('\\', '/').Replace("/", g.ModelFolderFormat ?? $"{Path.DirectorySeparatorChar}")
+            });
+            g.CurrentAudioVae = new WGNodeData([avaeLoader, 0], g, WGNodeData.DT_AUDIOVAE, g.CurrentCompat());
+        }
+
         public string RequireClipModel(string name, string url, string hash, T2IRegisteredParam<T2IModel> param)
         {
             if (param is not null && g.UserInput.TryGet(param, out T2IModel model))
@@ -694,6 +716,12 @@ public partial class WorkflowGenerator
         {
             // TODO: This is cursed and wrong.
             return RequireClipModel("ltx2/ltx2-embeddings-connector-distill.safetensors", "https://huggingface.co/Kijai/LTXV2_comfy/resolve/main/text_encoders/ltx-2-19b-embeddings_connector_distill_bf16.safetensors", "8990ec3fe88396ca33ac1795c89b1771d88190e51e24084b21f54b25399acbed", null);
+        }
+
+        public string GetLTX23TextProjectionClip()
+        {
+            // TODO: Still cursed!
+            return RequireClipModel("LTX-2/ltx-2.3_text_projection_bf16.safetensors", "https://huggingface.co/Kijai/LTX2.3_comfy/resolve/main/text_encoders/ltx-2.3_text_projection_bf16.safetensors", "911d59bb4cb7708179c9a0045ea0fe41212ecfb77aed3a02702b7c0a8274911f", null);
         }
 
         public void LoadClip(string type, string model)
@@ -1134,7 +1162,12 @@ public partial class WorkflowGenerator
         else if (IsKrea2())
         {
             helpers.LoadClip("krea2", helpers.GetQwen3vl_4bModel());
-            helpers.DoVaeLoader(null, "qwen-image", "qwen-image-vae");
+            helpers.DoVaeLoader(UserInput.SourceSession?.User?.Settings?.VAEs?.DefaultQwenVAE, "qwen-image", "qwen-image-vae");
+        }
+        else if (IsBoogu())
+        {
+            helpers.LoadClip("boogu", helpers.GetQwen3vl_8bModel());
+            helpers.DoVaeLoader(UserInput.SourceSession?.User?.Settings?.VAEs?.DefaultFluxVAE, "flux-1", "flux-ae");
         }
         else if (IsFlux() && (LoadingClip is null || LoadingVAE is null || UserInput.Get(T2IParamTypes.T5XXLModel) is not null || UserInput.Get(T2IParamTypes.ClipLModel) is not null))
         {
@@ -1156,7 +1189,7 @@ public partial class WorkflowGenerator
         else if (IsAnima())
         {
             helpers.LoadClip("stable_diffusion", helpers.GetQwen3_600mModel());
-            helpers.DoVaeLoader(null, "qwen-image", "qwen-image-vae");
+            helpers.DoVaeLoader(UserInput.SourceSession?.User?.Settings?.VAEs?.DefaultQwenVAE, "qwen-image", "qwen-image-vae");
         }
         else if (IsChroma() || IsChromaRadiance())
         {
@@ -1237,7 +1270,7 @@ public partial class WorkflowGenerator
         else if (IsQwenImage())
         {
             helpers.LoadClip("qwen_image", helpers.GetQwenImage25_7b_tenc());
-            helpers.DoVaeLoader(null, "qwen-image", "qwen-image-vae");
+            helpers.DoVaeLoader(UserInput.SourceSession?.User?.Settings?.VAEs?.DefaultQwenVAE, "qwen-image", "qwen-image-vae");
             string samplingNode = CreateNode("ModelSamplingAuraFlow", new JObject()
             {
                 ["model"] = LoadingModel,
@@ -1269,12 +1302,13 @@ public partial class WorkflowGenerator
         {
             if (LoadingVAE is null)
             {
-                // Hypothetical approximation of what would probably be right if comfy wasn't just entirely broken on handling this
-                helpers.LoadClip2("ltxv", helpers.GetGemma3_12bModel(), helpers.GetLTX2EmbedClip());
-                helpers.DoVaeLoader(null, (string)null, "ltx2-audio-vae");
-                CurrentAudioVae = new WGNodeData([LoadingVAE, 0], this, WGNodeData.DT_AUDIOVAE, CurrentCompat());
-                helpers.DoVaeLoader(null, "lightricks-ltx-video-2", "ltx2-video-vae");
-                throw new SwarmUserErrorException("LTX2 requires the safetensors checkpoint format currently due to comfy limitations.");
+                if (!IsLTXV23())
+                {
+                    throw new SwarmUserErrorException("LTX2 requires the safetensors checkpoint format currently due to comfy limitations.");
+                }
+                helpers.LoadClip2("ltxv", helpers.GetGemma3_12bModel(), helpers.GetLTX23TextProjectionClip());
+                helpers.DoVaeLoader(null, "lightricks-ltx-video-2", "ltx2-3-video-vae");
+                helpers.LTXAudioVaeLoad("ltx2-3-audio-vae");
             }
             else
             {
@@ -1419,7 +1453,7 @@ public partial class WorkflowGenerator
                 });
                 LoadingModel = [samplingNode, 0];
             }
-            else if (IsZImage() || IsAceStep15() || IsAnima() || IsKrea2())
+            else if (IsZImage() || IsAceStep15() || IsAnima() || IsKrea2() || IsBoogu())
             {
                 string samplingNode = CreateNode("ModelSamplingAuraFlow", new JObject()
                 {
