@@ -1,7 +1,5 @@
 let imageHistorySelected = new Set();
 let imageHistoryBulkActionRunning = false;
-let imageHistoryCompareFiles = null;
-let imageHistoryComparePan = { x: 0, y: 0, active: false, startX: 0, startY: 0, baseX: 0, baseY: 0 };
 let imageHistoryShowHidden = localStorage.getItem('image_history_show_hidden') == null ? window.userFeatureToggles?.imageHistoryShowHiddenDefault == true : localStorage.getItem('image_history_show_hidden') == 'true';
 let imageHistoryHideGrids = localStorage.getItem('image_history_hide_grids') == null ? true : localStorage.getItem('image_history_hide_grids') == 'true';
 let imageHistoryRefreshQueued = false;
@@ -886,459 +884,123 @@ function getImageHistoryFile(path) {
     return imageHistoryBrowser?.lastFilesMap?.get(path) || null;
 }
 
-/**
- * Ensures the image history compare modal exists.
- */
+let imageHistoryComparison = new ImageHistoryComparison({
+    getFile: path => getImageHistoryFile(path),
+    parseMetadata: metadata => parseHistoryMetadata(metadata),
+    valueToSearchText: value => imageHistoryValueToSearchText(value),
+    setMetadataValue: (metadata, key, value) => setMetadataValue(metadata, key, value),
+    requestRefresh: () => requestImageHistoryRefresh(),
+    selectCurrentImage: (src, metadata, batchId) => setCurrentImage(src, metadata, batchId)
+});
+
+/** Delegates image history comparison operations to the collaborator. */
 function ensureImageHistoryCompareModal() {
-    let modal = document.getElementById('image_history_compare_modal');
-    if (modal) {
-        return modal;
-    }
-    modal = createDiv('image_history_compare_modal', 'modal modal-fullscreen image-history-compare-modal');
-    modal.tabIndex = -1;
-    modal.setAttribute('role', 'dialog');
-    modal.innerHTML = `
-        <div class="image-history-compare-toolbar">
-            <span id="image_history_compare_title" class="image-history-compare-title"></span>
-            <label for="image_history_compare_zoom">Zoom</label>
-            <input id="image_history_compare_zoom" class="image-history-compare-zoom" type="range" min="25" max="200" value="100">
-            <label for="image_history_compare_diff"><input id="image_history_compare_diff" type="checkbox" autocomplete="off"> Diff</label>
-            <label for="image_history_compare_metadata"><input id="image_history_compare_metadata" type="checkbox" autocomplete="off"> Metadata</label>
-            <button type="button" class="basic-button translate" id="image_history_compare_fit">Fit</button>
-            <button type="button" class="basic-button translate" id="image_history_compare_swap">Swap</button>
-            <button type="button" class="basic-button translate" id="image_history_compare_reuse_a">A Settings</button>
-            <button type="button" class="basic-button translate" id="image_history_compare_reuse_b">B Settings</button>
-            <button type="button" class="basic-button translate" id="image_history_compare_star_a">A Star</button>
-            <button type="button" class="basic-button translate" id="image_history_compare_star_b">B Star</button>
-            <button type="button" class="basic-button translate" id="image_history_compare_rate_a">A Rating</button>
-            <button type="button" class="basic-button translate" id="image_history_compare_rate_b">B Rating</button>
-            <button type="button" class="basic-button translate" id="image_history_compare_close">Close</button>
-        </div>
-        <div class="image-history-compare-body">
-            <div class="image-history-compare-viewport">
-                <div class="image-history-compare-stage">
-                    <img id="image_history_compare_img_a" class="image-history-compare-img image-history-compare-img-base">
-                    <img id="image_history_compare_img_b" class="image-history-compare-img image-history-compare-img-top">
-                    <canvas id="image_history_compare_diff_canvas" class="image-history-compare-diff-canvas"></canvas>
-                    <div id="image_history_compare_divider" class="image-history-compare-divider"></div>
-                </div>
-            </div>
-            <div id="image_history_compare_metadata_panel" class="image-history-compare-metadata-panel"></div>
-        </div>`;
-    document.body.appendChild(modal);
-    getRequiredElementById('image_history_compare_close').onclick = () => {
-        closeImageHistoryCompareModal();
-    };
-    getRequiredElementById('image_history_compare_fit').onclick = () => {
-        setImageHistoryCompareZoom(100);
-    };
-    getRequiredElementById('image_history_compare_swap').onclick = () => {
-        swapImageHistoryCompareImages();
-    };
-    getRequiredElementById('image_history_compare_reuse_a').onclick = () => {
-        reuseImageHistoryCompareSettings('first');
-    };
-    getRequiredElementById('image_history_compare_reuse_b').onclick = () => {
-        reuseImageHistoryCompareSettings('second');
-    };
-    getRequiredElementById('image_history_compare_star_a').onclick = () => {
-        starImageHistoryCompareImage('first');
-    };
-    getRequiredElementById('image_history_compare_star_b').onclick = () => {
-        starImageHistoryCompareImage('second');
-    };
-    getRequiredElementById('image_history_compare_rate_a').onclick = () => {
-        rateImageHistoryCompareImage('first');
-    };
-    getRequiredElementById('image_history_compare_rate_b').onclick = () => {
-        rateImageHistoryCompareImage('second');
-    };
-    getRequiredElementById('image_history_compare_zoom').addEventListener('input', e => {
-        setImageHistoryCompareZoom(e.target.value);
-    });
-    getRequiredElementById('image_history_compare_diff').addEventListener('change', e => {
-        setImageHistoryCompareDiffMode(e.target.checked);
-    });
-    getRequiredElementById('image_history_compare_metadata').addEventListener('change', e => {
-        setImageHistoryCompareMetadataMode(e.target.checked);
-    });
-    let stage = modal.querySelector('.image-history-compare-stage');
-    stage.addEventListener('pointermove', updateImageHistoryCompareRevealFromPointer);
-    stage.addEventListener('pointerdown', startImageHistoryComparePan);
-    stage.addEventListener('pointerup', endImageHistoryComparePan);
-    stage.addEventListener('pointercancel', endImageHistoryComparePan);
-    getRequiredElementById('image_history_compare_img_a').draggable = false;
-    getRequiredElementById('image_history_compare_img_b').draggable = false;
-    getRequiredElementById('image_history_compare_img_a').addEventListener('dragstart', e => e.preventDefault());
-    getRequiredElementById('image_history_compare_img_b').addEventListener('dragstart', e => e.preventDefault());
-    return modal;
+    return imageHistoryComparison.ensureModal();
 }
 
-/**
- * Sends one compared image's generation settings back to the Generate tab.
- */
+/** Delegates image history comparison operations to the collaborator. */
 function reuseImageHistoryCompareSettings(side) {
-    if (!imageHistoryCompareFiles) {
-        return;
-    }
-    let file = imageHistoryCompareFiles[side];
-    if (!file?.data?.metadata) {
-        showError('Selected compare image has no reusable metadata.');
-        return;
-    }
-    setCurrentImage(file.data.src, file.data.metadata, 'history');
-    copy_current_image_params();
-    closeImageHistoryCompareModal();
+    return imageHistoryComparison.reuseSettings(side);
 }
 
-/**
- * Toggles starred state for one compared image.
- */
+/** Delegates image history comparison operations to the collaborator. */
 function starImageHistoryCompareImage(side) {
-    if (!imageHistoryCompareFiles) {
-        return;
-    }
-    let file = imageHistoryCompareFiles[side];
-    if (!file?.data?.fullsrc || !file?.data?.src) {
-        return;
-    }
-    toggleStar(file.data.fullsrc, file.data.src);
+    return imageHistoryComparison.starImage(side);
 }
 
+/** Delegates image history comparison operations to the collaborator. */
 function rateImageHistoryCompareImage(side) {
-    if (!imageHistoryCompareFiles) {
-        return;
-    }
-    let file = imageHistoryCompareFiles[side];
-    if (!file?.data?.fullsrc) {
-        return;
-    }
-    let value = prompt('Rating 0-5:', '5');
-    if (value == null) {
-        return;
-    }
-    let rating = Number.parseInt(value.trim());
-    if (!Number.isFinite(rating) || rating < 0 || rating > 5) {
-        showError('Rating must be from 0 through 5.');
-        return;
-    }
-    genericRequest('SetImageRating', { path: file.data.fullsrc, rating: rating }, data => {
-        file.data.metadata = setMetadataValue(file.data.metadata ?? '{}', 'rating', data.rating);
-        requestImageHistoryRefresh();
-        doNoticePopover(`Rated ${file.data.name || file.name}.`, 'notice-pop-green');
-    });
+    return imageHistoryComparison.rateImage(side);
 }
 
-/**
- * Loads the current compare pair into the overlay view.
- */
+/** Delegates image history comparison operations to the collaborator. */
 function renderImageHistoryComparePair() {
-    if (!imageHistoryCompareFiles) {
-        return;
-    }
-    let first = imageHistoryCompareFiles.first;
-    let second = imageHistoryCompareFiles.second;
-    getRequiredElementById('image_history_compare_title').innerText = `${first.data.name || first.name} / ${second.data.name || second.name}`;
-    getRequiredElementById('image_history_compare_img_a').src = first.data.src;
-    getRequiredElementById('image_history_compare_img_b').src = second.data.src;
-    if (getRequiredElementById('image_history_compare_diff').checked) {
-        renderImageHistoryCompareDiff();
-    }
-    if (getRequiredElementById('image_history_compare_metadata').checked) {
-        renderImageHistoryCompareMetadata();
-    }
+    return imageHistoryComparison.renderPair();
 }
 
-/**
- * Swaps image A and image B in the compare view.
- */
+/** Delegates image history comparison operations to the collaborator. */
 function swapImageHistoryCompareImages() {
-    if (!imageHistoryCompareFiles) {
-        return;
-    }
-    let oldFirst = imageHistoryCompareFiles.first;
-    imageHistoryCompareFiles.first = imageHistoryCompareFiles.second;
-    imageHistoryCompareFiles.second = oldFirst;
-    renderImageHistoryComparePair();
+    return imageHistoryComparison.swapImages();
 }
 
-/**
- * Returns focused generation metadata fields for comparison.
- */
+/** Delegates image history comparison operations to the collaborator. */
 function getImageHistoryCompareMetadataFields(file) {
-    let metadata = parseHistoryMetadata(file?.data?.metadata);
-    let params = metadata.sui_image_params || {};
-    let extra = metadata.sui_extra_data || {};
-    let resolution = params.width && params.height ? `${params.width}x${params.height}` : '';
-    let finalResolution = extra.final_width && extra.final_height ? `${extra.final_width}x${extra.final_height}` : '';
-    return {
-        Prompt: params.prompt || extra.original_prompt || '',
-        Negative: params.negativeprompt || extra.original_negativeprompt || '',
-        Model: params.model || '',
-        LoRAs: imageHistoryValueToSearchText(params.loras),
-        VAE: params.vae || '',
-        Sampler: params.sampler || '',
-        Scheduler: params.scheduler || '',
-        Seed: params.seed || '',
-        CFG: params.cfgscale || params.cfg || '',
-        Steps: params.steps || '',
-        Resolution: resolution,
-        'Final Resolution': finalResolution,
-        Rating: metadata.rating || '',
-        Tags: imageHistoryValueToSearchText(metadata.tags || extra.tags),
-        Notes: metadata.notes || extra.notes || '',
-        'Prompt Lab': extra.prompt_lab_id || extra.prompt_lab_prompt_id || '',
-        Wildcards: extra.prompt_lab_wildcard_values || ''
-    };
+    return imageHistoryComparison.getMetadataFields(file);
 }
 
-/**
- * Enables or disables metadata compare mode.
- */
+/** Delegates image history comparison operations to the collaborator. */
 function setImageHistoryCompareMetadataMode(enabled) {
-    let modal = getRequiredElementById('image_history_compare_modal');
-    modal.classList.toggle('image-history-compare-metadata-active', !!enabled);
-    if (enabled) {
-        renderImageHistoryCompareMetadata();
-    }
+    return imageHistoryComparison.setMetadataMode(enabled);
 }
 
-/**
- * Renders metadata differences for the two compared images.
- */
+/** Delegates image history comparison operations to the collaborator. */
 function renderImageHistoryCompareMetadata() {
-    let panel = getRequiredElementById('image_history_compare_metadata_panel');
-    if (!imageHistoryCompareFiles) {
-        panel.innerHTML = '';
-        return;
-    }
-    let firstFields = getImageHistoryCompareMetadataFields(imageHistoryCompareFiles.first);
-    let secondFields = getImageHistoryCompareMetadataFields(imageHistoryCompareFiles.second);
-    let html = '<table class="image-history-compare-metadata-table"><thead><tr><th>Field</th><th>A</th><th>B</th></tr></thead><tbody>';
-    for (let key of Object.keys(firstFields)) {
-        let firstValue = imageHistoryValueToSearchText(firstFields[key]);
-        let secondValue = imageHistoryValueToSearchText(secondFields[key]);
-        let className = firstValue == secondValue ? 'image-history-compare-metadata-same' : 'image-history-compare-metadata-different';
-        html += `<tr class="${className}"><td>${escapeHtml(key)}</td><td>${escapeHtml(firstValue)}</td><td>${escapeHtml(secondValue)}</td></tr>`;
-    }
-    html += '</tbody></table>';
-    panel.innerHTML = html;
+    return imageHistoryComparison.renderMetadata();
 }
 
-/**
- * Closes the image history compare modal.
- */
+/** Delegates image history comparison operations to the collaborator. */
 function closeImageHistoryCompareModal() {
-    cleanupImageHistoryCompareModal();
-    showGenerateTabAfterImageHistoryCompareClose();
+    return imageHistoryComparison.closeModal();
 }
 
-/**
- * Clears any leftover compare modal state.
- */
+/** Delegates image history comparison operations to the collaborator. */
 function cleanupImageHistoryCompareModal() {
-    let modal = getRequiredElementById('image_history_compare_modal');
-    if (window.bootstrap?.Modal) {
-        bootstrap.Modal.getInstance(modal)?.dispose();
-    }
-    modal.classList.remove('show');
-    modal.style.display = 'none';
-    modal.setAttribute('aria-hidden', 'true');
-    modal.removeAttribute('aria-modal');
-    modal.removeAttribute('role');
-    document.body.classList.remove('modal-open');
-    for (let backdrop of document.querySelectorAll('.modal-backdrop')) {
-        backdrop.remove();
-    }
+    return imageHistoryComparison.cleanupModal();
 }
 
-/**
- * Returns the UI to the normal Generate image view after compare closes.
- */
+/** Delegates image history comparison operations to the collaborator. */
 function showGenerateTabAfterImageHistoryCompareClose() {
-    let generateTab = document.getElementById('text2imagetabbutton');
-    if (generateTab && window.bootstrap?.Tab) {
-        bootstrap.Tab.getOrCreateInstance(generateTab).show();
-    }
-    let imageTab = document.querySelector('[href="#Image-Result-Tab"]');
-    if (imageTab && window.bootstrap?.Tab) {
-        bootstrap.Tab.getOrCreateInstance(imageTab).show();
-    }
+    return imageHistoryComparison.showGenerateTabAfterClose();
 }
 
-/**
- * Shows the image history compare modal.
- */
+/** Delegates image history comparison operations to the collaborator. */
 function openImageHistoryCompareModal() {
-    let modal = getRequiredElementById('image_history_compare_modal');
-    cleanupImageHistoryCompareModal();
-    modal.classList.add('show');
-    modal.style.display = 'block';
-    modal.setAttribute('aria-modal', 'true');
-    modal.setAttribute('role', 'dialog');
-    modal.removeAttribute('aria-hidden');
-    document.body.classList.add('modal-open');
+    return imageHistoryComparison.openModal();
 }
 
-/**
- * Updates reveal from mouse or pointer position over the image.
- */
+/** Delegates image history comparison operations to the collaborator. */
 function updateImageHistoryCompareRevealFromPointer(e) {
-    if (imageHistoryComparePan.active) {
-        imageHistoryComparePan.x = imageHistoryComparePan.baseX + e.clientX - imageHistoryComparePan.startX;
-        imageHistoryComparePan.y = imageHistoryComparePan.baseY + e.clientY - imageHistoryComparePan.startY;
-        applyImageHistoryComparePan();
-        return;
-    }
-    let base = getRequiredElementById('image_history_compare_img_a');
-    let rect = base.getBoundingClientRect();
-    if (rect.width <= 0) {
-        return;
-    }
-    let reveal = ((e.clientX - rect.left) / rect.width) * 100;
-    setImageHistoryCompareReveal(reveal);
+    return imageHistoryComparison.updateRevealFromPointer(e);
 }
 
+/** Delegates image history comparison operations to the collaborator. */
 function startImageHistoryComparePan(e) {
-    updateImageHistoryCompareRevealFromPointer(e);
-    if (e.button != 0) {
-        return;
-    }
-    imageHistoryComparePan.active = true;
-    imageHistoryComparePan.startX = e.clientX;
-    imageHistoryComparePan.startY = e.clientY;
-    imageHistoryComparePan.baseX = imageHistoryComparePan.x;
-    imageHistoryComparePan.baseY = imageHistoryComparePan.y;
-    e.currentTarget.setPointerCapture(e.pointerId);
+    return imageHistoryComparison.startPan(e);
 }
 
+/** Delegates image history comparison operations to the collaborator. */
 function endImageHistoryComparePan(e) {
-    imageHistoryComparePan.active = false;
-    if (e.currentTarget.hasPointerCapture(e.pointerId)) {
-        e.currentTarget.releasePointerCapture(e.pointerId);
-    }
+    return imageHistoryComparison.endPan(e);
 }
 
+/** Delegates image history comparison operations to the collaborator. */
 function applyImageHistoryComparePan() {
-    let stage = document.querySelector('#image_history_compare_modal .image-history-compare-stage');
-    if (stage) {
-        stage.style.transform = `translate(${imageHistoryComparePan.x}px, ${imageHistoryComparePan.y}px)`;
-    }
+    return imageHistoryComparison.applyPan();
 }
 
-/**
- * Sets the overlay reveal split.
- */
+/** Delegates image history comparison operations to the collaborator. */
 function setImageHistoryCompareReveal(value) {
-    let reveal = Math.max(0, Math.min(100, parseFloat(value) || 0));
-    let base = getRequiredElementById('image_history_compare_img_a');
-    let divider = getRequiredElementById('image_history_compare_divider');
-    let width = base.clientWidth || 0;
-    let height = base.clientHeight || 0;
-    getRequiredElementById('image_history_compare_img_b').style.clipPath = `inset(0 ${100 - reveal}% 0 0)`;
-    getRequiredElementById('image_history_compare_diff_canvas').style.clipPath = `inset(0 ${100 - reveal}% 0 0)`;
-    divider.style.left = `${width * reveal / 100}px`;
-    divider.style.height = `${height}px`;
+    return imageHistoryComparison.setReveal(value);
 }
 
-/**
- * Enables or disables highlighted pixel diff mode.
- */
+/** Delegates image history comparison operations to the collaborator. */
 function setImageHistoryCompareDiffMode(enabled) {
-    let modal = getRequiredElementById('image_history_compare_modal');
-    modal.classList.toggle('image-history-compare-diff-active', !!enabled);
-    if (enabled) {
-        renderImageHistoryCompareDiff();
-    }
+    return imageHistoryComparison.setDiffMode(enabled);
 }
 
-/**
- * Renders a red-pink diff overlay from image A to image B.
- */
+/** Delegates image history comparison operations to the collaborator. */
 function renderImageHistoryCompareDiff() {
-    let imgA = getRequiredElementById('image_history_compare_img_a');
-    let imgB = getRequiredElementById('image_history_compare_img_b');
-    if (!imgA.complete || !imgB.complete || imgA.naturalWidth == 0 || imgB.naturalWidth == 0) {
-        setTimeout(renderImageHistoryCompareDiff, 80);
-        return;
-    }
-    let width = imgA.naturalWidth;
-    let height = imgA.naturalHeight;
-    let canvasA = document.createElement('canvas');
-    let canvasB = document.createElement('canvas');
-    let diffCanvas = getRequiredElementById('image_history_compare_diff_canvas');
-    canvasA.width = width;
-    canvasA.height = height;
-    canvasB.width = width;
-    canvasB.height = height;
-    diffCanvas.width = width;
-    diffCanvas.height = height;
-    let ctxA = canvasA.getContext('2d');
-    let ctxB = canvasB.getContext('2d');
-    let diffCtx = diffCanvas.getContext('2d');
-    ctxA.drawImage(imgA, 0, 0, width, height);
-    ctxB.drawImage(imgB, 0, 0, width, height);
-    let dataA = ctxA.getImageData(0, 0, width, height);
-    let dataB = ctxB.getImageData(0, 0, width, height);
-    let diffData = diffCtx.createImageData(width, height);
-    for (let i = 0; i < dataA.data.length; i += 4) {
-        let delta = Math.abs(dataB.data[i] - dataA.data[i]) + Math.abs(dataB.data[i + 1] - dataA.data[i + 1]) + Math.abs(dataB.data[i + 2] - dataA.data[i + 2]);
-        if (delta > 30) {
-            diffData.data[i] = 255;
-            diffData.data[i + 1] = 45;
-            diffData.data[i + 2] = 120;
-            diffData.data[i + 3] = Math.min(230, 80 + delta / 2);
-        }
-    }
-    diffCtx.putImageData(diffData, 0, 0);
+    return imageHistoryComparison.renderDiff();
 }
 
-/**
- * Sets both compare images to the same zoom.
- */
+/** Delegates image history comparison operations to the collaborator. */
 function setImageHistoryCompareZoom(value) {
-    let zoom = Math.max(25, Math.min(200, parseInt(value) || 100));
-    getRequiredElementById('image_history_compare_zoom').value = zoom;
-    for (let id of ['image_history_compare_img_a', 'image_history_compare_img_b', 'image_history_compare_diff_canvas']) {
-        let img = getRequiredElementById(id);
-        img.style.width = `${zoom}%`;
-        img.style.maxWidth = zoom <= 100 ? '100%' : 'none';
-    }
-    if (zoom <= 100) {
-        imageHistoryComparePan.x = 0;
-        imageHistoryComparePan.y = 0;
-        applyImageHistoryComparePan();
-    }
+    return imageHistoryComparison.setZoom(value);
 }
 
-/**
- * Opens the side-by-side compare viewer for two selected history images.
- */
+/** Delegates image history comparison operations to the collaborator. */
 function showImageHistoryCompare(paths) {
-    if (paths.length != 2) {
-        showError('Select exactly two images to compare.');
-        return;
-    }
-    let first = getImageHistoryFile(paths[0]);
-    let second = getImageHistoryFile(paths[1]);
-    if (!first || !second) {
-        showError('Selected images are not loaded in history.');
-        return;
-    }
-    ensureImageHistoryCompareModal();
-    imageHistoryCompareFiles = { first, second };
-    let diffDefault = window.userFeatureToggles?.imageHistoryCompareDiffDefault == true;
-    let metadataDefault = window.userFeatureToggles?.imageHistoryCompareMetadataDefault == true;
-    getRequiredElementById('image_history_compare_diff').checked = diffDefault;
-    getRequiredElementById('image_history_compare_metadata').checked = metadataDefault;
-    renderImageHistoryComparePair();
-    setImageHistoryCompareDiffMode(diffDefault);
-    setImageHistoryCompareMetadataMode(metadataDefault);
-    setImageHistoryCompareZoom(100);
-    imageHistoryComparePan = { x: 0, y: 0, active: false, startX: 0, startY: 0, baseX: 0, baseY: 0 };
-    applyImageHistoryComparePan();
-    setImageHistoryCompareReveal(50);
-    openImageHistoryCompareModal();
+    return imageHistoryComparison.show(paths);
 }
 
 function orderHistoryFilesForDisplay(files) {
