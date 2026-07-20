@@ -1556,6 +1556,11 @@ function saveCurrentImageToHistory(img, button = null) {
 
 defaultButtonChoices = 'Use As Init,Edit Image,Send To Image Edit Tab,Star,Reuse Parameters,Save Image';
 
+/** Loads the image-editing coordinator before dispatching an action that it owns. */
+async function runImageEditingCoordinatorAction(callback) {
+    await ensureLazyScriptGroup('imageediting');
+    return await callback();
+}
 
 function getImageFullSrc(src) {
     if (src == null) {
@@ -1860,7 +1865,7 @@ function setCurrentImage(src, metadata = '', batchId = '', previewGrow = false, 
         tmpImg.src = img.src;
     }, '', 'Uses this image as an Image Prompt input', ['image']);
     includeButton('Edit Image', () => {
-        openGenerateTabEditorForImage(img, 'Edit Image').catch((e) => {
+        runImageEditingCoordinatorAction(() => openGenerateTabEditorForImage(img, 'Edit Image')).catch((e) => {
             showError(`${e}`);
         });
     }, '', 'Opens an Image Editor for this image', ['image']);
@@ -1869,7 +1874,7 @@ function setCurrentImage(src, metadata = '', batchId = '', previewGrow = false, 
     }, '', 'Exports this image to a temporary PNG and opens it in Krita', ['image']);
     if (mediaType == 'image') {
         includeButton('Send To Image Edit Tab', () => {
-            sendToImageEditingTabPreview(img.src, img.dataset.metadata).catch((e) => {
+            runImageEditingCoordinatorAction(() => sendToImageEditingTabPreview(img.src, img.dataset.metadata)).catch((e) => {
                 showError(`${e}`);
             });
         }, '', 'Sends this image to the Image Editing tab preview area');

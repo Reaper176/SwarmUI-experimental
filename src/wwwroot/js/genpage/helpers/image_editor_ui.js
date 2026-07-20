@@ -15,6 +15,7 @@ let imageEditingSplittersWired = false;
 let imageEditingLeftSidebarDrag = false;
 let imageEditingRightSidebarDrag = false;
 let imageEditingPausedGenerateEditor = false;
+let imageEditingTabLifecyclePending = false;
 let imageEditingLeftSidebarWidth = parseInt(localStorage.getItem('barspot_imageediting_leftSidebar') || `${convertRemToPixels(28)}`);
 let imageEditingRightSidebarWidth = parseInt(localStorage.getItem('barspot_imageediting_rightSidebar') || `${convertRemToPixels(16)}`);
 let imageEditingToolsCollapsed = localStorage.getItem('imageediting_toolsCollapsed') == 'true';
@@ -2135,6 +2136,10 @@ function imageEditingEnsureUiReady() {
     imageEditingRefreshCropControls();
     imageEditingRefreshEffectControls();
     imageEditingApplyZoom();
+    if (imageEditingTabLifecyclePending && imageEditingTopTabButton && imageEditingTopTabButton.classList.contains('active') && imageEditingTabEditor) {
+        imageEditingTabLifecyclePending = false;
+        imageEditingApplyActiveTabLifecycle();
+    }
 }
 
 /**
@@ -2396,37 +2401,35 @@ function sendImageEditingLayersToGenerateEditor() {
     doTransfer();
 }
 
-let imageEditingTopTabButton = document.getElementById('imageeditingtabbutton');
-if (imageEditingTopTabButton) {
-    imageEditingTopTabButton.addEventListener('shown.bs.tab', () => {
-        imageEditingEnsureUiReady();
-    });
+/** Applies the Image Editing tab's active editor lifecycle once its UI exists. */
+function imageEditingApplyActiveTabLifecycle() {
+    if (window.imageEditor && window.imageEditor.active) {
+        window.imageEditor.deactivate();
+        imageEditingPausedGenerateEditor = true;
+    }
+    if (!imageEditingTabEditor.active) {
+        imageEditingTabEditor.activate();
+    }
+    imageEditingApplyLeftSidebarWidth();
+    imageEditingApplyRightSidebarWidth();
+    imageEditingTabEditor.resize();
+    imageEditingRefreshToolButtons();
+    imageEditingRefreshLayerOpacityControl();
+    imageEditingApplyZoom();
 }
-$('#toptablist').on('shown.bs.tab', function (e) {
-    if (e.target.id == 'imageeditingtabbutton') {
+
+/** Synchronizes editor lifecycle state after a top-level tab is shown. */
+function imageEditingHandleTopTabShown(tabButton) {
+    if (tabButton.id == 'imageeditingtabbutton') {
+        imageEditingTabLifecyclePending = true;
         imageEditingEnsureUiReady();
-        if (!imageEditingTabEditor) {
-            return;
-        }
-        if (window.imageEditor && window.imageEditor.active) {
-            window.imageEditor.deactivate();
-            imageEditingPausedGenerateEditor = true;
-        }
-        if (!imageEditingTabEditor.active) {
-            imageEditingTabEditor.activate();
-        }
-        imageEditingApplyLeftSidebarWidth();
-        imageEditingApplyRightSidebarWidth();
-        imageEditingTabEditor.resize();
-        imageEditingRefreshToolButtons();
-        imageEditingRefreshLayerOpacityControl();
-        imageEditingApplyZoom();
     }
     else {
+        imageEditingTabLifecyclePending = false;
         if (imageEditingTabEditor && imageEditingTabEditor.active) {
             imageEditingTabEditor.deactivate();
         }
-        if (e.target.id == 'text2imagetabbutton' && imageEditingPausedGenerateEditor) {
+        if (tabButton.id == 'text2imagetabbutton' && imageEditingPausedGenerateEditor) {
             ensureGenerateImageEditorReady().then(() => {
                 if (window.imageEditor && !window.imageEditor.active) {
                     window.imageEditor.activate();
@@ -2437,4 +2440,12 @@ $('#toptablist').on('shown.bs.tab', function (e) {
             });
         }
     }
+}
+
+let imageEditingTopTabButton = document.getElementById('imageeditingtabbutton');
+$('#toptablist').on('shown.bs.tab', function (e) {
+    imageEditingHandleTopTabShown(e.target);
 });
+if (imageEditingTopTabButton && imageEditingTopTabButton.classList.contains('active')) {
+    imageEditingHandleTopTabShown(imageEditingTopTabButton);
+}
