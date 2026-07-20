@@ -7,6 +7,7 @@ using SwarmUI.Core;
 using SwarmUI.Media;
 using SwarmUI.Utils;
 using System.Diagnostics;
+using System.IO;
 using System.Linq;
 using Image = SwarmUI.Utils.Image;
 using ISImageRGBA = SixLabors.ImageSharp.Image<SixLabors.ImageSharp.PixelFormats.Rgba32>;
