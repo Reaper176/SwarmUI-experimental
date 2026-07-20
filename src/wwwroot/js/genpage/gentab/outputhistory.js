@@ -18,7 +18,6 @@ let imageHistoryInitialLoadScheduled = false;
 let imageHistorySavedRefreshTimer = null;
 let imageHistorySavedRefreshAttempts = 0;
 let imageHistorySavedRefreshTargets = new Set();
-const IMAGE_HISTORY_METADATA_CACHE_LIMIT = 1024;
 const IMAGE_HISTORY_AUTO_RETRY_DELAY_MS = 1500;
 const IMAGE_HISTORY_FAST_FIRST_LIMIT = 128;
 const IMAGE_HISTORY_BACKGROUND_WATCHDOG_DELAY_MS = 10000;
@@ -26,7 +25,6 @@ const IMAGE_HISTORY_BACKGROUND_MAX_RETRIES = 2;
 let IMAGE_HISTORY_SAVED_REFRESH_MAX_ATTEMPTS = 8;
 let IMAGE_HISTORY_UNLOAD_ROW_BUFFER = 10;
 let IMAGE_HISTORY_MIN_MEDIA_ROWS_TO_UNLOAD = 2;
-const imageHistoryMetadataCache = new Map();
 let registeredMediaButtons = [];
 
 class ImageHistoryWindowManager {
@@ -563,318 +561,61 @@ function scheduleImageHistoryAutoRetry() {
     return true;
 }
 
+let imageHistoryFilter = new ImageHistoryFilter();
+
+/** Parses image-history metadata through the bounded collaborator cache. */
 function parseHistoryMetadata(metadata) {
-    if (!metadata) {
-        return {};
-    }
-    if (typeof metadata == 'object') {
-        return metadata;
-    }
-    if (imageHistoryMetadataCache.has(metadata)) {
-        return imageHistoryMetadataCache.get(metadata);
-    }
-    let parsed = {};
-    try {
-        parsed = JSON.parse(interpretMetadata(metadata)) || {};
-    }
-    catch (e) {
-        parsed = {};
-    }
-    if (imageHistoryMetadataCache.size >= IMAGE_HISTORY_METADATA_CACHE_LIMIT) {
-        let firstKey = imageHistoryMetadataCache.keys().next().value;
-        imageHistoryMetadataCache.delete(firstKey);
-    }
-    imageHistoryMetadataCache.set(metadata, parsed);
-    return parsed;
+    return imageHistoryFilter.parseMetadata(metadata);
 }
 
-/**
- * Converts a metadata value into searchable text.
- */
+/** Converts a metadata value into searchable text through the collaborator. */
 function imageHistoryValueToSearchText(value) {
-    if (value == null) {
-        return '';
-    }
-    if (Array.isArray(value)) {
-        return value.map(v => imageHistoryValueToSearchText(v)).join(' ');
-    }
-    if (typeof value == 'object') {
-        return Object.values(value).map(v => imageHistoryValueToSearchText(v)).join(' ');
-    }
-    return `${value}`;
+    return imageHistoryFilter.valueToSearchText(value);
 }
 
-/**
- * Builds field-specific searchable metadata for the image history filter.
- */
+/** Builds field-specific searchable metadata through the collaborator. */
 function getImageHistorySearchFields(image, parsedMeta) {
-    let params = parsedMeta.sui_image_params || {};
-    let extra = parsedMeta.sui_extra_data || {};
-    let name = image.data.name || '';
-    let fullsrc = image.data.fullsrc || '';
-    let folder = fullsrc.includes('/') ? fullsrc.substring(0, fullsrc.lastIndexOf('/')) : '';
-    let extension = name.includes('.') ? name.split('.').pop().toLowerCase() : '';
-    let rawMetadata = typeof image.data.metadata == 'string' ? image.data.metadata : imageHistoryValueToSearchText(image.data.metadata);
-    let fileSize = Number.parseInt(image.data.file_size || 0) || 0;
-    let fileTime = Number.parseInt(image.data.file_time || 0) || 0;
-    let fileDate = fileTime ? new Date(fileTime * 1000).toISOString() : '';
-    let hasMetadataText = rawMetadata ? 'true yes metadata' : 'false no none';
-    let generationResolution = params.width && params.height ? `${params.width}x${params.height}` : '';
-    let finalResolution = extra.final_width && extra.final_height ? `${extra.final_width}x${extra.final_height}` : generationResolution;
-    let favoriteText = parsedMeta.is_starred ? 'true yes starred favorite' : 'false no unstarred';
-    let hiddenText = parsedMeta.is_hidden ? 'true yes hidden' : 'false no visible';
-    let width = Number.parseInt(params.width || 0) || 0;
-    let height = Number.parseInt(params.height || 0) || 0;
-    let finalWidth = Number.parseInt(extra.final_width || width || 0) || 0;
-    let finalHeight = Number.parseInt(extra.final_height || height || 0) || 0;
-    let fields = {
-        name: name,
-        path: fullsrc,
-        folder: folder,
-        type: extension,
-        filetype: extension,
-        filesize: fileSize ? `${fileSize} ${largeCountStringify(fileSize)}` : '',
-        has: hasMetadataText,
-        date: `${fileDate} ${fileDate.substring(0, 10)} ${fullsrc}`,
-        metadata: `${rawMetadata} ${imageHistoryValueToSearchText(parsedMeta)}`,
-        prompt: `${params.prompt || ''} ${extra.original_prompt || ''}`,
-        negative: params.negativeprompt || '',
-        model: params.model || '',
-        lora: `${imageHistoryValueToSearchText(params.loras)} ${imageHistoryValueToSearchText(params.loraweights)}`,
-        vae: params.vae || '',
-        sampler: params.sampler || '',
-        scheduler: params.scheduler || '',
-        seed: params.seed || '',
-        resolution: `${generationResolution} ${finalResolution}`,
-        width: `${width} ${finalWidth}`,
-        height: `${height} ${finalHeight}`,
-        finalwidth: finalWidth,
-        finalheight: finalHeight,
-        steps: params.steps || '',
-        cfg: params.cfgscale || '',
-        rating: parsedMeta.rating || extra.rating || '',
-        favorite: favoriteText,
-        hidden: hiddenText,
-        notes: `${parsedMeta.notes || ''} ${extra.notes || ''}`,
-        tags: `${imageHistoryValueToSearchText(parsedMeta.tags)} ${imageHistoryValueToSearchText(extra.tags)}`,
-        session: `${params.session_id || ''} ${extra.session_id || ''}`,
-        wildcard: `${extra.prompt_lab_wildcard_values || ''} ${imageHistoryValueToSearchText(extra.prompt_lab_wildcards)}`,
-        promptlab: `${extra.prompt_lab_id || ''} ${extra.prompt_lab_prompt_id || ''}`
-    };
-    fields.allFields = Object.values(fields).join(' ');
-    return fields;
+    return imageHistoryFilter.getSearchFields(image, parsedMeta);
 }
 
-/**
- * Splits a search query into terms while preserving quoted text.
- */
+/** Splits an image-history filter query through the collaborator. */
 function splitImageHistoryFilterQuery(filter) {
-    let terms = [];
-    let current = '';
-    let quote = null;
-    for (let i = 0; i < filter.length; i++) {
-        let char = filter[i];
-        if ((char == '"' || char == "'") && (quote == null || quote == char)) {
-            quote = quote == char ? null : char;
-            continue;
-        }
-        if (!quote && /\s/.test(char)) {
-            if (current.trim()) {
-                terms.push(current.trim());
-            }
-            current = '';
-            continue;
-        }
-        current += char;
-    }
-    if (current.trim()) {
-        terms.push(current.trim());
-    }
-    return terms;
+    return imageHistoryFilter.splitQuery(filter);
 }
 
-/**
- * Normalizes aliases for image history structured search fields.
- */
+/** Normalizes an image-history filter field through the collaborator. */
 function normalizeImageHistoryFilterField(field) {
-    let aliases = {
-        fav: 'favorite',
-        starred: 'favorite',
-        hide: 'hidden',
-        is_hidden: 'hidden',
-        tag: 'tags',
-        neg: 'negative',
-        negativeprompt: 'negative',
-        loras: 'lora',
-        res: 'resolution',
-        file_size: 'filesize',
-        size: 'filesize',
-        final_width: 'finalwidth',
-        final_height: 'finalheight',
-        prompt_lab: 'promptlab',
-        prompt_lab_id: 'promptlab',
-        ext: 'filetype',
-        file_type: 'filetype',
-        has_metadata: 'has',
-        wildcard_values: 'wildcard'
-    };
-    return aliases[field] || field;
+    return imageHistoryFilter.normalizeField(field);
 }
 
-let imageHistoryCompiledFilterText = null;
-let imageHistoryCompiledFilterTerms = [];
-
-/**
- * Compiles a history filter once per input string so each image does not repeat the same parsing work.
- */
+/** Compiles an image-history filter query through the collaborator. */
 function compileImageHistoryFilterQuery(filter) {
-    if (imageHistoryCompiledFilterText == filter) {
-        return imageHistoryCompiledFilterTerms;
-    }
-    imageHistoryCompiledFilterText = filter;
-    imageHistoryCompiledFilterTerms = [];
-    let rawTerms = splitImageHistoryFilterQuery(filter);
-    for (let term of rawTerms) {
-        let fieldSplit = term.indexOf(':');
-        if (fieldSplit > 0) {
-            let field = normalizeImageHistoryFilterField(term.substring(0, fieldSplit).toLowerCase());
-            let value = term.substring(fieldSplit + 1).toLowerCase();
-            if (!value) {
-                continue;
-            }
-            imageHistoryCompiledFilterTerms.push({ field, value, raw: term.toLowerCase() });
-        }
-        else {
-            imageHistoryCompiledFilterTerms.push({ field: null, value: term.toLowerCase(), raw: term.toLowerCase() });
-        }
-    }
-    return imageHistoryCompiledFilterTerms;
+    return imageHistoryFilter.compileQuery(filter);
 }
 
-/**
- * Returns searchable text for object, string, or fallback entry descriptions.
- */
+/** Gets searchable image-history text through the collaborator. */
 function getImageHistorySearchableText(desc, searchable) {
-    let allFields = '';
-    if (typeof searchable == 'string') {
-        allFields = searchable;
-    }
-    else if (typeof searchable == 'object') {
-        allFields = searchable.allFields || searchable.all_fields || Object.values(searchable).join(' ');
-    }
-    else if (searchable != null) {
-        allFields = `${searchable}`;
-    }
-    return `${allFields} ${desc.description || ''} ${desc.name || ''} ${desc.display || ''}`.toLowerCase();
+    return imageHistoryFilter.getSearchableText(desc, searchable);
 }
 
+/** Matches a numeric image-history filter comparison through the collaborator. */
 function imageHistoryNumericFilterMatches(fieldText, value) {
-    let match = value.match(/^(>=|<=|>|<|=)(-?\d+(?:\.\d+)?)$/);
-    if (!match) {
-        return null;
-    }
-    let actual = Number.parseFloat(fieldText);
-    let expected = Number.parseFloat(match[2]);
-    if (!Number.isFinite(actual) || !Number.isFinite(expected)) {
-        return false;
-    }
-    if (match[1] == '>=') {
-        return actual >= expected;
-    }
-    if (match[1] == '<=') {
-        return actual <= expected;
-    }
-    if (match[1] == '>') {
-        return actual > expected;
-    }
-    if (match[1] == '<') {
-        return actual < expected;
-    }
-    return actual == expected;
+    return imageHistoryFilter.numericMatches(fieldText, value);
 }
 
+/** Matches a date image-history filter comparison through the collaborator. */
 function imageHistoryDateFilterMatches(fieldText, value) {
-    let match = value.match(/^(>=|<=|>|<|=)(\d{4}-\d{2}-\d{2}(?:T[^ ]*)?)$/);
-    if (!match) {
-        return null;
-    }
-    let actual = Date.parse(`${fieldText}`.split(' ')[0]);
-    let expected = Date.parse(match[2]);
-    if (!Number.isFinite(actual) || !Number.isFinite(expected)) {
-        return false;
-    }
-    if (match[1] == '>=') {
-        return actual >= expected;
-    }
-    if (match[1] == '<=') {
-        return actual <= expected;
-    }
-    if (match[1] == '>') {
-        return actual > expected;
-    }
-    if (match[1] == '<') {
-        return actual < expected;
-    }
-    return actual == expected;
+    return imageHistoryFilter.dateMatches(fieldText, value);
 }
 
-/**
- * Matches image history entries against text and field:value search terms.
- */
+/** Matches one browser entry against the current history query. */
 function imageHistoryFilterMatches(desc, filter) {
-    if (!filter) {
-        return true;
-    }
-    let searchable = desc.searchable || {};
-    let allFields = getImageHistorySearchableText(desc, searchable);
-    let terms = compileImageHistoryFilterQuery(filter);
-    for (let term of terms) {
-        if (term.field) {
-            let field = term.field;
-            let value = term.value;
-            let fieldText = searchable[field];
-            if (fieldText == null) {
-                if (!allFields.includes(term.raw)) {
-                    return false;
-                }
-                continue;
-            }
-            let numericMatch = imageHistoryNumericFilterMatches(fieldText, value);
-            if (numericMatch != null) {
-                if (!numericMatch) {
-                    return false;
-                }
-                continue;
-            }
-            let dateMatch = imageHistoryDateFilterMatches(fieldText, value);
-            if (dateMatch != null) {
-                if (!dateMatch) {
-                    return false;
-                }
-                continue;
-            }
-            if (!`${fieldText}`.toLowerCase().includes(value)) {
-                return false;
-            }
-        }
-        else if (!allFields.includes(term.value)) {
-            return false;
-        }
-    }
-    return true;
+    return imageHistoryFilter.matches(desc, filter);
 }
 
-/**
- * Updates the history filter input hint after the browser builds its header.
- */
+/** Updates the image-history filter hint through the collaborator. */
 function updateImageHistoryFilterHint() {
-    let filterInput = document.getElementById('imagehistorybrowser_filter_input');
-    if (!filterInput || filterInput.dataset.historyFilterHint == 'true') {
-        return;
-    }
-    filterInput.dataset.historyFilterHint = 'true';
-    filterInput.placeholder = 'Search prompt/model/metadata...';
-    filterInput.title = 'Search text, or use field:value terms like model:sdxl seed:123 date:>=2026-04-01 rating:>=4 hidden:true wildcard:dragon.';
+    return imageHistoryFilter.updateHint();
 }
 
 /**
