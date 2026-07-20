@@ -66,7 +66,7 @@ function applyTranslations(root = null) {
     }
     let dropdown = document.getElementById('language_dropdown_link');
     if (dropdown) {
-        let newHtml = `<img class="translate-img" src="imgs/flags/${language_data.code}.jpg" /> ${SwarmUtil.escapeHtml(language_data.local_name)}`;
+        let newHtml = `<img class="translate-img" src="imgs/flags/${language_data.code}.jpg" /> ${escapeHtml(language_data.local_name)}`;
         if (dropdown.innerHTML != newHtml) { // try to avoid reload flicker
             dropdown.innerHTML = newHtml;
         }

@@ -33,13 +33,13 @@ class PromptLab {
         if (window.userFeatureToggles?.promptLab == false || !document.getElementById('prompt_lab_positive')) {
             return;
         }
-        SwarmUtil.getRequiredElementById('prompt_lab_max_combinations').value = window.userFeatureToggles?.promptLabWildcardHardLimit || 1000000;
-        SwarmUtil.getRequiredElementById('prompt_lab_shuffle_results').checked = window.userFeatureToggles?.promptLabShuffleWildcards == true;
-        SwarmUtil.getRequiredElementById('prompt_lab_autosave').checked = window.userFeatureToggles?.promptLabAutoSaveDefault == true;
-        promptTabComplete.enableFor(SwarmUtil.getRequiredElementById('prompt_lab_positive'));
-        promptTabComplete.enableFor(SwarmUtil.getRequiredElementById('prompt_lab_negative'));
-        this.enablePromptDrop(SwarmUtil.getRequiredElementById('prompt_lab_positive'));
-        this.enablePromptDrop(SwarmUtil.getRequiredElementById('prompt_lab_negative'));
+        getRequiredElementById('prompt_lab_max_combinations').value = window.userFeatureToggles?.promptLabWildcardHardLimit || 1000000;
+        getRequiredElementById('prompt_lab_shuffle_results').checked = window.userFeatureToggles?.promptLabShuffleWildcards == true;
+        getRequiredElementById('prompt_lab_autosave').checked = window.userFeatureToggles?.promptLabAutoSaveDefault == true;
+        promptTabComplete.enableFor(getRequiredElementById('prompt_lab_positive'));
+        promptTabComplete.enableFor(getRequiredElementById('prompt_lab_negative'));
+        this.enablePromptDrop(getRequiredElementById('prompt_lab_positive'));
+        this.enablePromptDrop(getRequiredElementById('prompt_lab_negative'));
         this.applyAllSectionStates();
         this.initResizableLayout();
         this.load();
@@ -47,13 +47,13 @@ class PromptLab {
 
     /** Initializes the Prompt Lab splitter bars. */
     initResizableLayout() {
-        this.wrapper = SwarmUtil.getRequiredElementById('prompt_lab_wrapper');
-        this.workspace = SwarmUtil.getRequiredElementById('prompt_lab_workspace');
-        this.editor = SwarmUtil.getRequiredElementById('prompt_lab_editor');
-        this.context = SwarmUtil.getRequiredElementById('prompt_lab_context');
-        this.library = SwarmUtil.getRequiredElementById('prompt_lab_library');
-        this.workspaceSplitter = SwarmUtil.getRequiredElementById('prompt_lab_workspace_splitter');
-        this.librarySplitter = SwarmUtil.getRequiredElementById('prompt_lab_library_splitter');
+        this.wrapper = getRequiredElementById('prompt_lab_wrapper');
+        this.workspace = getRequiredElementById('prompt_lab_workspace');
+        this.editor = getRequiredElementById('prompt_lab_editor');
+        this.context = getRequiredElementById('prompt_lab_context');
+        this.library = getRequiredElementById('prompt_lab_library');
+        this.workspaceSplitter = getRequiredElementById('prompt_lab_workspace_splitter');
+        this.librarySplitter = getRequiredElementById('prompt_lab_library_splitter');
         let startDrag = (kind, e) => {
             if (window.innerWidth < 900) {
                 return;

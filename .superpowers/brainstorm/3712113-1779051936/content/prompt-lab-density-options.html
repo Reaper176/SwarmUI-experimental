@@ -1,0 +1,103 @@
+<h2>Prompt Lab Density Directions</h2>
+<p class="subtitle">Which structure does the best job making Prompt Lab feel less crowded while keeping advanced prompt and wildcard workflows reachable?</p>
+
+<div class="cards">
+  <div class="card" data-choice="progressive" onclick="toggleSelect(this)">
+    <div class="card-image">
+      <div class="mockup" style="margin:0">
+        <div class="mockup-header">A. Progressive Disclosure</div>
+        <div class="mockup-body">
+          <div style="display:grid;grid-template-columns:240px 1fr;gap:10px;min-height:360px">
+            <div class="mock-sidebar">
+              <div class="label">Library</div>
+              <input class="mock-input" placeholder="Search all">
+              <div class="placeholder">Prompts</div>
+              <div class="placeholder" style="opacity:.55">Fragments collapsed</div>
+              <div class="placeholder" style="opacity:.55">Wildcards collapsed</div>
+              <div class="placeholder" style="opacity:.55">History collapsed</div>
+            </div>
+            <div class="mock-content">
+              <div class="label">Prompt editor first</div>
+              <input class="mock-input" placeholder="Prompt name">
+              <div class="placeholder" style="height:85px">Positive prompt</div>
+              <div class="placeholder" style="height:70px">Negative prompt</div>
+              <div class="placeholder">Primary actions: Save / Send / Preview</div>
+              <div class="placeholder" style="opacity:.55">Advanced panels: Wildcards, Fragments, Diff, Exports</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>A. Progressive Disclosure</h3>
+      <p>Keep one main editor surface visible. Collapse lower-frequency sections until the user asks for them.</p>
+    </div>
+  </div>
+
+  <div class="card" data-choice="task-tabs" onclick="toggleSelect(this)">
+    <div class="card-image">
+      <div class="mockup" style="margin:0">
+        <div class="mockup-header">B. Task Tabs</div>
+        <div class="mockup-body">
+          <div style="display:grid;grid-template-columns:220px 1fr;gap:10px;min-height:360px">
+            <div class="mock-sidebar">
+              <div class="label">Library</div>
+              <input class="mock-input" placeholder="Search prompts">
+              <div class="placeholder">Saved prompts</div>
+              <div class="placeholder">Recent prompts</div>
+            </div>
+            <div class="mock-content">
+              <div style="display:flex;gap:6px;margin-bottom:8px">
+                <button class="mock-button">Prompt</button>
+                <button class="mock-button">Fragments</button>
+                <button class="mock-button">Wildcards</button>
+                <button class="mock-button">Preview</button>
+              </div>
+              <input class="mock-input" placeholder="Prompt name">
+              <div class="placeholder" style="height:95px">Positive prompt</div>
+              <div class="placeholder" style="height:75px">Negative prompt</div>
+              <div class="placeholder">Contextual actions for selected tab</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>B. Task Tabs</h3>
+      <p>Separate prompt writing, fragments, wildcards, and preview into task modes so only one workflow is dense at a time.</p>
+    </div>
+  </div>
+
+  <div class="card" data-choice="command-bar" onclick="toggleSelect(this)">
+    <div class="card-image">
+      <div class="mockup" style="margin:0">
+        <div class="mockup-header">C. Command Bar</div>
+        <div class="mockup-body">
+          <div style="display:grid;grid-template-columns:1fr 260px;gap:10px;min-height:360px">
+            <div class="mock-content">
+              <div class="label">Wide editor</div>
+              <input class="mock-input" placeholder="Prompt name">
+              <div class="placeholder" style="height:105px">Positive prompt</div>
+              <div class="placeholder" style="height:85px">Negative prompt</div>
+              <div class="placeholder">Tags, notes, preview summary</div>
+            </div>
+            <div class="mock-sidebar">
+              <div class="label">Command rail</div>
+              <button class="mock-button">Save</button>
+              <button class="mock-button">Send to Generate</button>
+              <button class="mock-button">Preview Wildcards</button>
+              <button class="mock-button">Open Library</button>
+              <button class="mock-button">More...</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>C. Command Bar</h3>
+      <p>Make writing the prompt dominant and move library/preview actions into a compact right-side command rail.</p>
+    </div>
+  </div>
+</div>
+
+<p class="subtitle">Click the direction that feels closest, then come back here with any notes. URL: http://localhost:57955</p>

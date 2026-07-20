@@ -3,6 +3,7 @@ let imageHistoryBulkActionRunning = false;
 let imageHistoryCompareFiles = null;
 let imageHistoryComparePan = { x: 0, y: 0, active: false, startX: 0, startY: 0, baseX: 0, baseY: 0 };
 let imageHistoryShowHidden = localStorage.getItem('image_history_show_hidden') == null ? window.userFeatureToggles?.imageHistoryShowHiddenDefault == true : localStorage.getItem('image_history_show_hidden') == 'true';
+let imageHistoryHideGrids = localStorage.getItem('image_history_hide_grids') == null ? true : localStorage.getItem('image_history_hide_grids') == 'true';
 let imageHistoryRefreshQueued = false;
 let imageHistoryHasLoadedOnce = false;
 let imageHistoryInitialAutoRetryUsed = false;
@@ -385,8 +386,8 @@ function cancelImageHistoryBackgroundLoad() {
     clearImageHistoryBackgroundWatchdog();
 }
 
-function getImageHistoryRequestKey(path, depth, sortBy, reverse, showHidden) {
-    return JSON.stringify({ path, depth, sortBy, reverse, showHidden });
+function getImageHistoryRequestKey(path, depth, sortBy, reverse, showHidden, hideGrids) {
+    return JSON.stringify({ path, depth, sortBy, reverse, showHidden, hideGrids });
 }
 
 function isImageHistoryBackgroundRequestStillRelevant(path, requestKey, backgroundToken) {
@@ -399,7 +400,7 @@ function isImageHistoryBackgroundRequestStillRelevant(path, requestKey, backgrou
     return requestKey == imageHistoryBackgroundRequestKey;
 }
 
-function scheduleImageHistoryBackgroundWatchdog(path, depth, sortBy, reverse, showHidden, requestKey, backgroundToken) {
+function scheduleImageHistoryBackgroundWatchdog(path, depth, sortBy, reverse, showHidden, hideGrids, requestKey, backgroundToken) {
     clearImageHistoryBackgroundWatchdog();
     imageHistoryBackgroundWatchdog = setTimeout(() => {
         if (!isImageHistoryBackgroundRequestStillRelevant(path, requestKey, backgroundToken) || imageHistoryStartupStage != 'recent_loaded') {
@@ -407,7 +408,7 @@ function scheduleImageHistoryBackgroundWatchdog(path, depth, sortBy, reverse, sh
         }
         if (imageHistoryBackgroundRequestInFlight) {
             setImageHistoryRequestStatus('loading', 'Still loading older history...');
-            scheduleImageHistoryBackgroundWatchdog(path, depth, sortBy, reverse, showHidden, requestKey, backgroundToken);
+            scheduleImageHistoryBackgroundWatchdog(path, depth, sortBy, reverse, showHidden, hideGrids, requestKey, backgroundToken);
             return;
         }
         if (imageHistoryBackgroundRetryCount >= IMAGE_HISTORY_BACKGROUND_MAX_RETRIES) {
@@ -416,7 +417,7 @@ function scheduleImageHistoryBackgroundWatchdog(path, depth, sortBy, reverse, sh
         }
         imageHistoryBackgroundRetryCount++;
         setImageHistoryRequestStatus('loading', 'Still loading older history...');
-        queueFullImageHistoryLoad(path, depth, sortBy, reverse, showHidden);
+        queueFullImageHistoryLoad(path, depth, sortBy, reverse, showHidden, hideGrids);
     }, IMAGE_HISTORY_BACKGROUND_WATCHDOG_DELAY_MS);
 }
 
@@ -495,13 +496,14 @@ function scheduleInitialImageHistoryLoad(delayMs = 0) {
     }, delayMs);
 }
 
-function ensureImageHistoryHeaderControlsReady(sortBy, reverse, allowAnims, showHidden) {
+function ensureImageHistoryHeaderControlsReady(sortBy, reverse, allowAnims, showHidden, hideGrids) {
     ensureImageHistoryBrowserShellReady();
     let sortElem = document.getElementById('image_history_sort_by');
     let sortReverseElem = document.getElementById('image_history_sort_reverse');
     let allowAnimsElem = document.getElementById('image_history_allow_anims');
     let showHiddenElem = document.getElementById('image_history_show_hidden');
-    if (!sortElem || !sortReverseElem || !allowAnimsElem || !showHiddenElem) {
+    let hideGridsElem = document.getElementById('image_history_hide_grids');
+    if (!sortElem || !sortReverseElem || !allowAnimsElem || !showHiddenElem || !hideGridsElem) {
         return null;
     }
     let normalizedSortBy = normalizeImageHistorySortBy(sortBy);
@@ -517,6 +519,7 @@ function ensureImageHistoryHeaderControlsReady(sortBy, reverse, allowAnims, show
     sortReverseElem.checked = reverse;
     allowAnimsElem.checked = allowAnims;
     showHiddenElem.checked = showHidden;
+    hideGridsElem.checked = hideGrids;
     if (!sortElem.dataset.ready) {
         sortElem.dataset.ready = 'true';
         sortElem.addEventListener('change', () => {
@@ -536,9 +539,14 @@ function ensureImageHistoryHeaderControlsReady(sortBy, reverse, allowAnims, show
             localStorage.setItem('image_history_show_hidden', showHiddenElem.checked);
             requestImageHistoryRefresh();
         });
+        hideGridsElem.addEventListener('change', () => {
+            imageHistoryHideGrids = hideGridsElem.checked;
+            localStorage.setItem('image_history_hide_grids', hideGridsElem.checked);
+            requestImageHistoryRefresh();
+        });
     }
     ensureImageHistoryBulkControlsReady();
-    return { sortElem, sortReverseElem, allowAnimsElem, showHiddenElem };
+    return { sortElem, sortReverseElem, allowAnimsElem, showHiddenElem, hideGridsElem };
 }
 
 function scheduleImageHistoryAutoRetry() {
@@ -1435,6 +1443,20 @@ function imageHistoryPerfText(perf) {
         return '';
     }
     return `, server=${Number(perf.total_ms || 0).toFixed(1)}ms (dirs=${Number(perf.dir_scan_ms || 0).toFixed(1)}ms, files=${Number(perf.file_scan_ms || 0).toFixed(1)}ms, sort=${Number(perf.final_sort_ms || 0).toFixed(1)}ms)`;
+}
+
+/** Returns true when the currently viewed history path is the grid folder or one of its children. */
+function isImageHistoryGridFolder(path) {
+    let cleanPath = (path || '').replaceAll('\\', '/').replace(/^\/+|\/+$/g, '').toLowerCase();
+    return cleanPath == 'grids' || cleanPath.startsWith('grids/');
+}
+
+/** Filters grid history entries from general history views when requested. */
+function filterImageHistoryGridFiles(files, path, hideGrids) {
+    if (!hideGrids || isImageHistoryGridFolder(path)) {
+        return files;
+    }
+    return files.filter(file => !file.data?.fullsrc?.replaceAll('\\', '/').toLowerCase().startsWith('grids/'));
 }
 
 function replaceHistoryBrowserContents(path, folders, mapped) {
@@ -2385,14 +2407,17 @@ function listOutputHistoryFolderAndFiles(path, isRefresh, callback, depth, onErr
     let reverse = localStorage.getItem('image_history_sort_reverse') == 'true';
     let allowAnims = localStorage.getItem('image_history_allow_anims') != 'false';
     let showHidden = imageHistoryShowHidden;
+    let hideGrids = imageHistoryHideGrids;
     let filter = imageHistoryBrowser?.filter || '';
-    let controlElems = ensureImageHistoryHeaderControlsReady(sortBy, reverse, allowAnims, showHidden);
+    let controlElems = ensureImageHistoryHeaderControlsReady(sortBy, reverse, allowAnims, showHidden, hideGrids);
     if (controlElems) {
         sortBy = controlElems.sortElem.value;
         reverse = controlElems.sortReverseElem.checked;
         allowAnims = controlElems.allowAnimsElem.checked;
         showHidden = controlElems.showHiddenElem.checked;
+        hideGrids = controlElems.hideGridsElem.checked;
         imageHistoryShowHidden = showHidden;
+        imageHistoryHideGrids = hideGrids;
     }
     let isRetryLoad = imageHistoryNextLoadIsRetry;
     imageHistoryNextLoadIsRetry = false;
@@ -2428,7 +2453,7 @@ function listOutputHistoryFolderAndFiles(path, isRefresh, callback, depth, onErr
         imageHistoryHasLoadedOnce = true;
         let prefix = path == '' ? '' : (path.endsWith('/') ? path : `${path}/`);
         let folders = data.folders.sort((a, b) => b.toLowerCase().localeCompare(a.toLowerCase()));
-        let mapped = applyImageHistoryClientSort(mapHistoryFiles(prefix, orderHistoryFilesForDisplay(data.files)), sortBy, reverse);
+        let mapped = filterImageHistoryGridFiles(applyImageHistoryClientSort(mapHistoryFiles(prefix, orderHistoryFilesForDisplay(data.files)), sortBy, reverse), path, hideGrids);
         let mapMs = performance.now() - mapStart;
         let renderStart = performance.now();
         callback(folders, mapped);
@@ -2437,8 +2462,8 @@ function listOutputHistoryFolderAndFiles(path, isRefresh, callback, depth, onErr
         if (useFastFirst) {
             imageHistoryStartupStage = 'recent_loaded';
             imageHistoryBackgroundRetryCount = 0;
-            imageHistoryBackgroundRequestKey = getImageHistoryRequestKey(path, depth, sortBy, reverse, showHidden);
-            queueFullImageHistoryLoad(path, depth, sortBy, reverse, showHidden);
+            imageHistoryBackgroundRequestKey = getImageHistoryRequestKey(path, depth, sortBy, reverse, showHidden, hideGrids);
+            queueFullImageHistoryLoad(path, depth, sortBy, reverse, showHidden, hideGrids);
             return;
         }
         imageHistoryStartupStage = 'complete';
@@ -2461,15 +2486,15 @@ function listOutputHistoryFolderAndFiles(path, isRefresh, callback, depth, onErr
     }, 300000);
 }
 
-function queueFullImageHistoryLoad(path, depth, sortBy, reverse, showHidden) {
+function queueFullImageHistoryLoad(path, depth, sortBy, reverse, showHidden, hideGrids) {
     sortBy = normalizeImageHistorySortBy(sortBy);
-    let requestKey = getImageHistoryRequestKey(path, depth, sortBy, reverse, showHidden);
+    let requestKey = getImageHistoryRequestKey(path, depth, sortBy, reverse, showHidden, hideGrids);
     let serverSortBy = imageHistorySortSupportedByServer(sortBy) ? sortBy : 'DateEdited';
     let serverReverse = imageHistorySortSupportedByServer(sortBy) ? reverse : false;
     let backgroundToken = ++imageHistoryBackgroundLoadToken;
     imageHistoryBackgroundRequestKey = requestKey;
     imageHistoryBackgroundRequestInFlight = true;
-    scheduleImageHistoryBackgroundWatchdog(path, depth, sortBy, reverse, showHidden, requestKey, backgroundToken);
+    scheduleImageHistoryBackgroundWatchdog(path, depth, sortBy, reverse, showHidden, hideGrids, requestKey, backgroundToken);
     setTimeout(() => {
         let requestStart = performance.now();
         genericRequest('ListImages', { 'path': path, 'depth': depth, 'sortBy': serverSortBy, 'sortReverse': serverReverse, 'includeHidden': showHidden }, data => {
@@ -2481,7 +2506,7 @@ function queueFullImageHistoryLoad(path, depth, sortBy, reverse, showHidden) {
             imageHistoryBackgroundRequestInFlight = false;
             let prefix = path == '' ? '' : (path.endsWith('/') ? path : `${path}/`);
             let folders = data.folders.sort((a, b) => b.toLowerCase().localeCompare(a.toLowerCase()));
-            let mapped = applyImageHistoryClientSort(mapHistoryFiles(prefix, orderHistoryFilesForDisplay(data.files)), sortBy, reverse);
+            let mapped = filterImageHistoryGridFiles(applyImageHistoryClientSort(mapHistoryFiles(prefix, orderHistoryFilesForDisplay(data.files)), sortBy, reverse), path, hideGrids);
             let mapMs = performance.now() - mapStart;
             imageHistoryStartupStage = 'complete';
             imageHistoryBackgroundRetryCount = 0;
@@ -2504,7 +2529,7 @@ function queueFullImageHistoryLoad(path, depth, sortBy, reverse, showHidden) {
             }
             imageHistoryBackgroundRetryCount++;
             setImageHistoryRequestStatus('loading', 'Retrying older history...');
-            queueFullImageHistoryLoad(path, depth, sortBy, reverse, showHidden);
+            queueFullImageHistoryLoad(path, depth, sortBy, reverse, showHidden, hideGrids);
         }, 300000);
     }, 0);
 }
@@ -2764,7 +2789,7 @@ function selectOutputInHistory(image, div) {
 }
 
 let imageHistoryBrowser = new GenPageBrowserClass('image_history', listOutputHistoryFolderAndFiles, 'imagehistorybrowser', window.userFeatureToggles?.imageHistoryDefaultView || 'Thumbnails', describeOutputFile, selectOutputInHistory,
-    `<label for="image_history_sort_by">Sort:</label> <select id="image_history_sort_by"><option>Name</option><option value="DateCreated">Date-Created</option><option value="DateEdited">Date-Edited</option><option>Rating</option><option>Resolution</option><option>Model</option><option>Seed</option><option value="FileSize">File Size</option></select> <input type="checkbox" id="image_history_sort_reverse"> <label for="image_history_sort_reverse">Reverse</label> &emsp; <input type="checkbox" id="image_history_allow_anims" checked autocomplete="off"> <label for="image_history_allow_anims">Allow Animation</label> &emsp; <input type="checkbox" id="image_history_show_hidden" autocomplete="off"> <label for="image_history_show_hidden">Show Hidden</label> <button type="button" id="image_history_rescan_metadata" class="refresh-button" onclick="rescanImageHistoryMetadata()">Rescan Metadata</button> <span id="image_history_bulk_controls" class="image-history-bulk-controls"><span id="image_history_selected_count" class="image-history-selected-count">0 selected</span> <button type="button" id="image_history_select_all" class="refresh-button" onclick="selectAllImageHistory()">Select All</button> <button type="button" id="image_history_clear_selection" class="refresh-button" onclick="clearSelectedImageHistory()">Clear</button> <button type="button" id="image_history_compare_selected" class="refresh-button" onclick="compareSelectedImageHistory()">Compare</button> <button type="button" id="image_history_copy_paths_selected" class="refresh-button" onclick="copySelectedImageHistoryPaths()">Copy Paths</button> <button type="button" id="image_history_contact_sheet_selected" class="refresh-button" onclick="createSelectedImageHistoryContactSheet()">Contact Sheet</button> <button type="button" id="image_history_set_rating_selected" class="refresh-button" onclick="setSelectedImageHistoryRatingPrompt()">Set Rating</button> <button type="button" id="image_history_add_tags_selected" class="refresh-button" onclick="setSelectedImageHistoryTagsPrompt('add')">Add Tags</button> <button type="button" id="image_history_remove_tags_selected" class="refresh-button" onclick="setSelectedImageHistoryTagsPrompt('remove')">Remove Tags</button> <button type="button" id="image_history_set_notes_selected" class="refresh-button" onclick="setSelectedImageHistoryNotesPrompt()">Set Notes</button> <button type="button" id="image_history_copy_to_selected" class="refresh-button" onclick="moveSelectedImageHistoryPrompt('copy')">Copy To</button> <button type="button" id="image_history_move_to_selected" class="refresh-button" onclick="moveSelectedImageHistoryPrompt('move')">Move To</button> <button type="button" id="image_history_export_metadata_selected" class="refresh-button" onclick="exportSelectedImageHistoryMetadata()">Export Metadata</button> <button type="button" id="image_history_send_prompt_lab_selected" class="refresh-button" onclick="sendSelectedImageHistoryToPromptLab()">Send to Prompt Lab</button> <button type="button" id="image_history_star_selected" class="refresh-button" onclick="starSelectedImageHistory()">Star Selected</button> <button type="button" id="image_history_unstar_selected" class="refresh-button" onclick="unstarSelectedImageHistory()">Unstar Selected</button> <button type="button" id="image_history_hide_selected" class="refresh-button" onclick="hideSelectedImageHistory()">Hide Selected</button> <button type="button" id="image_history_unhide_selected" class="refresh-button" onclick="unhideSelectedImageHistory()">Unhide Selected</button> <button type="button" id="image_history_delete_selected" class="interrupt-button" onclick="deleteSelectedImageHistory()">Delete Selected</button></span> <span id="image_history_request_status" class="image-history-request-status" data-state="idle"><span id="image_history_request_status_text" class="image-history-request-status-text"></span> <button type="button" id="image_history_retry_button" class="refresh-button" style="display:none;">Retry</button></span>`);
+    `<label for="image_history_sort_by">Sort:</label> <select id="image_history_sort_by"><option>Name</option><option value="DateCreated">Date-Created</option><option value="DateEdited">Date-Edited</option><option>Rating</option><option>Resolution</option><option>Model</option><option>Seed</option><option value="FileSize">File Size</option></select> <input type="checkbox" id="image_history_sort_reverse"> <label for="image_history_sort_reverse">Reverse</label> &emsp; <input type="checkbox" id="image_history_allow_anims" checked autocomplete="off"> <label for="image_history_allow_anims">Allow Animation</label> &emsp; <input type="checkbox" id="image_history_show_hidden" autocomplete="off"> <label for="image_history_show_hidden">Show Hidden</label> &emsp; <input type="checkbox" id="image_history_hide_grids" checked autocomplete="off"> <label for="image_history_hide_grids">Hide Grids</label> <button type="button" id="image_history_rescan_metadata" class="refresh-button" onclick="rescanImageHistoryMetadata()">Rescan Metadata</button> <span id="image_history_bulk_controls" class="image-history-bulk-controls"><span id="image_history_selected_count" class="image-history-selected-count">0 selected</span> <button type="button" id="image_history_select_all" class="refresh-button" onclick="selectAllImageHistory()">Select All</button> <button type="button" id="image_history_clear_selection" class="refresh-button" onclick="clearSelectedImageHistory()">Clear</button> <button type="button" id="image_history_compare_selected" class="refresh-button" onclick="compareSelectedImageHistory()">Compare</button> <button type="button" id="image_history_copy_paths_selected" class="refresh-button" onclick="copySelectedImageHistoryPaths()">Copy Paths</button> <button type="button" id="image_history_contact_sheet_selected" class="refresh-button" onclick="createSelectedImageHistoryContactSheet()">Contact Sheet</button> <button type="button" id="image_history_set_rating_selected" class="refresh-button" onclick="setSelectedImageHistoryRatingPrompt()">Set Rating</button> <button type="button" id="image_history_add_tags_selected" class="refresh-button" onclick="setSelectedImageHistoryTagsPrompt('add')">Add Tags</button> <button type="button" id="image_history_remove_tags_selected" class="refresh-button" onclick="setSelectedImageHistoryTagsPrompt('remove')">Remove Tags</button> <button type="button" id="image_history_set_notes_selected" class="refresh-button" onclick="setSelectedImageHistoryNotesPrompt()">Set Notes</button> <button type="button" id="image_history_copy_to_selected" class="refresh-button" onclick="moveSelectedImageHistoryPrompt('copy')">Copy To</button> <button type="button" id="image_history_move_to_selected" class="refresh-button" onclick="moveSelectedImageHistoryPrompt('move')">Move To</button> <button type="button" id="image_history_export_metadata_selected" class="refresh-button" onclick="exportSelectedImageHistoryMetadata()">Export Metadata</button> <button type="button" id="image_history_send_prompt_lab_selected" class="refresh-button" onclick="sendSelectedImageHistoryToPromptLab()">Send to Prompt Lab</button> <button type="button" id="image_history_star_selected" class="refresh-button" onclick="starSelectedImageHistory()">Star Selected</button> <button type="button" id="image_history_unstar_selected" class="refresh-button" onclick="unstarSelectedImageHistory()">Unstar Selected</button> <button type="button" id="image_history_hide_selected" class="refresh-button" onclick="hideSelectedImageHistory()">Hide Selected</button> <button type="button" id="image_history_unhide_selected" class="refresh-button" onclick="unhideSelectedImageHistory()">Unhide Selected</button> <button type="button" id="image_history_delete_selected" class="interrupt-button" onclick="deleteSelectedImageHistory()">Delete Selected</button></span> <span id="image_history_request_status" class="image-history-request-status" data-state="idle"><span id="image_history_request_status_text" class="image-history-request-status-text"></span> <button type="button" id="image_history_retry_button" class="refresh-button" style="display:none;">Retry</button></span>`);
 imageHistoryBrowser.allowMultiSelect = true;
 imageHistoryBrowser.maxPreBuild = IMAGE_HISTORY_FAST_FIRST_LIMIT;
 imageHistoryBrowser.filterMatcher = imageHistoryFilterMatches;

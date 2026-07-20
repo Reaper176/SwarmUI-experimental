@@ -47,7 +47,7 @@ class LoginHandler {
             password: await doPasswordClientPrehash(username, password)
         };
         this.loginButton.disabled = true;
-        SwarmUtil.sendJsonToServer(`API/Login`, inData, (status, data) => {
+        sendJsonToServer(`API/Login`, inData, (status, data) => {
             data ??= {};
             if (data.success) {
                 this.showMessage(this.messageLoginSuccess.get());

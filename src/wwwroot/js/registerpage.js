@@ -62,7 +62,7 @@ class RegisterHandler {
             password: await doPasswordClientPrehash(username, password)
         };
         this.registerButton.disabled = true;
-        SwarmUtil.sendJsonToServer(`API/RegisterBasic`, inData, (status, data) => {
+        sendJsonToServer(`API/RegisterBasic`, inData, (status, data) => {
             data ??= {};
             if (data.success) {
                 this.showMessage(this.messageRegisterSuccess.get());
@@ -109,7 +109,7 @@ class RegisterHandler {
             oauth_type: type
         };
         this.registerButton.disabled = true;
-        SwarmUtil.sendJsonToServer(`API/RegisterOAuth`, inData, (status, data) => {
+        sendJsonToServer(`API/RegisterOAuth`, inData, (status, data) => {
             data ??= {};
             if (data.success) {
                 this.showMessage(this.messageRegisterSuccess.get());

@@ -5,9 +5,26 @@ let hasComfyLoaded = false;
 class ComfyTorchManager {
 
     constructor() {
-        getRequiredElementById('serverinfotabbutton').addEventListener('click', () => this.refresh());
-        getRequiredElementById('servertabbutton').addEventListener('click', () => this.refresh());
+        this.card = null;
+        this.bodyElem = null;
+        this.initialized = false;
+        getRequiredElementById('servertabbutton').addEventListener('shown.bs.tab', () => this.refresh());
+        document.addEventListener('shown.bs.tab', (e) => {
+            if (e.target.id == 'serverinfotabbutton') {
+                this.refresh();
+            }
+        });
+    }
+
+    /** Initializes the card once the lazy-loaded Server Info tab markup is available. */
+    ensureInitialized() {
+        if (this.initialized) {
+            return true;
+        }
         let serverInfoTab = document.getElementById('Server-Info');
+        if (!serverInfoTab) {
+            return false;
+        }
         let collection = createDiv(null, 'card-collection-inline');
         this.card = createDiv('comfy_torch_card', 'card border-secondary mb-3 card-center-container');
         this.card.dataset.requiredpermission = 'view_backends_list';
@@ -16,11 +33,16 @@ class ComfyTorchManager {
         collection.appendChild(this.card);
         serverInfoTab.appendChild(collection);
         this.bodyElem = getRequiredElementById('comfy_torch_card_body');
+        this.initialized = true;
+        return true;
     }
 
     /** Refreshes the torch install list from the server and rebuilds the card body. */
     refresh() {
         if (!permissions.hasPermission('view_backends_list')) {
+            return;
+        }
+        if (!this.ensureInitialized()) {
             return;
         }
         genericRequest('ComfyListTorchInstalls', {}, (data) => {
@@ -1413,16 +1435,19 @@ function comfyImportWorkflow() {
     });
 }
 
-getRequiredElementById('maintab_comfyworkflow').addEventListener('click', comfyTryToLoad);
+let comfyWorkflowTabButton = getRequiredElementById('maintab_comfyworkflow');
+comfyWorkflowTabButton.addEventListener('click', comfyTryToLoad);
+comfyWorkflowTabButton.addEventListener('shown.bs.tab', comfyTryToLoad);
 
 featureSetChangedCallbacks.push(() => {
     let hasAny = currentBackendFeatureSet.includes('comfyui');
-    getRequiredElementById('maintab_comfyworkflow').style.display = hasAny ? 'block' : 'none';
+    comfyWorkflowTabButton.style.display = hasAny ? 'block' : 'none';
     if (hasAny && !comfyHasTriedToLoad) {
         comfyHasTriedToLoad = true;
         comfyReloadObjectInfo(false);
     }
-    if (isVisible(getRequiredElementById('Server-Info'))) {
+    let serverInfoTab = document.getElementById('Server-Info');
+    if (serverInfoTab && isVisible(serverInfoTab)) {
         comfyTorchManager.refresh();
     }
 });

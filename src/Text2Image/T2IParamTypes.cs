@@ -265,7 +265,7 @@ public class T2IParamTypes
     /// <summary>Register a new parameter type.</summary>
     public static T2IRegisteredParam<T> Register<T>(T2IParamType type)
     {
-        type = type with { ID = CleanTypeName(type.Name), Type = SharpTypeToDataType(typeof(T), type.GetValues != null), SharpType = typeof(T) };
+        type = type with { ID = type.ID ?? CleanTypeName(type.Name), Type = SharpTypeToDataType(typeof(T), type.GetValues != null), SharpType = typeof(T) };
         if (type.Type == T2IParamDataType.DECIMAL || type.Type == T2IParamDataType.INTEGER)
         {
             if (type.Min == 0 && type.Max == 0)

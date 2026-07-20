@@ -1,0 +1,317 @@
+<h2>Prompt Lab: Generate-Style Bottom Library</h2>
+<p class="subtitle">A mockup of the Prompt Lab modeled after the Generate tab: active work on top, browsable library tabs along the bottom.</p>
+
+<style>
+  .pl-shell {
+    border: 1px solid #3b4655;
+    background: #111820;
+    color: #d8e2ec;
+    min-height: 680px;
+    display: grid;
+    grid-template-rows: minmax(360px, 1fr) 250px;
+    font-family: system-ui, sans-serif;
+  }
+  .pl-top {
+    display: grid;
+    grid-template-columns: minmax(0, 1.35fr) minmax(300px, 0.75fr);
+    min-height: 0;
+  }
+  .pl-editor,
+  .pl-context,
+  .pl-library {
+    border-color: #3b4655;
+  }
+  .pl-editor {
+    border-right: 1px solid #3b4655;
+    padding: 12px;
+    display: grid;
+    grid-template-rows: auto minmax(112px, 1fr) minmax(76px, 0.65fr) auto 62px auto;
+    gap: 8px;
+    min-width: 0;
+  }
+  .pl-context {
+    padding: 12px;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+  .pl-bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+  }
+  .pl-title {
+    font-weight: 700;
+    font-size: 15px;
+  }
+  .pl-subtitle {
+    color: #9fb1c3;
+    font-size: 12px;
+  }
+  .pl-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    justify-content: flex-end;
+  }
+  .pl-btn {
+    border: 1px solid #526275;
+    background: #22303d;
+    color: #eaf2f8;
+    padding: 5px 9px;
+    font-size: 12px;
+  }
+  .pl-btn-primary {
+    background: #365f89;
+    border-color: #5c8fbd;
+  }
+  .pl-input,
+  .pl-text {
+    border: 1px solid #425164;
+    background: #0d131a;
+    color: #d8e2ec;
+    padding: 8px;
+    min-width: 0;
+  }
+  .pl-text {
+    resize: none;
+  }
+  .pl-field-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+  }
+  .pl-primary-actions {
+    border-top: 1px solid #3b4655;
+    padding-top: 8px;
+  }
+  .pl-card {
+    border: 1px solid #3b4655;
+    background: #151f29;
+  }
+  .pl-card-head {
+    background: #22303d;
+    padding: 7px 9px;
+    font-weight: 700;
+    font-size: 12px;
+    display: flex;
+    justify-content: space-between;
+  }
+  .pl-card-body {
+    padding: 9px;
+    font-size: 12px;
+    color: #c6d4df;
+    line-height: 1.45;
+  }
+  .pl-stack {
+    display: grid;
+    gap: 8px;
+  }
+  .pl-chipline {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+  .pl-chip {
+    border: 1px solid #4a5b6c;
+    background: #0f1821;
+    padding: 3px 7px;
+    font-size: 11px;
+  }
+  .pl-library {
+    border-top: 1px solid #3b4655;
+    display: grid;
+    grid-template-rows: auto auto minmax(0, 1fr);
+    min-height: 0;
+  }
+  .pl-info {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    padding: 7px 10px;
+    border-bottom: 1px solid #3b4655;
+    background: #131c25;
+  }
+  .pl-search {
+    width: 260px;
+    max-width: 35vw;
+  }
+  .pl-tabs {
+    display: flex;
+    gap: 2px;
+    border-bottom: 1px solid #3b4655;
+    background: #101820;
+    padding-left: 8px;
+  }
+  .pl-tab {
+    padding: 8px 12px;
+    border-left: 1px solid #2d3946;
+    border-right: 1px solid #2d3946;
+    background: #1a2631;
+    font-size: 12px;
+  }
+  .pl-tab.active {
+    background: #263748;
+    color: #ffffff;
+    font-weight: 700;
+  }
+  .pl-library-body {
+    display: grid;
+    grid-template-columns: 210px minmax(0, 1fr);
+    gap: 10px;
+    padding: 10px;
+    min-height: 0;
+    overflow: hidden;
+  }
+  .pl-list {
+    display: grid;
+    gap: 6px;
+    align-content: start;
+    overflow: hidden;
+  }
+  .pl-item {
+    border: 1px solid #3b4655;
+    background: #17222d;
+    padding: 7px 8px;
+    font-size: 12px;
+  }
+  .pl-item.active {
+    border-color: #6fa4d0;
+    background: #203448;
+  }
+  .pl-browser {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 8px;
+    min-width: 0;
+  }
+  .pl-browser-card {
+    border: 1px solid #3b4655;
+    background: #151f29;
+    padding: 8px;
+    font-size: 12px;
+    min-width: 0;
+  }
+  .pl-browser-card b {
+    display: block;
+    margin-bottom: 4px;
+  }
+  .pl-muted {
+    color: #9fb1c3;
+  }
+  @media (max-width: 900px) {
+    .pl-shell {
+      grid-template-rows: auto auto;
+    }
+    .pl-top,
+    .pl-library-body,
+    .pl-browser {
+      grid-template-columns: 1fr;
+    }
+    .pl-search {
+      max-width: none;
+      width: 100%;
+    }
+  }
+</style>
+
+<div class="mockup">
+  <div class="mockup-header">Mockup: Prompt Lab using the Generate tab mental model</div>
+  <div class="mockup-body">
+    <div class="pl-shell">
+      <div class="pl-top">
+        <div class="pl-editor">
+          <div class="pl-bar">
+            <div>
+              <div class="pl-title">Prompt Workspace</div>
+              <div class="pl-subtitle">Write and refine the prompt before sending it to Generate</div>
+            </div>
+            <div class="pl-actions">
+              <button class="pl-btn">Save</button>
+              <button class="pl-btn">Variant</button>
+              <button class="pl-btn">Reset</button>
+            </div>
+          </div>
+          <input class="pl-input" value="Cinematic fantasy portrait" />
+          <textarea class="pl-text">Positive prompt... detailed character description, lighting, style notes, composition, camera language, and wildcard tokens.</textarea>
+          <textarea class="pl-text">Negative prompt... unwanted details, artifacts, bad anatomy, low quality terms.</textarea>
+          <div class="pl-field-row">
+            <input class="pl-input" value="portrait, fantasy, lighting" />
+            <input class="pl-input" value="Notes for this prompt" />
+          </div>
+          <div class="pl-actions pl-primary-actions">
+            <button class="pl-btn pl-btn-primary">Send to Generate</button>
+            <button class="pl-btn">Preview Variations</button>
+          </div>
+        </div>
+        <div class="pl-context">
+          <div class="pl-bar">
+            <div>
+              <div class="pl-title">Context</div>
+              <div class="pl-subtitle">Generated from the active prompt</div>
+            </div>
+            <div class="pl-actions">
+              <button class="pl-btn">Refresh Preview</button>
+              <button class="pl-btn">Generate</button>
+            </div>
+          </div>
+          <div class="pl-card">
+            <div class="pl-card-head"><span>Detected Wildcards</span><span>-</span></div>
+            <div class="pl-card-body pl-chipline">
+              <span class="pl-chip">__lighting__</span>
+              <span class="pl-chip">__camera__</span>
+              <span class="pl-chip">__style__</span>
+            </div>
+          </div>
+          <div class="pl-card">
+            <div class="pl-card-head"><span>Prompt Preview</span><span>-</span></div>
+            <div class="pl-card-body">1. Cinematic fantasy portrait, rim light, 85mm lens...<br>2. Cinematic fantasy portrait, moonlit haze, close-up...</div>
+          </div>
+          <div class="pl-card">
+            <div class="pl-card-head"><span>Warnings</span><span>+</span></div>
+            <div class="pl-card-body pl-muted">Warnings stay compact until there is something actionable.</div>
+          </div>
+        </div>
+      </div>
+      <div class="pl-library">
+        <div class="pl-info">
+          <div>
+            <b>Library</b>
+            <span class="pl-muted">Browse, insert, and manage reusable prompt assets</span>
+          </div>
+          <div class="pl-actions">
+            <input class="pl-input pl-search" value="Search library" />
+            <button class="pl-btn">Export</button>
+            <button class="pl-btn">Import</button>
+            <button class="pl-btn">Auto Save</button>
+          </div>
+        </div>
+        <div class="pl-tabs">
+          <div class="pl-tab active">Saved Prompts</div>
+          <div class="pl-tab">Reusable Fragments</div>
+          <div class="pl-tab">Wildcard Sets</div>
+          <div class="pl-tab">Recent Prompts</div>
+        </div>
+        <div class="pl-library-body">
+          <div class="pl-list">
+            <div class="pl-item active">Favorites</div>
+            <div class="pl-item">Portrait Workflows</div>
+            <div class="pl-item">Product Shots</div>
+            <div class="pl-item">Environments</div>
+          </div>
+          <div class="pl-browser">
+            <div class="pl-browser-card"><b>Fantasy Portrait Base</b><span class="pl-muted">portrait, fantasy, cinematic</span></div>
+            <div class="pl-browser-card"><b>Low Key Lighting</b><span class="pl-muted">lighting, studio, contrast</span></div>
+            <div class="pl-browser-card"><b>Wide Environment</b><span class="pl-muted">landscape, cinematic, scale</span></div>
+            <div class="pl-browser-card"><b>Character Sheet</b><span class="pl-muted">turnaround, reference, clean</span></div>
+            <div class="pl-browser-card"><b>Product Hero</b><span class="pl-muted">commercial, clean, sharp</span></div>
+            <div class="pl-browser-card"><b>Painterly Variant</b><span class="pl-muted">style, texture, art</span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>

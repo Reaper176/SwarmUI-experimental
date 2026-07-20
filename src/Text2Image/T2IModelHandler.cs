@@ -512,16 +512,23 @@ public class T2IModelHandler
             string textEncs = null;
             if (model.Name.EndsWith(".safetensors") || model.Name.EndsWith(".sft") || model.Name.EndsWith(".gguf"))
             {
-                headerData = T2IModel.GetMetadataHeaderFrom(model.RawFilePath);
-                if (headerData is not null)
+                try
                 {
-                    metaHeader = headerData["__metadata__"] as JObject ?? [];
-                    textEncs = "";
-                    string[] keys = [.. headerData.Properties().Select(p => p.Name).Where(k => k.StartsWith("text_encoders."))];
-                    if (keys.Any(k => k.StartsWith("text_encoders.clip_g."))) { textEncs += "clip_g,"; }
-                    if (keys.Any(k => k.StartsWith("text_encoders.clip_l."))) { textEncs += "clip_l,"; }
-                    if (keys.Any(k => k.StartsWith("text_encoders.t5xxl."))) { textEncs += "t5xxl,"; }
-                    textEncs = textEncs.TrimEnd(',');
+                    headerData = T2IModel.GetMetadataHeaderFrom(model.RawFilePath);
+                    if (headerData is not null)
+                    {
+                        metaHeader = headerData["__metadata__"] as JObject ?? [];
+                        textEncs = "";
+                        string[] keys = [.. headerData.Properties().Select(p => p.Name).Where(k => k.StartsWith("text_encoders."))];
+                        if (keys.Any(k => k.StartsWith("text_encoders.clip_g."))) { textEncs += "clip_g,"; }
+                        if (keys.Any(k => k.StartsWith("text_encoders.clip_l."))) { textEncs += "clip_l,"; }
+                        if (keys.Any(k => k.StartsWith("text_encoders.t5xxl."))) { textEncs += "t5xxl,"; }
+                        textEncs = textEncs.TrimEnd(',');
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Logs.Warning($"Failed to load embedded metadata header for {model.Name}, continuing with sidecar metadata only:\n{ex.ReadableString()}");
                 }
             }
             string altModelPrefix = $"{model.OriginatingFolderPath}/{model.Name.BeforeLast('.')}";

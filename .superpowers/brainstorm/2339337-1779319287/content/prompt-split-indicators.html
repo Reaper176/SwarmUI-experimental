@@ -1,0 +1,157 @@
+<style>
+  .prompt-demo-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+    gap: 18px;
+    margin-top: 18px;
+  }
+  .prompt-card {
+    border: 1px solid rgba(148, 163, 184, 0.28);
+    border-radius: 8px;
+    background: rgba(15, 23, 42, 0.72);
+    overflow: hidden;
+    cursor: pointer;
+  }
+  .prompt-card.selected {
+    outline: 2px solid #60a5fa;
+    outline-offset: 2px;
+  }
+  .prompt-card-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 12px;
+    padding: 10px 12px;
+    border-bottom: 1px solid rgba(148, 163, 184, 0.18);
+    font-size: 13px;
+    color: #cbd5e1;
+  }
+  .token-pill {
+    color: #93c5fd;
+    font-variant-numeric: tabular-nums;
+  }
+  .mock-prompt-box {
+    min-height: 148px;
+    padding: 12px;
+    font: 14px/1.55 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    color: #e5e7eb;
+    background: #0b1120;
+    white-space: normal;
+  }
+  .segment {
+    border-radius: 4px;
+    padding: 1px 2px;
+  }
+  .seg-a { background: rgba(59, 130, 246, 0.18); }
+  .seg-b { background: rgba(16, 185, 129, 0.18); }
+  .seg-c { background: rgba(245, 158, 11, 0.18); }
+  .split-marker {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    margin: 0 4px;
+    color: #f8fafc;
+    font-size: 12px;
+  }
+  .split-marker::before,
+  .split-marker::after {
+    content: "";
+    display: inline-block;
+    width: 18px;
+    border-top: 1px solid rgba(248, 250, 252, 0.42);
+  }
+  .underline-seg {
+    text-decoration-line: underline;
+    text-decoration-thickness: 3px;
+    text-underline-offset: 4px;
+  }
+  .under-a { text-decoration-color: #3b82f6; }
+  .under-b { text-decoration-color: #10b981; }
+  .under-c { text-decoration-color: #f59e0b; }
+  .gutter-layout {
+    display: grid;
+    grid-template-columns: 54px 1fr;
+    min-height: 148px;
+    background: #0b1120;
+  }
+  .gutter {
+    border-right: 1px solid rgba(148, 163, 184, 0.2);
+    padding: 12px 7px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    align-items: stretch;
+    color: #cbd5e1;
+    font: 12px/1.2 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  }
+  .gutter span {
+    border-radius: 4px;
+    padding: 4px 3px;
+    text-align: center;
+    background: rgba(148, 163, 184, 0.13);
+  }
+  .gutter-text {
+    padding: 12px;
+    font: 14px/1.55 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    color: #e5e7eb;
+  }
+  .notes {
+    margin-top: 16px;
+    color: #94a3b8;
+    font-size: 14px;
+  }
+</style>
+
+<h2>Prompt Split Indicator Options</h2>
+<p class="subtitle">These are visual sketches for showing automatic 75-token chunks and explicit <code>&lt;break&gt;</code> splits inside the prompt editor.</p>
+
+<div class="prompt-demo-grid">
+  <div class="prompt-card card" data-choice="background-segments" onclick="toggleSelect(this)">
+    <div class="prompt-card-header">
+      <strong>A. Soft Background Sections</strong>
+      <span class="token-pill">143/150</span>
+    </div>
+    <div class="mock-prompt-box">
+      <span class="segment seg-a">masterpiece, cinematic portrait, silver hair, rain-soaked alley, reflective pavement, neon signs, shallow depth of field, detailed skin texture, dramatic rim light, black leather coat, intense expression, atmospheric haze</span>
+      <span class="split-marker">75</span>
+      <span class="segment seg-b">ultra detailed eyes, wet hair strands, bokeh, high contrast, volumetric light, film grain, editorial fashion photography, sharp focus</span>
+      <span class="split-marker">&lt;break&gt;</span>
+      <span class="segment seg-c">blue neon backlight, orange storefront glow, subtle smile, urban night scene</span>
+    </div>
+  </div>
+
+  <div class="prompt-card card" data-choice="underline-segments" onclick="toggleSelect(this)">
+    <div class="prompt-card-header">
+      <strong>B. Colored Underlines</strong>
+      <span class="token-pill">143/150</span>
+    </div>
+    <div class="mock-prompt-box">
+      <span class="underline-seg under-a">masterpiece, cinematic portrait, silver hair, rain-soaked alley, reflective pavement, neon signs, shallow depth of field, detailed skin texture, dramatic rim light, black leather coat, intense expression, atmospheric haze</span>
+      <span class="split-marker">75</span>
+      <span class="underline-seg under-b">ultra detailed eyes, wet hair strands, bokeh, high contrast, volumetric light, film grain, editorial fashion photography, sharp focus</span>
+      <span class="split-marker">&lt;break&gt;</span>
+      <span class="underline-seg under-c">blue neon backlight, orange storefront glow, subtle smile, urban night scene</span>
+    </div>
+  </div>
+
+  <div class="prompt-card card" data-choice="gutter-markers" onclick="toggleSelect(this)">
+    <div class="prompt-card-header">
+      <strong>C. Gutter Markers</strong>
+      <span class="token-pill">143/150</span>
+    </div>
+    <div class="gutter-layout">
+      <div class="gutter">
+        <span>1</span>
+        <span>75</span>
+        <span>break</span>
+      </div>
+      <div class="gutter-text">
+        masterpiece, cinematic portrait, silver hair, rain-soaked alley, reflective pavement, neon signs, shallow depth of field, detailed skin texture, dramatic rim light, black leather coat, intense expression, atmospheric haze<br><br>
+        ultra detailed eyes, wet hair strands, bokeh, high contrast, volumetric light, film grain, editorial fashion photography, sharp focus<br><br>
+        blue neon backlight, orange storefront glow, subtle smile, urban night scene
+      </div>
+    </div>
+  </div>
+</div>
+
+<p class="notes">Click whichever direction feels closest. My default recommendation is A: it makes split sections obvious without changing the text layout much.</p>

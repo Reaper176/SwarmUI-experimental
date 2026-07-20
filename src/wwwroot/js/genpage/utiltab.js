@@ -2,8 +2,8 @@
 
 /** Triggers and process the clip tokenization utility. */
 function utilClipTokenize() {
-    let elem = SwarmUtil.getRequiredElementById('clip_tokenization_test_textarea');
-    let resultLine = SwarmUtil.getRequiredElementById('clip_tokenization_result_line');
+    let elem = getRequiredElementById('clip_tokenization_test_textarea');
+    let resultLine = getRequiredElementById('clip_tokenization_result_line');
     function process() {
         elem.dataset.is_running_proc = true;
         genericRequest('TokenizeInDetail', { text: elem.value, skipPromptSyntax: true }, data => {
@@ -22,9 +22,9 @@ function utilClipTokenize() {
                 else {
                     title = "This token is a word-piece (as opposed to a word-end), meaning there is no word-break after it, it directly connects to the next token.";
                 }
-                let weightActual = SwarmUtil.roundToStr(token.weight, 2);
+                let weightActual = roundToStr(token.weight, 2);
                 let weightInfo = weightActual == 1 ? '' : `<span class="clip-tokenization-weight" title="Token weight = ${weightActual}">${weightActual}</span>`;
-                html += `<span class="clip-tokenization-block${tweak}" title="${title}">${SwarmUtil.escapeHtml(text)}${postText}<br>${token.id}${weightInfo}</span>`;
+                html += `<span class="clip-tokenization-block${tweak}" title="${title}">${escapeHtml(text)}${postText}<br>${token.id}${weightInfo}</span>`;
             }
             resultLine.innerHTML = html;
             delete elem.dataset.is_running_proc;
@@ -43,7 +43,7 @@ function utilClipTokenize() {
 }
 
 async function showPromptTokenizen(box) {
-    let src = SwarmUtil.getRequiredElementById(box);
+    let src = getRequiredElementById(box);
     try {
         if (!await openGenPageTabAsync('utilitiestabbutton', 'cliptokentabbutton')) {
             return;
@@ -53,7 +53,7 @@ async function showPromptTokenizen(box) {
         showError(`${e}`);
         return;
     }
-    let target = SwarmUtil.getRequiredElementById('clip_tokenization_test_textarea');
+    let target = getRequiredElementById('clip_tokenization_test_textarea');
     target.value = src.value || src.innerText;
     triggerChangeFor(target);
 }
@@ -69,19 +69,19 @@ function pickle2safetensor_load(mapping = null) {
     for (let type of ['Stable-Diffusion', 'LoRA', 'VAE', 'Embedding', 'ControlNet']) {
         let modelSet = mapping[type];
         let count = modelSet.filter(x => !x.startsWith("backup") && x != "(None)" && !nativelySupportedModelExtensions.includes(x.split('.').pop())).length;
-        let counter = SwarmUtil.getRequiredElementById(`pickle2safetensor_${type.toLowerCase()}_count`);
+        let counter = getRequiredElementById(`pickle2safetensor_${type.toLowerCase()}_count`);
         counter.innerText = count;
-        let button = SwarmUtil.getRequiredElementById(`pickle2safetensor_${type.toLowerCase()}_button`);
+        let button = getRequiredElementById(`pickle2safetensor_${type.toLowerCase()}_button`);
         button.disabled = count == 0;
     }
 }
 
 /** Triggers the actual conversion process. */
 function pickle2safetensor_run(type) {
-    let fp16 = SwarmUtil.getRequiredElementById(`pickle2safetensor_fp16`).checked;
-    let button = SwarmUtil.getRequiredElementById(`pickle2safetensor_${type.toLowerCase()}_button`);
+    let fp16 = getRequiredElementById(`pickle2safetensor_fp16`).checked;
+    let button = getRequiredElementById(`pickle2safetensor_${type.toLowerCase()}_button`);
     button.disabled = true;
-    let notif = SwarmUtil.getRequiredElementById('pickle2safetensor_text_area');
+    let notif = getRequiredElementById('pickle2safetensor_text_area');
     notif.innerText = "Running, please wait ... monitor debug console for details...";
     genericRequest('Pickle2SafeTensor', { type: type, fp16: fp16 }, data => {
         notif.innerText = "Done!";
@@ -94,7 +94,7 @@ function pickle2safetensor_run(type) {
 }
 
 function util_massMetadataClear() {
-    let button = SwarmUtil.getRequiredElementById('util_massmetadataclear_button');
+    let button = getRequiredElementById('util_massmetadataclear_button');
     button.disabled = true;
     genericRequest('WipeMetadata', {}, data => {
         genericRequest('TriggerRefresh', {}, data => {
@@ -668,14 +668,14 @@ class ModelDownloaderUtil {
                     this.name.value = `${rawData.name} - ${rawVersion.name}`.replaceAll(/[\|\\\/\:\*\?\"\<\>\|\,\.\&\!\[\]\(\)]/g, '-');
                     this.nameInput();
                     this.metadataZone.innerHTML = `
-                        Found civitai metadata for model ID ${SwarmUtil.escapeHtml(id)} version id ${SwarmUtil.escapeHtml(versId)}:
-                        <br><b>Model title</b>: ${SwarmUtil.escapeHtml(rawData.name)}
-                        <br><b>Version title</b>: ${SwarmUtil.escapeHtml(rawVersion.name)}
-                        <br><b>Base model</b>: ${SwarmUtil.escapeHtml(rawVersion.baseModel)}
-                        <br><b>Date</b>: ${SwarmUtil.escapeHtml(rawVersion.createdAt)}`
+                        Found civitai metadata for model ID ${escapeHtml(id)} version id ${escapeHtml(versId)}:
+                        <br><b>Model title</b>: ${escapeHtml(rawData.name)}
+                        <br><b>Version title</b>: ${escapeHtml(rawVersion.name)}
+                        <br><b>Base model</b>: ${escapeHtml(rawVersion.baseModel)}
+                        <br><b>Date</b>: ${escapeHtml(rawVersion.createdAt)}`
                         + `<br><b>Model description</b>: ${safeHtmlOnly(rawData.description)}`
                         + (rawVersion.description ? `<br><b>Version description</b>: ${safeHtmlOnly(rawVersion.description)}` : '')
-                        + (rawVersion.trainedWords ? `<br><b>Trained words</b>: ${SwarmUtil.escapeHtml(rawVersion.trainedWords.join("; "))}` : '');
+                        + (rawVersion.trainedWords ? `<br><b>Trained words</b>: ${escapeHtml(rawVersion.trainedWords.join("; "))}` : '');
                     this.metadataZone.dataset.raw = `${JSON.stringify(metadata, null, 2)}`;
                     this.applyCivitaiPreview(img, imgs, requestId);
                 }, '', true, (img, imgs) => {
@@ -842,7 +842,7 @@ class ActiveModelDownload {
             if (data.overall_percent) {
                 this.overall.style.width = `${data.overall_percent * 100}%`;
                 this.current.style.width = `${data.current_percent * 100}%`;
-                this.statusText.innerText = `Downloading, please wait... ${SwarmUtil.roundToStr(data.current_percent * 100, 1)}% (${SwarmUtil.fileSizeStringify(data.per_second)} per second)`;
+                this.statusText.innerText = `Downloading, please wait... ${roundToStr(data.current_percent * 100, 1)}% (${fileSizeStringify(data.per_second)} per second)`;
             }
             else if (data.success) {
                 this.statusText.innerText = "Done!";
