@@ -41,14 +41,14 @@ function setPageTitle(newTitle) {
 }
 
 function autoTitle() {
-    let tabList = getRequiredElementById('toptablist');
+    let tabList = SwarmUtil.getRequiredElementById('toptablist');
     let activeTopTab = tabList.querySelector('.active');
     curAutoTitle = activeTopTab.textContent;
     setPageTitle(curAutoTitle);
 }
 
 function updateOtherInfoSpan() {
-    let span = getRequiredElementById('other_info_span');
+    let span = SwarmUtil.getRequiredElementById('other_info_span');
     span.innerHTML = otherInfoSpanContent.join(' ');
 }
 
@@ -65,7 +65,7 @@ function currentGenString(num_waiting_gens, num_models_loading, num_live_gens, n
         if (num == 0) {
             return '';
         }
-        return `<span class="interrupt-line-part">${num} ${text.replaceAll('%', autoS(num))},</span> `;
+        return `<span class="interrupt-line-part">${num} ${text.replaceAll('%', SwarmUtil.autoS(num))},</span> `;
     }
     let liveGens = num_live_gens;
     let backendWaits = num_backends_waiting;
@@ -113,7 +113,7 @@ function updateCurrentStatusDirect(data, backendStatus = null) {
     let avgGenTime = typeof mainGenHandler.getAverageGenTime == 'function' ? mainGenHandler.getAverageGenTime() : 0;
     if (estimateCount > 0 && avgGenTime > 0) {
         let estTime = avgGenTime * estimateCount;
-        timeEstimate = ` (est. ${durationStringify(estTime)})`;
+        timeEstimate = ` (est. ${SwarmUtil.durationStringify(estTime)})`;
     }
     elem.innerHTML = total == 0 ? (isGeneratingPreviews ? generatingPreviewsText.get() : '') : `${currentGenString(num_waiting_gens, num_models_loading, num_live_gens, num_backends_waiting, num_active_t2i_backends)} ${timeEstimate}...`;
     setPageTitle(total == 0 ? curAutoTitle : `(${total} ${generatingText.get()}) ${curAutoTitle}`);
@@ -158,7 +158,7 @@ function reviseStatusBar() {
     lastStatusRequestPending = Date.now();
     genericRequest('GetCurrentStatus', {}, data => {
         lastStatusRequestPending = 0;
-        if (!arraysEqual(data.supported_features, currentBackendFeatureSet)) {
+        if (!SwarmUtil.arraysEqual(data.supported_features, currentBackendFeatureSet)) {
             rawBackendFeatureSet = data.supported_features;
             currentBackendFeatureSet = data.supported_features;
             reviseBackendFeatureSet();

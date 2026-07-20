@@ -14,7 +14,7 @@ function enableSlidersIn(elem) {
 }
 
 function enableSliderAbove(div) {
-    enableSliderForBox(findParentOfClass(div, 'auto-slider-box'));
+enableSliderForBox(SwarmUtil.findParentOfClass(div, 'auto-slider-box'));
 }
 
 function enableSliderForBox(div) {
@@ -38,15 +38,15 @@ function enableSliderForBox(div) {
     if (range.dataset.ispot == "true") {
         let max = parseInt(range.getAttribute('max')), min = parseInt(range.getAttribute('min')), step = parseInt(range.getAttribute('step'));
         range.addEventListener('input', (e) => {
-            number.value = linearToPot(range.value, max, min, step);
-            range.value = potToLinear(number.value, max, min, step);
+            number.value = SwarmUtil.linearToPot(range.value, max, min, step);
+            range.value = SwarmUtil.potToLinear(number.value, max, min, step);
             number.dispatchEvent(new Event('change'));
             if (number.onchange) {
                 number.onchange(e);
             }
         });
         number.addEventListener('input', (e) => {
-            range.value = potToLinear(number.value, max, min, step);
+            range.value = SwarmUtil.potToLinear(number.value, max, min, step);
             range.dispatchEvent(new Event('change'));
             if (range.onchange) {
                 range.onchange(e);
@@ -71,7 +71,7 @@ function enableSliderForBox(div) {
 function showError(message) {
     if (message instanceof ProgressEvent || message?.constructor?.name == 'ProgressEvent') {
         let type = message.type || 'error';
-        message = type == 'timeout' ? `Request timed out after ${getSwarmXhrTimeoutMs()}ms.` : type == 'abort' ? 'Request was aborted before the server responded.' : 'Failed to send request to server. Did the server crash?';
+        message = type == 'timeout' ? `Request timed out after ${SwarmUtil.getSwarmXhrTimeoutMs()}ms.` : type == 'abort' ? 'Request was aborted before the server responded.' : 'Failed to send request to server. Did the server crash?';
     }
     else if (typeof message != 'string') {
         message = `${message}`;
@@ -111,7 +111,7 @@ function makeWSRequest(url, in_data, callback, depth = 0, errorHandle = null, on
         console.log(e);
         showError(e);
     }
-    let ws_address = getWSAddress();
+    let ws_address = SwarmUtil.getWSAddress();
     if (ws_address == null) {
         console.log(`Tried making WS request ${url} but failed.`);
         fail(failedWSAddr);
@@ -156,7 +156,7 @@ function describeRequestFailure(e, url = null, timeoutMs = null) {
         let type = e.type || 'error';
         let endpoint = url ? ` for API/${url}` : '';
         if (type == 'timeout') {
-            return `Request${endpoint} timed out after ${getSwarmXhrTimeoutMs(timeoutMs)}ms.`;
+            return `Request${endpoint} timed out after ${SwarmUtil.getSwarmXhrTimeoutMs(timeoutMs)}ms.`;
         }
         if (type == 'abort') {
             return `Request${endpoint} was aborted before the server responded.`;
@@ -177,7 +177,7 @@ function genericRequest(url, in_data, callback, depth = 0, errorHandle = null, t
         console.error(e);
         showError(e);
     }
-    sendJsonToServer(`API/${url}`, in_data, (status, data) => {
+    SwarmUtil.sendJsonToServer(`API/${url}`, in_data, (status, data) => {
         if (!data) {
             console.log(`Tried making generic request ${url} but failed.`);
             fail(genericServerErrorMsg.get());
