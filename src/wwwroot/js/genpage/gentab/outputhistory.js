@@ -634,6 +634,37 @@ let imageHistoryComparison = new ImageHistoryComparison({
     selectCurrentImage: (src, metadata, batchId) => setCurrentImage(src, metadata, batchId)
 });
 
+let imageHistoryBulkActions = new ImageHistoryBulkActions({
+    getSelectedPaths: () => {
+        syncImageHistorySelectionFromDOM();
+        return [...imageHistorySelected];
+    },
+    getFile: path => getImageHistoryFile(path),
+    getImageSrc: path => getHistoryImageSrc(path),
+    parseMetadata: metadata => parseHistoryMetadata(metadata),
+    setMetadataBoolValue: (metadata, key, value) => setMetadataBoolValue(metadata, key, value),
+    setMetadataValue: (metadata, key, value) => setMetadataValue(metadata, key, value),
+    isBusy: () => imageHistoryBulkActionRunning,
+    setBusy: value => {
+        imageHistoryBulkActionRunning = value;
+        updateImageHistoryBulkControls();
+    },
+    clearSelection: () => clearImageHistorySelection(),
+    requestRefresh: () => requestImageHistoryRefresh(),
+    deleteSingle: (fullsrc, src, explicitEntry, errorHandle) => deleteSingleHistoryImage(fullsrc, src, explicitEntry, errorHandle),
+    toggleHidden: (path, src, refreshAfter, errorHandle) => toggleImageHidden(path, src, refreshAfter, errorHandle),
+    updateStarredCards: (src, starred) => {
+        forEachSwarmImageCardForSrc(src, card => {
+            if (card.setStarred) {
+                card.setStarred(starred);
+            }
+            else {
+                card.classList.toggle('image-block-starred', starred);
+            }
+        });
+    }
+});
+
 /** Delegates image history comparison operations to the collaborator. */
 function ensureImageHistoryCompareModal() {
     return imageHistoryComparison.ensureModal();
@@ -1080,71 +1111,49 @@ function clearSelectedImageHistory() {
     clearImageHistorySelection();
 }
 
+/** Delegates hiding selected history images to the bulk-actions collaborator. */
 function hideSelectedImageHistory() {
-    setSelectedHistoryImagesHidden(true);
+    return imageHistoryBulkActions.hideSelected();
 }
 
+/** Delegates unhiding selected history images to the bulk-actions collaborator. */
 function unhideSelectedImageHistory() {
-    setSelectedHistoryImagesHidden(false);
+    return imageHistoryBulkActions.unhideSelected();
 }
 
+/** Delegates deleting selected history images to the bulk-actions collaborator. */
 function deleteSelectedImageHistory() {
-    deleteSelectedHistoryImages();
+    return imageHistoryBulkActions.deleteSelected();
 }
 
+/** Delegates starring selected history images to the bulk-actions collaborator. */
 function starSelectedImageHistory() {
-    setSelectedHistoryImagesStarred(true);
+    return imageHistoryBulkActions.starSelected();
 }
 
+/** Delegates unstarring selected history images to the bulk-actions collaborator. */
 function unstarSelectedImageHistory() {
-    setSelectedHistoryImagesStarred(false);
+    return imageHistoryBulkActions.unstarSelected();
 }
 
+/** Delegates the selected-image rating prompt to the bulk-actions collaborator. */
 function setSelectedImageHistoryRatingPrompt() {
-    let value = prompt('Rating 0-5:', '5');
-    if (value == null) {
-        return;
-    }
-    let rating = Number.parseInt(value.trim());
-    if (!Number.isFinite(rating) || rating < 0 || rating > 5) {
-        showError('Rating must be from 0 through 5.');
-        return;
-    }
-    setSelectedImageHistoryRating(rating);
+    return imageHistoryBulkActions.promptRating();
 }
 
+/** Delegates the selected-image tags prompt to the bulk-actions collaborator. */
 function setSelectedImageHistoryTagsPrompt(mode) {
-    let value = prompt(`${mode == 'add' ? 'Add' : 'Remove'} tags, comma-separated:`, '');
-    if (value == null) {
-        return;
-    }
-    let tags = value.split(',').map(t => t.trim()).filter(t => t.length > 0);
-    if (tags.length == 0) {
-        showError('No tags were provided.');
-        return;
-    }
-    setSelectedImageHistoryTags(tags.join(','), mode);
+    return imageHistoryBulkActions.promptTags(mode);
 }
 
+/** Delegates the selected-image notes prompt to the bulk-actions collaborator. */
 function setSelectedImageHistoryNotesPrompt() {
-    let value = prompt('Set notes for selected images:', '');
-    if (value == null) {
-        return;
-    }
-    setSelectedImageHistoryNotes(value);
+    return imageHistoryBulkActions.promptNotes();
 }
 
+/** Delegates the selected-image move prompt to the bulk-actions collaborator. */
 function moveSelectedImageHistoryPrompt(mode) {
-    let folder = prompt(`${mode == 'copy' ? 'Copy' : 'Move'} selected images to output folder:`, '');
-    if (folder == null) {
-        return;
-    }
-    folder = folder.trim();
-    if (!folder) {
-        showError('No output folder was provided.');
-        return;
-    }
-    moveSelectedImageHistory(folder, mode);
+    return imageHistoryBulkActions.promptMove(mode);
 }
 
 function compareSelectedImageHistory() {
@@ -1154,399 +1163,59 @@ function compareSelectedImageHistory() {
     showImageHistoryCompare([...imageHistorySelected].slice(0, 2));
 }
 
+/** Delegates selected-image metadata export to the bulk-actions collaborator. */
 function exportSelectedImageHistoryMetadata() {
-    syncImageHistorySelectionFromDOM();
-    let selected = [...imageHistorySelected];
-    if (selected.length == 0) {
-        return;
-    }
-    let exported = [];
-    for (let fullsrc of selected) {
-        let file = getImageHistoryFile(fullsrc);
-        if (!file) {
-            continue;
-        }
-        exported.push({
-            path: fullsrc,
-            name: file.data.name,
-            file_size: file.data.file_size || 0,
-            file_time: file.data.file_time || 0,
-            file_date: file.data.file_time ? new Date(file.data.file_time * 1000).toISOString() : '',
-            metadata: parseHistoryMetadata(file.data.metadata),
-            raw_metadata: file.data.metadata
-        });
-    }
-    let stamp = new Date().toISOString().replaceAll(':', '-').replaceAll('.', '-');
-    downloadPlainText(`image-history-metadata-${stamp}.json`, JSON.stringify(exported, null, 2));
+    return imageHistoryBulkActions.exportMetadata();
 }
 
+/** Delegates copying selected history paths to the bulk-actions collaborator. */
 function copySelectedImageHistoryPaths() {
-    syncImageHistorySelectionFromDOM();
-    let selected = [...imageHistorySelected];
-    if (selected.length == 0) {
-        return;
-    }
-    copyText(selected.join('\n'));
-    doNoticePopover(`Copied ${selected.length} path${selected.length == 1 ? '' : 's'}.`, 'notice-pop-green');
+    return imageHistoryBulkActions.copyPaths();
 }
 
+/** Delegates contact-sheet image loading to the bulk-actions collaborator. */
 function loadImageHistoryContactSheetImage(src) {
-    return new Promise(resolve => {
-        let image = new Image();
-        image.onload = () => resolve(image);
-        image.onerror = () => resolve(null);
-        image.src = src;
-    });
+    return imageHistoryBulkActions.loadContactSheetImage(src);
 }
 
+/** Delegates contact-sheet creation to the bulk-actions collaborator. */
 async function createSelectedImageHistoryContactSheet() {
-    if (imageHistoryBulkActionRunning) {
-        return;
-    }
-    syncImageHistorySelectionFromDOM();
-    let selected = [...imageHistorySelected];
-    if (selected.length == 0) {
-        return;
-    }
-    let autoColumns = Math.ceil(Math.sqrt(selected.length));
-    let options = prompt('Contact sheet columns, thumb size:', `${autoColumns},220`);
-    if (options == null) {
-        return;
-    }
-    let splitOptions = options.split(',').map(v => Number.parseInt(v.trim()));
-    let requestedColumns = Number.isFinite(splitOptions[0]) && splitOptions[0] > 0 ? splitOptions[0] : autoColumns;
-    let thumbSize = Number.isFinite(splitOptions[1]) && splitOptions[1] >= 64 ? splitOptions[1] : 220;
-    thumbSize = Math.min(1024, thumbSize);
-    imageHistoryBulkActionRunning = true;
-    updateImageHistoryBulkControls();
-    let entries = [];
-    for (let fullsrc of selected.slice(0, 200)) {
-        let file = getImageHistoryFile(fullsrc);
-        if (!file || getMediaType(file.data.src) != 'image') {
-            continue;
-        }
-        let image = await loadImageHistoryContactSheetImage(file.data.src);
-        if (!image) {
-            continue;
-        }
-        entries.push({ image: image, label: file.data.name || file.name || fullsrc });
-    }
-    imageHistoryBulkActionRunning = false;
-    updateImageHistoryBulkControls();
-    if (entries.length == 0) {
-        showError('No selected still images could be loaded for a contact sheet.');
-        return;
-    }
-    let labelHeight = 26;
-    let gap = 10;
-    let columns = Math.min(requestedColumns, entries.length);
-    let rows = Math.ceil(entries.length / columns);
-    let canvas = document.createElement('canvas');
-    canvas.width = columns * (thumbSize + gap) + gap;
-    canvas.height = rows * (thumbSize + labelHeight + gap) + gap;
-    let ctx = canvas.getContext('2d');
-    ctx.fillStyle = '#1f1f1f';
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
-    ctx.font = '13px sans-serif';
-    ctx.textBaseline = 'top';
-    for (let i = 0; i < entries.length; i++) {
-        let entry = entries[i];
-        let col = i % columns;
-        let row = Math.floor(i / columns);
-        let x = gap + col * (thumbSize + gap);
-        let y = gap + row * (thumbSize + labelHeight + gap);
-        let scale = Math.min(thumbSize / entry.image.naturalWidth, thumbSize / entry.image.naturalHeight);
-        let width = Math.max(1, Math.round(entry.image.naturalWidth * scale));
-        let height = Math.max(1, Math.round(entry.image.naturalHeight * scale));
-        let drawX = x + Math.floor((thumbSize - width) / 2);
-        let drawY = y + Math.floor((thumbSize - height) / 2);
-        ctx.fillStyle = '#111';
-        ctx.fillRect(x, y, thumbSize, thumbSize);
-        ctx.drawImage(entry.image, drawX, drawY, width, height);
-        ctx.fillStyle = '#eee';
-        ctx.fillText(entry.label, x, y + thumbSize + 6, thumbSize);
-    }
-    canvas.toBlob(blob => {
-        let url = URL.createObjectURL(blob);
-        let link = document.createElement('a');
-        link.href = url;
-        link.download = `image-history-contact-sheet-${new Date().toISOString().replaceAll(':', '-').replaceAll('.', '-')}.png`;
-        link.click();
-        URL.revokeObjectURL(url);
-    }, 'image/png');
-    doNoticePopover(`Created contact sheet with ${entries.length} image${entries.length == 1 ? '' : 's'}.`, 'notice-pop-green');
+    return await imageHistoryBulkActions.createContactSheet();
 }
 
-/**
- * Extracts Prompt Lab prompt fields from image metadata.
- */
+/** Delegates Prompt Lab metadata extraction to the bulk-actions collaborator. */
 function imageHistoryMetadataToPromptLabPrompt(file) {
-    let metadata = parseHistoryMetadata(file.data.metadata);
-    let params = metadata.sui_image_params || {};
-    let extra = metadata.sui_extra_data || {};
-    return {
-        name: file.data.name || file.name || 'History Prompt',
-        positive: extra.original_prompt || params.prompt || '',
-        negative: extra.original_negativeprompt || params.negativeprompt || '',
-        notes: `Imported from history image: ${file.data.fullsrc || file.name}`,
-        tags: ['history'],
-        favorite: false
-    };
+    return imageHistoryBulkActions.metadataToPromptLabPrompt(file);
 }
 
+/** Delegates sending selected history prompts to Prompt Lab. */
 async function sendSelectedImageHistoryToPromptLab() {
-    if (window.userFeatureToggles?.promptLab == false) {
-        return;
-    }
-    if (imageHistoryBulkActionRunning) {
-        return;
-    }
-    syncImageHistorySelectionFromDOM();
-    let selected = [...imageHistorySelected];
-    if (selected.length == 0) {
-        return;
-    }
-    imageHistoryBulkActionRunning = true;
-    updateImageHistoryBulkControls();
-    let saved = 0;
-    let skipped = 0;
-    let failed = 0;
-    for (let fullsrc of selected) {
-        let file = getImageHistoryFile(fullsrc);
-        if (!file) {
-            skipped++;
-            continue;
-        }
-        let item = imageHistoryMetadataToPromptLabPrompt(file);
-        if (!item.positive && !item.negative) {
-            skipped++;
-            continue;
-        }
-        let result = await new Promise(resolve => {
-            genericRequest('PromptLabSave', { collection: 'prompts', item: item }, data => resolve(data), 0, error => resolve({ error }));
-        });
-        if (result.error) {
-            failed++;
-            console.log(`Failed to send history image '${fullsrc}' to Prompt Lab: ${result.error}`);
-        }
-        else {
-            saved++;
-        }
-    }
-    imageHistoryBulkActionRunning = false;
-    updateImageHistoryBulkControls();
-    if (saved > 0 && window.promptLab?.load) {
-        promptLab.load();
-    }
-    if (failed > 0) {
-        showError(`Sent ${saved} prompt(s) to Prompt Lab. Skipped ${skipped}. Failed ${failed}.`);
-    }
-    else {
-        doNoticePopover(`Sent ${saved} prompt${saved == 1 ? '' : 's'} to Prompt Lab${skipped > 0 ? `, skipped ${skipped}` : ''}.`, 'notice-pop-green');
-    }
+    return await imageHistoryBulkActions.sendToPromptLab();
 }
 
+/** Delegates selected-image starred state changes to the bulk-actions collaborator. */
 async function setSelectedHistoryImagesStarred(targetStarred) {
-    if (imageHistoryBulkActionRunning) {
-        return;
-    }
-    syncImageHistorySelectionFromDOM();
-    let selected = [...imageHistorySelected];
-    if (selected.length == 0) {
-        return;
-    }
-    imageHistoryBulkActionRunning = true;
-    updateImageHistoryBulkControls();
-    let changed = 0;
-    let failed = 0;
-    for (let fullsrc of selected) {
-        let file = getImageHistoryFile(fullsrc);
-        if (!file || parseHistoryMetadata(file.data.metadata).is_starred == targetStarred) {
-            continue;
-        }
-        let result = await new Promise(resolve => {
-            genericRequest('ToggleImageStarred', { path: fullsrc }, data => resolve(data), 0, error => resolve({ error }));
-        });
-        if (result.error) {
-            failed++;
-            console.log(`Failed to ${targetStarred ? 'star' : 'unstar'} image '${fullsrc}': ${result.error}`);
-            continue;
-        }
-        changed++;
-        file.data.metadata = setMetadataBoolValue(file.data.metadata ?? '{}', 'is_starred', result.new_state);
-        forEachSwarmImageCardForSrc(file.data.src, card => {
-            if (card.setStarred) {
-                card.setStarred(result.new_state);
-            }
-            else {
-                card.classList.toggle('image-block-starred', result.new_state);
-            }
-        });
-    }
-    imageHistoryBulkActionRunning = false;
-    updateImageHistoryBulkControls();
-    if (changed > 0) {
-        requestImageHistoryRefresh();
-    }
-    if (failed > 0) {
-        showError(`${targetStarred ? 'Starred' : 'Unstarred'} ${changed} image(s). Failed ${failed}.`);
-    }
-    else if (changed > 0) {
-        doNoticePopover(`${targetStarred ? 'Starred' : 'Unstarred'} ${changed} image${changed == 1 ? '' : 's'}.`, 'notice-pop-green');
-    }
+    return await imageHistoryBulkActions.setStarred(targetStarred);
 }
 
+/** Delegates selected-image rating changes to the bulk-actions collaborator. */
 async function setSelectedImageHistoryRating(rating) {
-    if (imageHistoryBulkActionRunning) {
-        return;
-    }
-    syncImageHistorySelectionFromDOM();
-    let selected = [...imageHistorySelected];
-    if (selected.length == 0) {
-        return;
-    }
-    imageHistoryBulkActionRunning = true;
-    updateImageHistoryBulkControls();
-    let changed = 0;
-    let failed = 0;
-    for (let fullsrc of selected) {
-        let file = getImageHistoryFile(fullsrc);
-        if (!file) {
-            continue;
-        }
-        let result = await new Promise(resolve => {
-            genericRequest('SetImageRating', { path: fullsrc, rating: rating }, data => resolve(data), 0, error => resolve({ error }));
-        });
-        if (result.error) {
-            failed++;
-            console.log(`Failed to rate image '${fullsrc}': ${result.error}`);
-            continue;
-        }
-        changed++;
-        file.data.metadata = setMetadataValue(file.data.metadata ?? '{}', 'rating', result.rating);
-    }
-    imageHistoryBulkActionRunning = false;
-    updateImageHistoryBulkControls();
-    if (changed > 0) {
-        requestImageHistoryRefresh();
-    }
-    if (failed > 0) {
-        showError(`Rated ${changed} image(s). Failed ${failed}.`);
-    }
-    else if (changed > 0) {
-        doNoticePopover(`Rated ${changed} image${changed == 1 ? '' : 's'}.`, 'notice-pop-green');
-    }
+    return await imageHistoryBulkActions.setRating(rating);
 }
 
+/** Delegates selected-image tag changes to the bulk-actions collaborator. */
 async function setSelectedImageHistoryTags(tags, mode) {
-    if (imageHistoryBulkActionRunning) {
-        return;
-    }
-    syncImageHistorySelectionFromDOM();
-    let selected = [...imageHistorySelected];
-    if (selected.length == 0) {
-        return;
-    }
-    imageHistoryBulkActionRunning = true;
-    updateImageHistoryBulkControls();
-    let changed = 0;
-    let failed = 0;
-    for (let fullsrc of selected) {
-        let file = getImageHistoryFile(fullsrc);
-        if (!file) {
-            continue;
-        }
-        let result = await new Promise(resolve => {
-            genericRequest('SetImageTags', { path: fullsrc, tags: tags, mode: mode }, data => resolve(data), 0, error => resolve({ error }));
-        });
-        if (result.error) {
-            failed++;
-            console.log(`Failed to ${mode} tags for image '${fullsrc}': ${result.error}`);
-            continue;
-        }
-        changed++;
-        file.data.metadata = setMetadataValue(file.data.metadata ?? '{}', 'tags', result.tags || []);
-    }
-    imageHistoryBulkActionRunning = false;
-    updateImageHistoryBulkControls();
-    if (changed > 0) {
-        requestImageHistoryRefresh();
-    }
-    if (failed > 0) {
-        showError(`${mode == 'add' ? 'Added tags to' : 'Removed tags from'} ${changed} image(s). Failed ${failed}.`);
-    }
-    else if (changed > 0) {
-        doNoticePopover(`${mode == 'add' ? 'Added tags to' : 'Removed tags from'} ${changed} image${changed == 1 ? '' : 's'}.`, 'notice-pop-green');
-    }
+    return await imageHistoryBulkActions.setTags(tags, mode);
 }
 
+/** Delegates selected-image notes changes to the bulk-actions collaborator. */
 async function setSelectedImageHistoryNotes(notes) {
-    if (imageHistoryBulkActionRunning) {
-        return;
-    }
-    syncImageHistorySelectionFromDOM();
-    let selected = [...imageHistorySelected];
-    if (selected.length == 0) {
-        return;
-    }
-    imageHistoryBulkActionRunning = true;
-    updateImageHistoryBulkControls();
-    let changed = 0;
-    let failed = 0;
-    for (let fullsrc of selected) {
-        let file = getImageHistoryFile(fullsrc);
-        if (!file) {
-            continue;
-        }
-        let result = await new Promise(resolve => {
-            genericRequest('SetImageNotes', { path: fullsrc, notes: notes }, data => resolve(data), 0, error => resolve({ error }));
-        });
-        if (result.error) {
-            failed++;
-            console.log(`Failed to set notes for image '${fullsrc}': ${result.error}`);
-            continue;
-        }
-        changed++;
-        file.data.metadata = setMetadataValue(file.data.metadata ?? '{}', 'notes', result.notes || '');
-    }
-    imageHistoryBulkActionRunning = false;
-    updateImageHistoryBulkControls();
-    if (changed > 0) {
-        requestImageHistoryRefresh();
-    }
-    if (failed > 0) {
-        showError(`Set notes on ${changed} image(s). Failed ${failed}.`);
-    }
-    else if (changed > 0) {
-        doNoticePopover(`Set notes on ${changed} image${changed == 1 ? '' : 's'}.`, 'notice-pop-green');
-    }
+    return await imageHistoryBulkActions.setNotes(notes);
 }
 
+/** Delegates moving or copying selected history images to the bulk-actions collaborator. */
 async function moveSelectedImageHistory(folder, mode) {
-    if (imageHistoryBulkActionRunning) {
-        return;
-    }
-    syncImageHistorySelectionFromDOM();
-    let selected = [...imageHistorySelected];
-    if (selected.length == 0) {
-        return;
-    }
-    imageHistoryBulkActionRunning = true;
-    updateImageHistoryBulkControls();
-    let result = await new Promise(resolve => {
-        genericRequest('BulkMoveImages', { paths: selected, targetFolder: folder, mode: mode }, data => resolve(data), 0, error => resolve({ error }));
-    });
-    imageHistoryBulkActionRunning = false;
-    updateImageHistoryBulkControls();
-    if (result.error) {
-        showError(result.error);
-        return;
-    }
-    if (mode == 'move') {
-        clearImageHistorySelection();
-    }
-    requestImageHistoryRefresh();
-    doNoticePopover(`${mode == 'copy' ? 'Copied' : 'Moved'} ${result.changed || 0} image${result.changed == 1 ? '' : 's'}${result.failed ? `, failed ${result.failed}` : ''}.`, 'notice-pop-green');
+    return await imageHistoryBulkActions.move(folder, mode);
 }
 
 function ensureImageHistoryBulkControlsReady() {
@@ -1718,89 +1387,14 @@ function toggleImageHidden(path, rawSrc, refreshAfter = true, errorHandle = null
     });
 }
 
+/** Delegates selected-image hidden state changes to the bulk-actions collaborator. */
 async function setSelectedHistoryImagesHidden(targetHidden) {
-    if (imageHistoryBulkActionRunning) {
-        return;
-    }
-    syncImageHistorySelectionFromDOM();
-    let selected = [...imageHistorySelected];
-    if (selected.length == 0) {
-        return;
-    }
-    imageHistoryBulkActionRunning = true;
-    updateImageHistoryBulkControls();
-    let updated = 0;
-    let skipped = 0;
-    let failed = 0;
-    for (let fullsrc of selected) {
-        let current = imageHistoryBrowser?.getFileFor(fullsrc);
-        let isHidden = parseHistoryMetadata(current?.data?.metadata).is_hidden === true;
-        if (isHidden == targetHidden) {
-            skipped++;
-            continue;
-        }
-        let src = getHistoryImageSrc(fullsrc);
-        let res = await toggleImageHidden(fullsrc, src, false, () => {});
-        if (res.success) {
-            updated++;
-        }
-        else {
-            failed++;
-            console.log(`Failed to ${targetHidden ? 'hide' : 'unhide'} image '${fullsrc}': ${res.error}`);
-        }
-    }
-    imageHistoryBulkActionRunning = false;
-    updateImageHistoryBulkControls();
-    if (updated > 0) {
-        requestImageHistoryRefresh();
-    }
-    if (failed > 0) {
-        showError(`${targetHidden ? 'Hid' : 'Unhid'} ${updated} image(s), skipped ${skipped}, failed ${failed}.`);
-    }
-    else if (updated > 0 || skipped > 0) {
-        doNoticePopover(`${targetHidden ? 'Hid' : 'Unhid'} ${updated} image${updated == 1 ? '' : 's'}${skipped > 0 ? ` (${skipped} already ${targetHidden ? 'hidden' : 'visible'})` : ''}.`, 'notice-pop-green');
-    }
+    return await imageHistoryBulkActions.setHidden(targetHidden);
 }
 
+/** Delegates deletion of selected history images to the bulk-actions collaborator. */
 async function deleteSelectedHistoryImages() {
-    if (imageHistoryBulkActionRunning) {
-        return;
-    }
-    syncImageHistorySelectionFromDOM();
-    let selected = [...imageHistorySelected];
-    if (selected.length == 0) {
-        return;
-    }
-    let imgWord = selected.length == 1 ? 'image' : 'images';
-    if (!uiImprover.lastShift && getUserSetting('ui.checkifsurebeforedelete', true) && !confirm(`Are you sure you want to delete ${selected.length} ${imgWord}?\nHold shift to bypass.`)) {
-        return;
-    }
-    imageHistoryBulkActionRunning = true;
-    updateImageHistoryBulkControls();
-    let deleted = 0;
-    let failed = 0;
-    for (let fullsrc of selected) {
-        let src = getHistoryImageSrc(fullsrc);
-        let res = await deleteSingleHistoryImage(fullsrc, src, null, () => {});
-        if (res.success) {
-            deleted++;
-        }
-        else {
-            failed++;
-            console.log(`Failed to delete image '${fullsrc}': ${res.error}`);
-        }
-    }
-    imageHistoryBulkActionRunning = false;
-    updateImageHistoryBulkControls();
-    if (deleted > 0) {
-        requestImageHistoryRefresh();
-    }
-    if (failed > 0) {
-        showError(`Deleted ${deleted} image(s). Failed to delete ${failed} image(s).`);
-    }
-    else if (deleted > 0) {
-        doNoticePopover(`Deleted ${deleted} image${deleted == 1 ? '' : 's'}.`, 'notice-pop-green');
-    }
+    return await imageHistoryBulkActions.deleteImages();
 }
 
 function listOutputHistoryFolderAndFiles(path, isRefresh, callback, depth, onError = null) {
