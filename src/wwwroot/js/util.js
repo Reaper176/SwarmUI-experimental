@@ -1295,6 +1295,7 @@ window.SwarmUtil = {
     // DOM / element helpers
     createDiv: typeof createDiv !== 'undefined' ? createDiv : undefined,
     escapeHtml: typeof escapeHtml !== 'undefined' ? escapeHtml : undefined,
+    escapeHtmlNoBr: typeof escapeHtmlNoBr !== 'undefined' ? escapeHtmlNoBr : undefined,
     stripHtmlToText: typeof stripHtmlToText !== 'undefined' ? stripHtmlToText : undefined,
     getInputVal: typeof getInputVal !== 'undefined' ? getInputVal : undefined,
     setInputVal: typeof setInputVal !== 'undefined' ? setInputVal : undefined,
