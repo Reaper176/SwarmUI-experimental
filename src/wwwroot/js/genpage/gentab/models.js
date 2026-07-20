@@ -155,10 +155,11 @@ function bulkEditModelMetadata(files, browser, wrapper) {
     }
     let architectureSelector = getRequiredElementById('bulk_edit_model_architecture');
     let firstVisibleArchitecture = '';
+    let allowedSubIds = bulkEditModelWrapper?.subIds || ['lora', 'lora-depth', 'lora-canny'];
     for (let opt of architectureSelector.options) {
         let slash = opt.value.indexOf('/');
         let postSlash = slash > 0 ? opt.value.substring(slash + 1) : '';
-        let isVisible = bulkEditModelWrapper.subIds.includes(postSlash);
+        let isVisible = allowedSubIds.includes(postSlash);
         opt.style.display = isVisible ? 'block' : 'none';
         if (isVisible && !firstVisibleArchitecture) {
             firstVisibleArchitecture = opt.value;

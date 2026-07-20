@@ -83,14 +83,18 @@ namespace SwarmUI.Text2Image
             string typeLow = type.ToLowerFast();
             return backend =>
             {
+                if (backend?.Backend is null || backend.BackType is null)
+                {
+                    return false;
+                }
                 if (!backend.Backend.CanLoadModels)
                 {
                     Logs.Verbose($"Filter out backend {backend.ID} as it is marked as unable to load models (eg generic placeholder backend, this is not an important refusal)");
                     return false;
                 }
-                if (typeLow != "any" && typeLow != backend.Backend.HandlerTypeData.ID.ToLowerFast())
+                if (typeLow != "any" && typeLow != backend.BackType.ID.ToLowerFast())
                 {
-                    Logs.Verbose($"Filter out backend {backend.ID} as the Type is specified as {typeLow}, but the backend type is {backend.Backend.HandlerTypeData.ID.ToLowerFast()}");
+                    Logs.Verbose($"Filter out backend {backend.ID} as the Type is specified as {typeLow}, but the backend type is {backend.BackType.ID.ToLowerFast()}");
                     user_input.RefusalReasons.Add($"Specific backend type requested in advanced parameters did not match");
                     return false;
                 }

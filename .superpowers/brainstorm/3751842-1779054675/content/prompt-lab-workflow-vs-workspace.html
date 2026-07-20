@@ -1,0 +1,101 @@
+<h2>Prompt Lab: Two More Intuitive Directions</h2>
+<p class="subtitle">These are structural concepts, not final styling. Pick the one that feels easier to understand at a glance.</p>
+
+<div class="split">
+  <div class="mockup" data-choice="workflow" onclick="toggleSelect(this)">
+    <div class="mockup-header">A. Workflow / Task Mode</div>
+    <div class="mockup-body">
+      <div style="display:flex;gap:8px;margin-bottom:12px;align-items:center">
+        <button class="mock-button" style="background:#3c6">1 Library</button>
+        <button class="mock-button">2 Write</button>
+        <button class="mock-button">3 Reuse</button>
+        <button class="mock-button">4 Preview</button>
+        <button class="mock-button">5 Generate</button>
+      </div>
+      <div style="display:grid;grid-template-columns:260px 1fr;gap:12px;min-height:520px">
+        <div class="mock-sidebar">
+          <div class="label">Step 1: Choose a Starting Point</div>
+          <input class="mock-input" placeholder="Search saved prompts">
+          <div class="placeholder">Favorite - Portrait base</div>
+          <div class="placeholder">Cinematic test prompt</div>
+          <div class="placeholder">Creature material study</div>
+          <div style="display:flex;gap:6px;margin-top:10px">
+            <button class="mock-button">New Prompt</button>
+            <button class="mock-button">Import</button>
+          </div>
+        </div>
+        <div class="mock-content">
+          <div class="label">What happens here</div>
+          <div class="placeholder" style="height:70px;text-align:left;align-items:flex-start;padding-top:12px">Select an existing prompt or start from blank. The rest of the interface stays quiet until you advance to the next task.</div>
+          <div class="placeholder" style="height:58px;opacity:.6">Next: Write and edit prompt text</div>
+          <div class="placeholder" style="height:58px;opacity:.6">Then: Add fragments and wildcard sets</div>
+          <div class="placeholder" style="height:58px;opacity:.6">Then: Preview and generate variations</div>
+          <div style="display:flex;justify-content:flex-end;margin-top:12px">
+            <button class="mock-button">Continue to Write</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="mockup" data-choice="workspace" onclick="toggleSelect(this)">
+    <div class="mockup-header">B. Prompt Workspace + Smart Side Panels</div>
+    <div class="mockup-body">
+      <div style="display:grid;grid-template-columns:250px minmax(360px,1fr) 300px;gap:12px;min-height:520px">
+        <div class="mock-sidebar">
+          <div class="label">Library</div>
+          <input class="mock-input" placeholder="Search everything">
+          <div class="placeholder">Saved Prompts</div>
+          <div class="placeholder" style="opacity:.65">Fragments drawer</div>
+          <div class="placeholder" style="opacity:.65">Wildcard drawer</div>
+          <div class="placeholder" style="opacity:.65">Recent drawer</div>
+        </div>
+        <div class="mock-content">
+          <div style="display:flex;gap:8px;align-items:center;margin-bottom:8px">
+            <input class="mock-input" style="flex:1" placeholder="Prompt name">
+            <button class="mock-button">Save</button>
+            <button class="mock-button">Variant</button>
+          </div>
+          <div class="label">Positive Prompt</div>
+          <div class="placeholder" style="height:145px;text-align:left;align-items:flex-start;padding-top:12px">masterpiece, cinematic portrait, &lt;wildcard:lighting&gt;, detailed face...</div>
+          <div class="label">Negative Prompt</div>
+          <div class="placeholder" style="height:86px;text-align:left;align-items:flex-start;padding-top:12px">blurry, low quality, distorted anatomy...</div>
+          <div class="placeholder" style="height:46px">Tags and notes, compact until focused</div>
+          <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:10px">
+            <button class="mock-button">Send</button>
+            <button class="mock-button">Preview</button>
+          </div>
+        </div>
+        <div class="mock-sidebar">
+          <div class="label">Context Panel</div>
+          <div class="placeholder">Detected wildcards</div>
+          <div class="placeholder">Preview results</div>
+          <div class="placeholder" style="opacity:.65">Warnings hidden unless needed</div>
+          <div class="placeholder" style="opacity:.65">Diff drawer</div>
+          <div class="placeholder" style="opacity:.65">Export drawer</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="pros-cons">
+  <div class="pros">
+    <h4>A. Workflow / Task Mode</h4>
+    <ul>
+      <li>Most guided and beginner-friendly.</li>
+      <li>Very low density per step.</li>
+      <li>Harder to get lost.</li>
+    </ul>
+  </div>
+  <div class="cons">
+    <h4>B. Workspace / Smart Panels</h4>
+    <ul>
+      <li>Faster for experienced users.</li>
+      <li>Less disruptive than a wizard.</li>
+      <li>Still shows the whole mental model at once.</li>
+    </ul>
+  </div>
+</div>
+
+<p class="subtitle">URL: http://localhost:55060 - click A or B, then tell me what feels better or worse.</p>

@@ -1,0 +1,83 @@
+<h2>Prompt Lab Progressive Disclosure Example</h2>
+<p class="subtitle">A denser toolset, but with only the prompt-writing path fully open by default.</p>
+
+<div class="mockup">
+  <div class="mockup-header">Prompt Lab - Proposed Default View</div>
+  <div class="mockup-body">
+    <div style="display:grid;grid-template-columns:260px minmax(420px,1fr) 320px;gap:12px;min-height:620px">
+      <div class="mock-sidebar" style="display:flex;flex-direction:column;gap:8px">
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:8px">
+          <div class="label">Library</div>
+          <button class="mock-button">Import</button>
+        </div>
+        <input class="mock-input" placeholder="Search prompts, tags, fragments">
+        <div style="border:1px solid #555;padding:8px;border-radius:6px;background:#20242c">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+            <strong>Saved Prompts</strong>
+            <button class="mock-button">New</button>
+          </div>
+          <div class="placeholder" style="height:42px">Favorite - Portrait base</div>
+          <div class="placeholder" style="height:42px">Cinematic test prompt</div>
+          <div class="placeholder" style="height:42px">Creature material study</div>
+        </div>
+        <div class="placeholder" style="height:38px;opacity:.65">Fragments - collapsed (18)</div>
+        <div class="placeholder" style="height:38px;opacity:.65">Wildcard Sets - collapsed (7)</div>
+        <div class="placeholder" style="height:38px;opacity:.65">Recent Prompts - collapsed</div>
+      </div>
+
+      <div class="mock-content" style="display:flex;flex-direction:column;gap:10px">
+        <div style="display:flex;gap:8px;align-items:center">
+          <input class="mock-input" style="flex:1" placeholder="Prompt name">
+          <button class="mock-button">Save</button>
+          <button class="mock-button">Variant</button>
+          <button class="mock-button">More</button>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr;gap:8px">
+          <div>
+            <div class="label">Positive Prompt</div>
+            <div class="placeholder" style="height:150px;text-align:left;align-items:flex-start;padding-top:12px">
+              masterpiece, detailed portrait, {lighting}, studio background...
+            </div>
+          </div>
+          <div>
+            <div class="label">Negative Prompt</div>
+            <div class="placeholder" style="height:95px;text-align:left;align-items:flex-start;padding-top:12px">
+              blurry, low quality, distorted anatomy...
+            </div>
+          </div>
+        </div>
+        <input class="mock-input" placeholder="Tags: portrait, test, character">
+        <div class="placeholder" style="height:56px;text-align:left;align-items:flex-start;padding-top:10px">Notes - short by default, expands when focused</div>
+        <div style="display:flex;gap:8px;justify-content:flex-end">
+          <button class="mock-button">Send to Generate</button>
+          <button class="mock-button">Preview Wildcards</button>
+        </div>
+        <div class="placeholder" style="height:42px;opacity:.7">Wildcard Set Editor - collapsed</div>
+        <div class="placeholder" style="height:42px;opacity:.7">Fragment Editor - collapsed</div>
+      </div>
+
+      <div class="mock-sidebar" style="display:flex;flex-direction:column;gap:8px">
+        <div class="label">Preview</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px">
+          <button class="mock-button">Generate</button>
+          <button class="mock-button">Export</button>
+        </div>
+        <div style="border:1px solid #555;padding:8px;border-radius:6px;background:#20242c">
+          <strong>Detected Wildcards</strong>
+          <div class="placeholder" style="height:42px;margin-top:8px">{lighting} - 12 values</div>
+          <div class="placeholder" style="height:42px">{camera} - 5 values</div>
+        </div>
+        <div style="border:1px solid #555;padding:8px;border-radius:6px;background:#20242c;min-height:210px">
+          <strong>Preview</strong>
+          <div class="placeholder" style="height:54px;margin-top:8px">1 / 60 prompt combinations</div>
+          <div class="placeholder" style="height:54px">2 / 60 prompt combinations</div>
+          <div class="placeholder" style="height:54px">3 / 60 prompt combinations</div>
+        </div>
+        <div class="placeholder" style="height:38px;opacity:.65">Warnings - collapsed unless non-empty</div>
+        <div class="placeholder" style="height:38px;opacity:.65">Diff - collapsed</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<p class="subtitle">URL: http://localhost:57955 - Does this feel like the right density target, or should it be even more compact?</p>

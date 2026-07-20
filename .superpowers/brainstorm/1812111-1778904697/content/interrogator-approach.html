@@ -1,0 +1,66 @@
+<h2>Lodestone Image Interrogator Extension</h2>
+<p class="subtitle">Recommended self-contained shape for the first version.</p>
+
+<div class="section">
+  <div class="mockup">
+    <div class="mockup-header">Workflow</div>
+    <div class="mockup-body">
+      <div style="display:grid;grid-template-columns:1fr auto 1fr auto 1fr;gap:12px;align-items:center;">
+        <div class="placeholder">Generate Tab<br><small>selected/current image</small></div>
+        <div style="font-size:28px;">→</div>
+        <div class="placeholder">Image Interrogator Panel<br><small>setup, preview, tag controls</small></div>
+        <div style="font-size:28px;">→</div>
+        <div class="placeholder">Generate Prompt<br><small>append, replace, or copy tags</small></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<h3>Implementation Approaches</h3>
+<div class="options">
+  <div class="option" data-choice="recommended" onclick="toggleSelect(this)">
+    <div class="letter">A</div>
+    <div class="content">
+      <h3>Bundled Local Runner (Recommended)</h3>
+      <p>Extension ships C# routes, UI assets, and a Python runner. A setup button installs dependencies and downloads the 5.27 GB model/vocab files before first use.</p>
+    </div>
+  </div>
+  <div class="option" data-choice="comfy" onclick="toggleSelect(this)">
+    <div class="letter">B</div>
+    <div class="content">
+      <h3>Comfy Backend Node</h3>
+      <p>Integrates through Swarm's Comfy backend. Good for generation workflows, but more coupled to Comfy internals and less direct for a utility panel.</p>
+    </div>
+  </div>
+  <div class="option" data-choice="external" onclick="toggleSelect(this)">
+    <div class="letter">C</div>
+    <div class="content">
+      <h3>External Server Wrapper</h3>
+      <p>Calls a separately running tagger UI/server. Fastest to prototype, but not self-contained and harder to share cleanly.</p>
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <h3>Panel Capabilities</h3>
+  <div class="pros-cons">
+    <div class="pros">
+      <h4>Included in v1</h4>
+      <ul>
+        <li>Explicit setup button for model/dependency download.</li>
+        <li>Single-image interrogation.</li>
+        <li>Confidence threshold, max tags, and category filters.</li>
+        <li>Grouped rating/character/general/style tag views.</li>
+        <li>Send image from Generate to panel, send tags back to Generate.</li>
+      </ul>
+    </div>
+    <div class="cons">
+      <h4>Deferred</h4>
+      <ul>
+        <li>Batch interrogation.</li>
+        <li>Training dataset management.</li>
+        <li>Remote hosted inference.</li>
+      </ul>
+    </div>
+  </div>
+</div>

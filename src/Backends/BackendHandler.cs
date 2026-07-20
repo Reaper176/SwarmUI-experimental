@@ -23,7 +23,9 @@ public class BackendHandler
     public Dictionary<int, T2IBackendData> T2IBackends => AllBackends.Select(pair => new KeyValuePair<int, T2IBackendData>(pair.Key, pair.Value as T2IBackendData)).Where(p => p.Value is not null).PairsToDictionary();
 
     /// <summary>Returns a simple enumeration of current t2i backends.</summary>
-    public IEnumerable<T2IBackendData> EnumerateT2IBackends => AllBackends.Values.Select(b => b as T2IBackendData).Where(b => b is not null);
+    public IEnumerable<T2IBackendData> EnumerateT2IBackends => AllBackends.Values
+        .Select(b => b as T2IBackendData)
+        .Where(b => b is not null && b.Backend is not null && b.BackType is not null);
 
     /// <summary>Signal when any backends are available, or other reason to check backends (eg new requests came in).</summary>
     public AsyncAutoResetEvent CheckBackendsSignal = new(false);

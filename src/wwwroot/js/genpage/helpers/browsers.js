@@ -281,7 +281,7 @@ class GenPageBrowserClass {
         this.filterSorter = null;
         this.filterServerSide = false;
         this.filterUpdateTimeout = null;
-        this.filterUpdateDelayMs = 250;
+        this.filterUpdateDelayMs = 650;
         this.lastFiles = [];
         this.lastFilesMap = new Map();
         this.describeCache = new Map();
@@ -902,7 +902,18 @@ class GenPageBrowserClass {
                     buttonElem.className = 'sui_popover_model_button';
                     buttonElem.innerText = button.label;
                     if (button.onclick) {
-                        buttonElem.onclick = () => button.onclick(div);
+                        if (button.bulk_once) {
+                            buttonElem.onclick = () => {
+                                let files = this.multiSelectActive ? this.getMultiSelectedFiles() : [];
+                                if (files.length == 0) {
+                                    files = [file];
+                                }
+                                button.onclick(files, this);
+                            };
+                        }
+                        else {
+                            buttonElem.onclick = () => button.onclick(div);
+                        }
                     }
                     menuDiv.appendChild(buttonElem);
                 }
