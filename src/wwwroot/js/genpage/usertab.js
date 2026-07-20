@@ -33,13 +33,13 @@ class AuthTokenHelper {
             tokens.sort((a, b) => b.last_active - a.last_active);
             let html = '<table class="simple-table"><tr><th class="translate">Created</th><th class="translate">Last Active</th><th class="translate">User-Agent, Source, or Reason</th><th class="translate">Origin Address</th><th class="translate">Actions</th></tr>';
             for (let token of tokens) {
-                let created = token.created ? formatDateTime(new Date(token.created * 1000)) : 'Unknown';
-                let lastActive = token.last_active ? formatDateTime(new Date(token.last_active * 1000)) : 'Unknown';
-                let originAddress = escapeHtml(token.origin_address || 'unknown');
+                let created = token.created ? SwarmUtil.formatDateTime(new Date(token.created * 1000)) : 'Unknown';
+                let lastActive = token.last_active ? SwarmUtil.formatDateTime(new Date(token.last_active * 1000)) : 'Unknown';
+                let originAddress = SwarmUtil.escapeHtml(token.origin_address || 'unknown');
                 let ua = token.user_agent || 'unknown';
                 let uaSimple = ua.length > 60 ? ua.substring(0, 60) + '...' : ua;
-                let revokeBtn = token.is_current ? '(Current)' : permissions.hasPermission('edit_user_settings') ? `<button class="basic-button translate" onclick="authTokenHelpers.revokeAuthToken('${escapeHtml(token.id)}')">Revoke</button>` : '';
-                html += `<tr><td>${escapeHtml(created)}</td><td>${escapeHtml(lastActive)}</td><td title="${escapeHtml(ua)}">${escapeHtml(uaSimple)}</td><td>${originAddress}</td><td>${revokeBtn}</td></tr>`;
+                let revokeBtn = token.is_current ? '(Current)' : permissions.hasPermission('edit_user_settings') ? `<button class="basic-button translate" onclick="authTokenHelpers.revokeAuthToken('${SwarmUtil.escapeHtml(token.id)}')">Revoke</button>` : '';
+                html += `<tr><td>${SwarmUtil.escapeHtml(created)}</td><td>${SwarmUtil.escapeHtml(lastActive)}</td><td title="${SwarmUtil.escapeHtml(ua)}">${SwarmUtil.escapeHtml(uaSimple)}</td><td>${originAddress}</td><td>${revokeBtn}</td></tr>`;
             }
             html += '</table>';
             this.container.innerHTML = html;
@@ -92,7 +92,7 @@ class AuthTokenHelper {
         if (!this.createTokenRawValue) {
             return;
         }
-        copyText(this.createTokenRawValue.value);
+        SwarmUtil.copyText(this.createTokenRawValue.value);
         doNoticePopover('Copied!', 'notice-pop-green');
     }
     
@@ -121,7 +121,7 @@ function copySessionIdToClipboard() {
     if (!session_id) {
         return;
     }
-    copyText(session_id);
+    SwarmUtil.copyText(session_id);
     doNoticePopover('Copied!', 'notice-pop-green');
 }
 
@@ -257,9 +257,9 @@ class ParamConfigurationClass {
                         <div class="param-edit-part">Ordering Priority: <input type="number" class="param-edit-number" id="${groupPrefix}__priority" value="${group.priority}" autocomplete="off"></div>`;
                     groupDiv.appendChild(createDiv(null, 'param-edit-container-for-group', groupHtml));
                     this.container.appendChild(groupDiv);
-                    getRequiredElementById(`${groupPrefix}_reset`).addEventListener('click', () => {
+                    SwarmUtil.getRequiredElementById(`${groupPrefix}_reset`).addEventListener('click', () => {
                         for (let opt of ['open', 'advanced', 'priority']) {
-                            let elem = getRequiredElementById(`${groupPrefix}__${opt}`);
+                            let elem = SwarmUtil.getRequiredElementById(`${groupPrefix}__${opt}`);
                             delete elem.dataset.orig_val;
                             setInputVal(elem, this.original_groups[groupId][opt]);
                             triggerChangeFor(elem);
@@ -270,7 +270,7 @@ class ParamConfigurationClass {
                         this.updateConfirmer();
                     });
                     for (let opt of ['open', 'advanced', 'priority']) {
-                        let elem = getRequiredElementById(`${groupPrefix}__${opt}`);
+                        let elem = SwarmUtil.getRequiredElementById(`${groupPrefix}__${opt}`);
                         elem.dataset.orig_val = getInputVal(elem);
                         elem.addEventListener('input', () => {
                             if (!this.edited_groups[group.id]) {
@@ -330,7 +330,7 @@ class ParamConfigurationClass {
             }
             paramHtml += `</select></div>`;
             groupDiv.appendChild(createDiv(null, 'param-edit-container', paramHtml));
-            getRequiredElementById(`${paramPrefix}_reset`).addEventListener('click', () => {
+            SwarmUtil.getRequiredElementById(`${paramPrefix}_reset`).addEventListener('click', () => {
                 for (let opt of ['visible', 'do_not_save', 'advanced', 'priority', 'min', 'max', 'view_max', 'step', 'view_type', 'examples', 'group']) {
                     let elem = document.getElementById(`${paramPrefix}__${opt}`);
                     if (!elem) {
@@ -430,7 +430,7 @@ class ParamConfigurationClass {
     updateConfirmer() {
         let data = Object.values(this.edited_groups).concat(Object.values(this.edited_params)).map(g => Object.keys(g.changed).length);
         let count = (data.length == 0 ? 0 : data.reduce((a, b) => a + b)) + this.extra_count;
-        getRequiredElementById(`user_param_config_edit_count`).innerText = count;
+        SwarmUtil.getRequiredElementById(`user_param_config_edit_count`).innerText = count;
         this.confirmer.style.display = count == 0 ? 'none' : 'block';
     }
 
@@ -446,7 +446,7 @@ class ParamConfigurationClass {
             }
             for (let key in edit.changed) {
                 this.param_edits.groups[groupId][key] = edit.changed[key];
-                let elem = getRequiredElementById(`user_param_config_group_${groupId}__${key}`);
+                let elem = SwarmUtil.getRequiredElementById(`user_param_config_group_${groupId}__${key}`);
                 elem.dataset.orig_val = edit.changed[key];
             }
         }
@@ -457,7 +457,7 @@ class ParamConfigurationClass {
             }
             for (let key in edit.changed) {
                 this.param_edits.params[paramId][key] = edit.changed[key];
-                let elem = getRequiredElementById(`user_param_config_param_${paramId}__${key}`);
+                let elem = SwarmUtil.getRequiredElementById(`user_param_config_param_${paramId}__${key}`);
                 elem.dataset.orig_val = edit.changed[key];
             }
         }
@@ -475,14 +475,14 @@ class ParamConfigurationClass {
         for (let groupId in this.edited_groups) {
             let edit = this.edited_groups[groupId];
             for (let key in edit.changed) {
-                let input = getRequiredElementById(`user_param_config_group_${groupId}__${key}`);
+                let input = SwarmUtil.getRequiredElementById(`user_param_config_group_${groupId}__${key}`);
                 setInputVal(input, input.dataset.orig_val);
             }
         }
         for (let paramId in this.edited_params) {
             let edit = this.edited_params[paramId];
             for (let key in edit.changed) {
-                let input = getRequiredElementById(`user_param_config_param_${paramId}__${key}`);
+                let input = SwarmUtil.getRequiredElementById(`user_param_config_param_${paramId}__${key}`);
                 setInputVal(input, input.dataset.orig_val);
             }
         }
@@ -498,11 +498,11 @@ class ParamConfigurationClass {
 let paramConfig = new ParamConfigurationClass();
 
 async function doPasswordChangeSubmit() {
-    let resultArea = getRequiredElementById('change_password_result_area');
-    let submitButton = getRequiredElementById('change_password_submit_button');
-    let oldPassword = getRequiredElementById('change_password_old_password');
-    let newPassword = getRequiredElementById('change_password_new_password');
-    let newPassword2 = getRequiredElementById('change_password_new_password2');
+    let resultArea = SwarmUtil.getRequiredElementById('change_password_result_area');
+    let submitButton = SwarmUtil.getRequiredElementById('change_password_submit_button');
+    let oldPassword = SwarmUtil.getRequiredElementById('change_password_old_password');
+    let newPassword = SwarmUtil.getRequiredElementById('change_password_new_password');
+    let newPassword2 = SwarmUtil.getRequiredElementById('change_password_new_password2');
     if (newPassword.value != newPassword2.value) {
         resultArea.innerText = 'New passwords do not match';
         return;

@@ -1,9 +1,9 @@
 
 class InstallerClass {
     parts = ['license', 'skip', 'themes', 'installed_for', 'backends', 'models', 'end'];
-    backButton = getRequiredElementById('installer_button_back');
-    nextButton = getRequiredElementById('installer_button_next');
-    bottomInfo = getRequiredElementById('bottom_info');
+    backButton = SwarmUtil.getRequiredElementById('installer_button_back');
+    nextButton = SwarmUtil.getRequiredElementById('installer_button_next');
+    bottomInfo = SwarmUtil.getRequiredElementById('bottom_info');
 
     constructor() {
         let amdPart = document.getElementById('installer_section_amd');
@@ -18,7 +18,7 @@ class InstallerClass {
         this.backButton.addEventListener('click', this.back.bind(this));
         this.nextButton.addEventListener('click', this.next.bind(this));
         this.moveToPage(0);
-        for (let elem of getRequiredElementById('theme_selection_field').getElementsByClassName('form-check')) {
+        for (let elem of SwarmUtil.getRequiredElementById('theme_selection_field').getElementsByClassName('form-check')) {
             let radio = elem.getElementsByTagName('input')[0];
             elem.addEventListener('click', () => {
                 radio.click();
@@ -28,7 +28,7 @@ class InstallerClass {
         for (let elem of document.getElementsByTagName('fieldset')) {
             elem.addEventListener('change', this.check.bind(this));
         }
-        for (let elem of getRequiredElementById('install_path_selection_field').getElementsByClassName('installer-click-radio')) {
+        for (let elem of SwarmUtil.getRequiredElementById('install_path_selection_field').getElementsByClassName('installer-click-radio')) {
             let radio = elem.getElementsByTagName('input')[0];
             elem.addEventListener('click', () => {
                 radio.click();
@@ -39,7 +39,7 @@ class InstallerClass {
                 this.moveToPage(this.parts.findIndex(x => x == 'skip') + 1);
             });
         }
-        getRequiredElementById('installer_button_confirm').addEventListener('click', this.submit.bind(this));
+        SwarmUtil.getRequiredElementById('installer_button_confirm').addEventListener('click', this.submit.bind(this));
         getSession(() => {
             language = language || 'en';
             loadAndApplyTranslations();
