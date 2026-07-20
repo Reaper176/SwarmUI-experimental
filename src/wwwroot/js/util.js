@@ -1282,3 +1282,36 @@ function ansiHtml(text) {
     }
     return result;
 }
+
+// Backwards-compatible compatibility namespace. Expose commonly used helpers
+// as window.SwarmUtil so callers can migrate gradually without breaking the
+// runtime when util.js is loaded before or after other scripts.
+window.SwarmUtil = {
+    // Networking / server helpers
+    getSwarmXhrTimeoutMs: typeof getSwarmXhrTimeoutMs !== 'undefined' ? getSwarmXhrTimeoutMs : undefined,
+    sendJsonToServer: typeof sendJsonToServer !== 'undefined' ? sendJsonToServer : undefined,
+    getWSAddress: typeof getWSAddress !== 'undefined' ? getWSAddress : undefined,
+
+    // DOM / element helpers
+    createDiv: typeof createDiv !== 'undefined' ? createDiv : undefined,
+    escapeHtml: typeof escapeHtml !== 'undefined' ? escapeHtml : undefined,
+    stripHtmlToText: typeof stripHtmlToText !== 'undefined' ? stripHtmlToText : undefined,
+    getInputVal: typeof getInputVal !== 'undefined' ? getInputVal : undefined,
+    setInputVal: typeof setInputVal !== 'undefined' ? setInputVal : undefined,
+    getRadioSelectionInFieldset: typeof getRadioSelectionInFieldset !== 'undefined' ? getRadioSelectionInFieldset : undefined,
+    forceSetDropdownValue: typeof forceSetDropdownValue !== 'undefined' ? forceSetDropdownValue : undefined,
+
+    // Image helpers
+    getImageOutPrefix: typeof getImageOutPrefix !== 'undefined' ? getImageOutPrefix : undefined,
+    imageToSmallPreviewData: typeof imageToSmallPreviewData !== 'undefined' ? imageToSmallPreviewData : undefined,
+    imageToData: typeof imageToData !== 'undefined' ? imageToData : undefined,
+
+    // Utilities
+    parseCsvLine: typeof parseCsvLine !== 'undefined' ? parseCsvLine : undefined,
+    readFileText: typeof readFileText !== 'undefined' ? readFileText : undefined,
+    copyText: typeof copyText !== 'undefined' ? copyText : undefined,
+    sleep: typeof sleep !== 'undefined' ? sleep : undefined,
+    formatDateTime: typeof formatDateTime !== 'undefined' ? formatDateTime : undefined,
+    toHexString: typeof toHexString !== 'undefined' ? toHexString : undefined,
+    numberToLetters: typeof numberToLetters !== 'undefined' ? numberToLetters : undefined
+};
