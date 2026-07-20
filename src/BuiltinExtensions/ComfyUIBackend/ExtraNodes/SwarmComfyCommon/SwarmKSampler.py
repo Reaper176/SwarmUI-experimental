@@ -574,26 +574,34 @@ class SwarmKSampler:
         
         out = latent_image.copy()
         if steps > 0:
-            callback = make_swarm_sampler_callback(steps, device, model, previews)
-            sample_model = model
-            if detail_daemon is not None:
-                sampler = comfy.samplers.KSampler(model, steps=steps, device=model.load_device, sampler=sampler_name, scheduler=scheduler, denoise=1.0, model_options=model.model_options)
-                active_sigmas = sigmas if sigmas is not None else sampler.sigmas
-                if end_at_step is not None and end_at_step < (len(active_sigmas) - 1):
-                    active_sigmas = active_sigmas[:end_at_step + 1].clone()
-                    if return_with_leftover_noise == "disable":
-                        active_sigmas[-1] = 0
-                if start_at_step is not None:
-                    if start_at_step < (len(active_sigmas) - 1):
-                        active_sigmas = active_sigmas[start_at_step:]
-                    else:
-                        return (out, )
-                sample_model = detail_daemon_wrap_model(model, active_sigmas, cfg, detail_daemon)
+            global _preview_sampler_active, _last_preview_step_sent
+            with _preview_lock:
+                _preview_sampler_active = True
+                _last_preview_step_sent = -1
+            try:
+                callback = make_swarm_sampler_callback(steps, device, model, previews)
+                sample_model = model
+                if detail_daemon is not None:
+                    sampler = comfy.samplers.KSampler(model, steps=steps, device=model.load_device, sampler=sampler_name, scheduler=scheduler, denoise=1.0, model_options=model.model_options)
+                    active_sigmas = sigmas if sigmas is not None else sampler.sigmas
+                    if end_at_step is not None and end_at_step < (len(active_sigmas) - 1):
+                        active_sigmas = active_sigmas[:end_at_step + 1].clone()
+                        if return_with_leftover_noise == "disable":
+                            active_sigmas[-1] = 0
+                    if start_at_step is not None:
+                        if start_at_step < (len(active_sigmas) - 1):
+                            active_sigmas = active_sigmas[start_at_step:]
+                        else:
+                            return (out, )
+                    sample_model = detail_daemon_wrap_model(model, active_sigmas, cfg, detail_daemon)
 
-            samples = sample_sample(sample_model, noise, steps, cfg, sampler_name, scheduler, positive, negative, latent_samples,
-                                    denoise=1.0, disable_noise=disable_noise, start_step=start_at_step, last_step=end_at_step,
-                                    force_full_denoise=return_with_leftover_noise == "disable", noise_mask=noise_mask, sigmas=sigmas, callback=callback, seed=noise_seed, model_negative=model_negative)
-            out["samples"] = samples
+                samples = sample_sample(sample_model, noise, steps, cfg, sampler_name, scheduler, positive, negative, latent_samples,
+                                        denoise=1.0, disable_noise=disable_noise, start_step=start_at_step, last_step=end_at_step,
+                                        force_full_denoise=return_with_leftover_noise == "disable", noise_mask=noise_mask, sigmas=sigmas, callback=callback, seed=noise_seed, model_negative=model_negative)
+                out["samples"] = samples
+            finally:
+                with _preview_lock:
+                    _preview_sampler_active = False
         return (out, )
 
     # tiled sample version of sample function
