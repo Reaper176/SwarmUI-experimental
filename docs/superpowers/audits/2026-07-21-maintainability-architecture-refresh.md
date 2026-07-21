@@ -32,7 +32,7 @@ The read-only launcher surface has distinct platform paths. `launch-linux.sh` an
 
 ### Inventory indicators
 
-The initially prescribed repository-wide `rg --files` command returned 4,905 paths. Its literal globs did not exclude the sibling backup directory or root `node_modules`: six backup filenames and 4,353 dependency paths appeared. That raw count is retained only as command evidence. After adding explicit exclusions for both plus the four vendored files under `src/wwwroot/js/lib` and four vendored minified Bootstrap/Select2 stylesheets, the maintained-scope inventory is 538 files. The corrected extension distribution is:
+At Task 1 base, the maintained-scope inventory is 529 files. Its explicit exclusions are user `Data`, `Output`, and `Models`; `Data.pre-restore-2026-07-19`; root `node_modules`; external extensions under `src/Extensions`; downloaded code under `dlbackend` and `src/BuiltinExtensions/ComfyUIBackend/DLNodes`; generated API documentation under `docs/APIRoutes`; generated or IDE output under `src/bin`, `src/obj`, and `.vs`; and eight vendored static files: `src/wwwroot/js/lib/bootstrap.min.js`, `src/wwwroot/js/lib/exif-reader.min.js`, `src/wwwroot/js/lib/jquery.min.js`, `src/wwwroot/js/lib/select2.min.js`, `src/wwwroot/css/bootstrap.min.css`, `src/wwwroot/css/bootstrap_light.min.css`, `src/wwwroot/css/select2.min.css`, and `src/wwwroot/css/select2_bootstrap.min.css`. The corrected extension distribution is:
 
 | Extension | Files | Extension | Files |
 | --- | ---: | --- | ---: |
@@ -45,15 +45,15 @@ The initially prescribed repository-wide `rg --files` command returned 4,905 pat
 | `html` | 3 | `ico` | 1 |
 | `ipynb` | 1 | `jpg` | 55 |
 | `js` | 54 | `json` | 20 |
-| `ldb` | 3 | `md` | 103 |
+| `ldb` | 3 | `md` | 94 |
 | `png` | 39 | `props` | 2 |
 | `ps1` | 1 | `py` | 39 |
 | `sh` | 12 | `sln` | 1 |
 | `txt` | 8 | `woff2` | 3 |
 | `yml` | 1 |  |  |
 
-Two additional `LICENSE` files have no extension, bringing the table total from 536 extension-bearing files to the 538-file inventory total.
+Two additional `LICENSE` files have no extension, bringing the table total from 527 extension-bearing files to the 529-file inventory total.
 
-The requested source-line boundary—`src` files ending in `.cs`, `.js`, `.css`, `.cshtml`, or `.py`, excluding external extensions, downloaded nodes, and build output—contains 106,163 lines when the protected files are supplied from `HEAD`. Removing the eight vendored static-library files leaves 106,126 maintained-source lines in 239 files: 45,935 lines in 107 C# files; 44,156 in 52 JavaScript files; 7,980 in 27 CSS files; 3,054 in 22 Razor files; and 5,001 in 31 Python files.
+The requested source-line boundary—`src` files ending in `.cs`, `.js`, `.css`, `.cshtml`, or `.py`, excluding external extensions, downloaded nodes, build output, and the eight named vendored static files—contains 106,126 maintained-source lines in 239 files when the protected files are supplied from `HEAD`: 45,935 lines in 107 C# files; 44,156 in 52 JavaScript files; 7,980 in 27 CSS files; 3,054 in 22 Razor files; and 5,001 in 31 Python files. User-data, root dependency, generated API-documentation, and IDE-output exclusions are outside this `src` and source-extension boundary.
 
 Using `^public (static )?(class|interface|record|struct)|^    public (static )?` across maintained C# produced 2,137 public declaration matches. Using `^(let|class|function) |^window\.` across maintained `src/wwwroot/js/**/*.js` produced 998 top-level declaration/export matches; 100 came from the committed `main.js` and `loras.js` snapshots. A static `on*=` attribute search across maintained Razor produced 262 matching lines; the committed `Text2Image.cshtml` snapshot contributed none. These declaration, handler, line, file, registry, and consumer counts guide later navigation and consumer tracing. They do not, independently, prove a maintainability, compatibility, reliability, or performance finding.
