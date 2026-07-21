@@ -85,7 +85,7 @@ public static class ComfyNodeNames
     /// <summary>Comfy class name for overlap-mask cleaning.</summary>
     public const string CleanOverlapMasks = "SwarmCleanOverlapMasks";
 
-    /// <summary>Comfy class name for cleaning overlap masks except the current mask.</summary>
+    /// <summary>Comfy class name for normalizing one mask against an overmerged set of masks.</summary>
     public const string CleanOverlapMasksExceptSelf = "SwarmCleanOverlapMasksExceptSelf";
 
     /// <summary>Comfy class name for excluding one mask from another.</summary>
