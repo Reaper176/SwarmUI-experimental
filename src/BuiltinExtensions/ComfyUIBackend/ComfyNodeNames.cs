@@ -121,7 +121,7 @@ public static class ComfyNodeNames
     /// <summary>Comfy class name for thresholding masks.</summary>
     public const string MaskThreshold = "SwarmMaskThreshold";
 
-    /// <summary>Comfy class name for merging masks to correct overlaps.</summary>
+    /// <summary>Comfy class name for overmerging masks for use during overlap correction.</summary>
     public const string OverMergeMasksForOverlapFix = "SwarmOverMergeMasksForOverlapFix";
 
     /// <summary>Comfy class name for removing image backgrounds.</summary>

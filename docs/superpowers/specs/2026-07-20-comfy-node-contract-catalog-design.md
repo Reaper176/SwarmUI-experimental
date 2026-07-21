@@ -8,7 +8,7 @@ This is roadmap item 4 from the maintainability architecture audit. The project 
 
 ## Current State
 
-SwarmUI's maintained Python packages register 65 `Swarm*` node IDs through `NODE_CLASS_MAPPINGS`. C# repeats 47 of those IDs as string literals across:
+SwarmUI's maintained Python packages register 65 `Swarm*` node IDs through `NODE_CLASS_MAPPINGS`. C# repeats 46 of those IDs as string literals across:
 
 - `ComfyUIBackendExtension.cs` capability detection and object-info reads;
 - `ComfyUIAPIAbstractBackend.cs` model tracking and sampler detection;
@@ -252,7 +252,7 @@ The maintainer will validate the completed catalog migration in the live applica
 ## Success Criteria
 
 - `ComfyNodeNames` contains exactly the 65 maintained Python registration IDs with documented constants and no non-node entries.
-- Every maintained C# reference to a registered Swarm node uses the matching catalog constant.
+- Every registered Swarm-node reference in the approved built-in Comfy backend consumer surface uses the matching catalog constant.
 - `ComfyCapabilityCatalog` owns the unchanged default node-to-feature mapping and detected-node feature operation.
 - `ComfyUIBackendExtension.NodeToFeatureMap` retains its public mutable field compatibility and initializes from a new catalog dictionary.
 - Python object-info remains runtime authority for actual node and input availability.
