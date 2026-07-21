@@ -24,7 +24,7 @@ public static class ComfyNodeNames
 
     #region Inputs and loading
 
-    /// <summary>Comfy class name for providing embedded loader lists.</summary>
+    /// <summary>Comfy class name for exposing the embedding-name list through object-info.</summary>
     public const string EmbedLoaderListProvider = "SwarmEmbedLoaderListProvider";
 
     /// <summary>Comfy class name for an audio workflow input.</summary>
@@ -134,7 +134,7 @@ public static class ComfyNodeNames
 
     #region Sampling, latents, and models
 
-    /// <summary>Comfy class name for applying the AnimaLLLite animation model.</summary>
+    /// <summary>Comfy class name for applying Anima ControlNet-LLLite weights.</summary>
     public const string AnimaLLLite = "SwarmAnimaLLLite";
 
     /// <summary>Comfy class name for configuring Detail Daemon options.</summary>
