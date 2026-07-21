@@ -41,38 +41,7 @@ public class ComfyUIBackendExtension : Extension
     public static HashSet<string> FeaturesDiscardIfNotFound = ["variation_seed", "freeu", "yolov8"];
 
     /// <summary>Extensible map of ComfyUI Node IDs to supported feature IDs.</summary>
-    public static Dictionary<string, string> NodeToFeatureMap = new()
-    {
-        ["SwarmLoadImageB64"] = "comfy_loadimage_b64",
-        ["SwarmSaveImageWS"] = "comfy_saveimage_ws",
-        ["SwarmJustLoadTheModelPlease"] = "comfy_just_load_model",
-        ["SwarmLatentBlendMasked"] = "comfy_latent_blend_masked",
-        ["SwarmKSampler"] = "variation_seed",
-        ["FreeU"] = "freeu",
-        ["AITemplateLoader"] = "aitemplate",
-        ["IPAdapter"] = "ipadapter",
-        ["IPAdapterApply"] = "ipadapter",
-        ["IPAdapterModelLoader"] = "cubiqipadapter",
-        ["IPAdapterUnifiedLoader"] = "cubiqipadapterunified",
-        ["MiDaS-DepthMapPreprocessor"] = "controlnetpreprocessors",
-        ["RIFE VFI"] = "frameinterps",
-        ["GIMMVFI_interpolate"] = "frameinterps_gimmvfi",
-        ["SAM3Segmentation"] = "sam3",
-        ["SAM3Grounding"] = "sam3",
-        ["SwarmYoloDetection"] = "yolov8",
-        ["PixArtCheckpointLoader"] = "extramodelspixart",
-        ["SanaCheckpointLoader"] = "extramodelssana",
-        ["CheckpointLoaderNF4"] = "bnb_nf4",
-        ["UnetLoaderGGUF"] = "gguf",
-        ["NunchakuFluxDiTLoader"] = "nunchaku",
-        ["TensorRTLoader"] = "tensorrt",
-        ["TeaCache"] = "teacache",
-        ["TeaCacheForVidGen"] = "teacache",
-        ["TeaCacheForImgGen"] = "teacache_oldvers",
-        ["OverrideCLIPDevice"] = "set_clip_device",
-        ["INPAINT_LoadInpaintModel"] = "inpaintnodes",
-        ["INPAINT_InpaintWithModel"] = "inpaintnodes"
-    };
+    public static Dictionary<string, string> NodeToFeatureMap = ComfyCapabilityCatalog.CreateNodeToFeatureMap();
 
     /// <inheritdoc/>
     public override void OnPreInit()
@@ -513,7 +482,7 @@ public class ComfyUIBackendExtension : Extension
             {
                 T2IParamTypes.ConcatDropdownValsClean(ref UpscalerModels, latentUpscaleModels.Select(u => $"latentmodel-{u}///Latent Model: {u}"));
             }
-            if (TryGetRequiredInputs(rawObjectInfo, "SwarmKSampler", "sampler_name", out JToken swarmksamplerNames))
+            if (TryGetRequiredInputs(rawObjectInfo, ComfyNodeNames.KSampler, "sampler_name", out JToken swarmksamplerNames))
             {
                 string[] dropped = [.. Samplers.Select(s => s.Before("///")).Except([.. swarmksamplerNames.Select(u => $"{u}")])];
                 if (dropped.Any())
@@ -522,7 +491,7 @@ public class ComfyUIBackendExtension : Extension
                 }
                 T2IParamTypes.ConcatDropdownValsClean(ref Samplers, swarmksamplerNames.Select(u => $"{u}///{u} (New)"));
             }
-            if (TryGetRequiredInputs(rawObjectInfo, "SwarmKSampler", "scheduler", out JToken swarmksamplerSchedulers))
+            if (TryGetRequiredInputs(rawObjectInfo, ComfyNodeNames.KSampler, "scheduler", out JToken swarmksamplerSchedulers))
             {
                 T2IParamTypes.ConcatDropdownValsClean(ref Schedulers, swarmksamplerSchedulers.Select(u => $"{u}///{u} (New)"));
             }
@@ -564,7 +533,7 @@ public class ComfyUIBackendExtension : Extension
             {
                 T2IParamTypes.ConcatDropdownValsClean(ref StyleModels, styleModelLoader.Select(m => $"{m}"));
             }
-            if (TryGetRequiredInputs(rawObjectInfo, "SwarmYoloDetection", "model_name", out JToken yoloDetection))
+            if (TryGetRequiredInputs(rawObjectInfo, ComfyNodeNames.YoloDetection, "model_name", out JToken yoloDetection))
             {
                 T2IParamTypes.ConcatDropdownValsClean(ref YoloModels, yoloDetection.Select(m => $"{m}"));
             }
@@ -586,11 +555,7 @@ public class ComfyUIBackendExtension : Extension
                 {
                     ControlNetPreprocessors[key] = data;
                 }
-                if (NodeToFeatureMap.TryGetValue(key, out string featureId))
-                {
-                    FeaturesSupported.Add(featureId);
-                    FeaturesDiscardIfNotFound.Remove(featureId);
-                }
+                ComfyCapabilityCatalog.ApplyDetectedNodeFeature(key, NodeToFeatureMap, FeaturesSupported, FeaturesDiscardIfNotFound);
             }
             DetectHookLoraSchedulingSupport(rawObjectInfo);
             foreach (string feature in FeaturesDiscardIfNotFound)
