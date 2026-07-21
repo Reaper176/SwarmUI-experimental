@@ -252,14 +252,14 @@ public class WorkflowGeneratorSteps
                 else if (tileable == "Y-Only") { mode = "Y"; }
                 string tiling = g.CreateNode(ComfyNodeNames.ModelTiling, new JObject()
                 {
-                    ["model"] = g.LoadingModel,
-                    ["tile_axis"] = mode
+                    [ComfyNodeInputNames.ModelTiling.Model] = g.LoadingModel,
+                    [ComfyNodeInputNames.ModelTiling.TileAxis] = mode
                 });
                 g.LoadingModel = [tiling, 0];
                 string tilingVae = g.CreateNode(ComfyNodeNames.TileableVAE, new JObject()
                 {
-                    ["vae"] = g.LoadingVAE,
-                    ["tile_axis"] = mode
+                    [ComfyNodeInputNames.TileableVAE.VAE] = g.LoadingVAE,
+                    [ComfyNodeInputNames.TileableVAE.TileAxis] = mode
                 });
                 g.LoadingVAE = [tilingVae, 0];
             }
@@ -412,17 +412,17 @@ public class WorkflowGeneratorSteps
                     {
                         maskImageNode = g.CreateNode(ComfyNodeNames.MaskGrow, new JObject()
                         {
-                            ["mask"] = NodePath(maskImageNode, 0),
-                            ["grow"] = growAmount,
+                            [ComfyNodeInputNames.MaskGrow.Mask] = NodePath(maskImageNode, 0),
+                            [ComfyNodeInputNames.MaskGrow.Grow] = growAmount,
                         });
                     }
                     if (g.UserInput.TryGet(T2IParamTypes.MaskBlur, out int blurAmount))
                     {
                         maskImageNode = g.CreateNode(ComfyNodeNames.MaskBlur, new JObject()
                         {
-                            ["mask"] = NodePath(maskImageNode, 0),
-                            ["blur_radius"] = blurAmount,
-                            ["sigma"] = 1.0
+                            [ComfyNodeInputNames.MaskBlur.Mask] = NodePath(maskImageNode, 0),
+                            [ComfyNodeInputNames.MaskBlur.BlurRadius] = blurAmount,
+                            [ComfyNodeInputNames.MaskBlur.Sigma] = 1.0
                         });
                     }
                     g.FinalMask = [maskImageNode, 0];
@@ -434,20 +434,20 @@ public class WorkflowGeneratorSteps
                 {
                     JObject noiseInput = new()
                     {
-                        ["image"] = g.BasicInputImage.Path,
-                        ["amount"] = initNoise,
-                        ["seed"] = g.UserInput.Get(T2IParamTypes.Seed, 0) + 327
+                        [ComfyNodeInputNames.ImageNoise.Image] = g.BasicInputImage.Path,
+                        [ComfyNodeInputNames.ImageNoise.Amount] = initNoise,
+                        [ComfyNodeInputNames.ImageNoise.Seed] = g.UserInput.Get(T2IParamTypes.Seed, 0) + 327
                     };
                     if (currentMask is not null)
                     {
                         // cut the edges of a blurred mask back to make recompositing cleaner
                         string thresholded = g.CreateNode(ComfyNodeNames.MaskThreshold, new JObject()
                         {
-                            ["mask"] = currentMask,
-                            ["min"] = 0.5,
-                            ["max"] = 1.0
+                            [ComfyNodeInputNames.MaskThreshold.Mask] = currentMask,
+                            [ComfyNodeInputNames.MaskThreshold.Min] = 0.5,
+                            [ComfyNodeInputNames.MaskThreshold.Max] = 1.0
                         });
-                        noiseInput["mask"] = NodePath(thresholded, 0);
+                        noiseInput[ComfyNodeInputNames.ImageNoise.Mask] = NodePath(thresholded, 0);
                     }
                     string noised = g.CreateNode(ComfyNodeNames.ImageNoise, noiseInput);
                     g.BasicInputImage = g.BasicInputImage.WithPath([noised, 0]);
@@ -488,15 +488,15 @@ public class WorkflowGeneratorSteps
                     g.CurrentMedia = g.CurrentMedia.AsLatentImage(g.CurrentVae);
                     string unsampler = g.CreateNode(ComfyNodeNames.Unsampler, new JObject()
                     {
-                        ["model"] = g.CurrentModel.Path,
-                        ["steps"] = steps,
-                        ["sampler_name"] = g.UserInput.Get(ComfyUIBackendExtension.SamplerParam, "euler"),
-                        ["scheduler"] = g.UserInput.Get(ComfyUIBackendExtension.SchedulerParam, "normal"),
-                        ["positive"] = posCond,
-                        ["negative"] = negCond,
-                        ["latent_image"] = g.CurrentMedia.Path,
-                        ["start_at_step"] = startStep,
-                        ["previews"] = g.UserInput.Get(T2IParamTypes.NoPreviews) ? "none" : "default"
+                        [ComfyNodeInputNames.Unsampler.Model] = g.CurrentModel.Path,
+                        [ComfyNodeInputNames.Unsampler.Steps] = steps,
+                        [ComfyNodeInputNames.Unsampler.SamplerName] = g.UserInput.Get(ComfyUIBackendExtension.SamplerParam, "euler"),
+                        [ComfyNodeInputNames.Unsampler.Scheduler] = g.UserInput.Get(ComfyUIBackendExtension.SchedulerParam, "normal"),
+                        [ComfyNodeInputNames.Unsampler.Positive] = posCond,
+                        [ComfyNodeInputNames.Unsampler.Negative] = negCond,
+                        [ComfyNodeInputNames.Unsampler.LatentImage] = g.CurrentMedia.Path,
+                        [ComfyNodeInputNames.Unsampler.StartAtStep] = startStep,
+                        [ComfyNodeInputNames.Unsampler.Previews] = g.UserInput.Get(T2IParamTypes.NoPreviews) ? "none" : "default"
                     });
                     g.CurrentMedia = g.CurrentMedia.WithPath([unsampler, 0]);
                     g.MainSamplerAddNoise = false;
@@ -523,10 +523,10 @@ public class WorkflowGeneratorSteps
                     {
                         string blended = g.CreateNode(ComfyNodeNames.LatentBlendMasked, new JObject()
                         {
-                            ["samples0"] = g.CurrentMedia.Path,
-                            ["samples1"] = NodePath(emptyImg, 0),
-                            ["mask"] = currentMask,
-                            ["blend_factor"] = resetFactor
+                            [ComfyNodeInputNames.LatentBlendMasked.Samples0] = g.CurrentMedia.Path,
+                            [ComfyNodeInputNames.LatentBlendMasked.Samples1] = NodePath(emptyImg, 0),
+                            [ComfyNodeInputNames.LatentBlendMasked.Mask] = currentMask,
+                            [ComfyNodeInputNames.LatentBlendMasked.BlendFactor] = resetFactor
                         });
                         g.CurrentMedia = g.CurrentMedia.WithPath([blended, 0]);
                     }
@@ -556,7 +556,7 @@ public class WorkflowGeneratorSteps
                     {
                         string frameCountNode = g.CreateNode(ComfyNodeNames.CountFrames, new JObject()
                         {
-                            ["image"] = g.CurrentMedia.AsRawImage(g.CurrentVae).Path
+                            [ComfyNodeInputNames.CountFrames.Image] = g.CurrentMedia.AsRawImage(g.CurrentVae).Path
                         });
                         string emptyAudio = g.CreateNode("LTXVEmptyLatentAudio", new JObject()
                         {
@@ -734,9 +734,9 @@ public class WorkflowGeneratorSteps
                     g.CurrentMedia = g.CurrentMedia.AsLatentImage(g.CurrentVae);
                     string referencedModel = g.CreateNode(ComfyNodeNames.ReferenceOnly, new JObject()
                     {
-                        ["model"] = g.CurrentModel.Path,
-                        ["reference"] = lastEncoded.Path,
-                        ["latent"] = g.CurrentMedia.Path
+                        [ComfyNodeInputNames.ReferenceOnly.Model] = g.CurrentModel.Path,
+                        [ComfyNodeInputNames.ReferenceOnly.Reference] = lastEncoded.Path,
+                        [ComfyNodeInputNames.ReferenceOnly.Latent] = g.CurrentMedia.Path
                     });
                     g.CurrentModel = g.CurrentModel.WithPath([referencedModel, 0]);
                     g.CurrentMedia = g.CurrentMedia.WithPath([referencedModel, 1]);
@@ -1098,10 +1098,10 @@ public class WorkflowGeneratorSteps
                             int fps = g.Text2VideoFPS();
                             string resampleNode = g.CreateNode(ComfyNodeNames.VideoResampleFPS, new JObject()
                             {
-                                ["images"] = imageNodeActual.Path,
-                                ["fps_in"] = imageNodeActual.FPS,
-                                ["fps_out"] = fps,
-                                ["method"] = "linear"
+                                [ComfyNodeInputNames.VideoResampleFPS.Images] = imageNodeActual.Path,
+                                [ComfyNodeInputNames.VideoResampleFPS.FPSIn] = imageNodeActual.FPS,
+                                [ComfyNodeInputNames.VideoResampleFPS.FPSOut] = fps,
+                                [ComfyNodeInputNames.VideoResampleFPS.Method] = "linear"
                             });
                             imageNodeActual = imageNodeActual.WithPath([resampleNode, 0]);
                             imageNodeActual.FPS = fps;
@@ -1164,16 +1164,16 @@ public class WorkflowGeneratorSteps
                     {
                         JObject animaInputs = new()
                         {
-                            ["model"] = g.CurrentModel.Path,
-                            ["lllite_name"] = controlModel.ToString(g.ModelFolderFormat),
-                            ["image"] = imageNodeActual.Path,
-                            ["strength"] = controlStrength,
-                            ["start_percent"] = g.UserInput.Get(controlnetParams.Start, 0),
-                            ["end_percent"] = g.UserInput.Get(controlnetParams.End, 1)
+                            [ComfyNodeInputNames.AnimaLLLite.Model] = g.CurrentModel.Path,
+                            [ComfyNodeInputNames.AnimaLLLite.LLLiteName] = controlModel.ToString(g.ModelFolderFormat),
+                            [ComfyNodeInputNames.AnimaLLLite.Image] = imageNodeActual.Path,
+                            [ComfyNodeInputNames.AnimaLLLite.Strength] = controlStrength,
+                            [ComfyNodeInputNames.AnimaLLLite.StartPercent] = g.UserInput.Get(controlnetParams.Start, 0),
+                            [ComfyNodeInputNames.AnimaLLLite.EndPercent] = g.UserInput.Get(controlnetParams.End, 1)
                         };
                         if (g.FinalMask is not null)
                         {
-                            animaInputs["mask"] = g.FinalMask;
+                            animaInputs[ComfyNodeInputNames.AnimaLLLite.Mask] = g.FinalMask;
                         }
                         string animaControlNode = g.CreateNode(ComfyNodeNames.AnimaLLLite, animaInputs);
                         g.CurrentModel = g.CurrentModel.WithPath([animaControlNode, 0]);
@@ -1303,9 +1303,9 @@ public class WorkflowGeneratorSteps
             string modelNode = g.CreateNode("LoadSAM3Model", ComfyUIBackendExtension.Sam3ModelInputs());
             string posNode = g.CreateNode(ComfyNodeNames.Sam3PointsFromJson, new JObject()
             {
-                ["image"] = imageNodeActual,
-                ["points_json"] = coords,
-                ["is_foreground"] = true
+                [ComfyNodeInputNames.Sam3PointsFromJson.Image] = imageNodeActual,
+                [ComfyNodeInputNames.Sam3PointsFromJson.PointsJson] = coords,
+                [ComfyNodeInputNames.Sam3PointsFromJson.IsForeground] = true
             });
             JObject segInputs = new()
             {
@@ -1320,18 +1320,18 @@ public class WorkflowGeneratorSteps
             {
                 string negNode = g.CreateNode(ComfyNodeNames.Sam3PointsFromJson, new JObject()
                 {
-                    ["image"] = imageNodeActual,
-                    ["points_json"] = negCoords,
-                    ["is_foreground"] = false
+                    [ComfyNodeInputNames.Sam3PointsFromJson.Image] = imageNodeActual,
+                    [ComfyNodeInputNames.Sam3PointsFromJson.PointsJson] = negCoords,
+                    [ComfyNodeInputNames.Sam3PointsFromJson.IsForeground] = false
                 });
                 segInputs["negative_points"] = NodePath(negNode, 0);
             }
             string segNode = g.CreateNode("SAM3Segmentation", segInputs);
             string postNode = g.CreateNode(ComfyNodeNames.Sam3MaskPostProcess, new JObject()
             {
-                ["mask"] = NodePath(segNode, 0),
-                ["fill_holes"] = true,
-                ["hole_kernel_size"] = 9
+                [ComfyNodeInputNames.Sam3MaskPostProcess.Mask] = NodePath(segNode, 0),
+                [ComfyNodeInputNames.Sam3MaskPostProcess.FillHoles] = true,
+                [ComfyNodeInputNames.Sam3MaskPostProcess.HoleKernelSize] = 9
             });
             string maskNode = g.CreateNode("MaskToImage", new JObject()
             {
@@ -1354,8 +1354,8 @@ public class WorkflowGeneratorSteps
             string modelNode = g.CreateNode("LoadSAM3Model", ComfyUIBackendExtension.Sam3ModelInputs());
             string bboxNode = g.CreateNode(ComfyNodeNames.Sam3BBoxFromJson, new JObject()
             {
-                ["image"] = imageNodeActual,
-                ["bbox_json"] = bboxJson
+                [ComfyNodeInputNames.Sam3BBoxFromJson.Image] = imageNodeActual,
+                [ComfyNodeInputNames.Sam3BBoxFromJson.BBoxJson] = bboxJson
             });
             JObject segInputs = new()
             {
@@ -1369,9 +1369,9 @@ public class WorkflowGeneratorSteps
             string segNode = g.CreateNode("SAM3Segmentation", segInputs);
             string postNode = g.CreateNode(ComfyNodeNames.Sam3MaskPostProcess, new JObject()
             {
-                ["mask"] = NodePath(segNode, 0),
-                ["fill_holes"] = true,
-                ["hole_kernel_size"] = 5
+                [ComfyNodeInputNames.Sam3MaskPostProcess.Mask] = NodePath(segNode, 0),
+                [ComfyNodeInputNames.Sam3MaskPostProcess.FillHoles] = true,
+                [ComfyNodeInputNames.Sam3MaskPostProcess.HoleKernelSize] = 5
             });
             string maskNode = g.CreateNode("MaskToImage", new JObject()
             {
@@ -1408,9 +1408,9 @@ public class WorkflowGeneratorSteps
             });
             string postNode = g.CreateNode(ComfyNodeNames.Sam3MaskPostProcess, new JObject()
             {
-                ["mask"] = NodePath(segNode, 0),
-                ["fill_holes"] = true,
-                ["hole_kernel_size"] = 5
+                [ComfyNodeInputNames.Sam3MaskPostProcess.Mask] = NodePath(segNode, 0),
+                [ComfyNodeInputNames.Sam3MaskPostProcess.FillHoles] = true,
+                [ComfyNodeInputNames.Sam3MaskPostProcess.HoleKernelSize] = 5
             });
             string maskNode = g.CreateNode("MaskToImage", new JObject()
             {
@@ -1479,9 +1479,9 @@ public class WorkflowGeneratorSteps
             {
                 g.CreateNode(ComfyNodeNames.JustLoadTheModelPlease, new JObject()
                 {
-                    ["model"] = g.CurrentModel.Path,
-                    ["clip"] = g.CurrentTextEnc.Path,
-                    ["vae"] = g.CurrentVae.Path
+                    [ComfyNodeInputNames.JustLoadTheModelPlease.Model] = g.CurrentModel.Path,
+                    [ComfyNodeInputNames.JustLoadTheModelPlease.CLIP] = g.CurrentTextEnc.Path,
+                    [ComfyNodeInputNames.JustLoadTheModelPlease.VAE] = g.CurrentVae.Path
                 });
             }
             else if (steps > 0 && Math.Min(endStep, steps) > startStep)
@@ -1868,12 +1868,12 @@ public class WorkflowGeneratorSteps
                             }
                             newSegmentNode = g.CreateNode(ComfyNodeNames.YoloDetection, new JObject()
                             {
-                                ["image"] = g.CurrentMedia.Path,
-                                ["model_name"] = fullname,
-                                ["index"] = index,
-                                ["class_filter"] = classFilter,
-                                ["sort_order"] = g.UserInput.Get(T2IParamTypes.SegmentSortOrder, "left-right"),
-                                ["threshold"] = Math.Abs(part.Strength)
+                                [ComfyNodeInputNames.YoloDetection.Image] = g.CurrentMedia.Path,
+                                [ComfyNodeInputNames.YoloDetection.ModelName] = fullname,
+                                [ComfyNodeInputNames.YoloDetection.Index] = index,
+                                [ComfyNodeInputNames.YoloDetection.ClassFilter] = classFilter,
+                                [ComfyNodeInputNames.YoloDetection.SortOrder] = g.UserInput.Get(T2IParamTypes.SegmentSortOrder, "left-right"),
+                                [ComfyNodeInputNames.YoloDetection.Threshold] = Math.Abs(part.Strength)
                             });
                         }
                         else if (dataText.StartsWith("sam3-"))
@@ -1889,18 +1889,18 @@ public class WorkflowGeneratorSteps
                             });
                             newSegmentNode = g.CreateNode(ComfyNodeNames.Sam3MaskPostProcess, new JObject()
                             {
-                                ["mask"] = NodePath(sam3SegmentNode, 0),
-                                ["fill_holes"] = true,
-                                ["hole_kernel_size"] = 5
+                                [ComfyNodeInputNames.Sam3MaskPostProcess.Mask] = NodePath(sam3SegmentNode, 0),
+                                [ComfyNodeInputNames.Sam3MaskPostProcess.FillHoles] = true,
+                                [ComfyNodeInputNames.Sam3MaskPostProcess.HoleKernelSize] = 5
                             });
                         }
                         else
                         {
                             newSegmentNode = g.CreateNode(ComfyNodeNames.ClipSeg, new JObject()
                             {
-                                ["images"] = g.CurrentMedia.Path,
-                                ["match_text"] = dataText,
-                                ["threshold"] = Math.Abs(part.Strength)
+                                [ComfyNodeInputNames.ClipSeg.Images] = g.CurrentMedia.Path,
+                                [ComfyNodeInputNames.ClipSeg.MatchText] = dataText,
+                                [ComfyNodeInputNames.ClipSeg.Threshold] = Math.Abs(part.Strength)
                             });
                         }
                         if (segmentSections.Length > 1 && g.UserInput.Get(T2IParamTypes.SaveSegmentMask, false))
@@ -1939,9 +1939,9 @@ public class WorkflowGeneratorSteps
                     {
                         segmentNode = g.CreateNode(ComfyNodeNames.MaskBlur, new JObject()
                         {
-                            ["mask"] = NodePath(segmentNode, 0),
-                            ["blur_radius"] = blurAmt,
-                            ["sigma"] = 1
+                            [ComfyNodeInputNames.MaskBlur.Mask] = NodePath(segmentNode, 0),
+                            [ComfyNodeInputNames.MaskBlur.BlurRadius] = blurAmt,
+                            [ComfyNodeInputNames.MaskBlur.Sigma] = 1
                         });
                     }
                     int growAmt = g.UserInput.Get(T2IParamTypes.SegmentMaskGrow, 16);
@@ -2024,9 +2024,9 @@ public class WorkflowGeneratorSteps
                 }
                 string segmentNode = g.CreateNode(ComfyNodeNames.ClipSeg, new JObject()
                 {
-                    ["images"] = g.CurrentMedia.Path,
-                    ["match_text"] = part.DataText,
-                    ["threshold"] = Math.Abs(part.Strength)
+                    [ComfyNodeInputNames.ClipSeg.Images] = g.CurrentMedia.Path,
+                    [ComfyNodeInputNames.ClipSeg.MatchText] = part.DataText,
+                    [ComfyNodeInputNames.ClipSeg.Threshold] = Math.Abs(part.Strength)
                 });
                 if (part.Strength < 0)
                 {
@@ -2037,15 +2037,15 @@ public class WorkflowGeneratorSteps
                 }
                 string blurNode = g.CreateNode(ComfyNodeNames.MaskBlur, new JObject()
                 {
-                    ["mask"] = NodePath(segmentNode, 0),
-                    ["blur_radius"] = 10,
-                    ["sigma"] = 1
+                    [ComfyNodeInputNames.MaskBlur.Mask] = NodePath(segmentNode, 0),
+                    [ComfyNodeInputNames.MaskBlur.BlurRadius] = 10,
+                    [ComfyNodeInputNames.MaskBlur.Sigma] = 1
                 });
                 string thresholded = g.CreateNode(ComfyNodeNames.MaskThreshold, new JObject()
                 {
-                    ["mask"] = NodePath(blurNode, 0),
-                    ["min"] = 0.2,
-                    ["max"] = 0.6
+                    [ComfyNodeInputNames.MaskThreshold.Mask] = NodePath(blurNode, 0),
+                    [ComfyNodeInputNames.MaskThreshold.Min] = 0.2,
+                    [ComfyNodeInputNames.MaskThreshold.Max] = 0.6
                 });
                 string joined = g.CreateNode("JoinImageWithAlpha", new JObject()
                 {
@@ -2062,7 +2062,7 @@ public class WorkflowGeneratorSteps
                 }
                 string removed = g.CreateNode(ComfyNodeNames.RemBg, new JObject()
                 {
-                    ["images"] = g.CurrentMedia.Path
+                    [ComfyNodeInputNames.RemBg.Images] = g.CurrentMedia.Path
                 });
                 g.CurrentMedia = g.CurrentMedia.WithPath([removed, 0]);
             }
@@ -2081,9 +2081,9 @@ public class WorkflowGeneratorSteps
                     {
                         string trimNode = g.CreateNode(ComfyNodeNames.TrimFrames, new JObject()
                         {
-                            ["image"] = g.CurrentMedia.Path,
-                            ["trim_start"] = g.UserInput.Get(T2IParamTypes.TrimVideoStartFrames, 0),
-                            ["trim_end"] = g.UserInput.Get(T2IParamTypes.TrimVideoEndFrames, 0)
+                            [ComfyNodeInputNames.TrimFrames.Image] = g.CurrentMedia.Path,
+                            [ComfyNodeInputNames.TrimFrames.TrimStart] = g.UserInput.Get(T2IParamTypes.TrimVideoStartFrames, 0),
+                            [ComfyNodeInputNames.TrimFrames.TrimEnd] = g.UserInput.Get(T2IParamTypes.TrimVideoEndFrames, 0)
                         });
                         g.CurrentMedia = g.CurrentMedia.WithPath([trimNode, 0]);
                     }
@@ -2263,12 +2263,12 @@ public class WorkflowGeneratorSteps
                 WGNodeData conjoinedAudio = ensureAttachedAudio(conjoinedLast)?.AttachedAudio;
                 string getWidthNode = g.CreateNode(ComfyNodeNames.ImageWidth, new JObject()
                 {
-                    ["image"] = g.CurrentMedia.Path
+                    [ComfyNodeInputNames.ImageWidth.Image] = g.CurrentMedia.Path
                 });
                 JArray width = [getWidthNode, 0];
                 string getHeightNode = g.CreateNode(ComfyNodeNames.ImageHeight, new JObject()
                 {
-                    ["image"] = g.CurrentMedia.Path
+                    [ComfyNodeInputNames.ImageHeight.Image] = g.CurrentMedia.Path
                 });
                 JArray height = [getHeightNode, 0];
                 PromptRegion.Part[] parts = [.. regionalizer.Parts.Where(p => p.Type == PromptRegion.PartType.Extend)];
@@ -2282,13 +2282,13 @@ public class WorkflowGeneratorSteps
                     string prompt = part.Prompt;
                     string frameCountNode = g.CreateNode(ComfyNodeNames.CountFrames, new JObject()
                     {
-                        ["image"] = g.CurrentMedia.Path
+                        [ComfyNodeInputNames.CountFrames.Image] = g.CurrentMedia.Path
                     });
                     JArray frameCount = [frameCountNode, 0];
                     string fromEndCountNode = g.CreateNode(ComfyNodeNames.IntAdd, new JObject()
                     {
-                        ["a"] = frameCount,
-                        ["b"] = -frameExtendOverlap
+                        [ComfyNodeInputNames.IntAdd.A] = frameCount,
+                        [ComfyNodeInputNames.IntAdd.B] = -frameExtendOverlap
                     });
                     JArray fromEndCount = [fromEndCountNode, 0];
                     string partialBatchNode = g.CreateNode("ImageFromBatch", new JObject()
