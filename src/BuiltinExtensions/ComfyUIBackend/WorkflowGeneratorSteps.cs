@@ -250,13 +250,13 @@ public class WorkflowGeneratorSteps
                 string mode = "Both";
                 if (tileable == "X-Only") { mode = "X"; }
                 else if (tileable == "Y-Only") { mode = "Y"; }
-                string tiling = g.CreateNode("SwarmModelTiling", new JObject()
+                string tiling = g.CreateNode(ComfyNodeNames.ModelTiling, new JObject()
                 {
                     ["model"] = g.LoadingModel,
                     ["tile_axis"] = mode
                 });
                 g.LoadingModel = [tiling, 0];
-                string tilingVae = g.CreateNode("SwarmTileableVAE", new JObject()
+                string tilingVae = g.CreateNode(ComfyNodeNames.TileableVAE, new JObject()
                 {
                     ["vae"] = g.LoadingVAE,
                     ["tile_axis"] = mode
@@ -410,7 +410,7 @@ public class WorkflowGeneratorSteps
                     g.EnableDifferential();
                     if (g.UserInput.TryGet(T2IParamTypes.MaskGrow, out int growAmount))
                     {
-                        maskImageNode = g.CreateNode("SwarmMaskGrow", new JObject()
+                        maskImageNode = g.CreateNode(ComfyNodeNames.MaskGrow, new JObject()
                         {
                             ["mask"] = NodePath(maskImageNode, 0),
                             ["grow"] = growAmount,
@@ -418,7 +418,7 @@ public class WorkflowGeneratorSteps
                     }
                     if (g.UserInput.TryGet(T2IParamTypes.MaskBlur, out int blurAmount))
                     {
-                        maskImageNode = g.CreateNode("SwarmMaskBlur", new JObject()
+                        maskImageNode = g.CreateNode(ComfyNodeNames.MaskBlur, new JObject()
                         {
                             ["mask"] = NodePath(maskImageNode, 0),
                             ["blur_radius"] = blurAmount,
@@ -441,7 +441,7 @@ public class WorkflowGeneratorSteps
                     if (currentMask is not null)
                     {
                         // cut the edges of a blurred mask back to make recompositing cleaner
-                        string thresholded = g.CreateNode("SwarmMaskThreshold", new JObject()
+                        string thresholded = g.CreateNode(ComfyNodeNames.MaskThreshold, new JObject()
                         {
                             ["mask"] = currentMask,
                             ["min"] = 0.5,
@@ -449,7 +449,7 @@ public class WorkflowGeneratorSteps
                         });
                         noiseInput["mask"] = NodePath(thresholded, 0);
                     }
-                    string noised = g.CreateNode("SwarmImageNoise", noiseInput);
+                    string noised = g.CreateNode(ComfyNodeNames.ImageNoise, noiseInput);
                     g.BasicInputImage = g.BasicInputImage.WithPath([noised, 0]);
                 }
                 if (currentMask is not null)
@@ -486,7 +486,7 @@ public class WorkflowGeneratorSteps
                     JArray posCond = g.CreateConditioning(unprompt, g.CurrentTextEnc.Path, g.FinalLoadedModel, true);
                     JArray negCond = g.CreateConditioning(g.UserInput.Get(T2IParamTypes.NegativePrompt, ""), g.CurrentTextEnc.Path, g.FinalLoadedModel, false);
                     g.CurrentMedia = g.CurrentMedia.AsLatentImage(g.CurrentVae);
-                    string unsampler = g.CreateNode("SwarmUnsampler", new JObject()
+                    string unsampler = g.CreateNode(ComfyNodeNames.Unsampler, new JObject()
                     {
                         ["model"] = g.CurrentModel.Path,
                         ["steps"] = steps,
@@ -521,7 +521,7 @@ public class WorkflowGeneratorSteps
                     string emptyImg = g.CreateEmptyImage(g.UserInput.GetImageWidth(), g.UserInput.GetImageHeight(), batchSize);
                     if (g.Features.Contains("comfy_latent_blend_masked") && currentMask is not null)
                     {
-                        string blended = g.CreateNode("SwarmLatentBlendMasked", new JObject()
+                        string blended = g.CreateNode(ComfyNodeNames.LatentBlendMasked, new JObject()
                         {
                             ["samples0"] = g.CurrentMedia.Path,
                             ["samples1"] = NodePath(emptyImg, 0),
@@ -554,7 +554,7 @@ public class WorkflowGeneratorSteps
                 {
                     if (g.CurrentMedia.DataType == WGNodeData.DT_VIDEO)
                     {
-                        string frameCountNode = g.CreateNode("SwarmCountFrames", new JObject()
+                        string frameCountNode = g.CreateNode(ComfyNodeNames.CountFrames, new JObject()
                         {
                             ["image"] = g.CurrentMedia.AsRawImage(g.CurrentVae).Path
                         });
@@ -732,7 +732,7 @@ public class WorkflowGeneratorSteps
                         lastEncoded = lastEncoded.WithPath([newBatched, 0]);
                     }
                     g.CurrentMedia = g.CurrentMedia.AsLatentImage(g.CurrentVae);
-                    string referencedModel = g.CreateNode("SwarmReferenceOnly", new JObject()
+                    string referencedModel = g.CreateNode(ComfyNodeNames.ReferenceOnly, new JObject()
                     {
                         ["model"] = g.CurrentModel.Path,
                         ["reference"] = lastEncoded.Path,
@@ -1096,7 +1096,7 @@ public class WorkflowGeneratorSteps
                         if (imageNodeActual.DataType == WGNodeData.DT_VIDEO && imageNodeActual.FPS is not null)
                         {
                             int fps = g.Text2VideoFPS();
-                            string resampleNode = g.CreateNode("SwarmVideoResampleFPS", new JObject()
+                            string resampleNode = g.CreateNode(ComfyNodeNames.VideoResampleFPS, new JObject()
                             {
                                 ["images"] = imageNodeActual.Path,
                                 ["fps_in"] = imageNodeActual.FPS,
@@ -1175,7 +1175,7 @@ public class WorkflowGeneratorSteps
                         {
                             animaInputs["mask"] = g.FinalMask;
                         }
-                        string animaControlNode = g.CreateNode("SwarmAnimaLLLite", animaInputs);
+                        string animaControlNode = g.CreateNode(ComfyNodeNames.AnimaLLLite, animaInputs);
                         g.CurrentModel = g.CurrentModel.WithPath([animaControlNode, 0]);
                         continue;
                     }
@@ -1301,7 +1301,7 @@ public class WorkflowGeneratorSteps
                 return;
             }
             string modelNode = g.CreateNode("LoadSAM3Model", ComfyUIBackendExtension.Sam3ModelInputs());
-            string posNode = g.CreateNode("SwarmSam3PointsFromJson", new JObject()
+            string posNode = g.CreateNode(ComfyNodeNames.Sam3PointsFromJson, new JObject()
             {
                 ["image"] = imageNodeActual,
                 ["points_json"] = coords,
@@ -1318,7 +1318,7 @@ public class WorkflowGeneratorSteps
             };
             if (negCoords is not null)
             {
-                string negNode = g.CreateNode("SwarmSam3PointsFromJson", new JObject()
+                string negNode = g.CreateNode(ComfyNodeNames.Sam3PointsFromJson, new JObject()
                 {
                     ["image"] = imageNodeActual,
                     ["points_json"] = negCoords,
@@ -1327,7 +1327,7 @@ public class WorkflowGeneratorSteps
                 segInputs["negative_points"] = NodePath(negNode, 0);
             }
             string segNode = g.CreateNode("SAM3Segmentation", segInputs);
-            string postNode = g.CreateNode("SwarmSam3MaskPostProcess", new JObject()
+            string postNode = g.CreateNode(ComfyNodeNames.Sam3MaskPostProcess, new JObject()
             {
                 ["mask"] = NodePath(segNode, 0),
                 ["fill_holes"] = true,
@@ -1352,7 +1352,7 @@ public class WorkflowGeneratorSteps
                 return;
             }
             string modelNode = g.CreateNode("LoadSAM3Model", ComfyUIBackendExtension.Sam3ModelInputs());
-            string bboxNode = g.CreateNode("SwarmSam3BBoxFromJson", new JObject()
+            string bboxNode = g.CreateNode(ComfyNodeNames.Sam3BBoxFromJson, new JObject()
             {
                 ["image"] = imageNodeActual,
                 ["bbox_json"] = bboxJson
@@ -1367,7 +1367,7 @@ public class WorkflowGeneratorSteps
                 ["output_best_mask"] = true
             };
             string segNode = g.CreateNode("SAM3Segmentation", segInputs);
-            string postNode = g.CreateNode("SwarmSam3MaskPostProcess", new JObject()
+            string postNode = g.CreateNode(ComfyNodeNames.Sam3MaskPostProcess, new JObject()
             {
                 ["mask"] = NodePath(segNode, 0),
                 ["fill_holes"] = true,
@@ -1406,7 +1406,7 @@ public class WorkflowGeneratorSteps
                 ["text_prompt"] = segmentPrompt,
                 ["max_detections"] = -1
             });
-            string postNode = g.CreateNode("SwarmSam3MaskPostProcess", new JObject()
+            string postNode = g.CreateNode(ComfyNodeNames.Sam3MaskPostProcess, new JObject()
             {
                 ["mask"] = NodePath(segNode, 0),
                 ["fill_holes"] = true,
@@ -1477,7 +1477,7 @@ public class WorkflowGeneratorSteps
             double cfg = g.UserInput.Get(T2IParamTypes.CFGScale);
             if (!noSkip && (steps == 0 || endStep <= startStep))
             {
-                g.CreateNode("SwarmJustLoadTheModelPlease", new JObject()
+                g.CreateNode(ComfyNodeNames.JustLoadTheModelPlease, new JObject()
                 {
                     ["model"] = g.CurrentModel.Path,
                     ["clip"] = g.CurrentTextEnc.Path,
@@ -1866,7 +1866,7 @@ public class WorkflowGeneratorSteps
                                 Logs.Warning($"Yolo confidence threshold is set to 1. This was recommended syntax before yolo thresholds were supported, but is no longer valid. Swarm will automatically reset the value to default (0.25) instead.");
                                 part.Strength = 0.25;
                             }
-                            newSegmentNode = g.CreateNode("SwarmYoloDetection", new JObject()
+                            newSegmentNode = g.CreateNode(ComfyNodeNames.YoloDetection, new JObject()
                             {
                                 ["image"] = g.CurrentMedia.Path,
                                 ["model_name"] = fullname,
@@ -1887,7 +1887,7 @@ public class WorkflowGeneratorSteps
                                 ["text_prompt"] = dataText.After("sam3-"),
                                 ["max_detections"] = -1
                             });
-                            newSegmentNode = g.CreateNode("SwarmSam3MaskPostProcess", new JObject()
+                            newSegmentNode = g.CreateNode(ComfyNodeNames.Sam3MaskPostProcess, new JObject()
                             {
                                 ["mask"] = NodePath(sam3SegmentNode, 0),
                                 ["fill_holes"] = true,
@@ -1896,7 +1896,7 @@ public class WorkflowGeneratorSteps
                         }
                         else
                         {
-                            newSegmentNode = g.CreateNode("SwarmClipSeg", new JObject()
+                            newSegmentNode = g.CreateNode(ComfyNodeNames.ClipSeg, new JObject()
                             {
                                 ["images"] = g.CurrentMedia.Path,
                                 ["match_text"] = dataText,
@@ -1937,7 +1937,7 @@ public class WorkflowGeneratorSteps
                     int blurAmt = g.UserInput.Get(T2IParamTypes.SegmentMaskBlur, 10);
                     if (blurAmt > 0)
                     {
-                        segmentNode = g.CreateNode("SwarmMaskBlur", new JObject()
+                        segmentNode = g.CreateNode(ComfyNodeNames.MaskBlur, new JObject()
                         {
                             ["mask"] = NodePath(segmentNode, 0),
                             ["blur_radius"] = blurAmt,
@@ -2022,7 +2022,7 @@ public class WorkflowGeneratorSteps
                 {
                     g.CurrentMedia.SaveOutput(g.CurrentVae, g.CurrentAudioVae, g.GetStableDynamicID(50000, 0));
                 }
-                string segmentNode = g.CreateNode("SwarmClipSeg", new JObject()
+                string segmentNode = g.CreateNode(ComfyNodeNames.ClipSeg, new JObject()
                 {
                     ["images"] = g.CurrentMedia.Path,
                     ["match_text"] = part.DataText,
@@ -2035,13 +2035,13 @@ public class WorkflowGeneratorSteps
                         ["mask"] = NodePath(segmentNode, 0)
                     });
                 }
-                string blurNode = g.CreateNode("SwarmMaskBlur", new JObject()
+                string blurNode = g.CreateNode(ComfyNodeNames.MaskBlur, new JObject()
                 {
                     ["mask"] = NodePath(segmentNode, 0),
                     ["blur_radius"] = 10,
                     ["sigma"] = 1
                 });
-                string thresholded = g.CreateNode("SwarmMaskThreshold", new JObject()
+                string thresholded = g.CreateNode(ComfyNodeNames.MaskThreshold, new JObject()
                 {
                     ["mask"] = NodePath(blurNode, 0),
                     ["min"] = 0.2,
@@ -2060,7 +2060,7 @@ public class WorkflowGeneratorSteps
                 {
                     g.CurrentMedia.SaveOutput(g.CurrentVae, g.CurrentAudioVae, id: g.GetStableDynamicID(50000, 0));
                 }
-                string removed = g.CreateNode("SwarmRemBg", new JObject()
+                string removed = g.CreateNode(ComfyNodeNames.RemBg, new JObject()
                 {
                     ["images"] = g.CurrentMedia.Path
                 });
@@ -2079,7 +2079,7 @@ public class WorkflowGeneratorSteps
                 {
                     if (g.UserInput.TryGet(T2IParamTypes.TrimVideoStartFrames, out _) || g.UserInput.TryGet(T2IParamTypes.TrimVideoEndFrames, out _))
                     {
-                        string trimNode = g.CreateNode("SwarmTrimFrames", new JObject()
+                        string trimNode = g.CreateNode(ComfyNodeNames.TrimFrames, new JObject()
                         {
                             ["image"] = g.CurrentMedia.Path,
                             ["trim_start"] = g.UserInput.Get(T2IParamTypes.TrimVideoStartFrames, 0),
@@ -2261,12 +2261,12 @@ public class WorkflowGeneratorSteps
                 PromptRegion regionalizer = new(fullRawPrompt);
                 WGNodeData conjoinedLast = g.CurrentMedia;
                 WGNodeData conjoinedAudio = ensureAttachedAudio(conjoinedLast)?.AttachedAudio;
-                string getWidthNode = g.CreateNode("SwarmImageWidth", new JObject()
+                string getWidthNode = g.CreateNode(ComfyNodeNames.ImageWidth, new JObject()
                 {
                     ["image"] = g.CurrentMedia.Path
                 });
                 JArray width = [getWidthNode, 0];
-                string getHeightNode = g.CreateNode("SwarmImageHeight", new JObject()
+                string getHeightNode = g.CreateNode(ComfyNodeNames.ImageHeight, new JObject()
                 {
                     ["image"] = g.CurrentMedia.Path
                 });
@@ -2280,12 +2280,12 @@ public class WorkflowGeneratorSteps
                     seed++;
                     int? frames = int.Parse(part.DataText);
                     string prompt = part.Prompt;
-                    string frameCountNode = g.CreateNode("SwarmCountFrames", new JObject()
+                    string frameCountNode = g.CreateNode(ComfyNodeNames.CountFrames, new JObject()
                     {
                         ["image"] = g.CurrentMedia.Path
                     });
                     JArray frameCount = [frameCountNode, 0];
-                    string fromEndCountNode = g.CreateNode("SwarmIntAdd", new JObject()
+                    string fromEndCountNode = g.CreateNode(ComfyNodeNames.IntAdd, new JObject()
                     {
                         ["a"] = frameCount,
                         ["b"] = -frameExtendOverlap
@@ -2363,7 +2363,7 @@ public class WorkflowGeneratorSteps
         #region Post-Cleanup
         AddStep(g =>
         {
-            g.RunOnNodesOfClass("SwarmKSampler", (id, data) =>
+            g.RunOnNodesOfClass(ComfyNodeNames.KSampler, (id, data) =>
             {
                 if (data["inputs"]["start_at_step"].Value<int>() >= data["inputs"]["steps"].Value<int>())
                 {
@@ -2446,6 +2446,6 @@ public class WorkflowGeneratorSteps
     [
         "VAEDecode", "VAEDecodeTiled", "VAEEncode", "CLIPTextEncode", "CLIPTextEncodeSDXL",
         "LTXVAudioVAEDecode", "LTXVSeparateAVLatent", "LTXVConditioning", "LTXVEmptyLatentAudio", "LTXVConcatAVLatent", "LTXVReferenceAudio",
-        "SwarmCountFrames", "SwarmClipTextEncodeAdvanced"
+        ComfyNodeNames.CountFrames, ComfyNodeNames.ClipTextEncodeAdvanced
     ];
 }
