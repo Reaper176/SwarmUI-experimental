@@ -673,7 +673,7 @@ public partial class WorkflowGenerator
     public string CreateAudioLoadNode(AudioFile audio, string param, string nodeId = null)
     {
         // TODO: Fallback for base LoadAudio node?
-        return CreateNode("SwarmLoadAudioB64", new JObject()
+        return CreateNode(ComfyNodeNames.LoadAudioB64, new JObject()
         {
             ["audio_base64"] = audio.AsBase64
         }, nodeId);
@@ -696,7 +696,7 @@ public partial class WorkflowGenerator
             {
                 int imgWidth = width ?? UserInput.GetImageWidth();
                 int imgHeight = height ?? UserInput.GetImageHeight();
-                result = CreateNode("SwarmLoadImageB64", new JObject()
+                result = CreateNode(ComfyNodeNames.LoadImageB64, new JObject()
                 {
                     ["image_base64"] = (resize ? img.Resize(imgWidth, imgHeight) : img).AsBase64
                 }, nodeId);
@@ -708,7 +708,7 @@ public partial class WorkflowGenerator
                 JToken fpsRef = null;
                 if (img.Type.MetaType == MediaMetaType.Video)
                 {
-                    result = CreateNode("SwarmLoadVideoB64", new JObject()
+                    result = CreateNode(ComfyNodeNames.LoadVideoB64, new JObject()
                     {
                         ["video_base64"] = img.AsBase64
                     }, resize ? null : nodeId);
@@ -722,7 +722,7 @@ public partial class WorkflowGenerator
                 }
                 else
                 {
-                    result = CreateNode("SwarmLoadImageB64", new JObject()
+                    result = CreateNode(ComfyNodeNames.LoadImageB64, new JObject()
                     {
                         ["image_base64"] = img.AsBase64
                     }, resize ? null : nodeId);
@@ -775,7 +775,7 @@ public partial class WorkflowGenerator
     {
         if (threshold > 0)
         {
-            string thresholded = CreateNode("SwarmMaskThreshold", new JObject()
+            string thresholded = CreateNode(ComfyNodeNames.MaskThreshold, new JObject()
             {
                 ["mask"] = mask,
                 ["min"] = threshold,
@@ -788,14 +788,14 @@ public partial class WorkflowGenerator
         int targetX = int.Parse(targetWidth);
         int targetY = int.Parse(targetHeight);
         bool isCustomRes = targetX > 0 && targetY > 0;
-        string boundsNode = CreateNode("SwarmMaskBounds", new JObject()
+        string boundsNode = CreateNode(ComfyNodeNames.MaskBounds, new JObject()
         {
             ["mask"] = mask,
             ["grow"] = growBy,
             ["aspect_x"] = isCustomRes ? targetX : 0,
             ["aspect_y"] = isCustomRes ? targetY : 0
         });
-        string croppedImage = CreateNode("SwarmImageCrop", new JObject()
+        string croppedImage = CreateNode(ComfyNodeNames.ImageCrop, new JObject()
         {
             ["image"] = image,
             ["x"] = NodePath(boundsNode, 0),
@@ -824,7 +824,7 @@ public partial class WorkflowGenerator
             resolvedScaleWidth = Math.Clamp(mpWidth, 64, 8192);
             resolvedScaleHeight = Math.Clamp(mpHeight, 64, 8192);
         }
-        string scaledImage = CreateNode("SwarmImageScaleForMP", new JObject()
+        string scaledImage = CreateNode(ComfyNodeNames.ImageScaleForMP, new JObject()
         {
             ["image"] = NodePath(croppedImage, 0),
             ["width"] = resolvedScaleWidth,
@@ -850,7 +850,7 @@ public partial class WorkflowGenerator
         string nodeClass = "ImageCompositeMasked";
         if (Features.Contains("variation_seed") && !RestrictCustomNodes)
         {
-            nodeClass = "SwarmImageCompositeMaskedColorCorrecting";
+            nodeClass = ComfyNodeNames.ImageCompositeMaskedColorCorrecting;
         }
         string composited = CreateNode(nodeClass, new JObject()
         {
@@ -888,7 +888,7 @@ public partial class WorkflowGenerator
         string nodeClass = "ImageCompositeMasked";
         if (Features.Contains("variation_seed") && !RestrictCustomNodes)
         {
-            nodeClass = "SwarmImageCompositeMaskedColorCorrecting";
+            nodeClass = ComfyNodeNames.ImageCompositeMaskedColorCorrecting;
         }
         string composited = CreateNode(nodeClass, new JObject()
         {
@@ -1508,7 +1508,7 @@ public partial class WorkflowGenerator
             inputs["tile_size"] = FinalLoadedModel.StandardWidth <= 0 ? 768 : FinalLoadedModel.StandardWidth;
             if (UserInput.TryGet(ComfyUIBackendExtension.DetailDaemonAmount, out double detailDaemonAmount))
             {
-                string detailDaemonOptions = CreateNode("SwarmDetailDaemonOptions", new JObject()
+                string detailDaemonOptions = CreateNode(ComfyNodeNames.DetailDaemonOptions, new JObject()
                 {
                     ["detail_amount"] = detailDaemonAmount,
                     ["start"] = UserInput.Get(ComfyUIBackendExtension.DetailDaemonStart, 0.2),
@@ -1524,7 +1524,7 @@ public partial class WorkflowGenerator
                 inputs["detail_daemon"] = NodePath(detailDaemonOptions, 0);
             }
             inputs["model_negative"] = negativeModel?.Path;
-            created = CreateNode("SwarmKSampler", inputs, firstId);
+            created = CreateNode(ComfyNodeNames.KSampler, inputs, firstId);
         }
         else
         {
@@ -2430,7 +2430,7 @@ public partial class WorkflowGenerator
         CurrentMedia = CurrentMedia.AsRawImage(genInfo.Vae);
         if (UserInput.TryGet(T2IParamTypes.TrimVideoStartFrames, out _) || UserInput.TryGet(T2IParamTypes.TrimVideoEndFrames, out _))
         {
-            string trimNode = CreateNode("SwarmTrimFrames", new JObject()
+            string trimNode = CreateNode(ComfyNodeNames.TrimFrames, new JObject()
             {
                 ["image"] = CurrentMedia.Path,
                 ["trim_start"] = UserInput.Get(T2IParamTypes.TrimVideoStartFrames, 0),
@@ -2653,7 +2653,7 @@ public partial class WorkflowGenerator
                 });
                 imageNode = [batched, 0];
             }
-            node = CreateNode("SwarmClipTextEncodeAdvanced", new JObject()
+            node = CreateNode(ComfyNodeNames.ClipTextEncodeAdvanced, new JObject()
             {
                 ["clip"] = clip,
                 ["steps"] = UserInput.Get(T2IParamTypes.Steps),
@@ -2691,7 +2691,7 @@ public partial class WorkflowGenerator
                         qwenImage = [batched2, 0];
                     }
                 }
-                node = CreateNode("SwarmClipTextEncodeAdvanced", new JObject()
+                node = CreateNode(ComfyNodeNames.ClipTextEncodeAdvanced, new JObject()
                 {
                     ["clip"] = clip,
                     ["steps"] = UserInput.Get(T2IParamTypes.Steps),
@@ -2748,7 +2748,7 @@ public partial class WorkflowGenerator
             });
             if (wantsSwarmCustom)
             {
-                node = CreateNode("SwarmClipTextEncodeAdvanced", new JObject()
+                node = CreateNode(ComfyNodeNames.ClipTextEncodeAdvanced, new JObject()
                 {
                     ["clip"] = clip,
                     ["steps"] = UserInput.Get(T2IParamTypes.Steps),
@@ -2777,7 +2777,7 @@ public partial class WorkflowGenerator
         }
         else if (wantsSwarmCustom)
         {
-            node = CreateNode("SwarmClipTextEncodeAdvanced", new JObject()
+            node = CreateNode(ComfyNodeNames.ClipTextEncodeAdvanced, new JObject()
             {
                 ["clip"] = clip,
                 ["steps"] = UserInput.Get(T2IParamTypes.Steps),
@@ -2885,7 +2885,7 @@ public partial class WorkflowGenerator
     /// <summary>Creates a mask for a rectangular regional prompt part.</summary>
     public JArray CreateRegionalPromptMask(PromptRegion.Part part)
     {
-        string regionNode = CreateNode("SwarmSquareMaskFromPercent", new JObject()
+        string regionNode = CreateNode(ComfyNodeNames.SquareMaskFromPercent, new JObject()
         {
             ["x"] = part.X,
             ["y"] = part.Y,
@@ -2949,7 +2949,7 @@ public partial class WorkflowGenerator
             }
             else
             {
-                string overlapped = CreateNode("SwarmOverMergeMasksForOverlapFix", new JObject()
+                string overlapped = CreateNode(ComfyNodeNames.OverMergeMasksForOverlapFix, new JObject()
                 {
                     ["mask_a"] = lastMergedMask,
                     ["mask_b"] = regionMask
@@ -2957,7 +2957,7 @@ public partial class WorkflowGenerator
                 lastMergedMask = [overlapped, 0];
             }
         }
-        string globalMask = CreateNode("SwarmSquareMaskFromPercent", new JObject()
+        string globalMask = CreateNode(ComfyNodeNames.SquareMaskFromPercent, new JObject()
         {
             ["x"] = 0,
             ["y"] = 0,
@@ -2965,7 +2965,7 @@ public partial class WorkflowGenerator
             ["height"] = 1,
             ["strength"] = 1
         });
-        string maskBackground = CreateNode("SwarmExcludeFromMask", new JObject()
+        string maskBackground = CreateNode(ComfyNodeNames.ExcludeFromMask, new JObject()
         {
             ["main_mask"] = NodePath(globalMask, 0),
             ["exclude_mask"] = lastMergedMask
@@ -2988,7 +2988,7 @@ public partial class WorkflowGenerator
         DebugRegionalPromptMask(baseMask);
         foreach (AttentionCoupleRegion region in regions)
         {
-            string overlapped = CreateNode("SwarmCleanOverlapMasksExceptSelf", new JObject()
+            string overlapped = CreateNode(ComfyNodeNames.CleanOverlapMasksExceptSelf, new JObject()
             {
                 ["mask_self"] = region.Mask,
                 ["mask_merged"] = lastMergedMask
@@ -3034,7 +3034,7 @@ public partial class WorkflowGenerator
             inputs[$"cond_{i + 1}"] = plan.Regions[i].Cond;
             inputs[$"mask_{i + 1}"] = plan.Regions[i].Mask;
         }
-        string patched = CreateNode("SwarmAttentionCouple", inputs);
+        string patched = CreateNode(ComfyNodeNames.AttentionCouple, inputs);
         return [patched, 0];
     }
 
@@ -3224,7 +3224,7 @@ public partial class WorkflowGenerator
             }
             else
             {
-                string overlapped = CreateNode("SwarmOverMergeMasksForOverlapFix", new JObject()
+                string overlapped = CreateNode(ComfyNodeNames.OverMergeMasksForOverlapFix, new JObject()
                 {
                     ["mask_a"] = lastMergedMask,
                     ["mask_b"] = region.Mask
@@ -3232,7 +3232,7 @@ public partial class WorkflowGenerator
                 lastMergedMask = [overlapped, 0];
             }
         }
-        string globalMask = CreateNode("SwarmSquareMaskFromPercent", new JObject()
+        string globalMask = CreateNode(ComfyNodeNames.SquareMaskFromPercent, new JObject()
         {
             ["x"] = 0,
             ["y"] = 0,
@@ -3240,7 +3240,7 @@ public partial class WorkflowGenerator
             ["height"] = 1,
             ["strength"] = 1
         });
-        string maskBackground = CreateNode("SwarmExcludeFromMask", new JObject()
+        string maskBackground = CreateNode(ComfyNodeNames.ExcludeFromMask, new JObject()
         {
             ["main_mask"] = NodePath(globalMask, 0),
             ["exclude_mask"] = lastMergedMask
@@ -3269,7 +3269,7 @@ public partial class WorkflowGenerator
         }
         foreach (RegionHelper region in regions)
         {
-            string overlapped = CreateNode("SwarmCleanOverlapMasksExceptSelf", new JObject()
+            string overlapped = CreateNode(ComfyNodeNames.CleanOverlapMasksExceptSelf, new JObject()
             {
                 ["mask_self"] = region.Mask,
                 ["mask_merged"] = lastMergedMask
