@@ -321,7 +321,7 @@ public class WGNodeData(JArray _path, WorkflowGenerator _gen, string _dataType, 
             {
                 string frameCountNode = Gen.CreateNode(ComfyNodeNames.CountFrames, new JObject()
                 {
-                    ["image"] = AsRawImage(vae).Path
+                    [ComfyNodeInputNames.CountFrames.Image] = AsRawImage(vae).Path
                 });
                 framesTok = frameCountNode;
             }
@@ -368,8 +368,8 @@ public class WGNodeData(JArray _path, WorkflowGenerator _gen, string _dataType, 
                 {
                     string ensured = Gen.CreateNode(ComfyNodeNames.EnsureAudio, new JObject()
                     {
-                        ["audio"] = AttachedAudio.Path,
-                        ["target_duration"] = 0.1
+                        [ComfyNodeInputNames.EnsureAudio.Audio] = AttachedAudio.Path,
+                        [ComfyNodeInputNames.EnsureAudio.TargetDuration] = 0.1
                     });
                     WGNodeData ensuredNode = AttachedAudio.WithPath([ensured, 0], DT_AUDIO);
                     WGNodeData audioEncoded = ensuredNode.EncodeToLatent(audioVae);
@@ -498,8 +498,8 @@ public class WGNodeData(JArray _path, WorkflowGenerator _gen, string _dataType, 
             {
                 return Gen.CreateNode(ComfyNodeNames.SaveImageWS, new JObject()
                 {
-                    ["images"] = Path,
-                    ["bit_depth"] = UserInput.Get(T2IParamTypes.BitDepth, "8bit")
+                    [ComfyNodeInputNames.SaveImageWS.Images] = Path,
+                    [ComfyNodeInputNames.SaveImageWS.BitDepth] = UserInput.Get(T2IParamTypes.BitDepth, "8bit")
                 }, id);
             }
             else
@@ -520,19 +520,19 @@ public class WGNodeData(JArray _path, WorkflowGenerator _gen, string _dataType, 
                 // Also arguably audio should boomerang too but that'd probably be weird
                 string bounced = Gen.CreateNode(ComfyNodeNames.VideoBoomerang, new JObject()
                 {
-                    ["images"] = Path
+                    [ComfyNodeInputNames.VideoBoomerang.Images] = Path
                 });
                 path = [bounced, 0];
             }
             return Gen.CreateNode(ComfyNodeNames.SaveAnimationWS, new JObject()
             {
-                ["images"] = path,
-                ["fps"] = FPS ?? Gen.Text2VideoFPS(),
-                ["lossless"] = false,
-                ["quality"] = 95,
-                ["method"] = "default",
-                ["format"] = UserInput.Get(T2IParamTypes.VideoFormat, "h264-mp4"),
-                ["audio"] = AttachedAudio?.Path
+                [ComfyNodeInputNames.SaveAnimationWS.Images] = path,
+                [ComfyNodeInputNames.SaveAnimationWS.FPS] = FPS ?? Gen.Text2VideoFPS(),
+                [ComfyNodeInputNames.SaveAnimationWS.Lossless] = false,
+                [ComfyNodeInputNames.SaveAnimationWS.Quality] = 95,
+                [ComfyNodeInputNames.SaveAnimationWS.Method] = "default",
+                [ComfyNodeInputNames.SaveAnimationWS.Format] = UserInput.Get(T2IParamTypes.VideoFormat, "h264-mp4"),
+                [ComfyNodeInputNames.SaveAnimationWS.Audio] = AttachedAudio?.Path
             }, id);
         }
         if (DataType == DT_AUDIO)

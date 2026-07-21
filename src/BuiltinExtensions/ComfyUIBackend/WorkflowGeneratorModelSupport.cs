@@ -459,13 +459,13 @@ public partial class WorkflowGenerator
             }
             return resultImage(CreateNode(ComfyNodeNames.OffsetEmptyLatentImage, new JObject()
             {
-                ["batch_size"] = batchSize,
-                ["height"] = height,
-                ["width"] = width,
-                ["off_a"] = offA,
-                ["off_b"] = offB,
-                ["off_c"] = offC,
-                ["off_d"] = offD
+                [ComfyNodeInputNames.OffsetEmptyLatentImage.BatchSize] = batchSize,
+                [ComfyNodeInputNames.OffsetEmptyLatentImage.Height] = height,
+                [ComfyNodeInputNames.OffsetEmptyLatentImage.Width] = width,
+                [ComfyNodeInputNames.OffsetEmptyLatentImage.OffA] = offA,
+                [ComfyNodeInputNames.OffsetEmptyLatentImage.OffB] = offB,
+                [ComfyNodeInputNames.OffsetEmptyLatentImage.OffC] = offC,
+                [ComfyNodeInputNames.OffsetEmptyLatentImage.OffD] = offD
             }, id));
         }
         else
@@ -546,7 +546,7 @@ public partial class WorkflowGenerator
             }
             string avaeLoader = g.CreateNode(ComfyNodeNames.LTXVAudioVAELoader, new JObject()
             {
-                ["vae_name"] = vaeFile.Replace('\\', '/').Replace("/", g.ModelFolderFormat ?? $"{Path.DirectorySeparatorChar}")
+                [ComfyNodeInputNames.LTXVAudioVAELoader.VAEName] = vaeFile.Replace('\\', '/').Replace("/", g.ModelFolderFormat ?? $"{Path.DirectorySeparatorChar}")
             });
             g.CurrentAudioVae = new WGNodeData([avaeLoader, 0], g, WGNodeData.DT_AUDIOVAE, g.CurrentCompat());
         }
