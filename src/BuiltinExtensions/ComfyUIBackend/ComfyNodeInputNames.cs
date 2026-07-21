@@ -230,9 +230,9 @@ public static class ComfyNodeInputNames
         public const string BaseCondition = "base_cond";
         /// <summary>Input name for the base mask.</summary>
         public const string BaseMask = "base_mask";
-        /// <summary>Input-name prefix for regional conditioning; caller appends a one-based index.</summary>
+        /// <summary>Input-name prefix for regional conditioning; caller appends a one-based index to produce <c>cond_1</c> through <c>cond_8</c>.</summary>
         public const string ConditionPrefix = "cond_";
-        /// <summary>Input-name prefix for regional masks; caller appends a one-based index.</summary>
+        /// <summary>Input-name prefix for regional masks; caller appends a one-based index to produce <c>mask_1</c> through <c>mask_8</c>.</summary>
         public const string MaskPrefix = "mask_";
         /// <summary>Input name for the diffusion model.</summary>
         public const string Model = "model";
