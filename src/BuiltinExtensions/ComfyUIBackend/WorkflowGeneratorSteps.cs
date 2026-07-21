@@ -2365,9 +2365,9 @@ public class WorkflowGeneratorSteps
         {
             g.RunOnNodesOfClass(ComfyNodeNames.KSampler, (id, data) =>
             {
-                if (data["inputs"]["start_at_step"].Value<int>() >= data["inputs"]["steps"].Value<int>())
+                if (data["inputs"][ComfyNodeInputNames.KSampler.StartAtStep].Value<int>() >= data["inputs"][ComfyNodeInputNames.KSampler.Steps].Value<int>())
                 {
-                    g.ReplaceNodeConnection([id, 0], data["inputs"]["latent_image"] as JArray);
+                    g.ReplaceNodeConnection([id, 0], data["inputs"][ComfyNodeInputNames.KSampler.LatentImage] as JArray);
                     g.Workflow.Remove(id);
                 }
             });
