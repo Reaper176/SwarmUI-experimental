@@ -94,9 +94,9 @@ public abstract class ComfyUIAPIAbstractBackend : AbstractT2IBackend
         trackModels("LoRA", "LoraLoader", "lora_name");
         trackModels("VAE", "VAELoader", "vae_name");
         trackModels("ControlNet", "ControlNetLoader", "control_net_name");
-        trackModels("ControlNet", "SwarmAnimaLLLite", "lllite_name");
+        trackModels("ControlNet", ComfyNodeNames.AnimaLLLite, "lllite_name");
         trackModels("ClipVision", "CLIPVisionLoader", "clip_name");
-        trackModels("Embedding", "SwarmEmbedLoaderListProvider", "embed_name");
+        trackModels("Embedding", ComfyNodeNames.EmbedLoaderListProvider, "embed_name");
         Models = newModels;
         if (firstBackSlash is not null)
         {
@@ -117,7 +117,7 @@ public abstract class ComfyUIAPIAbstractBackend : AbstractT2IBackend
             Logs.Error($"Comfy backend {BackendData.ID} failed to load raw node backend info: {ex.ReadableString()}");
         }
         Logs.Verbose($"Comfy backend {BackendData.ID} loaded value set and parsed.");
-        if (!NodeTypes.Contains("SwarmKSampler"))
+        if (!NodeTypes.Contains(ComfyNodeNames.KSampler))
         {
             Logs.Warning($"Comfy backend {BackendData.ID} is missing the Swarm core nodes! Core functionalities will be missing. Please ensure you are using a well-installed ComfyUI Self-Starting backend. If you are, check debug logs for backend errors.");
         }

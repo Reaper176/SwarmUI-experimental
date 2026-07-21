@@ -611,7 +611,7 @@ public static class ComfyUIWebAPI
         bool doClip = !baseModelData.IsDiffusionModelsFormat && !otherModelData.IsDiffusionModelsFormat;
         workflow["6"] = new JObject()
         {
-            ["class_type"] = "SwarmExtractLora",
+            ["class_type"] = ComfyNodeNames.ExtractLora,
             ["inputs"] = new JObject()
             {
                 ["base_model"] = new JArray() { "4", 0 },
