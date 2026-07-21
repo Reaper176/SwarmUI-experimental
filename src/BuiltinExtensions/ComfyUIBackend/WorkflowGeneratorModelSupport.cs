@@ -457,7 +457,7 @@ public partial class WorkflowGenerator
                     offD = -0.3074;
                     break;
             }
-            return resultImage(CreateNode("SwarmOffsetEmptyLatentImage", new JObject()
+            return resultImage(CreateNode(ComfyNodeNames.OffsetEmptyLatentImage, new JObject()
             {
                 ["batch_size"] = batchSize,
                 ["height"] = height,
@@ -544,7 +544,7 @@ public partial class WorkflowGenerator
                 knownFile.DownloadNow().Wait();
                 Program.RefreshAllModelSets();
             }
-            string avaeLoader = g.CreateNode("SwarmLTXVAudioVAELoader", new JObject()
+            string avaeLoader = g.CreateNode(ComfyNodeNames.LTXVAudioVAELoader, new JObject()
             {
                 ["vae_name"] = vaeFile.Replace('\\', '/').Replace("/", g.ModelFolderFormat ?? $"{Path.DirectorySeparatorChar}")
             });

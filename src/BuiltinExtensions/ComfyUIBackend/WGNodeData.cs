@@ -319,7 +319,7 @@ public class WGNodeData(JArray _path, WorkflowGenerator _gen, string _dataType, 
             JToken framesTok = Frames;
             if (!Frames.HasValue)
             {
-                string frameCountNode = Gen.CreateNode("SwarmCountFrames", new JObject()
+                string frameCountNode = Gen.CreateNode(ComfyNodeNames.CountFrames, new JObject()
                 {
                     ["image"] = AsRawImage(vae).Path
                 });
@@ -366,7 +366,7 @@ public class WGNodeData(JArray _path, WorkflowGenerator _gen, string _dataType, 
                 JArray target = AttachedAudio.Path;
                 if (AttachedAudio.IsRawMedia) // TODO: When is the correct case to do a solid mask on audio? Any raw audio is *probably* mask-worthy, but...??
                 {
-                    string ensured = Gen.CreateNode("SwarmEnsureAudio", new JObject()
+                    string ensured = Gen.CreateNode(ComfyNodeNames.EnsureAudio, new JObject()
                     {
                         ["audio"] = AttachedAudio.Path,
                         ["target_duration"] = 0.1
@@ -496,7 +496,7 @@ public class WGNodeData(JArray _path, WorkflowGenerator _gen, string _dataType, 
         {
             if (Features.Contains("comfy_saveimage_ws") && !WorkflowGenerator.RestrictCustomNodes)
             {
-                return Gen.CreateNode("SwarmSaveImageWS", new JObject()
+                return Gen.CreateNode(ComfyNodeNames.SaveImageWS, new JObject()
                 {
                     ["images"] = Path,
                     ["bit_depth"] = UserInput.Get(T2IParamTypes.BitDepth, "8bit")
@@ -518,13 +518,13 @@ public class WGNodeData(JArray _path, WorkflowGenerator _gen, string _dataType, 
             {
                 // TODO: Should we really be doing this *here*?!
                 // Also arguably audio should boomerang too but that'd probably be weird
-                string bounced = Gen.CreateNode("SwarmVideoBoomerang", new JObject()
+                string bounced = Gen.CreateNode(ComfyNodeNames.VideoBoomerang, new JObject()
                 {
                     ["images"] = Path
                 });
                 path = [bounced, 0];
             }
-            return Gen.CreateNode("SwarmSaveAnimationWS", new JObject()
+            return Gen.CreateNode(ComfyNodeNames.SaveAnimationWS, new JObject()
             {
                 ["images"] = path,
                 ["fps"] = FPS ?? Gen.Text2VideoFPS(),
