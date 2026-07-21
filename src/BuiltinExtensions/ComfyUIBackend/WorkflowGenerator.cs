@@ -675,7 +675,7 @@ public partial class WorkflowGenerator
         // TODO: Fallback for base LoadAudio node?
         return CreateNode(ComfyNodeNames.LoadAudioB64, new JObject()
         {
-            ["audio_base64"] = audio.AsBase64
+            [ComfyNodeInputNames.LoadAudioB64.AudioBase64] = audio.AsBase64
         }, nodeId);
     }
 
@@ -698,7 +698,7 @@ public partial class WorkflowGenerator
                 int imgHeight = height ?? UserInput.GetImageHeight();
                 result = CreateNode(ComfyNodeNames.LoadImageB64, new JObject()
                 {
-                    ["image_base64"] = (resize ? img.Resize(imgWidth, imgHeight) : img).AsBase64
+                    [ComfyNodeInputNames.LoadImageB64.ImageBase64] = (resize ? img.Resize(imgWidth, imgHeight) : img).AsBase64
                 }, nodeId);
                 return new([result, 0], this, WGNodeData.DT_IMAGE, CurrentCompat()) { Width = imgWidth, Height = imgHeight };
             }
@@ -710,7 +710,7 @@ public partial class WorkflowGenerator
                 {
                     result = CreateNode(ComfyNodeNames.LoadVideoB64, new JObject()
                     {
-                        ["video_base64"] = img.AsBase64
+                        [ComfyNodeInputNames.LoadVideoB64.VideoBase64] = img.AsBase64
                     }, resize ? null : nodeId);
                     string splitNode = CreateNode("GetVideoComponents", new JObject()
                     {
@@ -724,7 +724,7 @@ public partial class WorkflowGenerator
                 {
                     result = CreateNode(ComfyNodeNames.LoadImageB64, new JObject()
                     {
-                        ["image_base64"] = img.AsBase64
+                        [ComfyNodeInputNames.LoadImageB64.ImageBase64] = img.AsBase64
                     }, resize ? null : nodeId);
                 }
                 int? imgWidth = null;
@@ -777,9 +777,9 @@ public partial class WorkflowGenerator
         {
             string thresholded = CreateNode(ComfyNodeNames.MaskThreshold, new JObject()
             {
-                ["mask"] = mask,
-                ["min"] = threshold,
-                ["max"] = thresholdMax
+                [ComfyNodeInputNames.MaskThreshold.Mask] = mask,
+                [ComfyNodeInputNames.MaskThreshold.Min] = threshold,
+                [ComfyNodeInputNames.MaskThreshold.Max] = thresholdMax
             });
             mask = [thresholded, 0];
         }
@@ -790,18 +790,18 @@ public partial class WorkflowGenerator
         bool isCustomRes = targetX > 0 && targetY > 0;
         string boundsNode = CreateNode(ComfyNodeNames.MaskBounds, new JObject()
         {
-            ["mask"] = mask,
-            ["grow"] = growBy,
-            ["aspect_x"] = isCustomRes ? targetX : 0,
-            ["aspect_y"] = isCustomRes ? targetY : 0
+            [ComfyNodeInputNames.MaskBounds.Mask] = mask,
+            [ComfyNodeInputNames.MaskBounds.Grow] = growBy,
+            [ComfyNodeInputNames.MaskBounds.AspectX] = isCustomRes ? targetX : 0,
+            [ComfyNodeInputNames.MaskBounds.AspectY] = isCustomRes ? targetY : 0
         });
         string croppedImage = CreateNode(ComfyNodeNames.ImageCrop, new JObject()
         {
-            ["image"] = image,
-            ["x"] = NodePath(boundsNode, 0),
-            ["y"] = NodePath(boundsNode, 1),
-            ["width"] = NodePath(boundsNode, 2),
-            ["height"] = NodePath(boundsNode, 3)
+            [ComfyNodeInputNames.ImageCrop.Image] = image,
+            [ComfyNodeInputNames.ImageCrop.X] = NodePath(boundsNode, 0),
+            [ComfyNodeInputNames.ImageCrop.Y] = NodePath(boundsNode, 1),
+            [ComfyNodeInputNames.ImageCrop.Width] = NodePath(boundsNode, 2),
+            [ComfyNodeInputNames.ImageCrop.Height] = NodePath(boundsNode, 3)
         });
         string croppedMask = CreateNode("CropMask", new JObject()
         {
@@ -826,10 +826,10 @@ public partial class WorkflowGenerator
         }
         string scaledImage = CreateNode(ComfyNodeNames.ImageScaleForMP, new JObject()
         {
-            ["image"] = NodePath(croppedImage, 0),
-            ["width"] = resolvedScaleWidth,
-            ["height"] = resolvedScaleHeight,
-            ["can_shrink"] = canShrink
+            [ComfyNodeInputNames.ImageScaleForMP.Image] = NodePath(croppedImage, 0),
+            [ComfyNodeInputNames.ImageScaleForMP.Width] = resolvedScaleWidth,
+            [ComfyNodeInputNames.ImageScaleForMP.Height] = resolvedScaleHeight,
+            [ComfyNodeInputNames.ImageScaleForMP.CanShrink] = canShrink
         });
         JArray encoded = DoMaskedVAEEncode(vae, [scaledImage, 0], [croppedMask, 0], null);
         return new(boundsNode, croppedMask, $"{encoded[0]}", scaledImage);
@@ -854,13 +854,13 @@ public partial class WorkflowGenerator
         }
         string composited = CreateNode(nodeClass, new JObject()
         {
-            ["destination"] = baseImage,
-            ["source"] = newImage,
-            ["mask"] = mask,
-            ["x"] = 0,
-            ["y"] = 0,
+            [ComfyNodeInputNames.ImageCompositeMaskedColorCorrecting.Destination] = baseImage,
+            [ComfyNodeInputNames.ImageCompositeMaskedColorCorrecting.Source] = newImage,
+            [ComfyNodeInputNames.ImageCompositeMaskedColorCorrecting.Mask] = mask,
+            [ComfyNodeInputNames.ImageCompositeMaskedColorCorrecting.X] = 0,
+            [ComfyNodeInputNames.ImageCompositeMaskedColorCorrecting.Y] = 0,
             ["resize_source"] = false,
-            ["correction_method"] = UserInput.Get(T2IParamTypes.ColorCorrectionBehavior, "None")
+            [ComfyNodeInputNames.ImageCompositeMaskedColorCorrecting.CorrectionMethod] = UserInput.Get(T2IParamTypes.ColorCorrectionBehavior, "None")
         });
         return [composited, 0];
     }
@@ -892,13 +892,13 @@ public partial class WorkflowGenerator
         }
         string composited = CreateNode(nodeClass, new JObject()
         {
-            ["destination"] = firstImage,
-            ["source"] = NodePath(scaledBack, 0),
-            ["mask"] = croppedMask,
-            ["x"] = NodePath(boundsNode, 0),
-            ["y"] = NodePath(boundsNode, 1),
+            [ComfyNodeInputNames.ImageCompositeMaskedColorCorrecting.Destination] = firstImage,
+            [ComfyNodeInputNames.ImageCompositeMaskedColorCorrecting.Source] = NodePath(scaledBack, 0),
+            [ComfyNodeInputNames.ImageCompositeMaskedColorCorrecting.Mask] = croppedMask,
+            [ComfyNodeInputNames.ImageCompositeMaskedColorCorrecting.X] = NodePath(boundsNode, 0),
+            [ComfyNodeInputNames.ImageCompositeMaskedColorCorrecting.Y] = NodePath(boundsNode, 1),
             ["resize_source"] = false,
-            ["correction_method"] = UserInput.Get(T2IParamTypes.ColorCorrectionBehavior, "None")
+            [ComfyNodeInputNames.ImageCompositeMaskedColorCorrecting.CorrectionMethod] = UserInput.Get(T2IParamTypes.ColorCorrectionBehavior, "None")
         });
         return [composited, 0];
     }
@@ -1477,19 +1477,19 @@ public partial class WorkflowGenerator
         string firstId = willCascadeFix ? null : id;
         JObject inputs = new()
         {
-            ["model"] = model,
-            ["noise_seed"] = seed,
-            ["steps"] = steps,
-            ["cfg"] = cfg,
-            ["sampler_name"] = explicitSampler ?? UserInput.Get(ComfyUIBackendExtension.SamplerParam, defsampler ?? DefaultSampler, sectionId: sectionId),
-            ["scheduler"] = explicitScheduler ?? UserInput.Get(ComfyUIBackendExtension.SchedulerParam, defscheduler ?? DefaultScheduler, sectionId: sectionId),
-            ["positive"] = pos,
-            ["negative"] = neg,
-            ["latent_image"] = latent,
-            ["start_at_step"] = startStep,
-            ["end_at_step"] = endStep,
-            ["return_with_leftover_noise"] = returnWithLeftoverNoise ? "enable" : "disable",
-            ["add_noise"] = addNoise ? "enable" : "disable"
+            [ComfyNodeInputNames.KSampler.Model] = model,
+            [ComfyNodeInputNames.KSampler.NoiseSeed] = seed,
+            [ComfyNodeInputNames.KSampler.Steps] = steps,
+            [ComfyNodeInputNames.KSampler.CFG] = cfg,
+            [ComfyNodeInputNames.KSampler.SamplerName] = explicitSampler ?? UserInput.Get(ComfyUIBackendExtension.SamplerParam, defsampler ?? DefaultSampler, sectionId: sectionId),
+            [ComfyNodeInputNames.KSampler.Scheduler] = explicitScheduler ?? UserInput.Get(ComfyUIBackendExtension.SchedulerParam, defscheduler ?? DefaultScheduler, sectionId: sectionId),
+            [ComfyNodeInputNames.KSampler.Positive] = pos,
+            [ComfyNodeInputNames.KSampler.Negative] = neg,
+            [ComfyNodeInputNames.KSampler.LatentImage] = latent,
+            [ComfyNodeInputNames.KSampler.StartAtStep] = startStep,
+            [ComfyNodeInputNames.KSampler.EndAtStep] = endStep,
+            [ComfyNodeInputNames.KSampler.ReturnWithLeftoverNoise] = returnWithLeftoverNoise ? "enable" : "disable",
+            [ComfyNodeInputNames.KSampler.AddNoise] = addNoise ? "enable" : "disable"
         };
         if (UserInput.RawOriginalSeed.HasValue && UserInput.RawOriginalSeed >= 0)
         {
@@ -1498,32 +1498,32 @@ public partial class WorkflowGenerator
         string created;
         if (Features.Contains("variation_seed") && !RestrictCustomNodes)
         {
-            inputs["var_seed"] = UserInput.Get(T2IParamTypes.VariationSeed, 0);
-            inputs["var_seed_strength"] = UserInput.Get(T2IParamTypes.VariationSeedStrength, 0);
-            inputs["sigma_min"] = UserInput.Get(T2IParamTypes.SamplerSigmaMin, sigmin);
-            inputs["sigma_max"] = UserInput.Get(T2IParamTypes.SamplerSigmaMax, sigmax);
-            inputs["rho"] = UserInput.Get(T2IParamTypes.SamplerRho, 7);
-            inputs["previews"] = UserInput.Get(T2IParamTypes.NoPreviews) ? "none" : previews ?? DefaultPreviews;
-            inputs["tile_sample"] = doTiled;
-            inputs["tile_size"] = FinalLoadedModel.StandardWidth <= 0 ? 768 : FinalLoadedModel.StandardWidth;
+            inputs[ComfyNodeInputNames.KSampler.VarSeed] = UserInput.Get(T2IParamTypes.VariationSeed, 0);
+            inputs[ComfyNodeInputNames.KSampler.VarSeedStrength] = UserInput.Get(T2IParamTypes.VariationSeedStrength, 0);
+            inputs[ComfyNodeInputNames.KSampler.SigmaMin] = UserInput.Get(T2IParamTypes.SamplerSigmaMin, sigmin);
+            inputs[ComfyNodeInputNames.KSampler.SigmaMax] = UserInput.Get(T2IParamTypes.SamplerSigmaMax, sigmax);
+            inputs[ComfyNodeInputNames.KSampler.Rho] = UserInput.Get(T2IParamTypes.SamplerRho, 7);
+            inputs[ComfyNodeInputNames.KSampler.Previews] = UserInput.Get(T2IParamTypes.NoPreviews) ? "none" : previews ?? DefaultPreviews;
+            inputs[ComfyNodeInputNames.KSampler.TileSample] = doTiled;
+            inputs[ComfyNodeInputNames.KSampler.TileSize] = FinalLoadedModel.StandardWidth <= 0 ? 768 : FinalLoadedModel.StandardWidth;
             if (UserInput.TryGet(ComfyUIBackendExtension.DetailDaemonAmount, out double detailDaemonAmount))
             {
                 string detailDaemonOptions = CreateNode(ComfyNodeNames.DetailDaemonOptions, new JObject()
                 {
-                    ["detail_amount"] = detailDaemonAmount,
-                    ["start"] = UserInput.Get(ComfyUIBackendExtension.DetailDaemonStart, 0.2),
-                    ["end"] = UserInput.Get(ComfyUIBackendExtension.DetailDaemonEnd, 0.8),
-                    ["bias"] = UserInput.Get(ComfyUIBackendExtension.DetailDaemonBias, 0.5),
-                    ["exponent"] = UserInput.Get(ComfyUIBackendExtension.DetailDaemonExponent, 1),
-                    ["start_offset"] = UserInput.Get(ComfyUIBackendExtension.DetailDaemonStartOffset, 0),
-                    ["end_offset"] = UserInput.Get(ComfyUIBackendExtension.DetailDaemonEndOffset, 0),
-                    ["fade"] = UserInput.Get(ComfyUIBackendExtension.DetailDaemonFade, 0),
-                    ["smooth"] = UserInput.Get(ComfyUIBackendExtension.DetailDaemonSmooth, true),
-                    ["cfg_scale_override"] = UserInput.Get(ComfyUIBackendExtension.DetailDaemonCFGScaleOverride, 0)
+                    [ComfyNodeInputNames.DetailDaemonOptions.DetailAmount] = detailDaemonAmount,
+                    [ComfyNodeInputNames.DetailDaemonOptions.Start] = UserInput.Get(ComfyUIBackendExtension.DetailDaemonStart, 0.2),
+                    [ComfyNodeInputNames.DetailDaemonOptions.End] = UserInput.Get(ComfyUIBackendExtension.DetailDaemonEnd, 0.8),
+                    [ComfyNodeInputNames.DetailDaemonOptions.Bias] = UserInput.Get(ComfyUIBackendExtension.DetailDaemonBias, 0.5),
+                    [ComfyNodeInputNames.DetailDaemonOptions.Exponent] = UserInput.Get(ComfyUIBackendExtension.DetailDaemonExponent, 1),
+                    [ComfyNodeInputNames.DetailDaemonOptions.StartOffset] = UserInput.Get(ComfyUIBackendExtension.DetailDaemonStartOffset, 0),
+                    [ComfyNodeInputNames.DetailDaemonOptions.EndOffset] = UserInput.Get(ComfyUIBackendExtension.DetailDaemonEndOffset, 0),
+                    [ComfyNodeInputNames.DetailDaemonOptions.Fade] = UserInput.Get(ComfyUIBackendExtension.DetailDaemonFade, 0),
+                    [ComfyNodeInputNames.DetailDaemonOptions.Smooth] = UserInput.Get(ComfyUIBackendExtension.DetailDaemonSmooth, true),
+                    [ComfyNodeInputNames.DetailDaemonOptions.CFGScaleOverride] = UserInput.Get(ComfyUIBackendExtension.DetailDaemonCFGScaleOverride, 0)
                 });
-                inputs["detail_daemon"] = NodePath(detailDaemonOptions, 0);
+                inputs[ComfyNodeInputNames.KSampler.DetailDaemon] = NodePath(detailDaemonOptions, 0);
             }
-            inputs["model_negative"] = negativeModel?.Path;
+            inputs[ComfyNodeInputNames.KSampler.ModelNegative] = negativeModel?.Path;
             created = CreateNode(ComfyNodeNames.KSampler, inputs, firstId);
         }
         else
@@ -2432,9 +2432,9 @@ public partial class WorkflowGenerator
         {
             string trimNode = CreateNode(ComfyNodeNames.TrimFrames, new JObject()
             {
-                ["image"] = CurrentMedia.Path,
-                ["trim_start"] = UserInput.Get(T2IParamTypes.TrimVideoStartFrames, 0),
-                ["trim_end"] = UserInput.Get(T2IParamTypes.TrimVideoEndFrames, 0)
+                [ComfyNodeInputNames.TrimFrames.Image] = CurrentMedia.Path,
+                [ComfyNodeInputNames.TrimFrames.TrimStart] = UserInput.Get(T2IParamTypes.TrimVideoStartFrames, 0),
+                [ComfyNodeInputNames.TrimFrames.TrimEnd] = UserInput.Get(T2IParamTypes.TrimVideoEndFrames, 0)
             });
             CurrentMedia = CurrentMedia.WithPath([trimNode, 0]);
         }
@@ -2655,16 +2655,16 @@ public partial class WorkflowGenerator
             }
             node = CreateNode(ComfyNodeNames.ClipTextEncodeAdvanced, new JObject()
             {
-                ["clip"] = clip,
-                ["steps"] = UserInput.Get(T2IParamTypes.Steps),
-                ["prompt"] = prompt,
-                ["width"] = width,
-                ["height"] = height,
-                ["target_width"] = width,
-                ["target_height"] = height,
-                ["guidance"] = UserInput.Get(T2IParamTypes.FluxGuidanceScale, defaultGuidance),
-                ["images"] = imageNode,
-                ["llama_template"] = IsBoogu() ? null : "krea2" // TODO: Ideogram preferred template?
+                [ComfyNodeInputNames.ClipTextEncodeAdvanced.CLIP] = clip,
+                [ComfyNodeInputNames.ClipTextEncodeAdvanced.Steps] = UserInput.Get(T2IParamTypes.Steps),
+                [ComfyNodeInputNames.ClipTextEncodeAdvanced.Prompt] = prompt,
+                [ComfyNodeInputNames.ClipTextEncodeAdvanced.Width] = width,
+                [ComfyNodeInputNames.ClipTextEncodeAdvanced.Height] = height,
+                [ComfyNodeInputNames.ClipTextEncodeAdvanced.TargetWidth] = width,
+                [ComfyNodeInputNames.ClipTextEncodeAdvanced.TargetHeight] = height,
+                [ComfyNodeInputNames.ClipTextEncodeAdvanced.Guidance] = UserInput.Get(T2IParamTypes.FluxGuidanceScale, defaultGuidance),
+                [ComfyNodeInputNames.ClipTextEncodeAdvanced.Images] = imageNode,
+                [ComfyNodeInputNames.ClipTextEncodeAdvanced.LlamaTemplate] = IsBoogu() ? null : "krea2" // TODO: Ideogram preferred template?
             }, id);
         }
         else if (IsQwenImageEdit() && (isPositive || IsQwenImageEditPlus()) && (qwenImage = GetPromptImage(true, true)) is not null)
@@ -2693,18 +2693,18 @@ public partial class WorkflowGenerator
                 }
                 node = CreateNode(ComfyNodeNames.ClipTextEncodeAdvanced, new JObject()
                 {
-                    ["clip"] = clip,
-                    ["steps"] = UserInput.Get(T2IParamTypes.Steps),
-                    ["prompt"] = prompt,
-                    ["width"] = width,
-                    ["height"] = height,
-                    ["target_width"] = width,
-                    ["target_height"] = height,
-                    ["guidance"] = UserInput.Get(T2IParamTypes.FluxGuidanceScale, defaultGuidance),
-                    ["images"] = qwenImage,
-                    ["llama_template"] = "qwen_image_edit_plus",
-                    ["token_normalization"] = tokenNormalization,
-                    ["weight_interpretation"] = weightInterpretation
+                    [ComfyNodeInputNames.ClipTextEncodeAdvanced.CLIP] = clip,
+                    [ComfyNodeInputNames.ClipTextEncodeAdvanced.Steps] = UserInput.Get(T2IParamTypes.Steps),
+                    [ComfyNodeInputNames.ClipTextEncodeAdvanced.Prompt] = prompt,
+                    [ComfyNodeInputNames.ClipTextEncodeAdvanced.Width] = width,
+                    [ComfyNodeInputNames.ClipTextEncodeAdvanced.Height] = height,
+                    [ComfyNodeInputNames.ClipTextEncodeAdvanced.TargetWidth] = width,
+                    [ComfyNodeInputNames.ClipTextEncodeAdvanced.TargetHeight] = height,
+                    [ComfyNodeInputNames.ClipTextEncodeAdvanced.Guidance] = UserInput.Get(T2IParamTypes.FluxGuidanceScale, defaultGuidance),
+                    [ComfyNodeInputNames.ClipTextEncodeAdvanced.Images] = qwenImage,
+                    [ComfyNodeInputNames.ClipTextEncodeAdvanced.LlamaTemplate] = "qwen_image_edit_plus",
+                    [ComfyNodeInputNames.ClipTextEncodeAdvanced.TokenNormalization] = tokenNormalization,
+                    [ComfyNodeInputNames.ClipTextEncodeAdvanced.WeightInterpretation] = weightInterpretation
                 }, id);
             }
             else if (IsQwenImageEditPlus())
@@ -2750,18 +2750,18 @@ public partial class WorkflowGenerator
             {
                 node = CreateNode(ComfyNodeNames.ClipTextEncodeAdvanced, new JObject()
                 {
-                    ["clip"] = clip,
-                    ["steps"] = UserInput.Get(T2IParamTypes.Steps),
-                    ["prompt"] = content,
-                    ["width"] = width,
-                    ["height"] = height,
-                    ["target_width"] = width,
-                    ["target_height"] = height,
-                    ["guidance"] = UserInput.Get(T2IParamTypes.FluxGuidanceScale, defaultGuidance),
-                    ["clip_vision_output"] = NodePath(encoded, 0),
-                    ["llama_template"] = "hunyuan_image",
-                    ["token_normalization"] = tokenNormalization,
-                    ["weight_interpretation"] = weightInterpretation
+                    [ComfyNodeInputNames.ClipTextEncodeAdvanced.CLIP] = clip,
+                    [ComfyNodeInputNames.ClipTextEncodeAdvanced.Steps] = UserInput.Get(T2IParamTypes.Steps),
+                    [ComfyNodeInputNames.ClipTextEncodeAdvanced.Prompt] = content,
+                    [ComfyNodeInputNames.ClipTextEncodeAdvanced.Width] = width,
+                    [ComfyNodeInputNames.ClipTextEncodeAdvanced.Height] = height,
+                    [ComfyNodeInputNames.ClipTextEncodeAdvanced.TargetWidth] = width,
+                    [ComfyNodeInputNames.ClipTextEncodeAdvanced.TargetHeight] = height,
+                    [ComfyNodeInputNames.ClipTextEncodeAdvanced.Guidance] = UserInput.Get(T2IParamTypes.FluxGuidanceScale, defaultGuidance),
+                    [ComfyNodeInputNames.ClipTextEncodeAdvanced.CLIPVisionOutput] = NodePath(encoded, 0),
+                    [ComfyNodeInputNames.ClipTextEncodeAdvanced.LlamaTemplate] = "hunyuan_image",
+                    [ComfyNodeInputNames.ClipTextEncodeAdvanced.TokenNormalization] = tokenNormalization,
+                    [ComfyNodeInputNames.ClipTextEncodeAdvanced.WeightInterpretation] = weightInterpretation
                 }, id);
             }
             else
@@ -2779,16 +2779,16 @@ public partial class WorkflowGenerator
         {
             node = CreateNode(ComfyNodeNames.ClipTextEncodeAdvanced, new JObject()
             {
-                ["clip"] = clip,
-                ["steps"] = UserInput.Get(T2IParamTypes.Steps),
-                ["prompt"] = prompt,
-                ["width"] = enhance ? (int)Utilities.RoundToPrecision(width * mult, 64) : width,
-                ["height"] = enhance ? (int)Utilities.RoundToPrecision(height * mult, 64) : height,
-                ["target_width"] = width,
-                ["target_height"] = height,
-                ["guidance"] = UserInput.Get(T2IParamTypes.FluxGuidanceScale, defaultGuidance),
-                ["token_normalization"] = tokenNormalization,
-                ["weight_interpretation"] = weightInterpretation
+                [ComfyNodeInputNames.ClipTextEncodeAdvanced.CLIP] = clip,
+                [ComfyNodeInputNames.ClipTextEncodeAdvanced.Steps] = UserInput.Get(T2IParamTypes.Steps),
+                [ComfyNodeInputNames.ClipTextEncodeAdvanced.Prompt] = prompt,
+                [ComfyNodeInputNames.ClipTextEncodeAdvanced.Width] = enhance ? (int)Utilities.RoundToPrecision(width * mult, 64) : width,
+                [ComfyNodeInputNames.ClipTextEncodeAdvanced.Height] = enhance ? (int)Utilities.RoundToPrecision(height * mult, 64) : height,
+                [ComfyNodeInputNames.ClipTextEncodeAdvanced.TargetWidth] = width,
+                [ComfyNodeInputNames.ClipTextEncodeAdvanced.TargetHeight] = height,
+                [ComfyNodeInputNames.ClipTextEncodeAdvanced.Guidance] = UserInput.Get(T2IParamTypes.FluxGuidanceScale, defaultGuidance),
+                [ComfyNodeInputNames.ClipTextEncodeAdvanced.TokenNormalization] = tokenNormalization,
+                [ComfyNodeInputNames.ClipTextEncodeAdvanced.WeightInterpretation] = weightInterpretation
             }, id);
         }
         else if (model is not null && model.ModelClass is not null && model.ModelClass.ID == "stable-diffusion-xl-v1-base")
@@ -2887,11 +2887,11 @@ public partial class WorkflowGenerator
     {
         string regionNode = CreateNode(ComfyNodeNames.SquareMaskFromPercent, new JObject()
         {
-            ["x"] = part.X,
-            ["y"] = part.Y,
-            ["width"] = part.Width,
-            ["height"] = part.Height,
-            ["strength"] = Math.Abs(part.Strength)
+            [ComfyNodeInputNames.SquareMaskFromPercent.X] = part.X,
+            [ComfyNodeInputNames.SquareMaskFromPercent.Y] = part.Y,
+            [ComfyNodeInputNames.SquareMaskFromPercent.Width] = part.Width,
+            [ComfyNodeInputNames.SquareMaskFromPercent.Height] = part.Height,
+            [ComfyNodeInputNames.SquareMaskFromPercent.Strength] = Math.Abs(part.Strength)
         });
         if (part.Strength < 0)
         {
@@ -2951,24 +2951,24 @@ public partial class WorkflowGenerator
             {
                 string overlapped = CreateNode(ComfyNodeNames.OverMergeMasksForOverlapFix, new JObject()
                 {
-                    ["mask_a"] = lastMergedMask,
-                    ["mask_b"] = regionMask
+                    [ComfyNodeInputNames.OverMergeMasksForOverlapFix.MaskA] = lastMergedMask,
+                    [ComfyNodeInputNames.OverMergeMasksForOverlapFix.MaskB] = regionMask
                 });
                 lastMergedMask = [overlapped, 0];
             }
         }
         string globalMask = CreateNode(ComfyNodeNames.SquareMaskFromPercent, new JObject()
         {
-            ["x"] = 0,
-            ["y"] = 0,
-            ["width"] = 1,
-            ["height"] = 1,
-            ["strength"] = 1
+            [ComfyNodeInputNames.SquareMaskFromPercent.X] = 0,
+            [ComfyNodeInputNames.SquareMaskFromPercent.Y] = 0,
+            [ComfyNodeInputNames.SquareMaskFromPercent.Width] = 1,
+            [ComfyNodeInputNames.SquareMaskFromPercent.Height] = 1,
+            [ComfyNodeInputNames.SquareMaskFromPercent.Strength] = 1
         });
         string maskBackground = CreateNode(ComfyNodeNames.ExcludeFromMask, new JObject()
         {
-            ["main_mask"] = NodePath(globalMask, 0),
-            ["exclude_mask"] = lastMergedMask
+            [ComfyNodeInputNames.ExcludeFromMask.MainMask] = NodePath(globalMask, 0),
+            [ComfyNodeInputNames.ExcludeFromMask.ExcludeMask] = lastMergedMask
         });
         string backgroundPrompt = string.IsNullOrWhiteSpace(regionalizer.BackgroundPrompt) ? regionalizer.GlobalPrompt : regionalizer.BackgroundPrompt;
         double globalStrength = UserInput.Get(T2IParamTypes.GlobalRegionFactor, 0.5);
@@ -2990,8 +2990,8 @@ public partial class WorkflowGenerator
         {
             string overlapped = CreateNode(ComfyNodeNames.CleanOverlapMasksExceptSelf, new JObject()
             {
-                ["mask_self"] = region.Mask,
-                ["mask_merged"] = lastMergedMask
+                [ComfyNodeInputNames.CleanOverlapMasksExceptSelf.MaskSelf] = region.Mask,
+                [ComfyNodeInputNames.CleanOverlapMasksExceptSelf.MaskMerged] = lastMergedMask
             });
             JArray cleanedMask = [overlapped, 0];
             DebugRegionalPromptMask(cleanedMask);
@@ -3024,15 +3024,15 @@ public partial class WorkflowGenerator
         }
         JObject inputs = new()
         {
-            ["model"] = model,
-            ["base_cond"] = plan.BaseCond,
-            ["base_mask"] = plan.BaseMask,
-            ["regions_json"] = "[]"
+            [ComfyNodeInputNames.AttentionCouple.Model] = model,
+            [ComfyNodeInputNames.AttentionCouple.BaseCondition] = plan.BaseCond,
+            [ComfyNodeInputNames.AttentionCouple.BaseMask] = plan.BaseMask,
+            [ComfyNodeInputNames.AttentionCouple.RegionsJson] = "[]"
         };
         for (int i = 0; i < plan.Regions.Count; i++)
         {
-            inputs[$"cond_{i + 1}"] = plan.Regions[i].Cond;
-            inputs[$"mask_{i + 1}"] = plan.Regions[i].Mask;
+            inputs[$"{ComfyNodeInputNames.AttentionCouple.ConditionPrefix}{i + 1}"] = plan.Regions[i].Cond;
+            inputs[$"{ComfyNodeInputNames.AttentionCouple.MaskPrefix}{i + 1}"] = plan.Regions[i].Mask;
         }
         string patched = CreateNode(ComfyNodeNames.AttentionCouple, inputs);
         return [patched, 0];
@@ -3226,24 +3226,24 @@ public partial class WorkflowGenerator
             {
                 string overlapped = CreateNode(ComfyNodeNames.OverMergeMasksForOverlapFix, new JObject()
                 {
-                    ["mask_a"] = lastMergedMask,
-                    ["mask_b"] = region.Mask
+                    [ComfyNodeInputNames.OverMergeMasksForOverlapFix.MaskA] = lastMergedMask,
+                    [ComfyNodeInputNames.OverMergeMasksForOverlapFix.MaskB] = region.Mask
                 });
                 lastMergedMask = [overlapped, 0];
             }
         }
         string globalMask = CreateNode(ComfyNodeNames.SquareMaskFromPercent, new JObject()
         {
-            ["x"] = 0,
-            ["y"] = 0,
-            ["width"] = 1,
-            ["height"] = 1,
-            ["strength"] = 1
+            [ComfyNodeInputNames.SquareMaskFromPercent.X] = 0,
+            [ComfyNodeInputNames.SquareMaskFromPercent.Y] = 0,
+            [ComfyNodeInputNames.SquareMaskFromPercent.Width] = 1,
+            [ComfyNodeInputNames.SquareMaskFromPercent.Height] = 1,
+            [ComfyNodeInputNames.SquareMaskFromPercent.Strength] = 1
         });
         string maskBackground = CreateNode(ComfyNodeNames.ExcludeFromMask, new JObject()
         {
-            ["main_mask"] = NodePath(globalMask, 0),
-            ["exclude_mask"] = lastMergedMask
+            [ComfyNodeInputNames.ExcludeFromMask.MainMask] = NodePath(globalMask, 0),
+            [ComfyNodeInputNames.ExcludeFromMask.ExcludeMask] = lastMergedMask
         });
         string backgroundPrompt = string.IsNullOrWhiteSpace(regionalizer.BackgroundPrompt) ? regionalizer.GlobalPrompt : regionalizer.BackgroundPrompt;
         JArray backgroundCond = CreateConditioningLine(backgroundPrompt, clip, model, isPositive);
@@ -3271,8 +3271,8 @@ public partial class WorkflowGenerator
         {
             string overlapped = CreateNode(ComfyNodeNames.CleanOverlapMasksExceptSelf, new JObject()
             {
-                ["mask_self"] = region.Mask,
-                ["mask_merged"] = lastMergedMask
+                [ComfyNodeInputNames.CleanOverlapMasksExceptSelf.MaskSelf] = region.Mask,
+                [ComfyNodeInputNames.CleanOverlapMasksExceptSelf.MaskMerged] = lastMergedMask
             });
             DebugMask([overlapped, 0]);
             string regionCond = CreateNode("ConditioningSetMask", new JObject()
