@@ -614,15 +614,15 @@ public static class ComfyUIWebAPI
             ["class_type"] = ComfyNodeNames.ExtractLora,
             ["inputs"] = new JObject()
             {
-                ["base_model"] = new JArray() { "4", 0 },
+                [ComfyNodeInputNames.ExtractLora.BaseModel] = new JArray() { "4", 0 },
                 ["base_model_clip"] = doClip ? new JArray() { "4", 1 } : null,
-                ["other_model"] = new JArray() { "5", 0 },
+                [ComfyNodeInputNames.ExtractLora.OtherModel] = new JArray() { "5", 0 },
                 ["other_model_clip"] = doClip ? new JArray() { "5", 1 } : null,
-                ["rank"] = rank,
-                ["save_rawpath"] = Program.T2IModelSets["LoRA"].DownloadFolderPath + "/",
-                ["save_filename"] = outName.Replace('\\', '/').Replace("/", format ?? $"{Path.DirectorySeparatorChar}"),
+                [ComfyNodeInputNames.ExtractLora.Rank] = rank,
+                [ComfyNodeInputNames.ExtractLora.SaveRawPath] = Program.T2IModelSets["LoRA"].DownloadFolderPath + "/",
+                [ComfyNodeInputNames.ExtractLora.SaveFilename] = outName.Replace('\\', '/').Replace("/", format ?? $"{Path.DirectorySeparatorChar}"),
                 ["save_clip"] = doClip,
-                ["metadata"] = metadata.ToString()
+                [ComfyNodeInputNames.ExtractLora.Metadata] = metadata.ToString()
             }
         };
         Logs.Info($"Starting LoRA extraction (for user {session.User.UserID}) for base '{baseModel}', other '{otherModel}', rank {rank}, output to '{outName}'...");

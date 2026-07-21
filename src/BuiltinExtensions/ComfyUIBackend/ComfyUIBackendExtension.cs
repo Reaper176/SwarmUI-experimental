@@ -482,7 +482,7 @@ public class ComfyUIBackendExtension : Extension
             {
                 T2IParamTypes.ConcatDropdownValsClean(ref UpscalerModels, latentUpscaleModels.Select(u => $"latentmodel-{u}///Latent Model: {u}"));
             }
-            if (TryGetRequiredInputs(rawObjectInfo, ComfyNodeNames.KSampler, "sampler_name", out JToken swarmksamplerNames))
+            if (TryGetRequiredInputs(rawObjectInfo, ComfyNodeNames.KSampler, ComfyNodeInputNames.KSampler.SamplerName, out JToken swarmksamplerNames))
             {
                 string[] dropped = [.. Samplers.Select(s => s.Before("///")).Except([.. swarmksamplerNames.Select(u => $"{u}")])];
                 if (dropped.Any())
@@ -491,7 +491,7 @@ public class ComfyUIBackendExtension : Extension
                 }
                 T2IParamTypes.ConcatDropdownValsClean(ref Samplers, swarmksamplerNames.Select(u => $"{u}///{u} (New)"));
             }
-            if (TryGetRequiredInputs(rawObjectInfo, ComfyNodeNames.KSampler, "scheduler", out JToken swarmksamplerSchedulers))
+            if (TryGetRequiredInputs(rawObjectInfo, ComfyNodeNames.KSampler, ComfyNodeInputNames.KSampler.Scheduler, out JToken swarmksamplerSchedulers))
             {
                 T2IParamTypes.ConcatDropdownValsClean(ref Schedulers, swarmksamplerSchedulers.Select(u => $"{u}///{u} (New)"));
             }
@@ -533,7 +533,7 @@ public class ComfyUIBackendExtension : Extension
             {
                 T2IParamTypes.ConcatDropdownValsClean(ref StyleModels, styleModelLoader.Select(m => $"{m}"));
             }
-            if (TryGetRequiredInputs(rawObjectInfo, ComfyNodeNames.YoloDetection, "model_name", out JToken yoloDetection))
+            if (TryGetRequiredInputs(rawObjectInfo, ComfyNodeNames.YoloDetection, ComfyNodeInputNames.YoloDetection.ModelName, out JToken yoloDetection))
             {
                 T2IParamTypes.ConcatDropdownValsClean(ref YoloModels, yoloDetection.Select(m => $"{m}"));
             }

@@ -94,9 +94,9 @@ public abstract class ComfyUIAPIAbstractBackend : AbstractT2IBackend
         trackModels("LoRA", "LoraLoader", "lora_name");
         trackModels("VAE", "VAELoader", "vae_name");
         trackModels("ControlNet", "ControlNetLoader", "control_net_name");
-        trackModels("ControlNet", ComfyNodeNames.AnimaLLLite, "lllite_name");
+        trackModels("ControlNet", ComfyNodeNames.AnimaLLLite, ComfyNodeInputNames.AnimaLLLite.LLLiteName);
         trackModels("ClipVision", "CLIPVisionLoader", "clip_name");
-        trackModels("Embedding", ComfyNodeNames.EmbedLoaderListProvider, "embed_name");
+        trackModels("Embedding", ComfyNodeNames.EmbedLoaderListProvider, ComfyNodeInputNames.EmbedLoaderListProvider.EmbedName);
         Models = newModels;
         if (firstBackSlash is not null)
         {
