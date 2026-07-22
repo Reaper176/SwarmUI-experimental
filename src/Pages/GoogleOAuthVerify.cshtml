@@ -31,7 +31,7 @@
             <script>window.location.href = "Login";</script>
             return;
         }
-        HttpContext.Response.Cookies.Append("swarm_token", tok, new CookieOptions() { HttpOnly = true, Expires = DateTimeOffset.UtcNow.AddYears(1), SameSite = SameSiteMode.Lax });
+        HttpContext.Response.Cookies.Append("swarm_token", tok, new CookieOptions() { HttpOnly = true, Expires = DateTimeOffset.UtcNow.AddYears(1), SameSite = SameSiteMode.Lax, Secure = HttpContext.Request.IsHttps });
         Logs.Info($"Login attempt from {WebUtil.GetIPString(HttpContext)} as {user.UserID} via Google OAuth, successful.");
         <script>window.location.href = "Text2Image";</script>
         return;
