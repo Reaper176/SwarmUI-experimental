@@ -165,7 +165,7 @@ public class ComfyUIBackendExtension : Extension
     public static T2IParamType FakeRawInputType = new("comfyworkflowraw", "", "", Type: T2IParamDataType.TEXT, ID: "comfyworkflowraw", FeatureFlag: "comfyui", HideFromMetadata: true), // TODO: Setting to toggle metadata
         FakeParameterMetadata = new("comfyworkflowparammetadata", "", "", Type: T2IParamDataType.TEXT, ID: "comfyworkflowparammetadata", FeatureFlag: "comfyui", HideFromMetadata: true);
 
-    public static SingleCacheAsync<string, JObject> ParameterMetadataCacheHelper = new(s => s.ParseToJson());
+    public static SingleCacheAsync<string, JObject> ParameterMetadataCacheHelper = new(s => ComfySubmittedJson.ParseObject(s));
 
     public T2IParamType DynamicParamGenerator(string name, T2IParamInput context)
     {
@@ -316,7 +316,7 @@ public class ComfyUIBackendExtension : Extension
         }
         try
         {
-            JObject json = File.ReadAllText(path).ParseToJson();
+            JObject json = ComfySubmittedJson.ParseObject(File.ReadAllText(path));
             string getStringFor(string key)
             {
                 if (!json.TryGetValue(key, out JToken data))

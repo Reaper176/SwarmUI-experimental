@@ -234,7 +234,7 @@ public abstract class ComfyUIAPIAbstractBackend : AbstractT2IBackend
             return;
         }
         Logs.Verbose("Will await a job, do parse...");
-        JObject workflowJson = Utilities.ParseToJson(workflow);
+        JObject workflowJson = ComfySubmittedJson.ParseObject(workflow);
         Logs.Verbose("JSON parsed.");
         JObject metadataObj = user_input.GenParameterMetadata();
         metadataObj.Remove("donotsave");
@@ -809,7 +809,7 @@ public abstract class ComfyUIAPIAbstractBackend : AbstractT2IBackend
             Logs.Verbose("Will fill a workflow...");
             workflow = StringConversionHelper.QuickSimpleTagFiller(initImageFixer(workflow), "${", "}", (tag) =>
             {
-                string fixedTag = Utilities.UnescapeJsonString(tag);
+                string fixedTag = ComfySubmittedJson.UnescapeString(tag);
                 string tagName = fixedTag.BeforeAndAfter(':', out string defVal);
                 string tagBasic = tagName.BeforeAndAfter('+', out string tagExtra);
                 string fillDynamic()
@@ -1019,7 +1019,7 @@ public abstract class ComfyUIAPIAbstractBackend : AbstractT2IBackend
         {
             return "null";
         });
-        JObject workflow = Utilities.ParseToJson(workflowRaw);
+        JObject workflow = ComfySubmittedJson.ParseObject(workflowRaw);
         JProperty refusalNode = workflow.Properties().FirstOrDefault(p => !nodeTypes.Contains($"{p.Value["class_type"]}"));
         if (refusalNode is not null)
         {
