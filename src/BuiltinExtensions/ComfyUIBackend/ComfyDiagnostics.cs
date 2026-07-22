@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.IO;
 using FreneticUtilities.FreneticExtensions;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
@@ -6,7 +7,7 @@ using SwarmUI.Text2Image;
 
 namespace SwarmUI.Builtin_ComfyUIBackend;
 
-/// <summary>Builds value-eliding diagnostic descriptions for Comfy workflows, typed inputs, tags, and exceptions.</summary>
+/// <summary>Builds opaque, value-eliding diagnostic descriptions for Comfy workflows, typed inputs, and exceptions.</summary>
 internal static class ComfyDiagnostics
 {
     /// <summary>Describes a raw direct workflow graph without reproducing submitted input values.</summary>
@@ -19,7 +20,7 @@ internal static class ComfyDiagnostics
         JToken parsed;
         try
         {
-            parsed = JToken.Parse(workflow);
+            parsed = ParseJson(workflow);
         }
         catch
         {
@@ -46,22 +47,18 @@ internal static class ComfyDiagnostics
         {
             return FixedStatus("empty-prompt-envelope");
         }
+        JToken parsed;
         try
         {
-            return DescribePromptEnvelope(JToken.Parse(envelope));
+            parsed = ParseJson(envelope);
         }
         catch
         {
             return FixedStatus("invalid-prompt-envelope-json");
         }
-    }
-
-    /// <summary>Describes a parsed Comfy prompt envelope without reproducing submitted input values.</summary>
-    public static string DescribePromptEnvelope(JToken envelope)
-    {
         try
         {
-            if (envelope is not JObject root || root["prompt"] is not JObject graph)
+            if (parsed is not JObject root || root["prompt"] is not JObject graph)
             {
                 return FixedStatus("invalid-prompt-envelope-shape");
             }
@@ -73,7 +70,7 @@ internal static class ComfyDiagnostics
         }
     }
 
-    /// <summary>Describes typed-input parameter names without reading or formatting their values.</summary>
+    /// <summary>Describes the number of typed-input parameters without reading or formatting their names or values.</summary>
     public static string DescribeParameters(T2IParamInput input)
     {
         try
@@ -82,34 +79,16 @@ internal static class ComfyDiagnostics
             {
                 return FixedStatus("unavailable-parameter-summary");
             }
-            JArray names = [];
-            foreach (string name in input.InternalSet.ValuesInput.Keys)
-            {
-                names.Add(name);
-            }
+            int parameterCount = input.InternalSet.ValuesInput.Count;
             JObject summary = new()
             {
-                ["parameter_count"] = names.Count,
-                ["parameter_names"] = names
+                ["parameter_count"] = parameterCount
             };
             return summary.ToString(Formatting.None);
         }
         catch
         {
             return FixedStatus("unavailable-parameter-summary");
-        }
-    }
-
-    /// <summary>Describes a normalized workflow-tag name without retaining defaults, suffixes, or values.</summary>
-    public static string DescribeNormalizedTagName(string tagName)
-    {
-        try
-        {
-            return new JValue(tagName ?? "invalid-tag-name").ToString(Formatting.None);
-        }
-        catch
-        {
-            return "\"invalid-tag-name\"";
         }
     }
 
@@ -134,38 +113,36 @@ internal static class ComfyDiagnostics
         }
     }
 
-    /// <summary>Describes a parsed direct workflow graph without reproducing submitted input values.</summary>
+    /// <summary>Parses JSON without coercing ISO-looking strings into dates.</summary>
+    private static JToken ParseJson(string json)
+    {
+        using StringReader stringReader = new(json);
+        using JsonTextReader reader = new(stringReader)
+        {
+            DateParseHandling = DateParseHandling.None
+        };
+        return JToken.ReadFrom(reader);
+    }
+
+    /// <summary>Describes a parsed workflow graph without reproducing submitted identifiers or input values.</summary>
     private static string DescribeGraph(JObject graph)
     {
-        HashSet<string> validNodeIds = [.. graph.Properties()
-            .Where(property => property.Value is JObject node && node["class_type"]?.Type == JTokenType.String && node["inputs"] is JObject)
-            .Select(property => property.Name)];
-        JObject nodes = [];
+        Dictionary<string, string> validNodeAliases = [];
+        int nodeNumber = 0;
         foreach (JProperty nodeProperty in graph.Properties())
         {
-            JObject nodeSummary = [];
-            if (nodeProperty.Value is not JObject node)
+            nodeNumber++;
+            if (IsValidNode(nodeProperty.Value))
             {
-                nodeSummary["status"] = "invalid-node-shape";
-                nodes[nodeProperty.Name] = nodeSummary;
-                continue;
+                validNodeAliases[nodeProperty.Name] = $"node_{nodeNumber}";
             }
-            JToken classType = node["class_type"];
-            nodeSummary["class_type"] = classType?.Type == JTokenType.String ? classType.Value<string>() : "invalid-class-type";
-            if (node["inputs"] is JObject inputs)
-            {
-                JObject inputSummary = [];
-                foreach (JProperty inputProperty in inputs.Properties())
-                {
-                    inputSummary[inputProperty.Name] = DescribeInput(inputProperty.Value, validNodeIds);
-                }
-                nodeSummary["inputs"] = inputSummary;
-            }
-            else
-            {
-                nodeSummary["inputs"] = "invalid-inputs-shape";
-            }
-            nodes[nodeProperty.Name] = nodeSummary;
+        }
+        JArray nodes = [];
+        nodeNumber = 0;
+        foreach (JProperty nodeProperty in graph.Properties())
+        {
+            nodeNumber++;
+            nodes.Add(DescribeNode(nodeProperty.Value, $"node_{nodeNumber}", validNodeAliases));
         }
         JObject summary = new()
         {
@@ -175,31 +152,98 @@ internal static class ComfyDiagnostics
         return summary.ToString(Formatting.None);
     }
 
-    /// <summary>Describes one workflow input as a validated connection or fixed value-kind marker.</summary>
-    private static JToken DescribeInput(JToken input, HashSet<string> validNodeIds)
+    /// <summary>Returns whether a graph node has the syntactically valid shape accepted as a connection source.</summary>
+    private static bool IsValidNode(JToken nodeToken)
     {
-        if (input is JArray array && array.Count == 2)
+        return nodeToken is JObject node && node["class_type"]?.Type == JTokenType.String && node["inputs"] is JObject;
+    }
+
+    /// <summary>Describes one graph node with generated aliases and value-free input metadata.</summary>
+    private static JObject DescribeNode(JToken nodeToken, string nodeAlias, Dictionary<string, string> validNodeAliases)
+    {
+        string status;
+        JObject inputs = null;
+        if (nodeToken is not JObject node)
         {
-            JToken sourceToken = array[0];
-            JToken outputToken = array[1];
-            if (sourceToken is not null
-                && (sourceToken.Type == JTokenType.String || sourceToken.Type == JTokenType.Integer)
-                && outputToken?.Type == JTokenType.Integer
-                && int.TryParse(outputToken.ToString(Formatting.None), NumberStyles.Integer, CultureInfo.InvariantCulture, out int outputIndex)
-                && outputIndex >= 0)
+            status = "invalid-node-shape";
+        }
+        else if (node["class_type"]?.Type != JTokenType.String)
+        {
+            status = "invalid-class-type";
+            inputs = node["inputs"] as JObject;
+        }
+        else if (node["inputs"] is not JObject nodeInputs)
+        {
+            status = "invalid-inputs-shape";
+        }
+        else
+        {
+            status = "valid-node-shape";
+            inputs = nodeInputs;
+        }
+        JArray inputSummaries = [];
+        if (inputs is not null)
+        {
+            int inputNumber = 0;
+            foreach (JProperty inputProperty in inputs.Properties())
             {
-                string sourceNode = sourceToken.ToString();
-                if (validNodeIds.Contains(sourceNode))
-                {
-                    return new JObject()
-                    {
-                        ["source_node"] = sourceNode,
-                        ["output_index"] = new JValue(outputIndex)
-                    };
-                }
+                inputNumber++;
+                inputSummaries.Add(DescribeInput(inputProperty.Value, $"input_{inputNumber}", validNodeAliases));
             }
         }
-        return $"redacted:{GetValueKind(input)}";
+        return new JObject()
+        {
+            ["node"] = nodeAlias,
+            ["status"] = status,
+            ["input_count"] = inputSummaries.Count,
+            ["inputs"] = inputSummaries
+        };
+    }
+
+    /// <summary>Describes one workflow input as a validated aliased connection or fixed value-kind marker.</summary>
+    private static JObject DescribeInput(JToken input, string inputAlias, Dictionary<string, string> validNodeAliases)
+    {
+        JObject summary = new()
+        {
+            ["input"] = inputAlias
+        };
+        if (TryGetConnectionSourceAlias(input, validNodeAliases, out string sourceNodeAlias))
+        {
+            summary["kind"] = "connection";
+            summary["source_node"] = sourceNodeAlias;
+        }
+        else
+        {
+            summary["kind"] = $"redacted:{GetValueKind(input)}";
+        }
+        return summary;
+    }
+
+    /// <summary>Returns a generated source-node alias only for valid two-item Comfy connections with a nonnegative int32 output index.</summary>
+    private static bool TryGetConnectionSourceAlias(JToken input, Dictionary<string, string> validNodeAliases, out string sourceNodeAlias)
+    {
+        sourceNodeAlias = null;
+        if (input is not JArray array || array.Count != 2)
+        {
+            return false;
+        }
+        JToken sourceToken = array[0];
+        JToken outputToken = array[1];
+        if (sourceToken is null || (sourceToken.Type != JTokenType.String && sourceToken.Type != JTokenType.Integer) || outputToken?.Type != JTokenType.Integer)
+        {
+            return false;
+        }
+        if (!int.TryParse(outputToken.ToString(Formatting.None), NumberStyles.Integer, CultureInfo.InvariantCulture, out int outputIndex) || outputIndex < 0)
+        {
+            return false;
+        }
+        string sourceIdentifier = Convert.ToString(((JValue)sourceToken).Value, CultureInfo.InvariantCulture);
+        if (sourceIdentifier is null || !validNodeAliases.TryGetValue(sourceIdentifier, out sourceNodeAlias))
+        {
+            sourceNodeAlias = null;
+            return false;
+        }
+        return true;
     }
 
     /// <summary>Maps a JSON token to a fixed value-kind name without reading its content.</summary>

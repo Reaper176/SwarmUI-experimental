@@ -888,7 +888,7 @@ public abstract class ComfyUIAPIAbstractBackend : AbstractT2IBackend
                 filled ??= defVal;
                 if (Logs.MinimumLevel <= Logs.LogLevel.Verbose)
                 {
-                    Logs.Verbose($"Filled tag {ComfyDiagnostics.DescribeNormalizedTagName(tagBasic)} with redacted value.");
+                    Logs.Verbose("Filled workflow tag with redacted name and value.");
                 }
                 return Utilities.EscapeJsonString(filled);
             }, false);
