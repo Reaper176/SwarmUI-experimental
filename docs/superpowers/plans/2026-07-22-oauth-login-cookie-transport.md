@@ -14,6 +14,8 @@
 
 **Approved design:** `docs/superpowers/specs/2026-07-22-oauth-login-cookie-transport-design.md` at commit `74bf9306`.
 
+**Implementation outcome:** Production is implemented and statically reviewed; maintainer compilation and HTTP/HTTPS/proxy authentication validation are pending.
+
 ---
 
 ### Task 1: Align the Google OAuth cookie transport flag
