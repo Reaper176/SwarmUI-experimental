@@ -806,93 +806,100 @@ public abstract class ComfyUIAPIAbstractBackend : AbstractT2IBackend
         string workflow = GetRawWorkflowFrom(user_input);
         if (workflow is not null && !user_input.Get(T2IParamTypes.ControlNetPreviewOnly))
         {
-            Logs.Verbose("Will fill a workflow...");
-            workflow = StringConversionHelper.QuickSimpleTagFiller(initImageFixer(workflow), "${", "}", (tag) =>
+            try
             {
-                string fixedTag = ComfySubmittedJson.UnescapeString(tag);
-                string tagName = fixedTag.BeforeAndAfter(':', out string defVal);
-                string tagBasic = tagName.BeforeAndAfter('+', out string tagExtra);
-                string fillDynamic()
+                Logs.Verbose("Will fill a workflow...");
+                workflow = StringConversionHelper.QuickSimpleTagFiller(initImageFixer(workflow), "${", "}", (tag) =>
                 {
-                    T2IParamType type = T2IParamTypes.GetType(tagBasic, user_input);
-                    if (type is null)
+                    string fixedTag = ComfySubmittedJson.UnescapeString(tag);
+                    string tagName = fixedTag.BeforeAndAfter(':', out string defVal);
+                    string tagBasic = tagName.BeforeAndAfter('+', out string tagExtra);
+                    string fillDynamic()
                     {
-                        if (string.IsNullOrWhiteSpace(defVal))
+                        T2IParamType type = T2IParamTypes.GetType(tagBasic, user_input);
+                        if (type is null)
                         {
-                            throw new SwarmUserErrorException($"Unknown param type request '{tagBasic}' from '{tag}'");
+                            if (string.IsNullOrWhiteSpace(defVal))
+                            {
+                                throw new SwarmUserErrorException("Unknown custom workflow parameter tag (content redacted).");
+                            }
+                            return defVal;
                         }
-                        return defVal;
+                        if (!user_input.TryGetRaw(type, out object val) || val is null)
+                        {
+                            val = defVal;
+                        }
+                        if (type.Type == T2IParamDataType.INTEGER && type.ViewType == ParamViewType.SEED && long.Parse(val.ToString()) == -1)
+                        {
+                            int max = (int)type.Max;
+                            return $"{Random.Shared.Next(0, max <= 0 ? int.MaxValue : max)}";
+                        }
+                        if (val is T2IModel model)
+                        {
+                            return model.ToString(ModelFolderFormat);
+                        }
+                        else if (val is MediaFile file)
+                        {
+                            return file.AsBase64;
+                        }
+                        else if (val is List<string> list)
+                        {
+                            return list.JoinString(",");
+                        }
+                        else if (val is bool bval)
+                        {
+                            return bval ? "true" : "false";
+                        }
+                        return val.ToString();
                     }
-                    if (!user_input.TryGetRaw(type, out object val) || val is null)
+                    long fixSeed(long input)
                     {
-                        val = defVal;
+                        return input == -1 ? Random.Shared.Next() : input;
                     }
-                    if (type.Type == T2IParamDataType.INTEGER && type.ViewType == ParamViewType.SEED && long.Parse(val.ToString()) == -1)
+                    string getLoras()
                     {
-                        int max = (int)type.Max;
-                        return $"{Random.Shared.Next(0, max <= 0 ? int.MaxValue : max)}";
+                        string[] loraNames = [.. Program.T2IModelSets["LoRA"].ListModelNamesFor(user_input.SourceSession)];
+                        string[] matches = [.. user_input.Get(T2IParamTypes.Loras, []).Select(lora => T2IParamTypes.GetBestModelInList(lora, loraNames))];
+                        if (matches.Any(m => string.IsNullOrWhiteSpace(m)))
+                        {
+                            throw new SwarmUserErrorException("One or more LoRA models not found.");
+                        }
+                        return matches.JoinString(",");
                     }
-                    if (val is T2IModel model)
+                    string filled = tagBasic switch
                     {
-                        return model.ToString(ModelFolderFormat);
-                    }
-                    else if (val is MediaFile file)
+                        "stability_api_key" => user_input.SourceSession.User.GetGenericData("stability_api", "key") ?? throw new SwarmUserErrorException("Stability API key not set - please go to the User tab to set it."),
+                        "prompt" => user_input.Get(T2IParamTypes.Prompt),
+                        "negative_prompt" => user_input.Get(T2IParamTypes.NegativePrompt),
+                        "seed" => $"{fixSeed(user_input.Get(T2IParamTypes.Seed)) + (int.TryParse(tagExtra, out int add) ? add : 0)}",
+                        "steps" => $"{user_input.Get(T2IParamTypes.Steps)}",
+                        "width" => $"{user_input.GetImageWidth()}",
+                        "height" => $"{user_input.GetImageHeight()}",
+                        "cfg_scale" => $"{user_input.Get(T2IParamTypes.CFGScale)}",
+                        "subseed" => $"{user_input.Get(T2IParamTypes.VariationSeed)}",
+                        "subseed_strength" => user_input.GetString(T2IParamTypes.VariationSeedStrength),
+                        "init_image" => user_input.Get(T2IParamTypes.InitImage, null)?.AsBase64,
+                        "init_image_strength" => user_input.GetString(T2IParamTypes.InitImageCreativity),
+                        "comfy_sampler" or "comfyui_sampler" or "sampler" => user_input.GetString(ComfyUIBackendExtension.SamplerParam) ?? (string.IsNullOrWhiteSpace(defVal) ? "euler" : defVal),
+                        "comfy_scheduler" or "comfyui_scheduler" or "scheduler" => user_input.GetString(ComfyUIBackendExtension.SchedulerParam) ?? (string.IsNullOrWhiteSpace(defVal) ? "normal" : defVal),
+                        "model" => user_input.Get(T2IParamTypes.Model).ToString(ModelFolderFormat),
+                        "prefix" => $"SwarmUI_{Random.Shared.Next():X4}_",
+                        "loras" => getLoras(),
+                        _ => fillDynamic()
+                    };
+                    filled ??= defVal;
+                    if (Logs.MinimumLevel <= Logs.LogLevel.Verbose)
                     {
-                        return file.AsBase64;
+                        Logs.Verbose("Filled workflow tag with redacted name and value.");
                     }
-                    else if (val is List<string> list)
-                    {
-                        return list.JoinString(",");
-                    }
-                    else if (val is bool bval)
-                    {
-                        return bval ? "true" : "false";
-                    }
-                    return val.ToString();
-                }
-                long fixSeed(long input)
-                {
-                    return input == -1 ? Random.Shared.Next() : input;
-                }
-                string getLoras()
-                {
-                    string[] loraNames = [.. Program.T2IModelSets["LoRA"].ListModelNamesFor(user_input.SourceSession)];
-                    string[] matches = [.. user_input.Get(T2IParamTypes.Loras, []).Select(lora => T2IParamTypes.GetBestModelInList(lora, loraNames))];
-                    if (matches.Any(m => string.IsNullOrWhiteSpace(m)))
-                    {
-                        throw new SwarmUserErrorException("One or more LoRA models not found.");
-                    }
-                    return matches.JoinString(",");
-                }
-                string filled = tagBasic switch
-                {
-                    "stability_api_key" => user_input.SourceSession.User.GetGenericData("stability_api", "key") ?? throw new SwarmUserErrorException("Stability API key not set - please go to the User tab to set it."),
-                    "prompt" => user_input.Get(T2IParamTypes.Prompt),
-                    "negative_prompt" => user_input.Get(T2IParamTypes.NegativePrompt),
-                    "seed" => $"{fixSeed(user_input.Get(T2IParamTypes.Seed)) + (int.TryParse(tagExtra, out int add) ? add : 0)}",
-                    "steps" => $"{user_input.Get(T2IParamTypes.Steps)}",
-                    "width" => $"{user_input.GetImageWidth()}",
-                    "height" => $"{user_input.GetImageHeight()}",
-                    "cfg_scale" => $"{user_input.Get(T2IParamTypes.CFGScale)}",
-                    "subseed" => $"{user_input.Get(T2IParamTypes.VariationSeed)}",
-                    "subseed_strength" => user_input.GetString(T2IParamTypes.VariationSeedStrength),
-                    "init_image" => user_input.Get(T2IParamTypes.InitImage, null)?.AsBase64,
-                    "init_image_strength" => user_input.GetString(T2IParamTypes.InitImageCreativity),
-                    "comfy_sampler" or "comfyui_sampler" or "sampler" => user_input.GetString(ComfyUIBackendExtension.SamplerParam) ?? (string.IsNullOrWhiteSpace(defVal) ? "euler" : defVal),
-                    "comfy_scheduler" or "comfyui_scheduler" or "scheduler" => user_input.GetString(ComfyUIBackendExtension.SchedulerParam) ?? (string.IsNullOrWhiteSpace(defVal) ? "normal" : defVal),
-                    "model" => user_input.Get(T2IParamTypes.Model).ToString(ModelFolderFormat),
-                    "prefix" => $"SwarmUI_{Random.Shared.Next():X4}_",
-                    "loras" => getLoras(),
-                    _ => fillDynamic()
-                };
-                filled ??= defVal;
-                if (Logs.MinimumLevel <= Logs.LogLevel.Verbose)
-                {
-                    Logs.Verbose("Filled workflow tag with redacted name and value.");
-                }
-                return Utilities.EscapeJsonString(filled);
-            }, false);
-            Logs.Verbose("Workflow filled.");
+                    return Utilities.EscapeJsonString(filled);
+                }, false);
+                Logs.Verbose("Workflow filled.");
+            }
+            catch (Exception)
+            {
+                throw new SwarmUserErrorException("Failed to process custom workflow data (content redacted).");
+            }
         }
         else
         {
@@ -1015,18 +1022,35 @@ public abstract class ComfyUIAPIAbstractBackend : AbstractT2IBackend
         {
             return true;
         }
-        workflowRaw = StringConversionHelper.QuickSimpleTagFiller(workflowRaw, "${", "}", (tag) =>
+        try
         {
-            return "null";
-        });
-        JObject workflow = ComfySubmittedJson.ParseObject(workflowRaw);
-        JProperty refusalNode = workflow.Properties().FirstOrDefault(p => !nodeTypes.Contains($"{p.Value["class_type"]}"));
-        if (refusalNode is not null)
-        {
-            input.RefusalReasons.Add($"The custom workflow contains an unsupported node type '{refusalNode.Value["class_type"]}'.");
-            return false;
+            workflowRaw = StringConversionHelper.QuickSimpleTagFiller(workflowRaw, "${", "}", (tag) =>
+            {
+                return "null";
+            });
+            JObject workflow = ComfySubmittedJson.ParseObject(workflowRaw);
+            int nodeIndex = 0;
+            foreach (JProperty nodeProperty in workflow.Properties())
+            {
+                nodeIndex++;
+                if (nodeProperty.Value is not JObject node
+                    || node["class_type"]?.Type != JTokenType.String
+                    || !nodeTypes.Contains(node["class_type"].Value<string>()))
+                {
+                    input.RefusalReasons.Add($"The custom workflow contains an unsupported or invalid node type at node_{nodeIndex} (identifier redacted).");
+                    return false;
+                }
+            }
+            return true;
         }
-        return true;
+        catch (JsonReaderException)
+        {
+            throw;
+        }
+        catch (Exception)
+        {
+            throw new SwarmUserErrorException("Custom workflow validation failed (content redacted).");
+        }
     }
 
     public Task<JType> SendGet<JType>(string url) where JType : class
