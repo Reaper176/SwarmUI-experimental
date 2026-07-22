@@ -2,31 +2,19 @@
 
 **Date:** 2026-07-21
 
-**Status:** Implemented, awaiting maintainer validation
+**Second revision:** 2026-07-22
+
+**Status:** Approved second revision; opaque diagnostics pending implementation
 
 ## Goal
 
-Prevent SwarmUI's maintained Comfy integration from writing filled workflow values, complete submitted workflows/prompts, typed-input values, raw WebSocket messages, or submitted/private JSON fragments embedded in parser exceptions to server logs or downstream error surfaces while retaining complete graph topology and useful failure context.
+Prevent SwarmUI's maintained Comfy integration from writing any user-controlled workflow, parameter, tag, WebSocket, or private stored-data lexeme to protected logs or downstream error surfaces. Retain value-free operation categories, graph shape through deterministic aliases, and failure behavior where confidentiality permits.
 
-## Confirmed Diagnostic Boundary
+## Confirmed Boundary and Review Findings
 
-Four maintained files own nine submitted-value diagnostic statements:
+The original project identified nine submitted-value diagnostic statements across `ComfyUIAPIAbstractBackend`, `ComfyUIWebAPI`, `ComfyUIRedirectHelper`, and `WorkflowGeneratorSteps`. It added `ComfyDiagnostics` and migrated those statements. The browser-to-Swarm raw WebSocket statement in `ComfyUser` is additional to the original nine, producing ten protected statement lines and eleven formatter invocations after that migration.
 
-1. `ComfyUIAPIAbstractBackend.CreateWorkflow` logs the raw workflow tag and up to 512 characters of the filled value. `${stability_api_key}` is a concrete credential source; prompts, media, model names, defaults, and extension-defined parameters also pass through this path.
-2. `ComfyUIAPIAbstractBackend.AwaitJobLive` logs the submitted workflow at verbose level.
-3. The same method logs the submitted workflow again at debug level when Comfy's `/prompt` response contains an error.
-4. `ComfyUIAPIAbstractBackend.GenerateLive` logs both `T2IParamInput` and the raw workflow after workflow-processing failure.
-5. `ComfyUIRedirectHelper.ComfyBackendDirectHandler` logs an unredirected direct-proxy prompt at verbose level.
-6. `ComfyUIWebAPI.ComfyGetGeneratedWorkflow` logs `T2IParamInput`; its current `ToString()` output includes every parameter value with per-value truncation.
-7. The standard ControlNet step in `WorkflowGeneratorSteps` logs `T2IParamInput.ToJSON().ToDenseDebugString()` before throwing the missing-image error. Every parameter key is included, and scalar content—including base64 media prefixes—is retained up to the dense formatter's per-value limit.
-8. The `GenerateLive` catch logs `JsonReaderException` through `ReadableString()` when `AwaitJobLive` rejects malformed direct-workflow JSON. `Utilities.ParseToJson` constructs that exception with the cleaned first 256 characters of the submitted workflow.
-9. The direct-prompt parse catch in `ComfyUIRedirectHelper.ComfyBackendDirectHandler` also logs `JsonReaderException` through `ReadableString()`. Its `Utilities.ParseToJson` call embeds the cleaned first 256 characters of the submitted direct prompt.
-
-These sinks cover stored/dynamic workflow generation, ordinary generated workflows, preview, prompt validation and processing errors, malformed direct-workflow parsing, direct Comfy proxy fallback and malformed direct-prompt parsing, and ControlNet validation. They are independent of the already-corrected browser `genericRequest` diagnostic.
-
-The browser-to-Swarm Comfy WebSocket raw-message statement is additional to these original nine statements; it is not a tenth statement retroactively added to that inventory.
-
-A complete exception-flow trace found that sink-only formatting is insufficient. `Utilities.ParseToJson` embeds up to 256 cleaned characters of its input in a replacement `JsonReaderException`, and several Comfy-owned private-input parsers allow that exception to reach generic loggers before or after the nine local statements. One browser-to-Swarm WebSocket catch also logs the complete raw message directly. The expanded boundary therefore includes 12 parsing or unescaping invocations:
+A later propagation trace identified 12 maintained Comfy submitted/private parsing or unescaping invocations and introduced `ComfySubmittedJson`:
 
 1. filled workflow parsing in `ComfyUIAPIAbstractBackend.AwaitJobLive`;
 2. raw or stored workflow validation in `ComfyUIAPIAbstractBackend.TryIsValid`;
@@ -39,264 +27,205 @@ A complete exception-flow trace found that sink-only formatting is insufficient.
 9. the `param_values` field submitted to the same endpoint;
 10. direct-proxy prompt-body parsing in `ComfyUIRedirectHelper.ComfyBackendDirectHandler`;
 11. direct-proxy interrupt-body parsing in the same handler; and
-12. browser-to-Swarm Comfy WebSocket message parsing in `ComfyUser.RunClientReceiveTask`.
+12. browser-to-Swarm Comfy WebSocket parsing in `ComfyUser.RunClientReceiveTask`.
 
-The stored custom-workflow container remains in scope because it originated as private user-authored content even though it is parsed from disk. Comfy backend responses—including `object_info`, backend WebSocket output, and returned metadata—have different provenance and remain outside this project. Generic WebAPI and T2I submitted-input disclosures found by the trace are a separate immediate follow-up project.
+Final security review showed that syntax-level parsing and a structural identifier allowlist are not sufficient:
 
-`AwaitJobLive` also logs the response returned by Comfy's `/prompt` endpoint. Output/history diagnostics log backend response or output data. Those are not confirmed submitted-input sinks and are outside this project.
+- workflow tags are expanded over the complete JSON text, so API keys, prompts, media, or extension-private values can become node IDs, input names, class types, connection sources, or output indexes before diagnostic formatting;
+- literal submitted secrets can be placed directly in the same identifier positions without using tags;
+- syntactically valid dynamic metadata and stored workflow containers can expose scalar values through later conversion exceptions;
+- unknown-tag errors can reproduce raw tags, suffixes, and decoded newlines;
+- `TryIsValid` can serialize an unsupported or non-string `class_type` into refusal logs and responses; and
+- Newtonsoft's default date coercion can convert ISO-looking connection source IDs and lose valid topology.
+
+The root cause is architectural: every retained workflow or parameter identifier remains user-controlled, and errors arising after successful parsing can also contain private values. JSON position, token type, and escaping do not establish trusted provenance.
+
+The stored custom-workflow container remains in scope because it originated as private user-authored content. Comfy backend responses—including `object_info`, backend WebSocket output, `/prompt` responses, output/history diagnostics, and returned metadata—remain excluded by provenance and unchanged. Reflected backend output is a separate trust concern.
 
 ## Chosen Architecture
 
-Use two internal, stateless classes with separate responsibilities inside the Comfy integration:
+Keep two internal, stateless classes with narrower contracts:
 
-- `ComfyDiagnostics` owns value-eliding workflow, typed-parameter, workflow-tag, and exception representations for logs.
-- `ComfySubmittedJson` owns parsing of Comfy-maintained submitted/private JSON and prevents content-bearing parser exceptions from escaping their source boundary.
+- `ComfyDiagnostics` produces opaque, value-free diagnostic representations. It may inspect user-controlled data to derive counts, JSON kinds, and graph relationships, but it never returns a source lexeme.
+- `ComfySubmittedJson` preserves valid operational parsing while replacing `JsonReaderException` with a fresh same-type exception containing fixed text and no original inner exception.
 
-The formatter is pure:
+Source owners additionally sanitize failures that occur after valid parsing. Parser sanitization and diagnostic formatting are defense-in-depth layers; neither substitutes for the other.
 
-- it does not mutate a supplied `JToken`, workflow string, or `T2IParamInput`;
-- it has no mutable static state;
-- it performs no logging itself;
-- it returns strings for the existing log calls;
-- its workflow, parameter, and tag representations never return submitted scalar values, and its exception representation redacts identified JSON parser content; and
-- it catches malformed diagnostic input and returns a fixed value-free fallback rather than throwing or replacing the original request failure.
+No Comfy-specific policy is added to `Utilities.cs`, no general logging framework is introduced, and no backend-response parser migrates.
 
-The formatter stays inside the Comfy integration. This project does not add Comfy-specific policy to `Utilities.cs` or introduce a general logging framework.
+## Opaque Workflow Structural Summary
 
-`ComfySubmittedJson.ParseObject(string)` returns the same `JObject` data as the existing object parsers for valid input. If `JObject.Parse` throws `JsonReaderException`, it throws a new `JsonReaderException` with the fixed message `JSON parsing failed (submitted content redacted).`. The replacement exception does not retain the original exception as an inner exception and does not include the source fragment, parser message, JSON path, or line details.
+`DescribeWorkflow(string)` accepts only a direct graph object. `DescribePromptEnvelope(string)` accepts only an envelope whose `prompt` property is the graph. Both string entry points parse with `JsonTextReader.DateParseHandling = DateParseHandling.None` so source identifiers retain their lexical string form for internal relationship matching. A direct graph node named `prompt` is never auto-unwrapped.
 
-`ComfySubmittedJson.UnescapeString(string)` performs the existing workflow-tag JSON-string unescape through the same safe exception boundary. Both methods preserve non-parser exception types and details. The class performs no logging, has no mutable state, and does not change valid JSON or operational control flow.
+The public parsed-token prompt-envelope overload is removed if no maintained caller remains. The direct-proxy caller retains the original decoded request string for diagnostics and passes that string to `DescribePromptEnvelope`; operational parsing and routing continue to use the existing `JObject`.
 
-## Workflow Structural Summary
+The summary includes every node without a node-count cap. Nodes receive deterministic aliases from graph property order: `node_1`, `node_2`, and so on. Inputs receive per-node aliases from input property order: `input_1`, `input_2`, and so on. Raw node IDs and input names are used only inside the formatter and are never copied into the result.
 
-The workflow formatter has explicit provenance-specific entry points. `DescribeWorkflow(string)` accepts only a direct graph object. `DescribePromptEnvelope(string)` and `DescribePromptEnvelope(JToken)` accept only a request envelope whose `prompt` property is the graph. The formatter never auto-detects or unwraps a direct graph based on a `prompt` property, so a direct graph node whose ID is `prompt` remains a node in the summary.
+Each node reports only:
 
-The summary includes every graph node without a node-count cap. For each node it retains:
+- its ordinal alias;
+- a fixed node-shape status;
+- its input count; and
+- an ordered list of aliased inputs.
 
-- node ID;
-- `class_type`;
-- every input name; and
-- source node ID and output index for a validated graph connection.
+The actual `class_type` is never returned. The summary reports only fixed markers such as `valid-node-shape`, `invalid-node-shape`, `invalid-class-type`, or `invalid-inputs-shape`.
 
-A value is a validated connection only when it is a two-element JSON array whose first element is a string or integer identifying a syntactically valid node in the same graph and whose second element is a non-negative integer representable by a 32-bit signed `int`. A syntactically valid source node must be an object with a string `class_type` and an object `inputs` property. This prevents malformed nodes, negative or oversized indexes, and arbitrary two-element content arrays from being reproduced as topology. Other arrays are treated as submitted values.
+A value is internally recognized as a connection only when it is a two-element array whose source is a string or integer matching a syntactically valid node in the same graph and whose output is a non-negative integer representable by a 32-bit signed `int`. A syntactically valid node must be an object with a string `class_type` and an object `inputs` property. A recognized connection reports only `connection` and the source node's ordinal alias. The source identifier and output index are never returned.
 
-Connection validation is intentionally structural rather than schema-backed: it does not verify that the output index exists for the source node's class. The pure diagnostic formatter does not load Comfy `object_info`, node schemas, or other global/backend dependencies.
+Non-connection inputs report fixed JSON-kind markers such as `redacted:string`, `redacted:integer`, `redacted:float`, `redacted:boolean`, `redacted:null`, `redacted:array`, or `redacted:object`. No scalar, nested property, array element, identifier, path, prompt, model name, seed, media data, or extension-defined value is copied.
 
-Every non-connection input becomes a fixed marker based only on its JSON kind, for example `redacted:string`, `redacted:integer`, `redacted:float`, `redacted:boolean`, `redacted:null`, `redacted:array`, or `redacted:object`. No string, number, boolean, nested property, array element, path, prompt, model name, seed, media data, or extension-defined value is copied.
+Invalid JSON, incorrect roots, malformed nodes, and formatter failures produce fixed entry-point-specific status objects. The formatter constructs a new summary object and never mutates or reuses a supplied token.
 
-Malformed node entries produce fixed structural markers such as `invalid-node-shape`. Invalid JSON, a non-object direct graph, or an envelope without an object `prompt` graph produces an entry-point-specific fixed status. Parser exception text is not included because it can contain source fragments or structural paths.
+This preserves graph-theoretic node order and source-edge relationships. It intentionally does not preserve semantic labels, class names, input names, or output ports because those fields are user-controlled.
 
-Retained identifiers are an explicit part of the approved diagnostic contract: node IDs, class types, and input names are structural metadata and remain visible. They must be serialized through Newtonsoft JSON from a newly constructed summary object so quotes, newlines, and other control characters are escaped. The existing `ToDenseDebugString` helper is not used to serialize retained property names because it does not provide this identifier-escaping contract.
+## Typed-Parameter and Tag Summaries
 
-Connection topology and node ordering remain diagnostic-only. The source graph and its property order are not modified.
+`DescribeParameters(T2IParamInput)` returns only the total parameter count. It may enumerate `InternalSet.ValuesInput` to count entries but never returns, formats, hashes, or classifies a key or value. It does not call `T2IParamInput.ToString()`, `ToJSON()`, `SimplifyParamVal`, a parameter value's `ToString()`, or a parameter key's `ToString()`.
 
-## Typed-Parameter Summary
+The tag-fill diagnostic becomes fixed text stating that a workflow tag name and value were redacted. It does not call `DescribeNormalizedTagName`, and that formatter method is removed when it has no maintained caller. Raw tags, normalized names, defaults, suffixes, decoded control characters, and filled values never enter the log.
 
-The parameter formatter reports:
+## Submitted/Private Failure Boundary
 
-- the total parameter count; and
-- every `InternalSet.ValuesInput` parameter name.
+`ComfySubmittedJson.ParseObject(string)` and `UnescapeString(string)` retain their current valid behavior. On `JsonReaderException`, each throws a fresh `JsonReaderException` with exactly `JSON parsing failed (submitted content redacted).` and no original inner exception, source fragment, parser message, JSON path, or line details. Non-parser exceptions from these two narrow parsing operations retain their existing behavior.
 
-It never calls `T2IParamInput.ToString()`, `ToJSON()`, `SimplifyParamVal`, or any value's `ToString()`. It does not include runtime value types, lengths, previews, hashes, or null/value state. Names are serialized through Newtonsoft JSON so control characters are escaped.
+Failures arising while interpreting already-valid submitted/private data use fixed operation-specific handling:
 
-Parameter names are intentionally retained as structural metadata. Parameter values, including prompts, media, API keys, password material, model paths, and extension-defined private values, are always omitted.
+- Raw/stored workflow tag filling is enclosed by a private-data boundary. Any exception from preprocessing, unescaping, lookup, conversion, substitution, or escaping becomes a fresh `SwarmUserErrorException` with fixed content-free text and no inner exception.
+- `TryIsValid` keeps a sanitized `JsonReaderException` from malformed JSON. Other tag-preprocessing, shape, or interpretation failures become a fresh fixed `SwarmUserErrorException`. Unsupported or invalid nodes add a fixed refusal reason containing only the node ordinal alias, never the class token or identifier.
+- Dynamic parameter metadata failures retain the existing caught-and-return-`null` behavior but log only fixed operation context. The parameter name and exception are omitted.
+- Stored custom-workflow load failures retain the existing return-`null` behavior but log only fixed read/processing context. Workflow names, paths, tokens, and exception details are omitted.
+- Direct-prompt failures retain the existing swallowed/fallback behavior but use a fixed submitted-data failure message for every exception type.
+- Browser-to-Swarm Comfy WebSocket inspection failures use fixed operation context for every exception type and retain the existing post-catch forwarding behavior.
 
-## Workflow-Tag Summary
+The direct-interrupt path continues to propagate its already-sanitized JSON parser exception. Its maintained post-parse operations do not convert submitted tokens through value-bearing exception messages. Save-field parsing, in-memory publication, parse-before-write behavior, body handling, prompt-ID mapping, routing, caching, and successful generation remain unchanged.
 
-The tag-fill diagnostic retains only the normalized `tagBasic` identifier derived after unescaping and splitting the raw tag. It does not retain:
+`ComfyDiagnostics.DescribeException` remains available for broad operational catches. It returns fixed text for a `JsonReaderException` anywhere in the linear inner chain and preserves existing non-parser `ReadableString()` detail only after private-data sources have sanitized their own interpretation failures. Private catches do not use this broad formatter when a valid submitted token could have caused the exception.
 
-- the raw tag;
-- a default value after `:`;
-- a suffix after `+`; or
-- any part of the filled value.
+## Diagnostic Migration
 
-The normalized identifier is serialized through `DescribeNormalizedTagName` so it is safely escaped and the caller precondition is explicit in the method name. The log message states that the value was redacted. The existing `Logs.MinimumLevel` guard remains, avoiding formatting work when verbose logging is disabled.
+The ten protected statement lines use eleven formatter calls:
 
-## Exception Summary
+1. tag fill uses fixed name-and-value-redacted text;
+2. `AwaitJobLive` verbose submission logging uses an opaque prompt-envelope summary;
+3. its prompt-error debug logging uses the same summary;
+4. `GenerateLive` failure logging combines the parameter count with an opaque direct-workflow summary;
+5. its broad catch uses `DescribeException` after source sanitization;
+6. direct-proxy fallback logging summarizes the original prompt-envelope string;
+7. its catch uses fixed submitted-data failure text;
+8. generated-workflow preview logging uses only the parameter count;
+9. ControlNet missing-image logging uses only the parameter count; and
+10. browser-to-Swarm WebSocket failure logging uses fixed submitted-data failure text.
 
-`DescribeException` walks the supplied exception's linear `InnerException` chain. If any exception is a `JsonReaderException`, it returns the fixed value-free text `JSON parsing failed (submitted content redacted).` without reading or returning parser messages. This covers `Utilities.ParseToJson`, which replaces line feeds with two spaces, applies `CleanTrashTextForDebug` to strip invalid symbols and retain at most the first 256 cleaned characters, then constructs a new `JsonReaderException` containing that submitted preview plus the original parser message.
-
-For non-parser exceptions, `DescribeException` preserves the existing `ReadableString()` result unchanged. A null exception returns `Unknown error.`, and any failure while formatting diagnostics returns `Error details unavailable.`. The helper has no state and never throws into the operational catch path.
-
-This formatter remains defense-in-depth at local diagnostic sinks. It is not the primary propagation boundary because a content-bearing parser exception can cross into a generic logger that never calls `ComfyDiagnostics`. `ComfySubmittedJson` therefore removes submitted content at each maintained Comfy source boundary before the exception can propagate.
-
-## Diagnostic Sink Migration
-
-All nine submitted-value statements migrate together:
-
-1. The tag-fill statement uses the safe normalized tag summary and a fixed redacted-value message.
-2. `AwaitJobLive` verbose submission logging uses the prompt-envelope structural summary.
-3. `AwaitJobLive` prompt-error debug logging uses the same prompt-envelope structural summary.
-4. `GenerateLive` failure logging combines the typed-parameter summary with the direct-workflow structural summary.
-5. The `GenerateLive` catch routes exception details through `DescribeException`, redacting malformed-workflow parser content while retaining non-parser detail.
-6. Direct-proxy fallback logging uses the parsed prompt-envelope structural summary.
-7. The direct-prompt parse catch routes exception details through `DescribeException` before preserving its existing swallowed/fallback flow.
-8. Generated-workflow preview logging uses the typed-parameter summary.
-9. ControlNet missing-image logging uses the typed-parameter summary.
-
-Existing log levels and equivalent surrounding context remain. The migrated wording must make clear that the output is structural/redacted rather than the submitted workflow or parameters.
-
-The browser-to-Swarm Comfy WebSocket catch also stops interpolating `rawText`. It retains fixed operation context and routes exception detail through `ComfyDiagnostics.DescribeException`. A malformed frame continues through the same post-catch forwarding behavior; only its diagnostic representation changes.
-
-## Submitted-JSON Boundary Migration
-
-All 12 identified private-input parsing or unescaping invocations migrate to `ComfySubmittedJson`. The migration changes only the parser entry point:
-
-- valid inputs produce the same `JObject` or unescaped string;
-- malformed JSON still fails at the same operation with `JsonReaderException`;
-- existing catch locations and propagation remain unchanged;
-- save fields are still all parsed before the workflow file is written;
-- no malformed input is converted into a new response contract; and
-- unrelated file I/O, cache, routing, validation, and transport errors retain their existing exception details.
-
-The direct-prompt catch continues to use `ComfyDiagnostics.DescribeException`. The interrupt parser intentionally remains uncaught locally: the safe exception may follow its existing framework path because it no longer contains submitted content. The dynamic-parameter, stored-workflow, matching, and generation paths retain their existing generic or local logging; source-boundary sanitization makes the parser details safe before those consumers receive them.
-
-The following behavior remains unchanged:
-
-- workflow construction and JSON bytes;
-- tag lookup, defaulting, substitution, and JSON escaping;
-- Comfy `/prompt` submission and response processing;
-- direct-proxy parsing, routing, and fallback;
-- generated-workflow preview output;
-- ControlNet branching and the readable missing-image exception;
-- non-parser `ReadableString()` exception detail at the two migrated catch sites;
-- exception propagation outside diagnostic formatting; and
-- all non-targeted logs.
-
-## Failure Behavior
-
-Diagnostic formatting and parsing must not mask the error being diagnosed. The formatter therefore returns a fixed safe fallback for null, malformed, or unexpected data and does not expose parser exception messages. `DescribeException` special-cases a `JsonReaderException` anywhere in the linear inner chain, preserves `ReadableString()` for other exceptions, and catches its own formatting failures.
-
-The submitted/private parser catches only `JsonReaderException`. It replaces that exception with a new exception of the same type and a fixed value-free message, deliberately omitting the original as an inner exception. This prevents later `ReadableString()`, exception interpolation, generic API logging, or framework error handling from recovering a source preview or native parser details. Other exceptions pass through unchanged.
-
-The direct-workflow string entry point owns parsing and requires the parsed root to be a graph object. It never inspects or unwraps a `prompt` property. The prompt-envelope string entry point owns parsing and delegates successfully parsed data to the prompt-envelope token overload, which requires an object root with an object `prompt` graph. Both paths delegate only the explicitly selected graph to the private summary formatter. The formatter reads only graph property names, node objects, their string `class_type`, their `inputs` property names, and candidate two-element connection arrays. It does not recursively copy arbitrary values.
-
-If a structural identifier is missing or has an unexpected JSON type, the summary uses a fixed marker. It does not fall back to raw serialization.
+Existing log levels remain. Wording states that summaries are opaque/redacted. No protected diagnostic contains a user-controlled lexeme.
 
 ## Files and Ownership
 
-- Safe diagnostic representation: `src/BuiltinExtensions/ComfyUIBackend/ComfyDiagnostics.cs`
-- Safe submitted/private JSON boundary: `src/BuiltinExtensions/ComfyUIBackend/ComfySubmittedJson.cs`
-- Expanded production owners: `src/BuiltinExtensions/ComfyUIBackend/ComfyUIAPIAbstractBackend.cs`, `src/BuiltinExtensions/ComfyUIBackend/ComfyUIBackendExtension.cs`, `src/BuiltinExtensions/ComfyUIBackend/ComfyUIWebAPI.cs`, `src/BuiltinExtensions/ComfyUIBackend/ComfyUIRedirectHelper.cs`, `src/BuiltinExtensions/ComfyUIBackend/ComfyUser.cs`, and `src/BuiltinExtensions/ComfyUIBackend/WorkflowGeneratorSteps.cs`
+- Opaque diagnostic representation: `src/BuiltinExtensions/ComfyUIBackend/ComfyDiagnostics.cs`
+- Safe JSON parser boundary: `src/BuiltinExtensions/ComfyUIBackend/ComfySubmittedJson.cs`
+- Source and diagnostic owners: `src/BuiltinExtensions/ComfyUIBackend/ComfyUIAPIAbstractBackend.cs`, `src/BuiltinExtensions/ComfyUIBackend/ComfyUIBackendExtension.cs`, `src/BuiltinExtensions/ComfyUIBackend/ComfyUIWebAPI.cs`, `src/BuiltinExtensions/ComfyUIBackend/ComfyUIRedirectHelper.cs`, `src/BuiltinExtensions/ComfyUIBackend/ComfyUser.cs`, and `src/BuiltinExtensions/ComfyUIBackend/WorkflowGeneratorSteps.cs`
 
-No Python, JavaScript, Razor, CSS, core utility, API contract, workflow schema, or extension-facing surface changes.
+No Python, JavaScript, Razor, CSS, core utility, API schema, workflow schema, backend-response, or extension-facing change is included.
 
 ## Compatibility Requirements
 
-- Preserve every targeted statement's current log level.
-- Preserve useful operation/error context around the structural summary.
-- Preserve all submitted workflow bytes and typed inputs.
-- Preserve all exception types and request results.
-- Preserve the `JsonReaderException` type and existing propagation for malformed submitted/private JSON while replacing content-bearing details with fixed text.
-- Preserve direct-proxy routing and prompt handling.
-- Preserve malformed browser WebSocket message forwarding after its diagnostic catch.
-- Preserve valid custom-workflow save/load data and the rule that every submitted JSON field parses before writing.
-- Preserve generated-workflow preview behavior.
-- Preserve the ControlNet missing-image error and its trigger.
-- Preserve optional-node and external-extension workflow compatibility.
-- Retain complete topology for every node, including validated connection edges.
+- Preserve valid workflow bytes, tag substitution results, node/property order, request bodies, and typed inputs.
+- Preserve target log levels and fixed operation categories.
+- Preserve malformed-JSON `JsonReaderException` type and propagation after removing content-bearing details.
+- Permit private post-parse failures to become fresh fixed `SwarmUserErrorException` or fixed local diagnostics where confidentiality requires it.
+- Preserve direct-prompt swallowed/fallback flow and interrupt propagation.
+- Preserve malformed browser WebSocket frame forwarding.
+- Preserve custom-workflow save/load success behavior and parse-before-write ordering.
+- Preserve dynamic parameter success behavior and caught failure returning `null`.
+- Preserve generated-workflow preview, ControlNet branching, and the ControlNet missing-image error.
+- Preserve optional-node and external-extension workflow execution compatibility.
+- Retain node order and source-edge topology through ordinal aliases, including ISO-looking node IDs.
 - Do not require external caller or extension migration.
+
+The following diagnostic detail is intentionally removed: real node IDs, class types, input names, connection output indexes, parameter names, tag names, workflow names/paths in protected failure logs, and private-data exception messages. User-visible private workflow errors may become fixed content-redacted messages.
 
 ## Non-Goals
 
-- Redacting Comfy backend response, output, or history diagnostics without evidence that they contain submitted secrets.
-- Changing log-level configuration or retention.
-- Changing workflow generation, graph normalization, node order, IDs, inputs, or property order.
-- Changing tag syntax, defaulting, dynamic parameter lookup, or supported tags.
+- Redacting Comfy backend responses, output, history, `object_info`, or returned metadata without separate reflected-data evidence.
+- Changing log configuration or retention.
+- Changing successful workflow generation, graph normalization, node order, IDs, inputs, property order, tag syntax, defaults, suffix behavior, dynamic parameter lookup, or supported tags.
 - Changing `T2IParamInput`, `ToDenseDebugString`, or general JSON utilities.
-- Adding a general-purpose redaction framework, configurable allowlist/denylist, or secret-name list.
-- Capping the node topology summary.
-- Redacting Comfy backend-response parsers solely because a backend might reflect submitted input; reflected-output trust is a separate concern.
-- Addressing generic WebAPI request parsing, follow-up T2I WebSocket frames, dynamic media objects, successful-generation parameter logging, or other non-Comfy submitted-input findings. These findings form the next separate project, identified as unranked security prerequisite `S1`.
+- Adding a general redaction framework, configurable secret list, hashing, schema allowlist, or taint-tracking engine.
+- Capping node or input summaries.
+- Addressing generic WebAPI/T2I submitted-input findings covered by unranked prerequisite `S1`.
 
 ## Confirmed Separate Follow-Up (`S1`)
 
-Static tracing separately confirmed unranked security prerequisite `S1`, **Redact generic server API/T2I submitted-input diagnostics**. `S1` was discovered during rank-2 exception-flow verification and directly continues the same submitted-input confidentiality boundary outside Comfy ownership. It was not fixed by this Comfy project and must be separately designed and handled before the ranked roadmap resumes at rank 3. Its exact source boundaries are:
+`S1`, **Redact generic server API/T2I submitted-input diagnostics**, remains separate and must be designed before ranked roadmap work resumes at rank 3. This Comfy revision does not modify:
 
-- `src/WebAPI/API.cs:70`, initial WebSocket request parsing through `ReceiveJson`;
-- `src/WebAPI/API.cs:85-87`, initial HTTP request-body decoding and `JObject.Parse`;
-- `src/WebAPI/T2IAPI.cs:116-124`, follow-up generation WebSocket frame decoding and `ParseToJson`;
-- `src/Text2Image/T2IParamSet.cs:158-190`, submitted dynamic image, audio, and video media-object parsing, reached by Grid Generator axis application through the direct `T2IParamInput.Set` call at `src/BuiltinExtensions/GridGenerator/GridGenCore.cs:355` within lines 350-357; and
-- `src/WebAPI/T2IAPI.cs:316`, the successful-generation `T2IParamInput.ToString()` verbose diagnostic.
+- `src/WebAPI/API.cs:70`, initial WebSocket `ReceiveJson`;
+- `src/WebAPI/API.cs:85-87`, initial HTTP `JObject.Parse`;
+- `src/WebAPI/T2IAPI.cs:116-124`, follow-up generation WebSocket parsing;
+- `src/Text2Image/T2IParamSet.cs:158-190`, dynamic media parsing reached through Grid's direct `T2IParamInput.Set` at `GridGenCore.cs:355`; or
+- `src/WebAPI/T2IAPI.cs:316`, successful-generation `T2IParamInput.ToString()` logging.
 
-The two initial `API.cs` parsers can reach the shared request catch and its generic `[WebAPI]` exception logging path. The follow-up generation parser runs inside a generic asynchronous fault-logging path. For dynamic media, ordinary T2I `ApplyParameter`/`ValidateParam` rejects JSON-looking image/audio/video values before the `T2IParamSet` parsers and is not the direct malformed-object trigger. Grid Generator dynamic-axis application calls `T2IParamInput.Set` directly and can reach those parsers. Grid starts the generation work with `Task.Run` at `src/BuiltinExtensions/GridGenerator/GridGeneratorExtension.cs:545`, rethrows the task fault at lines 555-557, routes the caught exception through `ExToError` at lines 686-690, logs `ReadableString()` inside `ExToError` at lines 426-443, and then emits the error log and WebSocket response at lines 704-708. `S1` must establish one generic submitted-input exception/diagnostic boundary without changing valid request parsing, Grid axis application, media conversion, generation framing, or response behavior. Comfy backend-response parsers and output/history diagnostics remain excluded by provenance and are unchanged.
-
-`S1` maintainer validation must use distinct sentinels for malformed initial WebSocket and HTTP JSON, malformed follow-up generation frames, a malformed JSON-looking image/audio/video value supplied through a Grid Generator dynamic axis, and successful-generation typed inputs. The dynamic-media case must be observed through the Grid `Task.Run` fault rethrow, `ExToError`/`ReadableString()` log, and WebSocket error-response path; an ordinary T2I request is not the direct trigger. Valid API requests, Grid axes, media conversion, generation frames, and responses must remain unchanged, and no validation success is claimed here.
+The Grid malformed-media path remains `Task.Run` → fault rethrow → `ExToError`/`ReadableString()` logging → WebSocket error response. Ordinary `ApplyParameter`/`ValidateParam` rejects the malformed JSON-looking media first and is not the direct trigger. `S1` remains outside the unchanged 24 production plus eight measurement numbered roadmap entries.
 
 ## Static Verification
 
-Repository policy prohibits agents from running builds, automated tests, browsers, Comfy, or the live application. Static verification will:
+Repository policy prohibits agents from running builds, automated tests, browsers, Comfy, backends, or the live application. Static verification will:
 
-1. inventory the nine original diagnostic statements and 12 submitted/private parsing or unescaping invocations before and after;
-2. prove the old raw tag, filled value, workflow/prompt, `T2IParamInput`, `ToJSON()`, two local parser `ex.ReadableString()` expressions, and browser WebSocket `rawText` interpolation are absent from the protected diagnostics;
-3. prove all original diagnostic owners call `ComfyDiagnostics` and all submitted/private parser owners call `ComfySubmittedJson`;
-4. prove `ComfySubmittedJson` catches `JsonReaderException`, throws a new exception of the same type with only the fixed message, and never retains the original as an inner exception;
-5. trace downstream matching, generation, dynamic-parameter, stored-workflow, endpoint, redirect, and WebSocket error paths to verify the fixed exception is the only parser detail available to local and generic consumers;
-6. trace every formatter branch and verify that only approved identifiers, non-negative 32-bit connection coordinates from syntactically valid source nodes, counts, and fixed markers reach the result;
-7. verify retained identifiers are JSON-escaped and no raw scalar, nested value, parser exception text, or source JSON is appended;
-8. verify valid source tokens, strings, saved data, and submission bytes are never mutated;
-9. verify backend-response parser calls remain unchanged and generic WebAPI/T2I findings remain outside the production diff;
-10. verify log levels, catch locations, exception type, successful parse results, save-before-write ordering, and surrounding control flow are unchanged;
-11. run repository-permitted whitespace and diff checks; and
-12. verify the implementation commit range contains only the two Comfy safety helpers, identified Comfy callers, and their approved documentation.
+1. inventory the ten protected statements, eleven formatter invocations, and 12 submitted/private parser calls;
+2. prove no protected diagnostic or private catch interpolates a source node ID, class type, input name, output index, parameter name/value, tag/name/suffix, workflow name/path, raw text/token, or private exception;
+3. verify workflow summaries contain only ordinal aliases, counts, fixed statuses, JSON kinds, and aliased source edges;
+4. verify connection matching uses raw identifiers only internally and never emits the raw source or output index;
+5. verify diagnostic string parsing sets `DateParseHandling.None` and the direct-prompt diagnostic receives the original decoded string;
+6. verify parameter formatting reads only the count and tag logging is fixed;
+7. verify parser exceptions remain fresh, fixed, same-type, and inner-free;
+8. trace tag filling, validation, dynamic metadata, stored workflow, direct prompt, interrupt, save, and browser WebSocket failure paths through local, generic, and framework consumers;
+9. verify private post-parse failures cannot expose original messages or values;
+10. verify log levels, save ordering, routing, prompt-ID mapping, frame forwarding, cache behavior, valid results, and ControlNet behavior remain unchanged;
+11. verify backend-response parsers and all `S1` production paths remain unchanged;
+12. run repository-permitted whitespace and committed-range checks over only the eight approved production files and three approved documents.
 
 ## Maintainer Validation
 
-Use recognizable sentinel values near the beginning of each value so they would have appeared within the old truncation windows. Place sentinels in:
+Use distinct sentinels in ordinary workflow values and in literal or tag-expanded structural positions. Exercise:
 
-- Stability API key;
-- positive and negative prompts;
-- media/base64 content;
-- dynamic workflow parameters and defaults;
-- extension-defined private parameter values; and
-- direct workflow input values.
-
-Exercise:
-
-1. successful ordinary and stored/raw workflow generation with verbose logging;
-2. Comfy prompt validation failure and transport/processing failure with debug logging;
-3. generated-workflow preview;
-4. direct-proxy prompt fallback;
-5. ControlNet strength enabled with neither a ControlNet image nor usable init/first image;
-6. malformed raw workflow parsing in `AwaitJobLive`, with a sentinel within the first 256 characters;
-7. malformed raw and stored workflow validation in `TryIsValid`, with distinct sentinels;
-8. malformed direct prompt parsing with a separate sentinel within the first 256 characters;
-9. malformed saved-workflow `workflow`, `prompt`, `custom_params`, and `param_values` fields with distinct sentinels;
-10. malformed submitted dynamic workflow parameter metadata;
-11. a malformed persisted private custom-workflow container containing a sentinel;
-12. a malformed workflow tag escape containing a sentinel;
-13. a malformed direct interrupt body containing a sentinel;
-14. a malformed browser-to-Swarm Comfy WebSocket message containing a sentinel; and
-15. supported verbose/debug log-level combinations.
+1. successful ordinary, raw, and stored workflow generation with verbose/debug logging;
+2. node IDs, input names, class types, connection sources, and output indexes containing literal sentinels;
+3. the same structural positions filled by `${stability_api_key}`, prompt, media, numeric, and extension-private tags;
+4. prompt validation and transport/processing failures;
+5. generated-workflow preview and ControlNet enabled without a usable ControlNet/init image;
+6. malformed raw workflow parsing in `AwaitJobLive`;
+7. malformed raw/stored workflow validation in `TryIsValid`;
+8. unsupported string, newline-bearing, and non-string `class_type` values;
+9. unknown tags containing suffix sentinels and decoded newlines;
+10. valid JSON dynamic metadata whose later list/type conversion contains a sentinel;
+11. a valid stored container whose `enable_in_simple` conversion contains a sentinel;
+12. malformed saved-workflow fields, direct prompt, direct interrupt, tag escape, and browser WebSocket JSON;
+13. an ISO-looking node ID used as a connection source; and
+14. supported verbose/debug log-level combinations.
 
 Confirm:
 
-- no sentinel, filled tag value, submitted scalar, or base64 prefix appears;
-- every malformed submitted/private JSON path exposes only `JSON parsing failed (submitted content redacted).` without its sentinel, source preview, native parser message, JSON path, or line detail, while non-parser exceptions retain their prior readable detail;
-- every expected node ID, class type, input name, and valid connection edge remains visible;
-- parameter names and counts remain visible without values;
-- the normalized tag identifier remains visible without its raw default/suffix/value;
-- invalid structures produce fixed safe markers;
-- endpoint, failure, and operation context remains actionable;
-- the existing ControlNet missing-image exception is unchanged;
-- generation, preview, direct proxy, and failure behavior are otherwise unchanged; and
-- valid workflow save/load, dynamic parameter, tag, interrupt, and WebSocket behavior is unchanged, including forwarding a malformed browser WebSocket frame after the existing catch.
-
-Sentinels belong in values, not the structural identifiers that this design intentionally retains.
+- no sentinel or other user-controlled lexeme appears in protected logs, refusal reasons, surfaced errors, or exception chains;
+- graph summaries retain the correct node count/order, input count/order, fixed JSON kinds, and aliased source edges;
+- the ISO-looking source ID remains a recognized aliased edge;
+- parameter summaries expose only counts and tag logs expose no name or value;
+- every private interpretation failure uses fixed context without its token, tag, name, path, or original exception;
+- malformed JSON retains the fixed `JSON parsing failed (submitted content redacted).` message;
+- dynamic metadata still returns `null` on failure, stored workflow loading still returns `null`, direct prompt still follows its fallback, and malformed browser frames still forward;
+- valid workflow generation, save/load, tag filling, routing, interrupt, preview, and ControlNet behavior remains unchanged; and
+- backend-response diagnostics remain unchanged.
 
 ## Success Criteria
 
-- All nine original submitted-value diagnostics use the shared safe formatter, normalized tag representation, or parser-exception redaction.
-- All 12 maintained Comfy submitted/private JSON parsing or unescaping invocations use `ComfySubmittedJson`.
-- No filled tag value, workflow scalar, prompt content, typed-input value, media/base64 prefix, or extension-defined value is added to logs by those paths.
-- No raw WebSocket message, submitted JSON preview, native parser message, JSON path, or line detail escapes from the protected parsing boundaries.
-- Complete node topology and parameter-name context remain available.
-- Parser exception text is value-free, malformed JSON retains its `JsonReaderException` type and propagation, non-parser details are preserved, and diagnostic failures cannot replace the original operational error.
-- No valid workflow, request, save/load, cache, tag, WebSocket, routing, preview, or ControlNet behavior changes.
-- No external caller or extension migration is required.
+- All ten protected statements contain only fixed text or opaque summaries, with eleven expected formatter invocations.
+- All 12 maintained submitted/private parsing or unescaping invocations remain behind `ComfySubmittedJson`.
+- No user-controlled workflow, parameter, tag, WebSocket, stored-data, or exception lexeme reaches a protected diagnostic or downstream error surface.
+- Complete node order and source-edge topology remain available through deterministic aliases; semantic labels and output ports are intentionally absent.
+- ISO-looking node IDs retain correct aliased connectivity.
+- Private post-parse failures are fixed and value-free; broad non-private operational errors retain useful detail.
+- Valid workflow, request, save/load, cache, tag-result, WebSocket-forwarding, routing, preview, and ControlNet behavior remains unchanged.
+- No backend-response or `S1` production path changes.
 
 ## Risks and Rollback
 
-The main risks are accidentally retaining a submitted value as structure, misclassifying a content array as a connection, confusing a direct graph's `prompt` node with an envelope, retaining parser content through an inner exception, changing malformed-input propagation, applying submitted-input policy to backend responses, throwing from the formatter during an existing failure, or removing non-parser diagnostic context. Provenance-specific formatter and parser entry points, construction of a new value-free parser exception without an inner exception, validation against syntactically valid same-graph source nodes with non-negative 32-bit indexes, construction of new summary objects, explicit backend-response exclusions, and preservation of non-parser details bound these risks.
+The main risks are accidentally returning a user-controlled identifier, treating a private conversion exception as operational, changing valid tag behavior while adding the failure boundary, losing topology through JSON coercion, or applying submitted-input policy to backend responses. Ordinal aliases, omission of semantic labels/output ports, fixed private failure handling, date-neutral diagnostic parsing, provenance-specific callers, and explicit exclusions bound these risks.
 
-Each caller migration is mechanically reversible. If a particular structural representation proves unusable, that sink may fall back to a fixed value-free message while the formatter is corrected. If a safe parser migration causes a compatibility problem, its valid-input behavior must be corrected without restoring a content-bearing exception path. Rollback must never restore raw filled values, workflows, prompts, typed inputs, raw WebSocket messages, or parser exception text as the accepted end state.
+If an opaque summary proves unusable, a protected sink may fall back to a fixed value-free message while the formatter is corrected. If a private failure boundary changes successful behavior, correct that success path without restoring original exception content. Rollback must never restore raw identifiers, class types, input/parameter/tag names, output indexes, values, raw messages, parser previews, conversion messages, or content-bearing inner exceptions.
