@@ -2,7 +2,7 @@
 
 **Date:** 2026-07-21
 
-**Status:** Approved revision; submitted-JSON boundary expansion pending implementation
+**Status:** Implemented, awaiting maintainer validation
 
 ## Goal
 
@@ -23,6 +23,8 @@ Four maintained files own nine submitted-value diagnostic statements:
 9. The direct-prompt parse catch in `ComfyUIRedirectHelper.ComfyBackendDirectHandler` also logs `JsonReaderException` through `ReadableString()`. Its `Utilities.ParseToJson` call embeds the cleaned first 256 characters of the submitted direct prompt.
 
 These sinks cover stored/dynamic workflow generation, ordinary generated workflows, preview, prompt validation and processing errors, malformed direct-workflow parsing, direct Comfy proxy fallback and malformed direct-prompt parsing, and ControlNet validation. They are independent of the already-corrected browser `genericRequest` diagnostic.
+
+The browser-to-Swarm Comfy WebSocket raw-message statement is additional to these original nine statements; it is not a tenth statement retroactively added to that inventory.
 
 A complete exception-flow trace found that sink-only formatting is insufficient. `Utilities.ParseToJson` embeds up to 256 cleaned characters of its input in a replacement `JsonReaderException`, and several Comfy-owned private-input parsers allow that exception to reach generic loggers before or after the nine local statements. One browser-to-Swarm WebSocket catch also logs the complete raw message directly. The expanded boundary therefore includes 12 parsing or unescaping invocations:
 
@@ -173,14 +175,9 @@ If a structural identifier is missing or has an unexpected JSON type, the summar
 
 ## Files and Ownership
 
-- Existing implementation: `src/BuiltinExtensions/ComfyUIBackend/ComfyDiagnostics.cs`
-- Create: `src/BuiltinExtensions/ComfyUIBackend/ComfySubmittedJson.cs`
-- Modify: `src/BuiltinExtensions/ComfyUIBackend/ComfyUIAPIAbstractBackend.cs`
-- Modify: `src/BuiltinExtensions/ComfyUIBackend/ComfyUIBackendExtension.cs`
-- Modify: `src/BuiltinExtensions/ComfyUIBackend/ComfyUIWebAPI.cs`
-- Modify: `src/BuiltinExtensions/ComfyUIBackend/ComfyUIRedirectHelper.cs`
-- Modify: `src/BuiltinExtensions/ComfyUIBackend/ComfyUser.cs`
-- Modify: `src/BuiltinExtensions/ComfyUIBackend/WorkflowGeneratorSteps.cs`
+- Safe diagnostic representation: `src/BuiltinExtensions/ComfyUIBackend/ComfyDiagnostics.cs`
+- Safe submitted/private JSON boundary: `src/BuiltinExtensions/ComfyUIBackend/ComfySubmittedJson.cs`
+- Expanded production owners: `src/BuiltinExtensions/ComfyUIBackend/ComfyUIAPIAbstractBackend.cs`, `src/BuiltinExtensions/ComfyUIBackend/ComfyUIBackendExtension.cs`, `src/BuiltinExtensions/ComfyUIBackend/ComfyUIWebAPI.cs`, `src/BuiltinExtensions/ComfyUIBackend/ComfyUIRedirectHelper.cs`, `src/BuiltinExtensions/ComfyUIBackend/ComfyUser.cs`, and `src/BuiltinExtensions/ComfyUIBackend/WorkflowGeneratorSteps.cs`
 
 No Python, JavaScript, Razor, CSS, core utility, API contract, workflow schema, or extension-facing surface changes.
 
@@ -211,6 +208,18 @@ No Python, JavaScript, Razor, CSS, core utility, API contract, workflow schema, 
 - Capping the node topology summary.
 - Redacting Comfy backend-response parsers solely because a backend might reflect submitted input; reflected-output trust is a separate concern.
 - Addressing generic WebAPI request parsing, follow-up T2I WebSocket frames, dynamic media objects, successful-generation parameter logging, or other non-Comfy submitted-input findings. These are the next separate project.
+
+## Confirmed Separate Follow-Up
+
+Static tracing separately confirmed a generic server API/T2I submitted-input project. It was not fixed by this Comfy project and is now the documented next separate project. Its exact source boundaries are:
+
+- `src/WebAPI/API.cs:70`, initial WebSocket request parsing through `ReceiveJson`;
+- `src/WebAPI/API.cs:85-87`, initial HTTP request-body decoding and `JObject.Parse`;
+- `src/WebAPI/T2IAPI.cs:116-124`, follow-up generation WebSocket frame decoding and `ParseToJson`;
+- `src/Text2Image/T2IParamSet.cs:158-190`, submitted dynamic image, audio, and video media-object parsing; and
+- `src/WebAPI/T2IAPI.cs:316`, the successful-generation `T2IParamInput.ToString()` verbose diagnostic.
+
+The two initial `API.cs` parsers can reach the shared request catch and its generic `[WebAPI]` exception logging path. The follow-up generation parser runs inside the generic checked-task logging path, while dynamic media parsing can propagate through generic API handling. The next project must establish one generic submitted-input exception/diagnostic boundary without changing valid request parsing, media conversion, generation framing, or response behavior. Comfy backend-response parsers and output/history diagnostics remain excluded by provenance and are unchanged.
 
 ## Static Verification
 
@@ -247,15 +256,16 @@ Exercise:
 3. generated-workflow preview;
 4. direct-proxy prompt fallback;
 5. ControlNet strength enabled with neither a ControlNet image nor usable init/first image;
-6. malformed raw workflow containing a sentinel within the first 256 characters;
-7. malformed direct prompt containing a separate sentinel within the first 256 characters; and
-8. malformed saved-workflow `workflow`, `prompt`, `custom_params`, and `param_values` fields with distinct sentinels;
-9. malformed dynamic workflow parameter metadata;
-10. a malformed persisted custom-workflow container containing a sentinel;
-11. a malformed workflow tag escape containing a sentinel;
-12. a malformed direct interrupt body containing a sentinel;
-13. a malformed browser-to-Swarm Comfy WebSocket message containing a sentinel; and
-14. supported verbose/debug log-level combinations.
+6. malformed raw workflow parsing in `AwaitJobLive`, with a sentinel within the first 256 characters;
+7. malformed raw and stored workflow validation in `TryIsValid`, with distinct sentinels;
+8. malformed direct prompt parsing with a separate sentinel within the first 256 characters;
+9. malformed saved-workflow `workflow`, `prompt`, `custom_params`, and `param_values` fields with distinct sentinels;
+10. malformed submitted dynamic workflow parameter metadata;
+11. a malformed persisted private custom-workflow container containing a sentinel;
+12. a malformed workflow tag escape containing a sentinel;
+13. a malformed direct interrupt body containing a sentinel;
+14. a malformed browser-to-Swarm Comfy WebSocket message containing a sentinel; and
+15. supported verbose/debug log-level combinations.
 
 Confirm:
 
