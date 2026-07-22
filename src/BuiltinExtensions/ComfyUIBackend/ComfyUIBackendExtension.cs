@@ -205,7 +205,6 @@ public class ComfyUIBackendExtension : Extension
                     }
                     return type;
                 }
-                //Logs.Verbose($"Failed to find param metadata for {name} in {paramMetadata.Properties().Select(p => p.Name).JoinString(", ")}");
             }
             if (name.StartsWith("comfyrawworkflowinput") && (context.InternalSet.ValuesInput.ContainsKey("comfyworkflowraw") || context.InternalSet.ValuesInput.ContainsKey("comfyuicustomworkflow")))
             {
