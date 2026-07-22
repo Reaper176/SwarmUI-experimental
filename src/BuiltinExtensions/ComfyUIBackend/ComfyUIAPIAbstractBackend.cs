@@ -324,7 +324,7 @@ public abstract class ComfyUIAPIAbstractBackend : AbstractT2IBackend
             workflow = $"{{\"prompt\": {workflow}, \"client_id\": \"{id}\"}}";
             if (Logs.MinimumLevel <= Logs.LogLevel.Verbose)
             {
-                Logs.Verbose($"Will use workflow: {JObject.Parse(workflow).ToDenseDebugString()}");
+                Logs.Verbose($"Will use workflow structure: {ComfyDiagnostics.DescribePromptEnvelope(workflow)}");
             }
             JObject promptResult = await HttpClient.PostJSONString($"{APIAddress}/prompt", workflow, interrupt);
             if (Logs.MinimumLevel <= Logs.LogLevel.Verbose)
@@ -333,7 +333,7 @@ public abstract class ComfyUIAPIAbstractBackend : AbstractT2IBackend
             }
             if (promptResult.ContainsKey("error"))
             {
-                Logs.Debug($"Error came from prompt: {JObject.Parse(workflow).ToDenseDebugString(noSpacing: true)}");
+                Logs.Debug($"Error came from prompt structure: {ComfyDiagnostics.DescribePromptEnvelope(workflow)}");
                 string encoded = promptResult.ToString(Formatting.Indented);
                 string prefix = "";
                 // TODO: Temp: July 2025 comfy breaking change
@@ -888,7 +888,7 @@ public abstract class ComfyUIAPIAbstractBackend : AbstractT2IBackend
                 filled ??= defVal;
                 if (Logs.MinimumLevel <= Logs.LogLevel.Verbose)
                 {
-                    Logs.Verbose($"Filled tag '{tag}' with '{(filled.Length > 512 ? $"{filled[..512]}..." : filled)}'");
+                    Logs.Verbose($"Filled tag {ComfyDiagnostics.DescribeNormalizedTagName(tagBasic)} with redacted value.");
                 }
                 return Utilities.EscapeJsonString(filled);
             }, false);
@@ -983,7 +983,7 @@ public abstract class ComfyUIAPIAbstractBackend : AbstractT2IBackend
         catch (Exception ex)
         {
             Logs.Verbose($"Error: {ex.ReadableString()}");
-            Logs.Debug($"Failed to process comfy workflow for inputs {user_input} with raw workflow {JObject.Parse(workflow).ToDenseDebugString(noSpacing: true)}");
+            Logs.Debug($"Failed to process comfy workflow for parameters {ComfyDiagnostics.DescribeParameters(user_input)} with workflow structure {ComfyDiagnostics.DescribeWorkflow(workflow)}");
             throw;
         }
         finally
