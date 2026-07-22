@@ -347,7 +347,7 @@ git diff -- src/BuiltinExtensions/ComfyUIBackend/ComfyUIAPIAbstractBackend.cs
 
 Expected:
 
-- Exactly four formatter calls appear in this file.
+- Exactly four migrated diagnostic statement lines containing five formatter invocations appear in this file; the `GenerateLive` failure statement contains both `DescribeParameters` and `DescribeWorkflow`.
 - The raw-value statement patterns are absent.
 - The Comfy response diagnostic, submission, tag return value, exception boundary, and surrounding flow remain unchanged.
 - The diff contains four statement replacements only.
@@ -517,11 +517,18 @@ rg -n 'ComfyDiagnostics\.(DescribeWorkflow|DescribePromptEnvelope|DescribeParame
   src/BuiltinExtensions/ComfyUIBackend/ComfyUIWebAPI.cs \
   src/BuiltinExtensions/ComfyUIBackend/ComfyUIRedirectHelper.cs \
   src/BuiltinExtensions/ComfyUIBackend/WorkflowGeneratorSteps.cs
+# Count one matched line for each of the seven migrated diagnostic statements.
 test "$(rg -c 'ComfyDiagnostics\.(DescribeWorkflow|DescribePromptEnvelope|DescribeParameters|DescribeNormalizedTagName)' \
   src/BuiltinExtensions/ComfyUIBackend/ComfyUIAPIAbstractBackend.cs \
   src/BuiltinExtensions/ComfyUIBackend/ComfyUIWebAPI.cs \
   src/BuiltinExtensions/ComfyUIBackend/ComfyUIRedirectHelper.cs \
   src/BuiltinExtensions/ComfyUIBackend/WorkflowGeneratorSteps.cs | awk -F: '{ total += $2 } END { print total }')" = "7"
+# Count all eight formatter invocations; the GenerateLive statement contains two.
+test "$(rg -o 'ComfyDiagnostics\.(DescribeWorkflow|DescribePromptEnvelope|DescribeParameters|DescribeNormalizedTagName)' \
+  src/BuiltinExtensions/ComfyUIBackend/ComfyUIAPIAbstractBackend.cs \
+  src/BuiltinExtensions/ComfyUIBackend/ComfyUIWebAPI.cs \
+  src/BuiltinExtensions/ComfyUIBackend/ComfyUIRedirectHelper.cs \
+  src/BuiltinExtensions/ComfyUIBackend/WorkflowGeneratorSteps.cs | awk 'END { print NR }')" = "8"
 if rg -n 'Filled tag .* with .*filled|Will use workflow: .*ToDenseDebugString|Error came from prompt: .*ToDenseDebugString|Failed to process comfy workflow for inputs|ComfyGetWorkflow for input:|Above is for prompt: .*ToDenseDebugString|Following error relates to parameters: .*ToJSON' \
   src/BuiltinExtensions/ComfyUIBackend/ComfyUIAPIAbstractBackend.cs \
   src/BuiltinExtensions/ComfyUIBackend/ComfyUIWebAPI.cs \
@@ -531,6 +538,8 @@ git diff --check
 git status --short --branch --untracked-files=normal
 git log --oneline --decorate -8
 ```
+
+The first count verifies seven migrated diagnostic statement lines. The second verifies eight total formatter invocations because the `GenerateLive` failure statement combines the parameter and direct-workflow summaries.
 
 Then determine the implementation base commit and verify the committed range changes exactly the five approved production files. Do not include the pre-existing dirty working-tree changes in that range check.
 

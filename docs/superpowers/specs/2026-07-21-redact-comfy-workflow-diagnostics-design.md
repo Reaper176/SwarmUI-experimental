@@ -138,7 +138,7 @@ No Python, JavaScript, Razor, CSS, core utility, API contract, workflow schema, 
 - Preserve the ControlNet missing-image error and its trigger.
 - Preserve optional-node and external-extension workflow compatibility.
 - Retain complete topology for every node, including validated connection edges.
-- Do not require caller or extension migration.
+- Do not require external caller or extension migration.
 
 ## Non-Goals
 
@@ -164,7 +164,7 @@ Repository policy prohibits agents from running builds, automated tests, browser
 7. verify source tokens and submission strings are never mutated;
 8. verify log levels and surrounding request/error control flow are unchanged;
 9. run repository-permitted whitespace and diff checks; and
-10. verify the implementation commit contains only the new formatter and four approved callers.
+10. verify the implementation commit range contains only the new formatter and four approved callers.
 
 ## Maintainer Validation
 
@@ -207,7 +207,7 @@ Sentinels belong in values, not the structural identifiers that this design inte
 - Complete node topology and parameter-name context remain available.
 - Formatting failures cannot replace the original operational error.
 - No workflow, request, exception, routing, preview, or ControlNet behavior changes.
-- No caller or extension migration is required.
+- No external caller or extension migration is required.
 
 ## Risks and Rollback
 
