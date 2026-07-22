@@ -332,7 +332,7 @@ public class ComfyUIRedirectHelper
                     using MemoryStream memStream = new();
                     await context.Request.Body.CopyToAsync(memStream);
                     byte[] data = memStream.ToArray();
-                    JObject parsed = StringConversionHelper.UTF8Encoding.GetString(data).ParseToJson();
+                    JObject parsed = ComfySubmittedJson.ParseObject(StringConversionHelper.UTF8Encoding.GetString(data));
                     bool redirected = false;
                     if (parsed.TryGetValue("client_id", out JToken clientIdTok))
                     {
@@ -410,7 +410,7 @@ public class ComfyUIRedirectHelper
                 using MemoryStream memStream = new();
                 await context.Request.Body.CopyToAsync(memStream);
                 byte[] inputBytes = memStream.ToArray();
-                JObject interruptData = StringConversionHelper.UTF8Encoding.GetString(inputBytes).ParseToJson();
+                JObject interruptData = ComfySubmittedJson.ParseObject(StringConversionHelper.UTF8Encoding.GetString(inputBytes));
                 // TODO: Maybe a global map instead of this per-user hack?
                 string userPromptId = interruptData["prompt_id"]?.ToString();
                 string realPromptId = Users.Values.Select(u => u.PromptIdMap.TryGetValue(userPromptId, out string r) ? r : null).FirstOrDefault(r => r is not null);

@@ -66,10 +66,10 @@ public static class ComfyUIWebAPI
         ComfyUIBackendExtension.CustomWorkflows[cleaned] = new ComfyUIBackendExtension.ComfyCustomWorkflow(cleaned, workflow, prompt, custom_params, param_values, image, description, enable_in_simple);
         JObject data = new()
         {
-            ["workflow"] = workflow.ParseToJson(),
-            ["prompt"] = prompt.ParseToJson(),
-            ["custom_params"] = custom_params.ParseToJson(),
-            ["param_values"] = param_values.ParseToJson(),
+            ["workflow"] = ComfySubmittedJson.ParseObject(workflow),
+            ["prompt"] = ComfySubmittedJson.ParseObject(prompt),
+            ["custom_params"] = ComfySubmittedJson.ParseObject(custom_params),
+            ["param_values"] = ComfySubmittedJson.ParseObject(param_values),
             ["image"] = image,
             ["description"] = description ?? "",
             ["enable_in_simple"] = enable_in_simple

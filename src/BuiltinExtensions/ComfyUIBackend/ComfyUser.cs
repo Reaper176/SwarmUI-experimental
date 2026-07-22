@@ -129,7 +129,7 @@ public class ComfyUser
                         try
                         {
                             rawText = StringConversionHelper.UTF8Encoding.GetString(recvBuf[0..received.Count]);
-                            JObject parsed = rawText.ParseToJson();
+                            JObject parsed = ComfySubmittedJson.ParseObject(rawText);
                             if (parsed.TryGetValue("type", out JToken typeTok) && $"{typeTok}" == "feature_flags")
                             {
                                 FeatureFlagReport = parsed;
@@ -137,7 +137,7 @@ public class ComfyUser
                         }
                         catch (Exception ex)
                         {
-                            Logs.Error($"Failed to parse ComfyUI user message \"{rawText.Replace('\n', ' ')}\": {ex.ReadableString()}");
+                            Logs.Error($"Failed to parse ComfyUI user message: {ComfyDiagnostics.DescribeException(ex)}");
                         }
                     }
                     if (received.MessageType == WebSocketMessageType.Binary || received.MessageType == WebSocketMessageType.Text)
