@@ -67,7 +67,7 @@ public class API
             if (context.WebSockets.IsWebSocketRequest)
             {
                 socket = await context.WebSockets.AcceptWebSocketAsync();
-                input = await socket.ReceiveJson(TimeSpan.FromMinutes(1), Program.ServerSettings.Network.MaxReceiveBytes);
+                input = await SubmittedInputJson.ReceiveObject(socket, TimeSpan.FromMinutes(1), Program.ServerSettings.Network.MaxReceiveBytes);
             }
             else if (context.Request.Method == "POST")
             {
@@ -84,7 +84,7 @@ public class API
                 }
                 byte[] rawData = new byte[(int)context.Request.ContentLength.Value];
                 await context.Request.Body.ReadExactlyAsync(rawData, 0, rawData.Length);
-                input = JObject.Parse(Encoding.UTF8.GetString(rawData));
+                input = SubmittedInputJson.ParseObject(Encoding.UTF8.GetString(rawData));
             }
             else
             {
