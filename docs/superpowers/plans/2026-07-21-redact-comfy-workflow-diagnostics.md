@@ -4,7 +4,7 @@
 
 **Goal:** Replace seven Comfy server-log disclosures with one value-eliding diagnostic boundary that preserves complete workflow topology and parameter-name context.
 
-**Architecture:** Add an internal, pure `ComfyDiagnostics` formatter owned by the Comfy integration. It builds new JSON summaries containing only approved node IDs, class types, input names, validated source node IDs/output indexes, parameter names, counts, and fixed markers; four existing diagnostic owners then migrate to this formatter without changing workflow, request, routing, exception, or log-level behavior.
+**Architecture:** Add an internal, pure `ComfyDiagnostics` formatter owned by the Comfy integration. Provenance-specific direct-graph and prompt-envelope entry points build new JSON summaries containing only approved node IDs, class types, input names, structurally validated source node IDs/non-negative 32-bit output indexes, parameter names, counts, and fixed markers; four existing diagnostic owners then migrate to this formatter without changing workflow, request, routing, exception, or log-level behavior.
 
 **Tech Stack:** C# 12, .NET 8, Newtonsoft.Json `JToken`/`JObject`/`JArray`, existing SwarmUI logging and Comfy workflow types.
 
@@ -47,6 +47,7 @@ If any planned production file is already modified, stop and reconcile ownership
 Use `apply_patch` to create `src/BuiltinExtensions/ComfyUIBackend/ComfyDiagnostics.cs` with this complete implementation:
 
 ```csharp
+using System.Globalization;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 using SwarmUI.Text2Image;
@@ -56,71 +57,67 @@ namespace SwarmUI.Builtin_ComfyUIBackend;
 /// <summary>Builds value-eliding diagnostic descriptions for Comfy workflows and typed inputs.</summary>
 internal static class ComfyDiagnostics
 {
-    /// <summary>Describes a raw workflow without reproducing submitted input values.</summary>
+    /// <summary>Describes a raw direct workflow graph without reproducing submitted input values.</summary>
     public static string DescribeWorkflow(string workflow)
     {
         if (string.IsNullOrWhiteSpace(workflow))
         {
             return FixedStatus("empty-workflow");
         }
+        JToken parsed;
         try
         {
-            return DescribeWorkflow(JToken.Parse(workflow));
+            parsed = JToken.Parse(workflow);
         }
         catch
         {
             return FixedStatus("invalid-workflow-json");
         }
-    }
-
-    /// <summary>Describes a parsed workflow without reproducing submitted input values.</summary>
-    public static string DescribeWorkflow(JToken workflow)
-    {
+        if (parsed is not JObject graph)
+        {
+            return FixedStatus("invalid-workflow-shape");
+        }
         try
         {
-            JObject graph = GetGraph(workflow);
-            if (graph is null)
-            {
-                return FixedStatus("invalid-workflow-shape");
-            }
-            HashSet<string> nodeIds = [.. graph.Properties().Select(property => property.Name)];
-            JObject nodes = [];
-            foreach (JProperty nodeProperty in graph.Properties())
-            {
-                JObject nodeSummary = [];
-                if (nodeProperty.Value is not JObject node)
-                {
-                    nodeSummary["status"] = "invalid-node-shape";
-                    nodes[nodeProperty.Name] = nodeSummary;
-                    continue;
-                }
-                JToken classType = node["class_type"];
-                nodeSummary["class_type"] = classType?.Type == JTokenType.String ? classType.Value<string>() : "invalid-class-type";
-                if (node["inputs"] is JObject inputs)
-                {
-                    JObject inputSummary = [];
-                    foreach (JProperty inputProperty in inputs.Properties())
-                    {
-                        inputSummary[inputProperty.Name] = DescribeInput(inputProperty.Value, nodeIds);
-                    }
-                    nodeSummary["inputs"] = inputSummary;
-                }
-                else
-                {
-                    nodeSummary["inputs"] = "invalid-inputs-shape";
-                }
-                nodes[nodeProperty.Name] = nodeSummary;
-            }
-            JObject summary = new()
-            {
-                ["node_count"] = nodes.Count,
-                ["nodes"] = nodes
-            };
-            return summary.ToString(Formatting.None);
+            return DescribeGraph(graph);
         }
         catch
         {
             return FixedStatus("unavailable-workflow-summary");
+        }
+    }
+
+    /// <summary>Describes a raw Comfy prompt envelope without reproducing submitted input values.</summary>
+    public static string DescribePromptEnvelope(string envelope)
+    {
+        if (string.IsNullOrWhiteSpace(envelope))
+        {
+            return FixedStatus("empty-prompt-envelope");
+        }
+        try
+        {
+            return DescribePromptEnvelope(JToken.Parse(envelope));
+        }
+        catch
+        {
+            return FixedStatus("invalid-prompt-envelope-json");
+        }
+    }
+
+    /// <summary>Describes a parsed Comfy prompt envelope without reproducing submitted input values.</summary>
+    public static string DescribePromptEnvelope(JToken envelope)
+    {
+        try
+        {
+            if (envelope is not JObject root || root["prompt"] is not JObject graph)
+            {
+                return FixedStatus("invalid-prompt-envelope-shape");
+            }
+            return DescribeGraph(graph);
+        }
+        catch
+        {
+            return FixedStatus("unavailable-prompt-envelope-summary");
         }
     }
 
@@ -152,7 +149,7 @@ internal static class ComfyDiagnostics
     }
 
     /// <summary>Describes a normalized workflow-tag name without retaining defaults, suffixes, or values.</summary>
-    public static string DescribeTag(string tagName)
+    public static string DescribeNormalizedTagName(string tagName)
     {
         try
         {
@@ -164,35 +161,67 @@ internal static class ComfyDiagnostics
         }
     }
 
-    /// <summary>Gets a direct graph or the graph inside a Comfy prompt envelope.</summary>
-    private static JObject GetGraph(JToken workflow)
+    /// <summary>Describes a parsed direct workflow graph without reproducing submitted input values.</summary>
+    private static string DescribeGraph(JObject graph)
     {
-        if (workflow is not JObject root)
+        HashSet<string> validNodeIds = [.. graph.Properties()
+            .Where(property => property.Value is JObject node && node["class_type"]?.Type == JTokenType.String && node["inputs"] is JObject)
+            .Select(property => property.Name)];
+        JObject nodes = [];
+        foreach (JProperty nodeProperty in graph.Properties())
         {
-            return null;
+            JObject nodeSummary = [];
+            if (nodeProperty.Value is not JObject node)
+            {
+                nodeSummary["status"] = "invalid-node-shape";
+                nodes[nodeProperty.Name] = nodeSummary;
+                continue;
+            }
+            JToken classType = node["class_type"];
+            nodeSummary["class_type"] = classType?.Type == JTokenType.String ? classType.Value<string>() : "invalid-class-type";
+            if (node["inputs"] is JObject inputs)
+            {
+                JObject inputSummary = [];
+                foreach (JProperty inputProperty in inputs.Properties())
+                {
+                    inputSummary[inputProperty.Name] = DescribeInput(inputProperty.Value, validNodeIds);
+                }
+                nodeSummary["inputs"] = inputSummary;
+            }
+            else
+            {
+                nodeSummary["inputs"] = "invalid-inputs-shape";
+            }
+            nodes[nodeProperty.Name] = nodeSummary;
         }
-        if (root["prompt"] is JObject prompt)
+        JObject summary = new()
         {
-            return prompt;
-        }
-        return root;
+            ["node_count"] = nodes.Count,
+            ["nodes"] = nodes
+        };
+        return summary.ToString(Formatting.None);
     }
 
     /// <summary>Describes one workflow input as a validated connection or fixed value-kind marker.</summary>
-    private static JToken DescribeInput(JToken input, HashSet<string> nodeIds)
+    private static JToken DescribeInput(JToken input, HashSet<string> validNodeIds)
     {
-        if (input is JArray array && array.Count == 2 && array[1]?.Type == JTokenType.Integer)
+        if (input is JArray array && array.Count == 2)
         {
             JToken sourceToken = array[0];
-            if (sourceToken is not null && (sourceToken.Type == JTokenType.String || sourceToken.Type == JTokenType.Integer))
+            JToken outputToken = array[1];
+            if (sourceToken is not null
+                && (sourceToken.Type == JTokenType.String || sourceToken.Type == JTokenType.Integer)
+                && outputToken?.Type == JTokenType.Integer
+                && int.TryParse(outputToken.ToString(Formatting.None), NumberStyles.Integer, CultureInfo.InvariantCulture, out int outputIndex)
+                && outputIndex >= 0)
             {
                 string sourceNode = sourceToken.ToString();
-                if (nodeIds.Contains(sourceNode))
+                if (validNodeIds.Contains(sourceNode))
                 {
                     return new JObject()
                     {
                         ["source_node"] = sourceNode,
-                        ["output_index"] = array[1].DeepClone()
+                        ["output_index"] = new JValue(outputIndex)
                     };
                 }
             }
@@ -236,7 +265,7 @@ Run:
 
 ```bash
 rg -n 'ToJSON|SimplifyParamVal|ToDenseDebugString|InternalSet\.ValuesInput\[[^]]+\]|\.Values\b' src/BuiltinExtensions/ComfyUIBackend/ComfyDiagnostics.cs
-rg -n 'class_type|Properties\(\)|parameter_names|source_node|output_index|redacted:|FixedStatus|Formatting\.None' src/BuiltinExtensions/ComfyUIBackend/ComfyDiagnostics.cs
+rg -n 'DescribeWorkflow|DescribePromptEnvelope|DescribeNormalizedTagName|validNodeIds|NumberStyles\.Integer|class_type|Properties\(\)|parameter_names|source_node|output_index|redacted:|FixedStatus|Formatting\.None' src/BuiltinExtensions/ComfyUIBackend/ComfyDiagnostics.cs
 git diff --check -- src/BuiltinExtensions/ComfyUIBackend/ComfyDiagnostics.cs
 git diff -- src/BuiltinExtensions/ComfyUIBackend/ComfyDiagnostics.cs
 ```
@@ -244,7 +273,9 @@ git diff -- src/BuiltinExtensions/ComfyUIBackend/ComfyDiagnostics.cs
 Expected:
 
 - The first scan has no output except the permitted `ValuesInput` collection/key access if matched by a broader environment-specific regex; no value indexer, `ToJSON`, `SimplifyParamVal`, or dense raw serialization is present.
-- The formatter reads graph property names, approved `class_type`, parameter keys, and validated connection coordinates only.
+- Direct workflow input is never auto-unwrapped, and a direct graph node named `prompt` remains in the summary; only explicit prompt-envelope entry points select `root["prompt"]`.
+- The formatter reads graph property names, approved `class_type`, parameter keys, and structurally validated connection coordinates only.
+- Connection sources must be syntactically valid same-graph nodes, and output indexes must be non-negative 32-bit integers; schema-backed output validation remains intentionally out of scope.
 - All final strings come from newly constructed JSON or fixed JSON/string fallbacks.
 - The new file follows explicit-type and XML-documentation conventions.
 
@@ -285,15 +316,15 @@ Expected: four existing raw-value statements and no uncommitted diff.
 Make these exact replacements while leaving all surrounding branches and log levels unchanged:
 
 ```csharp
-Logs.Verbose($"Will use workflow structure: {ComfyDiagnostics.DescribeWorkflow(workflow)}");
+Logs.Verbose($"Will use workflow structure: {ComfyDiagnostics.DescribePromptEnvelope(workflow)}");
 ```
 
 ```csharp
-Logs.Debug($"Error came from prompt structure: {ComfyDiagnostics.DescribeWorkflow(workflow)}");
+Logs.Debug($"Error came from prompt structure: {ComfyDiagnostics.DescribePromptEnvelope(workflow)}");
 ```
 
 ```csharp
-Logs.Verbose($"Filled tag {ComfyDiagnostics.DescribeTag(tagBasic)} with redacted value.");
+Logs.Verbose($"Filled tag {ComfyDiagnostics.DescribeNormalizedTagName(tagBasic)} with redacted value.");
 ```
 
 ```csharp
@@ -307,7 +338,7 @@ The tag statement must remain inside the existing `Logs.MinimumLevel <= Logs.Log
 Run:
 
 ```bash
-rg -n 'ComfyDiagnostics\.(DescribeWorkflow|DescribeParameters|DescribeTag)' src/BuiltinExtensions/ComfyUIBackend/ComfyUIAPIAbstractBackend.cs
+rg -n 'ComfyDiagnostics\.(DescribeWorkflow|DescribePromptEnvelope|DescribeParameters|DescribeNormalizedTagName)' src/BuiltinExtensions/ComfyUIBackend/ComfyUIAPIAbstractBackend.cs
 if rg -n 'Will use workflow:|Error came from prompt:|Filled tag .* with .*filled|Failed to process comfy workflow for inputs' src/BuiltinExtensions/ComfyUIBackend/ComfyUIAPIAbstractBackend.cs; then exit 1; fi
 rg -n 'ComfyUI prompt said:|PostJSONString\(.*prompt|return Utilities\.EscapeJsonString\(filled\)|catch \(Exception ex\)' src/BuiltinExtensions/ComfyUIBackend/ComfyUIAPIAbstractBackend.cs
 git diff --check -- src/BuiltinExtensions/ComfyUIBackend/ComfyUIAPIAbstractBackend.cs
@@ -370,7 +401,7 @@ Logs.Verbose($"ComfyGetWorkflow for parameters: {ComfyDiagnostics.DescribeParame
 Replace the direct-proxy fallback statement with:
 
 ```csharp
-Logs.Verbose($"Above is for prompt structure: {ComfyDiagnostics.DescribeWorkflow(parsed)}");
+Logs.Verbose($"Above is for prompt structure: {ComfyDiagnostics.DescribePromptEnvelope(parsed)}");
 ```
 
 Replace the ControlNet statement with:
@@ -386,7 +417,7 @@ Do not change the preview result, proxy routing, parsed prompt, ControlNet branc
 Run:
 
 ```bash
-rg -n 'ComfyDiagnostics\.(DescribeWorkflow|DescribeParameters)' \
+rg -n 'ComfyDiagnostics\.(DescribePromptEnvelope|DescribeParameters)' \
   src/BuiltinExtensions/ComfyUIBackend/ComfyUIWebAPI.cs \
   src/BuiltinExtensions/ComfyUIBackend/ComfyUIRedirectHelper.cs \
   src/BuiltinExtensions/ComfyUIBackend/WorkflowGeneratorSteps.cs
@@ -448,9 +479,11 @@ Review the complete implementation range against the design and verify:
 - exactly seven confirmed submitted-value statements migrated;
 - all four original owners use the one internal formatter;
 - only approved identifiers, counts, fixed markers, and validated connections are retained;
-- connection recognition requires a two-element array, an integer output index, and a source node present in the same graph;
+- direct graphs and prompt envelopes use distinct entry points, and direct graph nodes named `prompt` cannot be auto-unwrapped;
+- connection recognition requires a two-element array, a non-negative 32-bit integer output index, and a syntactically valid source node present in the same graph;
+- connection validation is structural rather than schema-backed and has no `object_info`, node-schema, global, or backend dependency;
 - typed-parameter formatting reads keys without formatting values;
-- tag formatting receives only `tagBasic` and safely escapes it;
+- tag formatting passes only `tagBasic` to `DescribeNormalizedTagName` and safely escapes it;
 - invalid/malformed diagnostic inputs cannot throw or expose parser messages;
 - all log levels and operational control flow remain unchanged;
 - response/output/history diagnostics remain unchanged; and
@@ -479,12 +512,12 @@ Run:
 
 ```bash
 target_files='src/BuiltinExtensions/ComfyUIBackend/ComfyDiagnostics.cs src/BuiltinExtensions/ComfyUIBackend/ComfyUIAPIAbstractBackend.cs src/BuiltinExtensions/ComfyUIBackend/ComfyUIWebAPI.cs src/BuiltinExtensions/ComfyUIBackend/ComfyUIRedirectHelper.cs src/BuiltinExtensions/ComfyUIBackend/WorkflowGeneratorSteps.cs'
-rg -n 'ComfyDiagnostics\.(DescribeWorkflow|DescribeParameters|DescribeTag)' \
+rg -n 'ComfyDiagnostics\.(DescribeWorkflow|DescribePromptEnvelope|DescribeParameters|DescribeNormalizedTagName)' \
   src/BuiltinExtensions/ComfyUIBackend/ComfyUIAPIAbstractBackend.cs \
   src/BuiltinExtensions/ComfyUIBackend/ComfyUIWebAPI.cs \
   src/BuiltinExtensions/ComfyUIBackend/ComfyUIRedirectHelper.cs \
   src/BuiltinExtensions/ComfyUIBackend/WorkflowGeneratorSteps.cs
-test "$(rg -c 'ComfyDiagnostics\.(DescribeWorkflow|DescribeParameters|DescribeTag)' \
+test "$(rg -c 'ComfyDiagnostics\.(DescribeWorkflow|DescribePromptEnvelope|DescribeParameters|DescribeNormalizedTagName)' \
   src/BuiltinExtensions/ComfyUIBackend/ComfyUIAPIAbstractBackend.cs \
   src/BuiltinExtensions/ComfyUIBackend/ComfyUIWebAPI.cs \
   src/BuiltinExtensions/ComfyUIBackend/ComfyUIRedirectHelper.cs \

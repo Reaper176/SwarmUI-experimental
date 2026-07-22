@@ -41,7 +41,7 @@ The formatter stays inside the Comfy integration. This project does not add Comf
 
 ## Workflow Structural Summary
 
-The workflow formatter accepts either raw workflow JSON or an already parsed `JToken`. It recognizes both a direct graph object and a request envelope containing the graph under `prompt`.
+The workflow formatter has explicit provenance-specific entry points. `DescribeWorkflow(string)` accepts only a direct graph object. `DescribePromptEnvelope(string)` and `DescribePromptEnvelope(JToken)` accept only a request envelope whose `prompt` property is the graph. The formatter never auto-detects or unwraps a direct graph based on a `prompt` property, so a direct graph node whose ID is `prompt` remains a node in the summary.
 
 The summary includes every graph node without a node-count cap. For each node it retains:
 
@@ -50,11 +50,13 @@ The summary includes every graph node without a node-count cap. For each node it
 - every input name; and
 - source node ID and output index for a validated graph connection.
 
-A value is a validated connection only when it is a two-element JSON array whose first element identifies a node present in the same graph and whose second element is an integer output index. This prevents an arbitrary two-element content array from being reproduced as topology. Other arrays are treated as submitted values.
+A value is a validated connection only when it is a two-element JSON array whose first element is a string or integer identifying a syntactically valid node in the same graph and whose second element is a non-negative integer representable by a 32-bit signed `int`. A syntactically valid source node must be an object with a string `class_type` and an object `inputs` property. This prevents malformed nodes, negative or oversized indexes, and arbitrary two-element content arrays from being reproduced as topology. Other arrays are treated as submitted values.
+
+Connection validation is intentionally structural rather than schema-backed: it does not verify that the output index exists for the source node's class. The pure diagnostic formatter does not load Comfy `object_info`, node schemas, or other global/backend dependencies.
 
 Every non-connection input becomes a fixed marker based only on its JSON kind, for example `redacted:string`, `redacted:integer`, `redacted:float`, `redacted:boolean`, `redacted:null`, `redacted:array`, or `redacted:object`. No string, number, boolean, nested property, array element, path, prompt, model name, seed, media data, or extension-defined value is copied.
 
-Malformed node entries produce fixed structural markers such as `invalid-node-shape`. Invalid raw JSON or an unrecognizable root produces a fixed unavailable-summary message. Parser exception text is not included because it can contain source fragments or structural paths.
+Malformed node entries produce fixed structural markers such as `invalid-node-shape`. Invalid JSON, a non-object direct graph, or an envelope without an object `prompt` graph produces an entry-point-specific fixed status. Parser exception text is not included because it can contain source fragments or structural paths.
 
 Retained identifiers are an explicit part of the approved diagnostic contract: node IDs, class types, and input names are structural metadata and remain visible. They must be serialized through Newtonsoft JSON from a newly constructed summary object so quotes, newlines, and other control characters are escaped. The existing `ToDenseDebugString` helper is not used to serialize retained property names because it does not provide this identifier-escaping contract.
 
@@ -80,17 +82,17 @@ The tag-fill diagnostic retains only the normalized `tagBasic` identifier derive
 - a suffix after `+`; or
 - any part of the filled value.
 
-The normalized identifier is serialized through the shared diagnostic formatter so it is safely escaped. The log message states that the value was redacted. The existing `Logs.MinimumLevel` guard remains, avoiding formatting work when verbose logging is disabled.
+The normalized identifier is serialized through `DescribeNormalizedTagName` so it is safely escaped and the caller precondition is explicit in the method name. The log message states that the value was redacted. The existing `Logs.MinimumLevel` guard remains, avoiding formatting work when verbose logging is disabled.
 
 ## Sink Migration
 
 All seven submitted-value statements migrate together:
 
 1. The tag-fill statement uses the safe normalized tag summary and a fixed redacted-value message.
-2. `AwaitJobLive` verbose submission logging uses the workflow structural summary.
-3. `AwaitJobLive` prompt-error debug logging uses the same workflow structural summary.
-4. `GenerateLive` failure logging combines the typed-parameter summary with the workflow structural summary.
-5. Direct-proxy fallback logging uses the workflow structural summary.
+2. `AwaitJobLive` verbose submission logging uses the prompt-envelope structural summary.
+3. `AwaitJobLive` prompt-error debug logging uses the same prompt-envelope structural summary.
+4. `GenerateLive` failure logging combines the typed-parameter summary with the direct-workflow structural summary.
+5. Direct-proxy fallback logging uses the parsed prompt-envelope structural summary.
 6. Generated-workflow preview logging uses the typed-parameter summary.
 7. ControlNet missing-image logging uses the typed-parameter summary.
 
@@ -111,7 +113,7 @@ The following behavior remains unchanged:
 
 Diagnostic formatting must not mask the error being diagnosed. The formatter therefore returns a fixed safe fallback for null, malformed, or unexpected data and does not expose parser exception messages.
 
-The raw-string workflow overload owns parsing and delegates only successfully parsed data to the token overload. The token overload reads only the graph object, node objects, their `class_type`, their `inputs` property names, and candidate two-element connection arrays. It does not recursively copy arbitrary values.
+The direct-workflow string entry point owns parsing and requires the parsed root to be a graph object. It never inspects or unwraps a `prompt` property. The prompt-envelope string entry point owns parsing and delegates successfully parsed data to the prompt-envelope token overload, which requires an object root with an object `prompt` graph. Both paths delegate only the explicitly selected graph to the private summary formatter. The formatter reads only graph property names, node objects, their string `class_type`, their `inputs` property names, and candidate two-element connection arrays. It does not recursively copy arbitrary values.
 
 If a structural identifier is missing or has an unexpected JSON type, the summary uses a fixed marker. It does not fall back to raw serialization.
 
@@ -156,7 +158,7 @@ Repository policy prohibits agents from running builds, automated tests, browser
 1. inventory the seven confirmed statements before and after;
 2. prove the old raw tag, filled value, workflow/prompt, `T2IParamInput`, and `ToJSON()` diagnostic expressions are absent from those paths;
 3. prove all four existing owners call `ComfyDiagnostics`;
-4. trace every formatter branch and verify that only approved identifiers, connection coordinates, counts, and fixed markers reach the result;
+4. trace every formatter branch and verify that only approved identifiers, non-negative 32-bit connection coordinates from syntactically valid source nodes, counts, and fixed markers reach the result;
 5. verify retained identifiers are JSON-escaped;
 6. verify no raw scalar, nested value, parser exception text, or source JSON is appended;
 7. verify source tokens and submission strings are never mutated;
@@ -209,6 +211,6 @@ Sentinels belong in values, not the structural identifiers that this design inte
 
 ## Risks and Rollback
 
-The main risks are accidentally retaining a submitted value as structure, misclassifying a content array as a connection, throwing from the formatter during an existing failure, or removing too much diagnostic context. Connection validation against the same graph and construction of a new summary object bound these risks.
+The main risks are accidentally retaining a submitted value as structure, misclassifying a content array as a connection, confusing a direct graph's `prompt` node with an envelope, throwing from the formatter during an existing failure, or removing too much diagnostic context. Provenance-specific entry points, validation against syntactically valid same-graph source nodes with non-negative 32-bit indexes, and construction of a new summary object bound these risks.
 
 Each caller migration is mechanically reversible. If a particular structural representation proves unusable, that sink may fall back to a fixed value-free message while the formatter is corrected. Rollback must never restore raw filled values, workflows, prompts, typed inputs, or parser exception text as the accepted end state.
