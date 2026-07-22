@@ -103,7 +103,7 @@ The direct-interrupt path continues to propagate its already-sanitized JSON pars
 
 ## Diagnostic Migration
 
-The ten protected statement lines use eleven formatter calls:
+The ten protected statement lines use eight formatter calls:
 
 1. tag fill uses fixed name-and-value-redacted text;
 2. `AwaitJobLive` verbose submission logging uses an opaque prompt-envelope summary;
@@ -169,7 +169,7 @@ The Grid malformed-media path remains `Task.Run` → fault rethrow → `ExToErro
 
 Repository policy prohibits agents from running builds, automated tests, browsers, Comfy, backends, or the live application. Static verification will:
 
-1. inventory the ten protected statements, eleven formatter invocations, and 12 submitted/private parser calls;
+1. inventory the ten protected statements, eight formatter invocations, and 12 submitted/private parser calls;
 2. prove no protected diagnostic or private catch interpolates a source node ID, class type, input name, output index, parameter name/value, tag/name/suffix, workflow name/path, raw text/token, or private exception;
 3. verify workflow summaries contain only ordinal aliases, counts, fixed statuses, JSON kinds, and aliased source edges;
 4. verify connection matching uses raw identifiers only internally and never emits the raw source or output index;
@@ -215,7 +215,7 @@ Confirm:
 
 ## Success Criteria
 
-- All ten protected statements contain only fixed text or opaque summaries, with eleven expected formatter invocations.
+- All ten protected statements contain only fixed text or opaque summaries, with eight expected formatter invocations.
 - All 12 maintained submitted/private parsing or unescaping invocations remain behind `ComfySubmittedJson`.
 - No user-controlled workflow, parameter, tag, WebSocket, stored-data, or exception lexeme reaches a protected diagnostic or downstream error surface.
 - Complete node order and source-edge topology remain available through deterministic aliases; semantic labels and output ports are intentionally absent.
