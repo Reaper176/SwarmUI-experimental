@@ -12,7 +12,7 @@ This project addresses rank 3, Core F9, from the maintainability architecture re
 
 ## Confirmed Boundary
 
-`src/Pages/GoogleOAuthVerify.cshtml` is the sole maintained Google OAuth login-cookie writer. After Google credential verification finds an existing registered account, the page creates the same persistent login-session token used by password login and appends `swarm_token` with `HttpOnly`, a one-year expiry, and `SameSite=Lax`. It currently omits `CookieOptions.Secure`, whose default is `false`.
+`src/Pages/GoogleOAuthVerify.cshtml` is the sole maintained Google OAuth login-cookie writer. After Google credential verification finds an existing registered account, the page creates the same persistent login-session token used by password login and appends `swarm_token` with `HttpOnly`, a one-year expiry, and `SameSite=Lax`. Before production commit `c6de780d`, the writer omitted `CookieOptions.Secure`, whose default is `false`; the implemented writer now sets `Secure = HttpContext.Request.IsHttps`.
 
 `BasicAPIFeatures.Login` writes the equivalent password-login cookie with `Secure = context.Request.IsHttps`. `BasicAPIFeatures.Logout` clears the cookie using the same secure decision. `WebUtil.GetValidLogin` and its protected-page, output-route, and API-session consumers read and validate the cookie without depending on how the login was performed.
 
