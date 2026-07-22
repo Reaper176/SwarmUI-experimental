@@ -313,7 +313,7 @@ public static class T2IAPI
         Logs.Info($"User {session.User.UserID} requested {images} image{(images == 1 ? "" : "s")} with model '{user_input.Get(T2IParamTypes.Model)?.Name}'...");
         if (Logs.MinimumLevel <= Logs.LogLevel.Verbose)
         {
-            Logs.Verbose($"User {session.User.UserID} above image request had parameter count: {user_input.ValuesInput.Count}");
+            Logs.Verbose($"User {session.User.UserID} above image request had parameter count: {user_input.InternalSet.ValuesInput.Count}");
         }
         List<T2IEngine.ImageOutput> imageSet = [];
         List<Task> tasks = [];
