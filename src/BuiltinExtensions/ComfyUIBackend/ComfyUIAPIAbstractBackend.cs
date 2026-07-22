@@ -982,7 +982,7 @@ public abstract class ComfyUIAPIAbstractBackend : AbstractT2IBackend
         }
         catch (Exception ex)
         {
-            Logs.Verbose($"Error: {ex.ReadableString()}");
+            Logs.Verbose($"Error: {ComfyDiagnostics.DescribeException(ex)}");
             Logs.Debug($"Failed to process comfy workflow for parameters {ComfyDiagnostics.DescribeParameters(user_input)} with workflow structure {ComfyDiagnostics.DescribeWorkflow(workflow)}");
             throw;
         }

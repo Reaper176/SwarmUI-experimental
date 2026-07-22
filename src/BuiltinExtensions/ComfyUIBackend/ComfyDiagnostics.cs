@@ -1,11 +1,12 @@
 using System.Globalization;
+using FreneticUtilities.FreneticExtensions;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 using SwarmUI.Text2Image;
 
 namespace SwarmUI.Builtin_ComfyUIBackend;
 
-/// <summary>Builds value-eliding diagnostic descriptions for Comfy workflows and typed inputs.</summary>
+/// <summary>Builds value-eliding diagnostic descriptions for Comfy workflows, typed inputs, tags, and exceptions.</summary>
 internal static class ComfyDiagnostics
 {
     /// <summary>Describes a raw direct workflow graph without reproducing submitted input values.</summary>
@@ -112,6 +113,27 @@ internal static class ComfyDiagnostics
         }
     }
 
+    /// <summary>Describes an exception while redacting submitted content from JSON parser failures.</summary>
+    public static string DescribeException(Exception exception)
+    {
+        try
+        {
+            if (exception is null)
+            {
+                return "Unknown error.";
+            }
+            if (ContainsJsonReaderException(exception))
+            {
+                return "JSON parsing failed (submitted content redacted).";
+            }
+            return exception.ReadableString();
+        }
+        catch
+        {
+            return "Error details unavailable.";
+        }
+    }
+
     /// <summary>Describes a parsed direct workflow graph without reproducing submitted input values.</summary>
     private static string DescribeGraph(JObject graph)
     {
@@ -198,6 +220,21 @@ internal static class ComfyDiagnostics
             JTokenType.Object => "object",
             _ => "other"
         };
+    }
+
+    /// <summary>Returns whether an exception or any exception in its linear inner chain is a JSON reader failure.</summary>
+    private static bool ContainsJsonReaderException(Exception exception)
+    {
+        Exception current = exception;
+        while (current is not null)
+        {
+            if (current is JsonReaderException)
+            {
+                return true;
+            }
+            current = current.InnerException;
+        }
+        return false;
     }
 
     /// <summary>Creates a fixed, value-free status object.</summary>

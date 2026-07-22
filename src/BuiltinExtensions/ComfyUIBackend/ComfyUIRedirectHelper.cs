@@ -402,7 +402,7 @@ public class ComfyUIRedirectHelper
                 }
                 catch (Exception ex)
                 {
-                    Logs.Debug($"ComfyUI redirection failed - prompt json parse: {ex.ReadableString()}");
+                    Logs.Debug($"ComfyUI redirection failed - prompt json parse: {ComfyDiagnostics.DescribeException(ex)}");
                 }
             }
             else if (path == "interrupt" || path == "api/interrupt")
