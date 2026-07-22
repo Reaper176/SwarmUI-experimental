@@ -135,9 +135,9 @@ public class ComfyUser
                                 FeatureFlagReport = parsed;
                             }
                         }
-                        catch (Exception ex)
+                        catch (Exception)
                         {
-                            Logs.Error($"Failed to parse ComfyUI user message: {ComfyDiagnostics.DescribeException(ex)}");
+                            Logs.Error("Failed to process ComfyUI user message (content redacted).");
                         }
                     }
                     if (received.MessageType == WebSocketMessageType.Binary || received.MessageType == WebSocketMessageType.Text)

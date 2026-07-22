@@ -400,9 +400,9 @@ public class ComfyUIRedirectHelper
                     }
                     content = Utilities.JSONContent(parsed);
                 }
-                catch (Exception ex)
+                catch (Exception)
                 {
-                    Logs.Debug($"ComfyUI redirection failed - prompt json parse: {ComfyDiagnostics.DescribeException(ex)}");
+                    Logs.Debug("ComfyUI redirection failed - submitted prompt processing failed (content redacted).");
                 }
             }
             else if (path == "interrupt" || path == "api/interrupt")
