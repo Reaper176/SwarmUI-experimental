@@ -1,9 +1,9 @@
 using System.Globalization;
 using System.IO;
-using FreneticUtilities.FreneticExtensions;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 using SwarmUI.Text2Image;
+using SwarmUI.Utils;
 
 namespace SwarmUI.Builtin_ComfyUIBackend;
 
