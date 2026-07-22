@@ -37,7 +37,7 @@ A complete exception-flow trace found that sink-only formatting is insufficient.
 9. the `param_values` field submitted to the same endpoint;
 10. direct-proxy prompt-body parsing in `ComfyUIRedirectHelper.ComfyBackendDirectHandler`;
 11. direct-proxy interrupt-body parsing in the same handler; and
-12. browser-to-Swarm Comfy WebSocket message parsing in `ComfyUser.RunWebsocketHandler`.
+12. browser-to-Swarm Comfy WebSocket message parsing in `ComfyUser.RunClientReceiveTask`.
 
 The stored custom-workflow container remains in scope because it originated as private user-authored content even though it is parsed from disk. Comfy backend responses—including `object_info`, backend WebSocket output, and returned metadata—have different provenance and remain outside this project. Generic WebAPI and T2I submitted-input disclosures found by the trace are a separate immediate follow-up project.
 

@@ -2,15 +2,17 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Replace nine Comfy server-log disclosures with one value-eliding diagnostic boundary that preserves complete workflow topology, parameter-name context, and non-parser exception details.
+**Goal:** Remove submitted/private values from nine Comfy diagnostics and prevent content-bearing JSON parser failures from escaping 12 maintained Comfy input boundaries while preserving topology, operational behavior, and non-parser exception details.
 
-**Architecture:** Add an internal, pure `ComfyDiagnostics` formatter owned by the Comfy integration. Provenance-specific direct-graph and prompt-envelope entry points build new JSON summaries containing only approved node IDs, class types, input names, structurally validated source node IDs/non-negative 32-bit output indexes, parameter names, counts, and fixed markers. Its exception entry point redacts `JsonReaderException` details while preserving existing non-parser `ReadableString()` output; four existing diagnostic owners then migrate to this formatter without changing workflow, request, routing, exception, or log-level behavior.
+**Architecture:** Keep the implemented internal `ComfyDiagnostics` formatter as the value-eliding log boundary, and add an internal `ComfySubmittedJson` parser as the source boundary for maintained Comfy submitted/private JSON. Valid input returns the same object or unescaped tag string; malformed JSON throws a new `JsonReaderException` with fixed value-free text and no content-bearing inner exception. Migrate the 12 identified input parsers and remove the explicit raw browser WebSocket message log without changing catch locations, propagation, routing, saving, forwarding, or backend-response parsers.
 
 **Tech Stack:** C# 12, .NET 8, Newtonsoft.Json `JToken`/`JObject`/`JArray`, existing SwarmUI logging and Comfy workflow types.
 
 **Execution context:** Work directly on `master` as requested by the maintainer. Do not create a worktree. Preserve the existing modified files and the untracked `Data.pre-restore-2026-07-19/` directory; never inspect or stage that directory.
 
 **Repository verification constraint:** `AGENTS.md` prohibits agents from running builds, automated tests, browsers, Comfy, backends, or the live application. Each task therefore uses static source and diff verification, followed by explicit maintainer-run validation after all review gates pass.
+
+**Progress at revision commit `c920a7e1`:** Tasks 1–3 are implemented in commits `852905d2`, `52e1fe8b`, `f26e778a`, `b16dbac6`, `6ce3300c`, and `0ba79cae`. The first final review discovered propagation paths outside the nine local sinks, so Tasks 4–7 implement and verify the approved source-boundary expansion. Existing completed steps are marked `[x]`; do not repeat or recommit them.
 
 ---
 
@@ -22,7 +24,7 @@
 - Reference: `src/Text2Image/T2IParamInput.cs`
 - Reference: `src/Utils/Utilities.cs`
 
-- [ ] **Step 1: Confirm the protected state and formatter inputs**
+- [x] **Step 1: Confirm the protected state and formatter inputs**
 
 Run:
 
@@ -45,7 +47,7 @@ Expected:
 
 If any planned production file is already modified, stop and reconcile ownership with the maintainer before editing.
 
-- [ ] **Step 2: Create the formatter**
+- [x] **Step 2: Create the formatter**
 
 Use `apply_patch` to create `src/BuiltinExtensions/ComfyUIBackend/ComfyDiagnostics.cs` with this complete implementation:
 
@@ -299,7 +301,7 @@ internal static class ComfyDiagnostics
 
 Do not add configuration, mutable state, recursive value copying, a general utility, or a node cap.
 
-- [ ] **Step 3: Statically inspect the formatter's value boundary**
+- [x] **Step 3: Statically inspect the formatter's value boundary**
 
 Run:
 
@@ -320,7 +322,7 @@ Expected:
 - Workflow, parameter, and tag strings come from newly constructed JSON or fixed JSON/string fallbacks; exception strings are fixed for parser/null/formatting failures or preserve the existing non-parser `ReadableString()` result.
 - The new file follows explicit-type and XML-documentation conventions.
 
-- [ ] **Step 4: Commit the formatter**
+- [x] **Step 4: Commit the formatter**
 
 Run:
 
@@ -341,7 +343,7 @@ Expected: one new C# file only; protected user changes remain unstaged.
 - Modify: `src/BuiltinExtensions/ComfyUIBackend/ComfyUIAPIAbstractBackend.cs:978-988`
 - Reference: `src/BuiltinExtensions/ComfyUIBackend/ComfyDiagnostics.cs`
 
-- [ ] **Step 1: Confirm the five target statements are unchanged**
+- [x] **Step 1: Confirm the five target statements are unchanged**
 
 Run:
 
@@ -352,7 +354,7 @@ git diff -- src/BuiltinExtensions/ComfyUIBackend/ComfyUIAPIAbstractBackend.cs
 
 Expected: five existing raw-value statements and no uncommitted diff.
 
-- [ ] **Step 2: Migrate all five statements with `apply_patch`**
+- [x] **Step 2: Migrate all five statements with `apply_patch`**
 
 Make these exact replacements while leaving all surrounding branches and log levels unchanged:
 
@@ -378,7 +380,7 @@ Logs.Debug($"Failed to process comfy workflow for parameters {ComfyDiagnostics.D
 
 The tag statement must remain inside the existing `Logs.MinimumLevel <= Logs.LogLevel.Verbose` guard. Do not change tag parsing, `filled`, escaping, workflow parsing/submission, the catch/throw/finally control flow, or any response log.
 
-- [ ] **Step 3: Verify generation-path compatibility and redaction**
+- [x] **Step 3: Verify generation-path compatibility and redaction**
 
 Run:
 
@@ -398,7 +400,7 @@ Expected:
 - The malformed-workflow parser exception uses `DescribeException`, while non-parser detail, exception propagation, and cleanup remain unchanged.
 - The diff contains five statement replacements only.
 
-- [ ] **Step 4: Commit the generation-path migration**
+- [x] **Step 4: Commit the generation-path migration**
 
 Run:
 
@@ -419,7 +421,7 @@ Expected: only the API abstract backend is committed; protected user changes rem
 - Modify: `src/BuiltinExtensions/ComfyUIBackend/WorkflowGeneratorSteps.cs:1006-1014`
 - Reference: `src/BuiltinExtensions/ComfyUIBackend/ComfyDiagnostics.cs`
 
-- [ ] **Step 1: Confirm the remaining four target statements are unchanged**
+- [x] **Step 1: Confirm the remaining four target statements are unchanged**
 
 Run:
 
@@ -436,7 +438,7 @@ git diff -- \
 
 Expected: four existing raw-value statements and no uncommitted diff.
 
-- [ ] **Step 2: Migrate all four statements with `apply_patch`**
+- [x] **Step 2: Migrate all four statements with `apply_patch`**
 
 Replace the preview statement with:
 
@@ -464,7 +466,7 @@ Logs.Verbose($"Following error relates to parameters: {ComfyDiagnostics.Describe
 
 Do not change the preview result, proxy routing, parsed prompt, parser catch/fallback flow, ControlNet branching, or missing-image exception.
 
-- [ ] **Step 3: Verify the three caller migrations**
+- [x] **Step 3: Verify the three caller migrations**
 
 Run:
 
@@ -499,7 +501,7 @@ Expected:
 - The malformed direct-prompt parser exception uses `DescribeException`, while the existing swallowed/fallback flow remains.
 - One statement changes in `ComfyUIWebAPI` and `WorkflowGeneratorSteps`; two change in `ComfyUIRedirectHelper`.
 
-- [ ] **Step 4: Commit the remaining caller migrations**
+- [x] **Step 4: Commit the remaining caller migrations**
 
 Run:
 
@@ -515,14 +517,362 @@ git commit -m "fix: redact Comfy workflow input diagnostics"
 
 Expected: exactly the three approved callers are committed; protected user changes remain unstaged.
 
-### Task 4: Review the complete implementation and hand off runtime validation
+### Task 4: Add the submitted/private JSON parsing boundary
+
+**Files:**
+- Create: `src/BuiltinExtensions/ComfyUIBackend/ComfySubmittedJson.cs`
+- Reference: `src/Utils/Utilities.cs:515-518`
+- Reference: `src/Utils/Utilities.cs:607-615`
+- Reference: `docs/superpowers/specs/2026-07-21-redact-comfy-workflow-diagnostics-design.md`
+
+- [ ] **Step 1: Confirm the protected state and existing parsing behavior**
+
+Run:
+
+```bash
+git status --short --branch --untracked-files=normal
+test ! -e src/BuiltinExtensions/ComfyUIBackend/ComfySubmittedJson.cs
+sed -n '510,520p' src/Utils/Utilities.cs
+sed -n '600,618p' src/Utils/Utilities.cs
+```
+
+Expected:
+
+- `master` is active and the known maintainer-owned dirty paths remain untouched.
+- `ComfySubmittedJson.cs` does not exist.
+- `UnescapeJsonString` parses a constructed object and returns its `value` string.
+- `ParseToJson` returns `JObject.Parse(input)` for valid JSON but embeds a cleaned 256-character input preview in malformed-JSON exceptions.
+
+Do not run a test or build; repository policy requires static equivalence review and later maintainer validation.
+
+- [ ] **Step 2: Create the focused parser**
+
+Use `apply_patch` to create `src/BuiltinExtensions/ComfyUIBackend/ComfySubmittedJson.cs` with this complete implementation:
+
+```csharp
+using Newtonsoft.Json;
+using Newtonsoft.Json.Linq;
+
+namespace SwarmUI.Builtin_ComfyUIBackend;
+
+/// <summary>Parses Comfy-maintained submitted or private JSON without propagating content-bearing parser errors.</summary>
+internal static class ComfySubmittedJson
+{
+    /// <summary>Fixed parser failure text that contains no submitted JSON or parser-derived location details.</summary>
+    private const string ParserFailureMessage = "JSON parsing failed (submitted content redacted).";
+
+    /// <summary>Parses a submitted or private JSON object through a value-free failure boundary.</summary>
+    public static JObject ParseObject(string input)
+    {
+        try
+        {
+            return JObject.Parse(input);
+        }
+        catch (JsonReaderException)
+        {
+            throw new JsonReaderException(ParserFailureMessage);
+        }
+    }
+
+    /// <summary>Unescapes a submitted workflow-tag string through a value-free failure boundary.</summary>
+    public static string UnescapeString(string input)
+    {
+        try
+        {
+            return JObject.Parse("{ \"value\": \"" + input + "\" }")["value"].ToString();
+        }
+        catch (JsonReaderException)
+        {
+            throw new JsonReaderException(ParserFailureMessage);
+        }
+    }
+}
+```
+
+Do not add an inner exception, source preview, native parser message, JSON path, line information, logging, configuration, or a general utility abstraction. Keep the constructed tag object byte-for-byte equivalent to `Utilities.UnescapeJsonString`.
+
+- [ ] **Step 3: Statically verify the parser boundary**
+
+Run:
+
+```bash
+test "$(rg -c 'catch \(JsonReaderException\)' src/BuiltinExtensions/ComfyUIBackend/ComfySubmittedJson.cs)" = "2"
+test "$(rg -c 'throw new JsonReaderException\(ParserFailureMessage\);' src/BuiltinExtensions/ComfyUIBackend/ComfySubmittedJson.cs)" = "2"
+if rg -n 'InnerException|CleanTrashTextForDebug|ReadableString|ex\.Message|input\[|input\.Replace|Logs\.' src/BuiltinExtensions/ComfyUIBackend/ComfySubmittedJson.cs; then exit 1; fi
+rg -n 'ParseObject|string UnescapeString|JObject\.Parse|ParserFailureMessage' src/BuiltinExtensions/ComfyUIBackend/ComfySubmittedJson.cs
+git diff --check -- src/BuiltinExtensions/ComfyUIBackend/ComfySubmittedJson.cs
+git diff -- src/BuiltinExtensions/ComfyUIBackend/ComfySubmittedJson.cs
+```
+
+Expected:
+
+- Both methods catch only `JsonReaderException` and throw a fresh same-type exception containing the shared fixed message.
+- The old exception is not named or retained, so no inner chain can recover submitted content.
+- Valid object parsing and tag unescaping use the same Newtonsoft operations as the old paths.
+- The class follows explicit-type, braces, and XML-documentation conventions.
+
+- [ ] **Step 4: Commit the parser boundary**
+
+Run:
+
+```bash
+git add src/BuiltinExtensions/ComfyUIBackend/ComfySubmittedJson.cs
+git diff --cached --check
+test "$(git diff --cached --name-only)" = "src/BuiltinExtensions/ComfyUIBackend/ComfySubmittedJson.cs"
+git commit -m "refactor: add safe Comfy JSON parser"
+```
+
+Expected: one new C# file only; protected maintainer changes remain unstaged.
+
+### Task 5: Migrate workflow, tag, metadata, and stored-workflow parsing
+
+**Files:**
+- Modify: `src/BuiltinExtensions/ComfyUIBackend/ComfyUIAPIAbstractBackend.cs:237`
+- Modify: `src/BuiltinExtensions/ComfyUIBackend/ComfyUIAPIAbstractBackend.cs:812`
+- Modify: `src/BuiltinExtensions/ComfyUIBackend/ComfyUIAPIAbstractBackend.cs:1022`
+- Modify: `src/BuiltinExtensions/ComfyUIBackend/ComfyUIBackendExtension.cs:168`
+- Modify: `src/BuiltinExtensions/ComfyUIBackend/ComfyUIBackendExtension.cs:319`
+- Reference: `src/BuiltinExtensions/ComfyUIBackend/ComfySubmittedJson.cs`
+
+- [ ] **Step 1: Confirm the five source boundaries and clean caller diffs**
+
+Run:
+
+```bash
+rg -n 'workflowJson = Utilities\.ParseToJson\(workflow\)|fixedTag = Utilities\.UnescapeJsonString\(tag\)|workflow = Utilities\.ParseToJson\(workflowRaw\)' src/BuiltinExtensions/ComfyUIBackend/ComfyUIAPIAbstractBackend.cs
+rg -n 'ParameterMetadataCacheHelper = new\(s => s\.ParseToJson\(\)\)|JObject json = File\.ReadAllText\(path\)\.ParseToJson\(\)' src/BuiltinExtensions/ComfyUIBackend/ComfyUIBackendExtension.cs
+git diff -- src/BuiltinExtensions/ComfyUIBackend/ComfyUIAPIAbstractBackend.cs src/BuiltinExtensions/ComfyUIBackend/ComfyUIBackendExtension.cs
+```
+
+Expected: exactly three API-backend matches, two extension matches, and no uncommitted caller diff.
+
+- [ ] **Step 2: Replace the API-backend parser entry points**
+
+Use `apply_patch` for these exact replacements:
+
+```csharp
+JObject workflowJson = ComfySubmittedJson.ParseObject(workflow);
+```
+
+```csharp
+string fixedTag = ComfySubmittedJson.UnescapeString(tag);
+```
+
+```csharp
+JObject workflow = ComfySubmittedJson.ParseObject(workflowRaw);
+```
+
+Do not change workflow preprocessing, tag splitting/defaulting/filling/escaping, node validation, rejection reasons, matching, generation, catches, or propagation.
+
+- [ ] **Step 3: Replace the metadata and stored-container parser entry points**
+
+Use `apply_patch` for these exact replacements:
+
+```csharp
+public static SingleCacheAsync<string, JObject> ParameterMetadataCacheHelper = new(s => ComfySubmittedJson.ParseObject(s));
+```
+
+```csharp
+JObject json = ComfySubmittedJson.ParseObject(File.ReadAllText(path));
+```
+
+Do not change cache keys/lifetime, dynamic parameter construction, custom-workflow field extraction, file I/O, fallback image, caching, catch logging, or null return behavior.
+
+- [ ] **Step 4: Verify valid and malformed flow equivalence**
+
+Run:
+
+```bash
+test "$(rg -o 'ComfySubmittedJson\.(ParseObject|UnescapeString)' src/BuiltinExtensions/ComfyUIBackend/ComfyUIAPIAbstractBackend.cs src/BuiltinExtensions/ComfyUIBackend/ComfyUIBackendExtension.cs | wc -l)" = "5"
+if rg -n 'workflowJson = Utilities\.ParseToJson\(workflow\)|fixedTag = Utilities\.UnescapeJsonString\(tag\)|workflow = Utilities\.ParseToJson\(workflowRaw\)|ParameterMetadataCacheHelper = new\(s => s\.ParseToJson\(\)\)|JObject json = File\.ReadAllText\(path\)\.ParseToJson\(\)' src/BuiltinExtensions/ComfyUIBackend/ComfyUIAPIAbstractBackend.cs src/BuiltinExtensions/ComfyUIBackend/ComfyUIBackendExtension.cs; then exit 1; fi
+rg -n 'return Utilities\.EscapeJsonString\(filled\)|RefusalReasons\.Add|catch \(Exception (ex|e)\)|CustomWorkflows\[name\] = workflow|return null;' src/BuiltinExtensions/ComfyUIBackend/ComfyUIAPIAbstractBackend.cs src/BuiltinExtensions/ComfyUIBackend/ComfyUIBackendExtension.cs
+git diff --check -- src/BuiltinExtensions/ComfyUIBackend/ComfyUIAPIAbstractBackend.cs src/BuiltinExtensions/ComfyUIBackend/ComfyUIBackendExtension.cs
+git diff -- src/BuiltinExtensions/ComfyUIBackend/ComfyUIAPIAbstractBackend.cs src/BuiltinExtensions/ComfyUIBackend/ComfyUIBackendExtension.cs
+```
+
+Expected:
+
+- Exactly five safe-parser invocations replace the five identified source boundaries.
+- All surrounding operational statements and catches remain unchanged.
+- Backend-response parses in these files remain on their existing parsers.
+- The diff is five parser-expression replacements only.
+
+- [ ] **Step 5: Commit the workflow and storage migrations**
+
+Run:
+
+```bash
+git add src/BuiltinExtensions/ComfyUIBackend/ComfyUIAPIAbstractBackend.cs src/BuiltinExtensions/ComfyUIBackend/ComfyUIBackendExtension.cs
+git diff --cached --check
+test "$(git diff --cached --name-only | wc -l)" = "2"
+git commit -m "fix: sanitize Comfy workflow parser failures"
+```
+
+Expected: exactly the two approved callers are committed; protected maintainer changes remain unstaged.
+
+### Task 6: Migrate submitted endpoint and browser WebSocket parsing
+
+**Files:**
+- Modify: `src/BuiltinExtensions/ComfyUIBackend/ComfyUIWebAPI.cs:69-72`
+- Modify: `src/BuiltinExtensions/ComfyUIBackend/ComfyUIRedirectHelper.cs:335`
+- Modify: `src/BuiltinExtensions/ComfyUIBackend/ComfyUIRedirectHelper.cs:413`
+- Modify: `src/BuiltinExtensions/ComfyUIBackend/ComfyUser.cs:132-140`
+- Reference: `src/BuiltinExtensions/ComfyUIBackend/ComfySubmittedJson.cs`
+- Reference: `src/BuiltinExtensions/ComfyUIBackend/ComfyDiagnostics.cs`
+
+- [ ] **Step 1: Confirm the seven parser calls and raw-message log**
+
+Run:
+
+```bash
+rg -n '\["(workflow|prompt|custom_params|param_values)"\] = (workflow|prompt|custom_params|param_values)\.ParseToJson\(\)' src/BuiltinExtensions/ComfyUIBackend/ComfyUIWebAPI.cs
+rg -n 'JObject parsed = StringConversionHelper\.UTF8Encoding\.GetString\(data\)\.ParseToJson\(\)|JObject interruptData = StringConversionHelper\.UTF8Encoding\.GetString\(inputBytes\)\.ParseToJson\(\)' src/BuiltinExtensions/ComfyUIBackend/ComfyUIRedirectHelper.cs
+rg -n 'JObject parsed = rawText\.ParseToJson\(\)|Failed to parse ComfyUI user message.*rawText.*ex\.ReadableString' src/BuiltinExtensions/ComfyUIBackend/ComfyUser.cs
+git diff -- src/BuiltinExtensions/ComfyUIBackend/ComfyUIWebAPI.cs src/BuiltinExtensions/ComfyUIBackend/ComfyUIRedirectHelper.cs src/BuiltinExtensions/ComfyUIBackend/ComfyUser.cs
+```
+
+Expected: four save-field calls, two redirect calls, one browser WebSocket call, one raw-message diagnostic, and no uncommitted caller diff.
+
+- [ ] **Step 2: Replace all four save-field parsers**
+
+Use `apply_patch` to make the `data` initializer contain exactly:
+
+```csharp
+["workflow"] = ComfySubmittedJson.ParseObject(workflow),
+["prompt"] = ComfySubmittedJson.ParseObject(prompt),
+["custom_params"] = ComfySubmittedJson.ParseObject(custom_params),
+["param_values"] = ComfySubmittedJson.ParseObject(param_values),
+```
+
+Do not change the in-memory publication, optional replacement deletion, image/description fields, file path, serialization, write ordering, or response.
+
+- [ ] **Step 3: Replace the direct prompt and interrupt parsers**
+
+Use `apply_patch` for these exact replacements:
+
+```csharp
+JObject parsed = ComfySubmittedJson.ParseObject(StringConversionHelper.UTF8Encoding.GetString(data));
+```
+
+```csharp
+JObject interruptData = ComfySubmittedJson.ParseObject(StringConversionHelper.UTF8Encoding.GetString(inputBytes));
+```
+
+Do not add a new catch or response. Preserve prompt routing/fallback, prompt-ID remapping, interrupt fan-out, body bytes, and existing exception propagation.
+
+- [ ] **Step 4: Replace the browser WebSocket parser and diagnostic**
+
+Use `apply_patch` for these exact replacements:
+
+```csharp
+JObject parsed = ComfySubmittedJson.ParseObject(rawText);
+```
+
+```csharp
+Logs.Error($"Failed to parse ComfyUI user message: {ComfyDiagnostics.DescribeException(ex)}");
+```
+
+Keep `rawText` as the parser input but never interpolate it into diagnostics. Preserve frame-size/type checks, feature-flag handling, the catch location, and the unconditional post-catch `NewMessageToServers` forwarding call.
+
+- [ ] **Step 5: Verify all seven boundaries and the raw-log removal**
+
+Run:
+
+```bash
+test "$(rg -o 'ComfySubmittedJson\.ParseObject' src/BuiltinExtensions/ComfyUIBackend/ComfyUIWebAPI.cs src/BuiltinExtensions/ComfyUIBackend/ComfyUIRedirectHelper.cs src/BuiltinExtensions/ComfyUIBackend/ComfyUser.cs | wc -l)" = "7"
+if rg -n '\["(workflow|prompt|custom_params|param_values)"\] = (workflow|prompt|custom_params|param_values)\.ParseToJson\(\)|JObject parsed = StringConversionHelper\.UTF8Encoding\.GetString\(data\)\.ParseToJson\(\)|JObject interruptData = StringConversionHelper\.UTF8Encoding\.GetString\(inputBytes\)\.ParseToJson\(\)|JObject parsed = rawText\.ParseToJson\(\)|Failed to parse ComfyUI user message.*rawText' src/BuiltinExtensions/ComfyUIBackend/ComfyUIWebAPI.cs src/BuiltinExtensions/ComfyUIBackend/ComfyUIRedirectHelper.cs src/BuiltinExtensions/ComfyUIBackend/ComfyUser.cs; then exit 1; fi
+rg -n 'ComfySubmittedJson\.ParseObject|Failed to parse ComfyUI user message:|NewMessageToServers\(recvBuf\.AsMemory|prompt_id|File\.WriteAllBytes' src/BuiltinExtensions/ComfyUIBackend/ComfyUIWebAPI.cs src/BuiltinExtensions/ComfyUIBackend/ComfyUIRedirectHelper.cs src/BuiltinExtensions/ComfyUIBackend/ComfyUser.cs
+git diff --check -- src/BuiltinExtensions/ComfyUIBackend/ComfyUIWebAPI.cs src/BuiltinExtensions/ComfyUIBackend/ComfyUIRedirectHelper.cs src/BuiltinExtensions/ComfyUIBackend/ComfyUser.cs
+git diff -- src/BuiltinExtensions/ComfyUIBackend/ComfyUIWebAPI.cs src/BuiltinExtensions/ComfyUIBackend/ComfyUIRedirectHelper.cs src/BuiltinExtensions/ComfyUIBackend/ComfyUser.cs
+```
+
+Expected:
+
+- Exactly seven safe-parser calls replace the submitted endpoint and browser WebSocket parsers.
+- No protected old parser expression or raw browser message log remains.
+- The WebSocket catch uses the existing diagnostic formatter, and its frame is still forwarded afterward.
+- Backend-to-browser and backend-output parsers in the redirect helper and `ComfyUser` remain unchanged.
+- The diff contains seven parser-expression replacements and one diagnostic replacement only.
+
+- [ ] **Step 6: Commit the endpoint and WebSocket migrations**
+
+Run:
+
+```bash
+git add src/BuiltinExtensions/ComfyUIBackend/ComfyUIWebAPI.cs src/BuiltinExtensions/ComfyUIBackend/ComfyUIRedirectHelper.cs src/BuiltinExtensions/ComfyUIBackend/ComfyUser.cs
+git diff --cached --check
+test "$(git diff --cached --name-only | wc -l)" = "3"
+git commit -m "fix: sanitize submitted Comfy JSON failures"
+```
+
+Expected: exactly the three approved callers are committed; protected maintainer changes remain unstaged.
+
+### Task 7: Reconcile the architecture record
+
+**Files:**
+- Modify: `docs/superpowers/specs/2026-07-21-redact-comfy-workflow-diagnostics-design.md`
+- Modify: `docs/superpowers/audits/2026-07-21-maintainability-architecture-refresh.md`
+- Review: `docs/superpowers/plans/2026-07-21-redact-comfy-workflow-diagnostics.md`
+
+- [ ] **Step 1: Update implementation status and exact evidence**
+
+Use `apply_patch` to:
+
+- set the design status to `Implemented, awaiting maintainer validation`;
+- retain the exact count of nine original diagnostic statements and 12 submitted/private parsing or unescaping invocations;
+- update Comfy F25, its risk-register row, and roadmap rank 2 to name `ComfySubmittedJson`, the raw browser WebSocket diagnostic, and the newly protected propagation paths;
+- record generic API/T2I parsing and successful-generation parameter disclosures as a distinct immediate follow-up rather than claiming they were fixed; and
+- leave all finding and roadmap numbering stable unless a new separately evidenced finding is explicitly added.
+
+Do not rewrite unrelated audit findings or ranks.
+
+The audit update must state these concrete facts rather than use generic completion language:
+
+- F25's original nine sink inventory remains valid, but an exception-flow trace found 12 Comfy-owned submitted/private parsing or unescaping invocations whose failures can reach local, generic, or framework diagnostics.
+- The implemented boundary consists of `ComfyDiagnostics` for value-eliding representations and `ComfySubmittedJson` for fresh, fixed-message `JsonReaderException` failures without inner exceptions.
+- The expanded owners are `ComfyUIAPIAbstractBackend`, `ComfyUIBackendExtension`, `ComfyUIWebAPI`, `ComfyUIRedirectHelper`, `ComfyUser`, and `WorkflowGeneratorSteps`.
+- Backend-response parsing is excluded by provenance and unchanged.
+- The next-project record names the separately confirmed generic API initial WebSocket parser at `src/WebAPI/API.cs:70`, HTTP body parser at `src/WebAPI/API.cs:85-87`, follow-up T2I WebSocket parser at `src/WebAPI/T2IAPI.cs:116-124`, dynamic media parameter parsing at `src/Text2Image/T2IParamSet.cs:158-190`, and successful-generation `T2IParamInput.ToString()` diagnostic at `src/WebAPI/T2IAPI.cs:316`. It must explicitly say the current Comfy change does not fix those paths.
+
+- [ ] **Step 2: Verify documentation consistency**
+
+Run:
+
+```bash
+rg -n 'Status:|nine|12|ComfySubmittedJson|WebSocket|generic WebAPI|T2I' docs/superpowers/specs/2026-07-21-redact-comfy-workflow-diagnostics-design.md docs/superpowers/audits/2026-07-21-maintainability-architecture-refresh.md
+if rg -n '\bTBD\b|implement later|fill in details|only two malformed|four existing owners|nine submitted/private' docs/superpowers/specs/2026-07-21-redact-comfy-workflow-diagnostics-design.md docs/superpowers/audits/2026-07-21-maintainability-architecture-refresh.md; then exit 1; fi
+git diff --check -- docs/superpowers/specs/2026-07-21-redact-comfy-workflow-diagnostics-design.md docs/superpowers/audits/2026-07-21-maintainability-architecture-refresh.md
+git diff -- docs/superpowers/specs/2026-07-21-redact-comfy-workflow-diagnostics-design.md docs/superpowers/audits/2026-07-21-maintainability-architecture-refresh.md
+```
+
+Expected: the specification and audit agree on scope, counts, implementation state, exclusions, and the separate generic follow-up.
+
+- [ ] **Step 3: Commit the architecture record**
+
+Run:
+
+```bash
+git add docs/superpowers/specs/2026-07-21-redact-comfy-workflow-diagnostics-design.md docs/superpowers/audits/2026-07-21-maintainability-architecture-refresh.md
+git diff --cached --check
+test "$(git diff --cached --name-only | wc -l)" = "2"
+git commit -m "docs: record Comfy JSON redaction boundary"
+```
+
+Expected: exactly the design and audit are committed; protected maintainer changes remain unstaged.
+
+### Task 8: Review the complete implementation and hand off runtime validation
 
 **Files:**
 - Review: `src/BuiltinExtensions/ComfyUIBackend/ComfyDiagnostics.cs`
+- Review: `src/BuiltinExtensions/ComfyUIBackend/ComfySubmittedJson.cs`
 - Review: `src/BuiltinExtensions/ComfyUIBackend/ComfyUIAPIAbstractBackend.cs`
+- Review: `src/BuiltinExtensions/ComfyUIBackend/ComfyUIBackendExtension.cs`
 - Review: `src/BuiltinExtensions/ComfyUIBackend/ComfyUIWebAPI.cs`
 - Review: `src/BuiltinExtensions/ComfyUIBackend/ComfyUIRedirectHelper.cs`
+- Review: `src/BuiltinExtensions/ComfyUIBackend/ComfyUser.cs`
 - Review: `src/BuiltinExtensions/ComfyUIBackend/WorkflowGeneratorSteps.cs`
+- Review: `docs/superpowers/specs/2026-07-21-redact-comfy-workflow-diagnostics-design.md`
+- Review: `docs/superpowers/audits/2026-07-21-maintainability-architecture-refresh.md`
 - Modify: only a file above if review finds a verified defect
 
 - [ ] **Step 1: Run an independent specification-compliance review**
@@ -538,9 +888,15 @@ Review the complete implementation range against the design and verify:
 - typed-parameter formatting reads keys without formatting values;
 - tag formatting passes only `tagBasic` to `DescribeNormalizedTagName` and safely escapes it;
 - exception formatting replaces parser exception details with fixed value-free text when a `JsonReaderException` appears anywhere in the linear inner chain, preserves non-parser `ReadableString()` output, and has fixed null/formatting fallbacks;
+- exactly 12 submitted/private parsing or unescaping invocations use `ComfySubmittedJson`;
+- both parser methods catch only `JsonReaderException` and throw a fresh same-type exception with fixed text and no inner exception;
+- all valid parser operations use equivalent Newtonsoft parsing and return shapes;
+- the browser-to-Swarm WebSocket catch does not log `rawText`, uses safe exception formatting, and still forwards the frame afterward;
+- save-before-write ordering, catch locations, failure propagation, cache behavior, matching, routing, interruption, and tag processing remain unchanged;
 - invalid/malformed diagnostic inputs cannot throw or expose parser messages;
 - all log levels and operational control flow remain unchanged;
-- response/output/history diagnostics remain unchanged; and
+- backend-response/output/history parsers and diagnostics remain unchanged;
+- generic WebAPI/T2I disclosures are documented as a separate follow-up; and
 - no unrelated behavior or file was added.
 
 If the review finds a defect, correct it with `apply_patch`, repeat the affected task's static checks, commit the correction, and return it to the same reviewer.
@@ -550,9 +906,11 @@ If the review finds a defect, correct it with `apply_patch`, repeat the affected
 After specification approval, review for:
 
 - accidental content retention through identifiers, arrays, exception text, `ToString`, or token reuse;
+- accidental content retention through the replacement exception's message, inner chain, source, or data;
 - mutation of source tokens;
 - malformed/null input safety;
 - Newtonsoft ownership/escaping correctness;
+- exact valid-input equivalence for object parsing and tag unescaping;
 - C# explicit-type, braces, and XML-documentation conventions;
 - unnecessary abstraction or generalized utility scope;
 - diagnostic usefulness and log-level preservation; and
@@ -565,37 +923,49 @@ Resolve all critical or important findings through the implementer/re-review loo
 Run:
 
 ```bash
-target_files='src/BuiltinExtensions/ComfyUIBackend/ComfyDiagnostics.cs src/BuiltinExtensions/ComfyUIBackend/ComfyUIAPIAbstractBackend.cs src/BuiltinExtensions/ComfyUIBackend/ComfyUIWebAPI.cs src/BuiltinExtensions/ComfyUIBackend/ComfyUIRedirectHelper.cs src/BuiltinExtensions/ComfyUIBackend/WorkflowGeneratorSteps.cs'
+target_files='src/BuiltinExtensions/ComfyUIBackend/ComfyDiagnostics.cs src/BuiltinExtensions/ComfyUIBackend/ComfySubmittedJson.cs src/BuiltinExtensions/ComfyUIBackend/ComfyUIAPIAbstractBackend.cs src/BuiltinExtensions/ComfyUIBackend/ComfyUIBackendExtension.cs src/BuiltinExtensions/ComfyUIBackend/ComfyUIWebAPI.cs src/BuiltinExtensions/ComfyUIBackend/ComfyUIRedirectHelper.cs src/BuiltinExtensions/ComfyUIBackend/ComfyUser.cs src/BuiltinExtensions/ComfyUIBackend/WorkflowGeneratorSteps.cs'
 rg -n 'ComfyDiagnostics\.(DescribeWorkflow|DescribePromptEnvelope|DescribeParameters|DescribeNormalizedTagName|DescribeException)' \
   src/BuiltinExtensions/ComfyUIBackend/ComfyUIAPIAbstractBackend.cs \
   src/BuiltinExtensions/ComfyUIBackend/ComfyUIWebAPI.cs \
   src/BuiltinExtensions/ComfyUIBackend/ComfyUIRedirectHelper.cs \
+  src/BuiltinExtensions/ComfyUIBackend/ComfyUser.cs \
   src/BuiltinExtensions/ComfyUIBackend/WorkflowGeneratorSteps.cs
-# Count one matched line for each of the nine migrated diagnostic statements.
+# Count the nine original migrated statements plus the browser WebSocket statement.
 test "$(rg -c 'ComfyDiagnostics\.(DescribeWorkflow|DescribePromptEnvelope|DescribeParameters|DescribeNormalizedTagName|DescribeException)' \
   src/BuiltinExtensions/ComfyUIBackend/ComfyUIAPIAbstractBackend.cs \
   src/BuiltinExtensions/ComfyUIBackend/ComfyUIWebAPI.cs \
   src/BuiltinExtensions/ComfyUIBackend/ComfyUIRedirectHelper.cs \
-  src/BuiltinExtensions/ComfyUIBackend/WorkflowGeneratorSteps.cs | awk -F: '{ total += $2 } END { print total }')" = "9"
-# Count all ten formatter invocations; the GenerateLive structural statement contains two.
+  src/BuiltinExtensions/ComfyUIBackend/ComfyUser.cs \
+  src/BuiltinExtensions/ComfyUIBackend/WorkflowGeneratorSteps.cs | awk -F: '{ total += $2 } END { print total }')" = "10"
+# Count all eleven formatter invocations; the GenerateLive structural statement contains two.
 test "$(rg -o 'ComfyDiagnostics\.(DescribeWorkflow|DescribePromptEnvelope|DescribeParameters|DescribeNormalizedTagName|DescribeException)' \
   src/BuiltinExtensions/ComfyUIBackend/ComfyUIAPIAbstractBackend.cs \
   src/BuiltinExtensions/ComfyUIBackend/ComfyUIWebAPI.cs \
   src/BuiltinExtensions/ComfyUIBackend/ComfyUIRedirectHelper.cs \
-  src/BuiltinExtensions/ComfyUIBackend/WorkflowGeneratorSteps.cs | awk 'END { print NR }')" = "10"
-if rg -n 'Filled tag .* with .*filled|Will use workflow: .*ToDenseDebugString|Error came from prompt: .*ToDenseDebugString|Logs\.Verbose\(\$"Error: \{ex\.ReadableString\(\)\}"\)|Failed to process comfy workflow for inputs|ComfyGetWorkflow for input:|Above is for prompt: .*ToDenseDebugString|ComfyUI redirection failed - prompt json parse: .*ex\.ReadableString|Following error relates to parameters: .*ToJSON' \
+  src/BuiltinExtensions/ComfyUIBackend/ComfyUser.cs \
+  src/BuiltinExtensions/ComfyUIBackend/WorkflowGeneratorSteps.cs | awk 'END { print NR }')" = "11"
+test "$(rg -o 'ComfySubmittedJson\.(ParseObject|UnescapeString)' \
+  src/BuiltinExtensions/ComfyUIBackend/ComfyUIAPIAbstractBackend.cs \
+  src/BuiltinExtensions/ComfyUIBackend/ComfyUIBackendExtension.cs \
+  src/BuiltinExtensions/ComfyUIBackend/ComfyUIWebAPI.cs \
+  src/BuiltinExtensions/ComfyUIBackend/ComfyUIRedirectHelper.cs \
+  src/BuiltinExtensions/ComfyUIBackend/ComfyUser.cs | wc -l)" = "12"
+if rg -n 'Filled tag .* with .*filled|Will use workflow: .*ToDenseDebugString|Error came from prompt: .*ToDenseDebugString|Logs\.Verbose\(\$"Error: \{ex\.ReadableString\(\)\}"\)|Failed to process comfy workflow for inputs|ComfyGetWorkflow for input:|Above is for prompt: .*ToDenseDebugString|ComfyUI redirection failed - prompt json parse: .*ex\.ReadableString|Following error relates to parameters: .*ToJSON|Failed to parse ComfyUI user message.*rawText' \
   src/BuiltinExtensions/ComfyUIBackend/ComfyUIAPIAbstractBackend.cs \
   src/BuiltinExtensions/ComfyUIBackend/ComfyUIWebAPI.cs \
   src/BuiltinExtensions/ComfyUIBackend/ComfyUIRedirectHelper.cs \
+  src/BuiltinExtensions/ComfyUIBackend/ComfyUser.cs \
   src/BuiltinExtensions/ComfyUIBackend/WorkflowGeneratorSteps.cs; then exit 1; fi
+test "$(rg -c 'throw new JsonReaderException\(ParserFailureMessage\);' src/BuiltinExtensions/ComfyUIBackend/ComfySubmittedJson.cs)" = "2"
+if rg -n 'InnerException|CleanTrashTextForDebug|ReadableString|ex\.Message|Logs\.' src/BuiltinExtensions/ComfyUIBackend/ComfySubmittedJson.cs; then exit 1; fi
 git diff --check
 git status --short --branch --untracked-files=normal
 git log --oneline --decorate -8
 ```
 
-The first count verifies nine migrated diagnostic statement lines. The second verifies ten total formatter invocations because the `GenerateLive` structural failure statement combines the parameter and direct-workflow summaries.
+The first diagnostic count verifies the nine original statement lines plus the corrected browser WebSocket statement. The second verifies eleven total formatter invocations because the `GenerateLive` structural failure statement combines two summaries. The parser count verifies all 12 submitted/private boundaries.
 
-Then determine the implementation base commit and verify the committed range changes exactly the five approved production files. Do not include the pre-existing dirty working-tree changes in that range check.
+Then determine the implementation base commit and verify the committed range changes exactly the eight approved production files and approved documentation. Do not include the pre-existing dirty working-tree changes in that range check.
 
 Do not run a build, automated test, browser, live server, launcher, installer, or backend/Comfy process.
 
@@ -603,7 +973,7 @@ Do not run a build, automated test, browser, live server, launcher, installer, o
 
 This is the required **Maintainer Validation** gate; agent-permitted static verification does not replace it.
 
-Ask the maintainer to place recognizable sentinels near the start of API-key, positive/negative prompt, media, dynamic/default, extension-private, and direct-workflow values. Place distinct malformed raw-workflow and malformed direct-prompt sentinels within the first 256 characters consumed by `Utilities.ParseToJson`, then validate:
+Ask the maintainer to place recognizable sentinels near the start of API-key, positive/negative prompt, media, dynamic/default, extension-private, and direct-workflow values. Use distinct sentinels in each malformed submitted/private JSON source, then validate:
 
 1. successful ordinary and stored/raw workflow generation at verbose level;
 2. Comfy prompt validation and transport/processing failures at debug level;
@@ -611,11 +981,17 @@ Ask the maintainer to place recognizable sentinels near the start of API-key, po
 4. direct-proxy prompt fallback;
 5. ControlNet strength without a usable ControlNet/init image;
 6. malformed raw-workflow parsing and its `GenerateLive` catch;
-7. malformed direct-prompt parsing and its redirect catch; and
-8. supported verbose/debug log-level combinations.
+7. malformed direct-prompt parsing and its redirect catch;
+8. malformed saved-workflow `workflow`, `prompt`, `custom_params`, and `param_values` fields;
+9. malformed dynamic workflow parameter metadata;
+10. a malformed persisted custom-workflow container;
+11. a malformed workflow-tag escape;
+12. a malformed direct interrupt body;
+13. a malformed browser-to-Swarm Comfy WebSocket message; and
+14. supported verbose/debug log-level combinations.
 
-Confirm no sentinel, filled value, submitted scalar, base64 prefix, or raw parser message appears; both malformed JSON paths emit `JSON parsing failed (submitted content redacted).`; non-parser exceptions retain their prior readable detail; every node ID/class/input/connection and parameter name/count remains useful; normalized tag names contain no raw default/suffix; fixed malformed-input markers are safe; and all operational behavior and the ControlNet error are unchanged.
+Confirm no sentinel, filled value, submitted scalar, base64 prefix, raw WebSocket body, source preview, native parser message, JSON path, or line detail appears. Every malformed submitted/private JSON path must expose only `JSON parsing failed (submitted content redacted).`; non-parser exceptions must retain their prior readable detail. Confirm every node ID/class/input/connection and parameter name/count remains useful, normalized tag names contain no raw default/suffix, fixed malformed-input markers are safe, valid save/load/dynamic/tag/interrupt/WebSocket behavior is unchanged, malformed browser WebSocket frames retain their existing forwarding behavior, and all other operational behavior and the ControlNet error are unchanged.
 
 Do not claim runtime completion until the maintainer reports these scenarios pass. If validation fails, collect the exact path, log level, structural summary, leaked/missing field, operational result, and reproduction steps before proposing a correction.
 
-**Rollback:** if a migrated sink leaks content or its formatter cannot safely describe the encountered shape, replace that sink with a fixed value-free message while correcting the shared formatter. Never restore raw filled tags, workflows, prompts, typed inputs, base64 content, or parser exception text as the accepted fallback.
+**Rollback:** if a migrated sink leaks content or its formatter cannot safely describe the encountered shape, replace that sink with a fixed value-free message while correcting the shared formatter. If a safe parser migration changes valid behavior, correct its valid-input equivalence without restoring content-bearing exceptions. Never restore raw filled tags, workflows, prompts, typed inputs, base64 content, raw WebSocket messages, or parser exception text as the accepted fallback.
