@@ -207,19 +207,21 @@ No Python, JavaScript, Razor, CSS, core utility, API contract, workflow schema, 
 - Adding a general-purpose redaction framework, configurable allowlist/denylist, or secret-name list.
 - Capping the node topology summary.
 - Redacting Comfy backend-response parsers solely because a backend might reflect submitted input; reflected-output trust is a separate concern.
-- Addressing generic WebAPI request parsing, follow-up T2I WebSocket frames, dynamic media objects, successful-generation parameter logging, or other non-Comfy submitted-input findings. These are the next separate project.
+- Addressing generic WebAPI request parsing, follow-up T2I WebSocket frames, dynamic media objects, successful-generation parameter logging, or other non-Comfy submitted-input findings. These findings form the next separate project, identified as unranked security prerequisite `S1`.
 
-## Confirmed Separate Follow-Up
+## Confirmed Separate Follow-Up (`S1`)
 
-Static tracing separately confirmed a generic server API/T2I submitted-input project. It was not fixed by this Comfy project and is now the documented next separate project. Its exact source boundaries are:
+Static tracing separately confirmed unranked security prerequisite `S1`, **Redact generic server API/T2I submitted-input diagnostics**. `S1` was discovered during rank-2 exception-flow verification and directly continues the same submitted-input confidentiality boundary outside Comfy ownership. It was not fixed by this Comfy project and must be separately designed and handled before the ranked roadmap resumes at rank 3. Its exact source boundaries are:
 
 - `src/WebAPI/API.cs:70`, initial WebSocket request parsing through `ReceiveJson`;
 - `src/WebAPI/API.cs:85-87`, initial HTTP request-body decoding and `JObject.Parse`;
 - `src/WebAPI/T2IAPI.cs:116-124`, follow-up generation WebSocket frame decoding and `ParseToJson`;
-- `src/Text2Image/T2IParamSet.cs:158-190`, submitted dynamic image, audio, and video media-object parsing; and
+- `src/Text2Image/T2IParamSet.cs:158-190`, submitted dynamic image, audio, and video media-object parsing, reached by Grid Generator axis application through the direct `T2IParamInput.Set` call at `src/BuiltinExtensions/GridGenerator/GridGenCore.cs:350`; and
 - `src/WebAPI/T2IAPI.cs:316`, the successful-generation `T2IParamInput.ToString()` verbose diagnostic.
 
-The two initial `API.cs` parsers can reach the shared request catch and its generic `[WebAPI]` exception logging path. The follow-up generation parser runs inside the generic checked-task logging path, while dynamic media parsing can propagate through generic API handling. The next project must establish one generic submitted-input exception/diagnostic boundary without changing valid request parsing, media conversion, generation framing, or response behavior. Comfy backend-response parsers and output/history diagnostics remain excluded by provenance and are unchanged.
+The two initial `API.cs` parsers can reach the shared request catch and its generic `[WebAPI]` exception logging path. The follow-up generation parser runs inside the generic checked-task logging path. For dynamic media, ordinary T2I `ApplyParameter`/`ValidateParam` rejects JSON-looking image/audio/video values before the `T2IParamSet` parsers and is not the direct malformed-object trigger. Grid Generator dynamic-axis application calls `T2IParamInput.Set` directly, can reach those parsers, and can expose the failure through the Grid generation WebSocket's checked-task/WebSocket failure logger. `S1` must establish one generic submitted-input exception/diagnostic boundary without changing valid request parsing, Grid axis application, media conversion, generation framing, or response behavior. Comfy backend-response parsers and output/history diagnostics remain excluded by provenance and are unchanged.
+
+`S1` maintainer validation must use distinct sentinels for malformed initial WebSocket and HTTP JSON, malformed follow-up generation frames, a malformed JSON-looking image/audio/video value supplied through a Grid Generator dynamic axis, and successful-generation typed inputs. The dynamic-media case must be observed through the Grid generation WebSocket's checked-task/WebSocket failure logger; an ordinary T2I request is not the direct trigger. Valid API requests, Grid axes, media conversion, generation frames, and responses must remain unchanged, and no validation success is claimed here.
 
 ## Static Verification
 
