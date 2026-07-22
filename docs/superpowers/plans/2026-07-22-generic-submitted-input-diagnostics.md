@@ -2,9 +2,9 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Put all confirmed generic API/T2I browser-submitted JSON and successful-generation diagnostics behind a value-safe boundary without changing valid transport, generation, media conversion, or client error contracts.
+**Goal:** Put all confirmed generic API/T2I browser-submitted JSON parser/error surfaces and the former complete typed-input successful-generation Verbose dump behind a value-safe boundary without changing valid transport, generation, media conversion, client error contracts, or the adjacent Info-level selected-model operational log.
 
-**Architecture:** Add a dedicated `SubmittedInputJson` owner that preserves `JObject.Parse` success behavior and replaces only submitted parser failures with a fresh fixed-message exception. Migrate the three generic JSON entry paths, keep valid-JSON media interpretation sanitization local to `T2IParamSet`, and reduce the successful-generation diagnostic to a parameter count. General JSON utilities, backend responses, persisted data, and Comfy parsing remain unchanged.
+**Architecture:** Add a dedicated `SubmittedInputJson` owner that preserves `JObject.Parse` success behavior and replaces only submitted parser failures with a fresh fixed-message exception. Migrate the three generic JSON entry paths, keep valid-JSON media interpretation sanitization local to `T2IParamSet`, and reduce the complete typed-input successful-generation Verbose diagnostic to a parameter count while preserving the adjacent Info-level selected-model line. General JSON utilities, backend responses, persisted data, and Comfy parsing remain unchanged.
 
 **Tech Stack:** C# 12, .NET 8, Newtonsoft.Json 13, ASP.NET Core HTTP/WebSocket transport, existing SwarmUI media/T2I/Grid flows.
 
@@ -162,7 +162,7 @@ git commit -m "fix: sanitize initial API JSON failures"
 
 ---
 
-### Task 3: Migrate follow-up generation parsing and count-only diagnostics
+### Task 3: Migrate follow-up generation parsing and the count-only Verbose diagnostic
 
 **Files:**
 - Modify: `src/WebAPI/T2IAPI.cs:108-130`
@@ -212,7 +212,7 @@ git diff --check -- src/WebAPI/T2IAPI.cs
 git diff -- src/WebAPI/T2IAPI.cs
 ```
 
-Expected: the frame sequence is textually unchanged except for the parser owner; the success diagnostic reads only `Count` and retains its guard/log level.
+Expected: the frame sequence is textually unchanged except for the parser owner; the protected successful-generation Verbose diagnostic reads only `Count` and retains its guard/log level, while the adjacent Info-level selected-model line remains unchanged.
 
 - [ ] **Step 4: Commit the T2I migration**
 
@@ -344,7 +344,7 @@ Do not claim build, runtime, or sentinel validation.
 Use `apply_patch` to update the S1 finding, its risk-register row, the roadmap preamble, and Recommended Next Project section with these exact implementation facts:
 
 ```markdown
-**Implemented, awaiting maintainer validation.** `SubmittedInputJson` preserves successful `JObject.Parse` results while replacing submitted `JsonReaderException` failures with a fresh fixed-message exception with no inner exception. Initial HTTP and WebSocket parsing and follow-up generation-frame parsing use that boundary. `T2IParamSet` preserves valid image/audio/video object conversion while replacing later private interpretation failures with a fresh fixed generic exception. Successful-generation verbose logging reports only the total parameter count. General JSON utilities, backend-response/persisted-data parsers, Comfy boundaries, transport, routes, response contracts, and Grid's generic client error remain unchanged.
+**Implemented, awaiting maintainer validation.** `SubmittedInputJson` preserves successful `JObject.Parse` results while replacing submitted `JsonReaderException` failures with a fresh fixed-message exception with no inner exception. Initial HTTP and WebSocket parsing and follow-up generation-frame parsing use that boundary. `T2IParamSet` preserves valid image/audio/video object conversion while replacing later private interpretation failures with a fresh fixed generic exception. The protected successful-generation Verbose diagnostic reports only the total parameter count; the adjacent Info-level selected-model operational log remains unchanged. General JSON utilities, backend-response/persisted-data parsers, Comfy boundaries, transport, routes, response contracts, and Grid's generic client error remain unchanged.
 ```
 
 Retain the five-source inventory, Grid direct-`Set`/`Task.Run`/`ExToError` trace, unranked identity, unchanged 24+8/32 numbered roadmap counts, backend-response exclusion, maintainer sentinel matrix, and the rule that numbered rank 3 remains blocked until S1 maintainer validation completes. Do not rewrite unrelated findings or ranks.
@@ -355,7 +355,7 @@ Run:
 
 ```bash
 rg -n 'Status:|SubmittedInputJson|five|parameter count|media object|Grid|maintainer validation|S1|rank 3|24.*eight|32' docs/superpowers/specs/2026-07-22-generic-submitted-input-diagnostics-design.md docs/superpowers/audits/2026-07-21-maintainability-architecture-refresh.md docs/superpowers/plans/2026-07-22-generic-submitted-input-diagnostics.md
-if rg -n 'S1.*design.*pending|complete T2IParamInput|stringifies the complete|current mitigation.*do not provide|recommended next project is unranked security prerequisite|must be separately designed and handled|must be designed and handled|Every unimplemented ranked production project and `S1`|S1.*must be handled before rank 3|S1.*requires its own.*brainstorming' docs/superpowers/specs/2026-07-22-generic-submitted-input-diagnostics-design.md docs/superpowers/audits/2026-07-21-maintainability-architecture-refresh.md; then exit 1; fi
+if rg -n 'S1.*design.*pending|complete T2IParamInput|stringifies the complete|current mitigation.*do not provide|recommended next project is unranked security prerequisite|must be separately designed and handled|must be designed and handled|Every unimplemented ranked production project and `S1`|S1.*must be handled before rank 3|S1.*requires its own.*brainstorming|must be completed before numbered roadmap|[Ss]uccessful-generation diagnostics (read|report|expose) only|[Nn]o .*model.*(protected logs|protected diagnostics)|No production implementation.*runtime success is claimed' docs/superpowers/specs/2026-07-22-generic-submitted-input-diagnostics-design.md docs/superpowers/audits/2026-07-21-maintainability-architecture-refresh.md; then exit 1; fi
 git diff --check -- docs/superpowers/specs/2026-07-22-generic-submitted-input-diagnostics-design.md docs/superpowers/audits/2026-07-21-maintainability-architecture-refresh.md docs/superpowers/plans/2026-07-22-generic-submitted-input-diagnostics.md
 ```
 
@@ -391,7 +391,7 @@ Review the complete implementation range and prove:
 - follow-up frame ordering, cancellation, `retain`, tasks, and batch offsets remain unchanged;
 - valid media conversion and filename publication remain unchanged;
 - valid-JSON media failures cannot retain private values and remain generic to Grid clients;
-- successful-generation diagnostics read only the total parameter count;
+- the protected successful-generation Verbose diagnostic reads only the total parameter count while the adjacent Info-level selected-model line remains unchanged;
 - general JSON, backend-response, persisted-data, metadata, webhook, and Comfy paths remain unchanged; and
 - documentation matches source without claiming maintainer validation.
 
@@ -412,6 +412,7 @@ for media_type in ImageFile AudioFile VideoFile; do
 done
 if rg -n 'ReceiveJson\(TimeSpan\.FromMinutes\(1\)|JObject\.Parse\(Encoding\.UTF8\.GetString\(rawData\)\)|GetString\(rec\)\.ParseToJson|JObject parsed = val\.ParseToJson|above image request had parameters|\{user_input\}' src/WebAPI/API.cs src/WebAPI/T2IAPI.cs src/Text2Image/T2IParamSet.cs; then exit 1; fi
 if rg -n 'CleanTrashTextForDebug|ReadableString|InnerException|\{input\}' src/Utils/SubmittedInputJson.cs; then exit 1; fi
+if rg -n 'must be completed before numbered roadmap|[Ss]uccessful-generation diagnostics (read|report|expose) only|[Nn]o .*model.*(protected logs|protected diagnostics)|No production implementation.*runtime success is claimed' docs/superpowers/specs/2026-07-22-generic-submitted-input-diagnostics-design.md docs/superpowers/audits/2026-07-21-maintainability-architecture-refresh.md; then exit 1; fi
 rg -n 'JSON parsing failed \(submitted content redacted\)|Failed to process submitted media object \(content redacted\)|user_input\.InternalSet\.ValuesInput\.Count|internal_error|Failed due to internal error' src/Utils/SubmittedInputJson.cs src/WebAPI/API.cs src/WebAPI/T2IAPI.cs src/Text2Image/T2IParamSet.cs src/BuiltinExtensions/GridGenerator/GridGeneratorExtension.cs
 git diff --check
 git status --short --branch --untracked-files=normal
@@ -431,7 +432,7 @@ Ask the maintainer to run their normal build/launch command and all cases in the
 5. valid media JSON with missing/wrong fields or invalid data; and
 6. successful generation containing prompt, model, media, filename, seed, and extension-defined sentinels.
 
-Confirm no sentinel, source preview, native parser/conversion message, JSON path/line detail, filename, media/base64 prefix, parameter key/value, or extension-defined value reaches protected logs or client errors. Confirm correct parameter counts, unchanged valid requests/media/Grid/generation, unchanged cancellation/cleanup, and unchanged client error IDs/messages/statuses.
+Confirm no sentinel, source preview, native parser/conversion message, JSON path/line detail, filename, media/base64 prefix, parameter key/value, or extension-defined value reaches submitted parser/error surfaces. Confirm prompt, media, filename, seed, and extension-defined sentinels do not reach the protected successful-generation Verbose diagnostic. Retain the model sentinel and expect it only in the pre-existing Info-level selected-model line; require it absent from the count-only Verbose diagnostic and every submitted parser/error surface. Confirm correct parameter counts, unchanged valid requests/media/Grid/generation, unchanged cancellation/cleanup, and unchanged client error IDs/messages/statuses.
 
 Do not mark S1 validated or resume numbered rank 3 until the maintainer confirms these results.
 

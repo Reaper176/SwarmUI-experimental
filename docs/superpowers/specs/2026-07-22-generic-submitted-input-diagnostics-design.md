@@ -6,9 +6,9 @@
 
 ## Goal
 
-Prevent browser/user-submitted JSON, dynamic media objects, and typed generation parameters from being reproduced in generic Swarm API/T2I logs or downstream error surfaces. Preserve valid parsing, transport, generation, media conversion, and established client error contracts.
+Prevent browser/user-submitted JSON and dynamic media objects from being reproduced in generic Swarm API/T2I parser/error surfaces, and replace the complete typed-input successful-generation Verbose dump with a count-only diagnostic. Preserve valid parsing, transport, generation, media conversion, established client error contracts, and the adjacent Info-level selected-model operational log.
 
-This project is security prerequisite `S1` from the maintainability architecture refresh. It continues the submitted-input confidentiality boundary outside Comfy ownership and must be completed before numbered roadmap work resumes at rank 3.
+This project is security prerequisite `S1` from the maintainability architecture refresh. It continues the submitted-input confidentiality boundary outside Comfy ownership and must be maintainer-validated before numbered roadmap work resumes at rank 3.
 
 ## Confirmed Boundary
 
@@ -63,7 +63,7 @@ The fixed post-parse exception deliberately does not derive from `SwarmReadableE
 
 The existing verbose-level guard and operation category remain. The complete `T2IParamInput` interpolation is replaced by `Logs.Verbose($"User {session.User.UserID} above image request had parameter count: {user_input.InternalSet.ValuesInput.Count}");`. The statement does not enumerate, format, hash, classify, or stringify parameter keys or values. The existing session user ID is operational context and is not derived from the submitted parameter collection.
 
-No prompt, model, filename, media content, base64 prefix, seed, extension-defined name/value, or nested object reaches this diagnostic.
+No prompt, model, filename, media content, base64 prefix, seed, extension-defined name/value, or nested object reaches this protected Verbose diagnostic. The adjacent pre-existing Info-level operational log remains unchanged and intentionally reports the selected model name.
 
 ## Error Contracts
 
@@ -84,7 +84,7 @@ Non-parser exceptions outside these submitted/private boundaries retain their cu
 - Preserve follow-up frame ordering, `retain`, cancellation, batch offsets, and task tracking.
 - Preserve valid image/audio/video data conversion and `SourceFilePath` assignment.
 - Preserve Grid fault propagation, generic client response, and downstream cleanup.
-- Preserve successful generation and the existing verbose log level.
+- Preserve successful generation, the existing verbose log level, and the adjacent Info-level selected-model operational log.
 - Preserve general `ParseToJson`/`ReceiveJson`, backend-response, persisted-data, metadata, webhook, and Comfy behavior.
 - Do not require external caller or extension migration.
 
@@ -109,8 +109,8 @@ Repository policy prohibits agents from running builds, automated tests, browser
 3. prove successful results still originate from `JObject.Parse` and successful source control flow is unchanged;
 4. prove replacement parser exceptions are fresh, same-type, fixed-message, and inner-free;
 5. prove post-parse media failures discard original exceptions and remain generic to preserve Grid response classification;
-6. prove the successful-generation log reads only the parameter count;
-7. prove no protected source can emit a submitted preview, native parser message, JSON path/line detail, filename, media/base64 content, prompt, model, seed, parameter key/value, or extension-defined value;
+6. prove the protected successful-generation Verbose diagnostic reads only the parameter count while the adjacent Info-level selected-model line remains unchanged;
+7. prove no submitted parser/error surface can emit a submitted preview, native parser message, JSON path/line detail, filename, media/base64 content, prompt, model, seed, parameter key/value, or extension-defined value, and no typed-input sentinel reaches the protected count-only Verbose diagnostic;
 8. prove general JSON helpers, backend-response parsers, Comfy boundaries, routes, response objects, and persistence owners are unchanged; and
 9. run repository-permitted diff, whitespace, exact-call-site, and approved-file-scope checks.
 
@@ -127,12 +127,13 @@ Use distinct sentinels in:
 
 For dynamic media, use Grid Generator's direct-axis `Set` path rather than an ordinary T2I request. Observe `Task.Run` fault rethrow, `ExToError`, the server log, and WebSocket response.
 
-Confirm that no sentinel, source preview, parser message, JSON path, line detail, filename, media/base64 prefix, prompt, model, seed, parameter key/value, or extension-defined value appears in protected logs or client errors. Confirm that valid HTTP/WebSocket requests, follow-up frames, Grid axes, media conversions, generation, responses, cancellation, and cleanup behave unchanged. Confirm the successful-generation log reports the correct count and nothing else from the submitted parameters.
+Confirm that no sentinel, source preview, parser message, JSON path, line detail, filename, media/base64 prefix, prompt, model, seed, parameter key/value, or extension-defined value appears in submitted parser/error surfaces. Confirm that prompt, media, filename, seed, and extension-defined sentinels do not appear in the protected successful-generation Verbose diagnostic; retain a model sentinel and expect it only in the pre-existing Info-level selected-model line, never in that count-only Verbose diagnostic or any submitted parser/error surface. Confirm that valid HTTP/WebSocket requests, follow-up frames, Grid axes, media conversions, generation, responses, cancellation, and cleanup behave unchanged. Confirm the protected Verbose diagnostic reports the correct count and nothing else from the submitted parameters.
 
 ## Non-Goals
 
 - No transport, route, payload-schema, media-format, or response-contract redesign.
 - No changes to general `Utilities.ParseToJson`, ordinary `ReceiveJson`, or `ReadableString`.
+- No removal or redaction of the adjacent Info-level selected-model operational log.
 - No general logging, telemetry, taint-tracking, hashing, secret-list, or redaction framework.
 - No backend-response, output/history, persisted metadata, webhook, model metadata, or Comfy parser migration.
 - No new detailed client validation errors for malformed media objects.
@@ -145,7 +146,7 @@ Confirm that no sentinel, source preview, parser message, JSON path, line detail
 - Valid parsing, media conversion, generation, transport, and established client error responses remain unchanged.
 - Parser failures expose only fixed content-redacted detail through fresh same-type exceptions.
 - Valid-JSON media interpretation failures retain no original exception or submitted content and remain generic to clients.
-- Successful-generation diagnostics expose only total parameter count.
+- The protected successful-generation Verbose diagnostic exposes only total parameter count; the adjacent Info-level selected-model operational log remains unchanged.
 - General, backend-response, persisted-data, metadata, webhook, and Comfy parsing behavior remains unchanged.
 
 ## Risks and Rollback
