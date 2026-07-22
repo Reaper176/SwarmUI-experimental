@@ -260,9 +260,9 @@ public class ComfyUIBackendExtension : Extension
                 return resType;
             }
         }
-        catch (Exception e)
+        catch (Exception)
         {
-            Logs.Error($"Error generating dynamic Comfy param {name}: {e}");
+            Logs.Error("Error processing dynamic Comfy parameter metadata (content redacted).");
         }
         return null;
     }
@@ -340,9 +340,9 @@ public class ComfyUIBackendExtension : Extension
             CustomWorkflows[name] = workflow;
             return workflow;
         }
-        catch (Exception ex)
+        catch (Exception)
         {
-            Logs.Error($"Error loading ComfyUI custom workflow '{name}': {ex.ReadableString()}");
+            Logs.Error("Error loading ComfyUI custom workflow (submitted content redacted).");
             return null;
         }
     }
