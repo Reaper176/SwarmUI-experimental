@@ -14,6 +14,8 @@
 
 **Starting state:** The earlier implementation through `cb207936` remains committed. Final review found one Critical, four Important, and two Minor gaps. The approved second-revision design is committed in `76b35098` and corrected count in `39fe7304`. This plan implements only that second revision; do not repeat earlier parser migrations.
 
+**Implementation outcome:** Production Tasks 1-4 were completed through `566b34f5`. Quality review required full-document diagnostic parsing through EOF and found that retaining/reparsing the decoded direct-prompt body was unnecessary. The approved fixed-message fallback was used instead, so the final ten protected statement lines contain seven formatter invocations rather than the eight originally projected. Task 5 reconciles that outcome; maintainer validation remains pending and no live validation is claimed.
+
 ---
 
 ### Task 1: Rewrite the formatter as an opaque graph summary
@@ -161,7 +163,11 @@ internal static class ComfyDiagnostics
         {
             DateParseHandling = DateParseHandling.None
         };
-        return JToken.ReadFrom(reader);
+        JToken parsed = JToken.ReadFrom(reader);
+        while (reader.Read())
+        {
+        }
+        return parsed;
     }
 
     /// <summary>Describes a parsed direct workflow graph with deterministic aliases and no source lexemes.</summary>
@@ -351,19 +357,18 @@ Logs.Verbose("Filled workflow tag with redacted name and value.");
 
 Keep the existing `Logs.MinimumLevel` guard and tag result unchanged.
 
-- [ ] **Step 2: Preserve the original direct-prompt string for diagnostics**
+- [ ] **Step 2: Use fixed direct-prompt fallback diagnostics**
 
-Use `apply_patch` to decode once:
+Keep operational decoding and parsing in the existing expression:
 
 ```csharp
-string promptText = StringConversionHelper.UTF8Encoding.GetString(data);
-JObject parsed = ComfySubmittedJson.ParseObject(promptText);
+JObject parsed = ComfySubmittedJson.ParseObject(StringConversionHelper.UTF8Encoding.GetString(data));
 ```
 
-Replace the fallback summary with:
+Replace the fallback summary with fixed value-free text:
 
 ```csharp
-Logs.Verbose($"Above is for opaque prompt structure: {ComfyDiagnostics.DescribePromptEnvelope(promptText)}");
+Logs.Verbose("Above is for an opaque prompt whose structure was not retained.");
 ```
 
 Replace the catch declaration and log with:
@@ -390,14 +395,14 @@ catch (Exception)
 
 Keep `rawText` only as the parser input and preserve `NewMessageToServers` after the catch.
 
-- [ ] **Step 4: Verify eight formatter invocations and caller compatibility**
+- [ ] **Step 4: Verify seven formatter invocations and caller compatibility**
 
 Run:
 
 ```bash
-test "$(rg -o 'ComfyDiagnostics\.(DescribeWorkflow|DescribePromptEnvelope|DescribeParameters|DescribeException)' src/BuiltinExtensions/ComfyUIBackend/ComfyUIAPIAbstractBackend.cs src/BuiltinExtensions/ComfyUIBackend/ComfyUIWebAPI.cs src/BuiltinExtensions/ComfyUIBackend/ComfyUIRedirectHelper.cs src/BuiltinExtensions/ComfyUIBackend/ComfyUser.cs src/BuiltinExtensions/ComfyUIBackend/WorkflowGeneratorSteps.cs | wc -l)" = "8"
+test "$(rg -o 'ComfyDiagnostics\.(DescribeWorkflow|DescribePromptEnvelope|DescribeParameters|DescribeException)' src/BuiltinExtensions/ComfyUIBackend/ComfyUIAPIAbstractBackend.cs src/BuiltinExtensions/ComfyUIBackend/ComfyUIWebAPI.cs src/BuiltinExtensions/ComfyUIBackend/ComfyUIRedirectHelper.cs src/BuiltinExtensions/ComfyUIBackend/ComfyUser.cs src/BuiltinExtensions/ComfyUIBackend/WorkflowGeneratorSteps.cs | wc -l)" = "7"
 if rg -n 'DescribeNormalizedTagName|DescribePromptEnvelope\(parsed\)|ComfyUI redirection failed.*DescribeException|Failed to parse ComfyUI user message.*DescribeException|Failed to process ComfyUI user message.*rawText' src/BuiltinExtensions/ComfyUIBackend --glob '*.cs'; then exit 1; fi
-rg -n 'Filled workflow tag with redacted name and value|DescribePromptEnvelope\(promptText\)|submitted prompt processing failed|Failed to process ComfyUI user message|NewMessageToServers' src/BuiltinExtensions/ComfyUIBackend/ComfyUIAPIAbstractBackend.cs src/BuiltinExtensions/ComfyUIBackend/ComfyUIRedirectHelper.cs src/BuiltinExtensions/ComfyUIBackend/ComfyUser.cs
+rg -n 'Filled workflow tag with redacted name and value|opaque prompt whose structure was not retained|submitted prompt processing failed|Failed to process ComfyUI user message|NewMessageToServers' src/BuiltinExtensions/ComfyUIBackend/ComfyUIAPIAbstractBackend.cs src/BuiltinExtensions/ComfyUIBackend/ComfyUIRedirectHelper.cs src/BuiltinExtensions/ComfyUIBackend/ComfyUser.cs
 git diff --check -- src/BuiltinExtensions/ComfyUIBackend/ComfyUIAPIAbstractBackend.cs src/BuiltinExtensions/ComfyUIBackend/ComfyUIRedirectHelper.cs src/BuiltinExtensions/ComfyUIBackend/ComfyUser.cs
 ```
 
@@ -578,14 +583,14 @@ git commit -m "fix: redact Comfy private conversion failures"
 **Files:**
 - Modify: `docs/superpowers/specs/2026-07-21-redact-comfy-workflow-diagnostics-design.md`
 - Modify: `docs/superpowers/audits/2026-07-21-maintainability-architecture-refresh.md`
-- Review: `docs/superpowers/plans/2026-07-22-opaque-comfy-diagnostics.md`
+- Modify: `docs/superpowers/plans/2026-07-22-opaque-comfy-diagnostics.md`
 
 - [ ] **Step 1: Record the implemented opaque boundary**
 
 Use `apply_patch` to:
 
 - set design status to `Implemented, awaiting maintainer validation`;
-- retain historical nine/ten/eleven counts while stating the final target is ten statements and eight formatter calls;
+- retain historical nine/ten/eleven counts while stating the final outcome is ten statements and seven formatter calls;
 - update F25, its risk-register row, and rank 2 with ordinal aliases, omitted semantic identifiers/output indexes, date-neutral diagnostics, parameter-count-only output, fixed tag text, and fixed valid-JSON private conversion failures;
 - record the Critical/Important review paths as corrected evidence rather than deleting their history;
 - include the explicit `TryIsValid` malformed raw/stored validation exercise in the audit's maintainer-validation record; and
@@ -598,17 +603,17 @@ Do not renumber findings or roadmap entries, claim live validation, or rewrite u
 Run:
 
 ```bash
-rg -n 'Status:|opaque|node_[0-9]|input_[0-9]|DateParseHandling|parameter count|tag.*redacted|TryIsValid|enable_in_simple|ten.*eight|S1' docs/superpowers/specs/2026-07-21-redact-comfy-workflow-diagnostics-design.md docs/superpowers/audits/2026-07-21-maintainability-architecture-refresh.md docs/superpowers/plans/2026-07-22-opaque-comfy-diagnostics.md
+rg -n 'Status:|opaque|node_[0-9]|input_[0-9]|DateParseHandling|parameter count|tag.*redacted|TryIsValid|enable_in_simple|ten.*seven|S1' docs/superpowers/specs/2026-07-21-redact-comfy-workflow-diagnostics-design.md docs/superpowers/audits/2026-07-21-maintainability-architecture-refresh.md docs/superpowers/plans/2026-07-22-opaque-comfy-diagnostics.md
 if rg -n 'every expected node ID|parameter names remain|normalized tag identifier remains|complete node topology.*output index|non-parser exceptions retain their prior readable detail' docs/superpowers/specs/2026-07-21-redact-comfy-workflow-diagnostics-design.md docs/superpowers/audits/2026-07-21-maintainability-architecture-refresh.md; then exit 1; fi
-git diff --check -- docs/superpowers/specs/2026-07-21-redact-comfy-workflow-diagnostics-design.md docs/superpowers/audits/2026-07-21-maintainability-architecture-refresh.md
+git diff --check -- docs/superpowers/specs/2026-07-21-redact-comfy-workflow-diagnostics-design.md docs/superpowers/audits/2026-07-21-maintainability-architecture-refresh.md docs/superpowers/plans/2026-07-22-opaque-comfy-diagnostics.md
 ```
 
 - [ ] **Step 3: Commit the architecture record**
 
 ```bash
-git add docs/superpowers/specs/2026-07-21-redact-comfy-workflow-diagnostics-design.md docs/superpowers/audits/2026-07-21-maintainability-architecture-refresh.md
+git add docs/superpowers/specs/2026-07-21-redact-comfy-workflow-diagnostics-design.md docs/superpowers/audits/2026-07-21-maintainability-architecture-refresh.md docs/superpowers/plans/2026-07-22-opaque-comfy-diagnostics.md
 git diff --cached --check
-test "$(git diff --cached --name-only | wc -l)" = "2"
+test "$(git diff --cached --name-only | wc -l)" = "3"
 git commit -m "docs: record opaque Comfy diagnostics"
 ```
 
@@ -623,7 +628,7 @@ git commit -m "docs: record opaque Comfy diagnostics"
 
 Review the complete Comfy range and prove:
 
-- ten protected statements contain eight formatter calls;
+- ten protected statements contain seven formatter calls;
 - all 12 parser calls remain behind `ComfySubmittedJson`;
 - formatter output contains no source lexeme and only aliases/counts/statuses/kinds/edges;
 - date-neutral parsing preserves ISO-ID connectivity;
@@ -643,7 +648,7 @@ Review for alternate source-lexeme paths, exception `InnerException`/`Data` rete
 Run:
 
 ```bash
-test "$(rg -o 'ComfyDiagnostics\.(DescribeWorkflow|DescribePromptEnvelope|DescribeParameters|DescribeException)' src/BuiltinExtensions/ComfyUIBackend/ComfyUIAPIAbstractBackend.cs src/BuiltinExtensions/ComfyUIBackend/ComfyUIWebAPI.cs src/BuiltinExtensions/ComfyUIBackend/ComfyUIRedirectHelper.cs src/BuiltinExtensions/ComfyUIBackend/ComfyUser.cs src/BuiltinExtensions/ComfyUIBackend/WorkflowGeneratorSteps.cs | wc -l)" = "8"
+test "$(rg -o 'ComfyDiagnostics\.(DescribeWorkflow|DescribePromptEnvelope|DescribeParameters|DescribeException)' src/BuiltinExtensions/ComfyUIBackend/ComfyUIAPIAbstractBackend.cs src/BuiltinExtensions/ComfyUIBackend/ComfyUIWebAPI.cs src/BuiltinExtensions/ComfyUIBackend/ComfyUIRedirectHelper.cs src/BuiltinExtensions/ComfyUIBackend/ComfyUser.cs src/BuiltinExtensions/ComfyUIBackend/WorkflowGeneratorSteps.cs | wc -l)" = "7"
 test "$(rg -o 'ComfySubmittedJson\.(ParseObject|UnescapeString)' src/BuiltinExtensions/ComfyUIBackend/ComfyUIAPIAbstractBackend.cs src/BuiltinExtensions/ComfyUIBackend/ComfyUIBackendExtension.cs src/BuiltinExtensions/ComfyUIBackend/ComfyUIWebAPI.cs src/BuiltinExtensions/ComfyUIBackend/ComfyUIRedirectHelper.cs src/BuiltinExtensions/ComfyUIBackend/ComfyUser.cs | wc -l)" = "12"
 if rg -n 'DescribeNormalizedTagName|parameter_names|output_index|Failed to parse ComfyUI user message.*rawText|Error generating dynamic Comfy param.*\{(name|e)\}|Error loading ComfyUI custom workflow.*(ReadableString|\{name\})|RefusalReasons.Add\(.*class_type' src/BuiltinExtensions/ComfyUIBackend --glob '*.cs'; then exit 1; fi
 rg -n 'DateParseHandling\.None|node_[{]|input_[{]|source_node|parameter_count|content redacted|identifier redacted' src/BuiltinExtensions/ComfyUIBackend --glob '*.cs'

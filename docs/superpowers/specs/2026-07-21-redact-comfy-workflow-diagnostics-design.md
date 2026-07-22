@@ -4,7 +4,7 @@
 
 **Second revision:** 2026-07-22
 
-**Status:** Approved second revision; opaque diagnostics pending implementation
+**Status:** Implemented, awaiting maintainer validation
 
 ## Goal
 
@@ -55,9 +55,9 @@ No Comfy-specific policy is added to `Utilities.cs`, no general logging framewor
 
 ## Opaque Workflow Structural Summary
 
-`DescribeWorkflow(string)` accepts only a direct graph object. `DescribePromptEnvelope(string)` accepts only an envelope whose `prompt` property is the graph. Both string entry points parse with `JsonTextReader.DateParseHandling = DateParseHandling.None` so source identifiers retain their lexical string form for internal relationship matching. A direct graph node named `prompt` is never auto-unwrapped.
+`DescribeWorkflow(string)` accepts only a direct graph object. `DescribePromptEnvelope(string)` accepts only an envelope whose `prompt` property is the graph. Both string entry points parse with `JsonTextReader.DateParseHandling = DateParseHandling.None` so source identifiers retain their lexical string form for internal relationship matching, then advance the reader through the complete document so trailing non-comment content produces the fixed invalid-JSON status. A direct graph node named `prompt` is never auto-unwrapped.
 
-The public parsed-token prompt-envelope overload is removed if no maintained caller remains. The direct-proxy caller retains the original decoded request string for diagnostics and passes that string to `DescribePromptEnvelope`; operational parsing and routing continue to use the existing `JObject`.
+The public parsed-token prompt-envelope overload is removed because no maintained caller remains. Quality review found that retaining and reparsing the decoded direct-proxy request duplicated operational parsing and unnecessarily extended the lifetime of raw submitted content. The implemented caller therefore uses the design's fixed-message rollback path for the direct-proxy fallback; operational parsing and routing continue to use the existing `JObject`.
 
 The summary includes every node without a node-count cap. Nodes receive deterministic aliases from graph property order: `node_1`, `node_2`, and so on. Inputs receive per-node aliases from input property order: `input_1`, `input_2`, and so on. Raw node IDs and input names are used only inside the formatter and are never copied into the result.
 
@@ -103,20 +103,22 @@ The direct-interrupt path continues to propagate its already-sanitized JSON pars
 
 ## Diagnostic Migration
 
-The ten protected statement lines use eight formatter calls:
+The final ten protected statement lines use seven formatter calls. This preserves the historical sequence of nine original statements, ten protected lines, and eleven formatter invocations after the first migration while recording the second-revision outcome:
 
 1. tag fill uses fixed name-and-value-redacted text;
 2. `AwaitJobLive` verbose submission logging uses an opaque prompt-envelope summary;
 3. its prompt-error debug logging uses the same summary;
 4. `GenerateLive` failure logging combines the parameter count with an opaque direct-workflow summary;
 5. its broad catch uses `DescribeException` after source sanitization;
-6. direct-proxy fallback logging summarizes the original prompt-envelope string;
+6. direct-proxy fallback logging uses fixed value-free text because the raw prompt structure is not retained;
 7. its catch uses fixed submitted-data failure text;
 8. generated-workflow preview logging uses only the parameter count;
 9. ControlNet missing-image logging uses only the parameter count; and
 10. browser-to-Swarm WebSocket failure logging uses fixed submitted-data failure text.
 
 Existing log levels remain. Wording states that summaries are opaque/redacted. No protected diagnostic contains a user-controlled lexeme.
+
+The implemented private-data boundary also covers raw/stored tag processing and `TryIsValid`: malformed JSON retains the sanitized same-type parser exception, other private interpretation failures become fresh fixed errors, and unsupported/invalid nodes expose only an ordinal alias. Dynamic metadata and stored-workflow conversion failures use fixed logs, and the dormant metadata-log example that interpolated submitted names and metadata keys was removed rather than left as an unsafe future template.
 
 ## Files and Ownership
 
@@ -169,11 +171,11 @@ The Grid malformed-media path remains `Task.Run` → fault rethrow → `ExToErro
 
 Repository policy prohibits agents from running builds, automated tests, browsers, Comfy, backends, or the live application. Static verification will:
 
-1. inventory the ten protected statements, eight formatter invocations, and 12 submitted/private parser calls;
+1. inventory the ten protected statements, seven formatter invocations, and 12 submitted/private parser calls;
 2. prove no protected diagnostic or private catch interpolates a source node ID, class type, input name, output index, parameter name/value, tag/name/suffix, workflow name/path, raw text/token, or private exception;
 3. verify workflow summaries contain only ordinal aliases, counts, fixed statuses, JSON kinds, and aliased source edges;
 4. verify connection matching uses raw identifiers only internally and never emits the raw source or output index;
-5. verify diagnostic string parsing sets `DateParseHandling.None` and the direct-prompt diagnostic receives the original decoded string;
+5. verify diagnostic string parsing sets `DateParseHandling.None`, validates the complete document through EOF, and no direct-prompt diagnostic retains or reparses the original decoded string;
 6. verify parameter formatting reads only the count and tag logging is fixed;
 7. verify parser exceptions remain fresh, fixed, same-type, and inner-free;
 8. trace tag filling, validation, dynamic metadata, stored workflow, direct prompt, interrupt, save, and browser WebSocket failure paths through local, generic, and framework consumers;
@@ -215,7 +217,7 @@ Confirm:
 
 ## Success Criteria
 
-- All ten protected statements contain only fixed text or opaque summaries, with eight expected formatter invocations.
+- All ten protected statements contain only fixed text or opaque summaries, with seven expected formatter invocations.
 - All 12 maintained submitted/private parsing or unescaping invocations remain behind `ComfySubmittedJson`.
 - No user-controlled workflow, parameter, tag, WebSocket, stored-data, or exception lexeme reaches a protected diagnostic or downstream error surface.
 - Complete node order and source-edge topology remain available through deterministic aliases; semantic labels and output ports are intentionally absent.
