@@ -149,6 +149,20 @@ public class T2IParamSet
             ValuesInput.Remove(param.ID);
             return;
         }
+        T mediaFromJson<T>(string input, Func<string, T> fromDataString) where T : MediaFile
+        {
+            JObject parsed = SubmittedInputJson.ParseObject(input);
+            try
+            {
+                T result = fromDataString(parsed["data"].ToString());
+                result.SourceFilePath = parsed["filename"].ToString();
+                return result;
+            }
+            catch (Exception)
+            {
+                throw new InvalidOperationException("Failed to process submitted media object (content redacted).");
+            }
+        }
         ImageFile imageFor(string val, bool canJson)
         {
             if (val.StartsWithFast("data:"))
@@ -157,10 +171,7 @@ public class T2IParamSet
             }
             if (canJson && val.StartsWithFast('{'))
             {
-                JObject parsed = val.ParseToJson();
-                ImageFile result = ImageFile.FromDataString(parsed["data"].ToString());
-                result.SourceFilePath = parsed["filename"].ToString();
-                return result;
+                return mediaFromJson<ImageFile>(val, ImageFile.FromDataString);
             }
             return ImageFile.FromBase64(val, MediaType.ImagePng);
         }
@@ -172,10 +183,7 @@ public class T2IParamSet
             }
             if (val.StartsWithFast('{'))
             {
-                JObject parsed = val.ParseToJson();
-                AudioFile result = AudioFile.FromDataString(parsed["data"].ToString());
-                result.SourceFilePath = parsed["filename"].ToString();
-                return result;
+                return mediaFromJson<AudioFile>(val, AudioFile.FromDataString);
             }
             return AudioFile.FromBase64(val, MediaType.AudioWav);
         }
@@ -187,10 +195,7 @@ public class T2IParamSet
             }
             if (val.StartsWithFast('{'))
             {
-                JObject parsed = val.ParseToJson();
-                VideoFile result = VideoFile.FromDataString(parsed["data"].ToString());
-                result.SourceFilePath = parsed["filename"].ToString();
-                return result;
+                return mediaFromJson<VideoFile>(val, VideoFile.FromDataString);
             }
             return VideoFile.FromBase64(val, MediaType.AudioWav);
         }
