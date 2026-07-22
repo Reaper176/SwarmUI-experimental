@@ -14,7 +14,7 @@
 
 **Approved design:** `docs/superpowers/specs/2026-07-22-generic-submitted-input-diagnostics-design.md` at commit `43824aba`.
 
-**Implementation outcome:** Production changes were implemented through `518134b7`; maintainer validation remains pending.
+**Implementation outcome:** Production changes were implemented through `518134b7`, and maintainer validation confirmed the named build/runtime/sentinel matrix.
 
 ---
 

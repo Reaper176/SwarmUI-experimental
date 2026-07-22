@@ -2,13 +2,13 @@
 
 **Date:** 2026-07-22
 
-**Status:** Implemented; awaiting maintainer validation
+**Status:** Implemented and maintainer-validated
 
 ## Goal
 
 Prevent browser/user-submitted JSON and dynamic media objects from being reproduced in generic Swarm API/T2I parser/error surfaces, and replace the complete typed-input successful-generation Verbose dump with a count-only diagnostic. Preserve valid parsing, transport, generation, media conversion, established client error contracts, and the adjacent Info-level selected-model operational log.
 
-This project is security prerequisite `S1` from the maintainability architecture refresh. It continues the submitted-input confidentiality boundary outside Comfy ownership and must be maintainer-validated before numbered roadmap work resumes at rank 3.
+This project is security prerequisite `S1` from the maintainability architecture refresh. It continues the submitted-input confidentiality boundary outside Comfy ownership. Its maintainer validation is complete, unblocking numbered roadmap work at rank 3.
 
 ## Confirmed Boundary
 
@@ -128,6 +128,8 @@ Use distinct sentinels in:
 For dynamic media, use Grid Generator's direct-axis `Set` path rather than an ordinary T2I request. Observe `Task.Run` fault rethrow, `ExToError`, the server log, and WebSocket response.
 
 Confirm that no sentinel, source preview, parser message, JSON path, line detail, filename, media/base64 prefix, prompt, model, seed, parameter key/value, or extension-defined value appears in submitted parser/error surfaces. Confirm that prompt, media, filename, seed, and extension-defined sentinels do not appear in the protected successful-generation Verbose diagnostic; retain a model sentinel and expect it only in the pre-existing Info-level selected-model line, never in that count-only Verbose diagnostic or any submitted parser/error surface. Confirm that valid HTTP/WebSocket requests, follow-up frames, Grid axes, media conversions, generation, responses, cancellation, and cleanup behave unchanged. Confirm the protected Verbose diagnostic reports the correct count and nothing else from the submitted parameters.
+
+**Validation result:** Maintainer Reaper176 confirmed the named build, runtime, and sentinel matrix. No benchmark or performance measurement is part of this result.
 
 ## Non-Goals
 
