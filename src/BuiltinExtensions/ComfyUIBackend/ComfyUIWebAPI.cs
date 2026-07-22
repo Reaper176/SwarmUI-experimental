@@ -163,7 +163,7 @@ public static class ComfyUIWebAPI
                 return await remoteBackend.SendAPIJSON("ComfyGetGeneratedWorkflow", rawInput);
             }
             string format = backend.SupportedFeatures.Contains("folderbackslash") ? "\\" : "/";
-            Logs.Verbose($"ComfyGetWorkflow for input: {input}");
+            Logs.Verbose($"ComfyGetWorkflow for parameters: {ComfyDiagnostics.DescribeParameters(input)}");
             string flow = ComfyUIAPIAbstractBackend.CreateWorkflow(input, w => w, format, features: [.. backend.SupportedFeatures]);
             return new JObject() { ["workflow"] = flow };
         }

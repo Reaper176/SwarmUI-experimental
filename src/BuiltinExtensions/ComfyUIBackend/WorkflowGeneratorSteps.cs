@@ -1009,7 +1009,7 @@ public class WorkflowGeneratorSteps
                     {
                         if (i == 0 ? g.BasicInputImage is null : firstImageNode is null)
                         {
-                            Logs.Verbose($"Following error relates to parameters: {g.UserInput.ToJSON().ToDenseDebugString()}");
+                            Logs.Verbose($"Following error relates to parameters: {ComfyDiagnostics.DescribeParameters(g.UserInput)}");
                             throw new SwarmUserErrorException("Must specify either a ControlNet Image, or Init image. Or turn off ControlNet if not wanted.");
                         }
                         if (i == 0)

@@ -394,7 +394,7 @@ public class ComfyUIRedirectHelper
                             return;
                         }
                         Logs.Debug($"Was not able to redirect Comfy backend direct prompt request");
-                        Logs.Verbose($"Above is for prompt: {parsed.ToDenseDebugString()}");
+                        Logs.Verbose($"Above is for prompt structure: {ComfyDiagnostics.DescribePromptEnvelope(parsed)}");
                         backend.BackendData.UpdateLastReleaseTime();
                         Logs.Info($"Sent Comfy backend improper API call direct prompt requested to backend #{backend.BackendData.ID}");
                     }
