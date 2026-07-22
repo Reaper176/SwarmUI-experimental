@@ -2,7 +2,7 @@
 
 **Date:** 2026-07-22
 
-**Status:** Approved design; implementation pending
+**Status:** Implemented; awaiting maintainer validation
 
 ## Goal
 
@@ -18,9 +18,9 @@ The project contains five submitted-input sources:
 2. the initial API HTTP body parsed in the same handler;
 3. follow-up generation WebSocket frames parsed in `T2IAPI.GenerateText2ImageWS`;
 4. JSON-looking image, audio, and video values interpreted by `T2IParamSet`, including the Grid Generator direct-`Set` path; and
-5. the successful-generation verbose log that currently stringifies the complete `T2IParamInput`.
+5. the successful-generation verbose log that formerly stringified the complete `T2IParamInput`.
 
-Initial API parser failures reach the shared request catch, which logs `ReadableString()` through the generic `[WebAPI]` error logger. Follow-up frame parser failures reach the generic asynchronous-task logger. Dynamic Grid media failures propagate through `Task.Run`, fault rethrow, `GridGeneratorExtension.ExToError`, its `ReadableString()` log, and the generic WebSocket error response. The successful-generation statement directly writes parameter names and values.
+Initial API parser failures reach the shared request catch, which logs `ReadableString()` through the generic `[WebAPI]` error logger. Follow-up frame parser failures reach the generic asynchronous-task logger. Dynamic Grid media failures propagate through `Task.Run`, fault rethrow, `GridGeneratorExtension.ExToError`, its `ReadableString()` log, and the generic WebSocket error response. Before implementation, the successful-generation statement directly wrote parameter names and values.
 
 Ordinary T2I request validation rejects malformed JSON-looking media before `T2IParamSet` parsing and is not the confirmed dynamic-media trigger. Grid Generator applies dynamic-axis values through `T2IParamInput.Set` directly and remains the required validation path.
 
@@ -61,7 +61,7 @@ The fixed post-parse exception deliberately does not derive from `SwarmReadableE
 
 ### Successful-generation diagnostics
 
-The existing verbose-level guard and operation category remain. The complete `T2IParamInput` interpolation is replaced by `Logs.Verbose($"User {session.User.UserID} above image request had parameter count: {user_input.ValuesInput.Count}");`. The statement does not enumerate, format, hash, classify, or stringify parameter keys or values. The existing session user ID is operational context and is not derived from the submitted parameter collection.
+The existing verbose-level guard and operation category remain. The complete `T2IParamInput` interpolation is replaced by `Logs.Verbose($"User {session.User.UserID} above image request had parameter count: {user_input.InternalSet.ValuesInput.Count}");`. The statement does not enumerate, format, hash, classify, or stringify parameter keys or values. The existing session user ID is operational context and is not derived from the submitted parameter collection.
 
 No prompt, model, filename, media content, base64 prefix, seed, extension-defined name/value, or nested object reaches this diagnostic.
 

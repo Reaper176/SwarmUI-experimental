@@ -14,6 +14,8 @@
 
 **Approved design:** `docs/superpowers/specs/2026-07-22-generic-submitted-input-diagnostics-design.md` at commit `43824aba`.
 
+**Implementation outcome:** Production changes were implemented through `518134b7`; maintainer validation remains pending.
+
 ---
 
 ### Task 1: Add the submitted-input JSON boundary
@@ -193,7 +195,7 @@ Logs.Verbose($"User {session.User.UserID} above image request had parameters: {u
 with:
 
 ```csharp
-Logs.Verbose($"User {session.User.UserID} above image request had parameter count: {user_input.ValuesInput.Count}");
+Logs.Verbose($"User {session.User.UserID} above image request had parameter count: {user_input.InternalSet.ValuesInput.Count}");
 ```
 
 Keep the existing `Logs.MinimumLevel <= Logs.LogLevel.Verbose` guard, session context, adjacent info log, and generation behavior unchanged.
@@ -205,7 +207,7 @@ Run:
 ```bash
 test "$(rg -o 'SubmittedInputJson\.ParseObject' src/WebAPI/T2IAPI.cs | wc -l)" = "1"
 if rg -n 'GetString\(rec\)\.ParseToJson|above image request had parameters|\{user_input\}' src/WebAPI/T2IAPI.cs; then exit 1; fi
-rg -n 'ReceiveData|Volatile\.Write\(ref retain|socket\.State|SubmittedInputJson|newImages|tasks\.TryAdd|batchOffset|ValuesInput\.Count' src/WebAPI/T2IAPI.cs
+rg -n 'ReceiveData|Volatile\.Write\(ref retain|socket\.State|SubmittedInputJson|newImages|tasks\.TryAdd|batchOffset|InternalSet\.ValuesInput\.Count' src/WebAPI/T2IAPI.cs
 git diff --check -- src/WebAPI/T2IAPI.cs
 git diff -- src/WebAPI/T2IAPI.cs
 ```
@@ -410,7 +412,7 @@ for media_type in ImageFile AudioFile VideoFile; do
 done
 if rg -n 'ReceiveJson\(TimeSpan\.FromMinutes\(1\)|JObject\.Parse\(Encoding\.UTF8\.GetString\(rawData\)\)|GetString\(rec\)\.ParseToJson|JObject parsed = val\.ParseToJson|above image request had parameters|\{user_input\}' src/WebAPI/API.cs src/WebAPI/T2IAPI.cs src/Text2Image/T2IParamSet.cs; then exit 1; fi
 if rg -n 'CleanTrashTextForDebug|ReadableString|InnerException|\{input\}' src/Utils/SubmittedInputJson.cs; then exit 1; fi
-rg -n 'JSON parsing failed \(submitted content redacted\)|Failed to process submitted media object \(content redacted\)|ValuesInput\.Count|internal_error|Failed due to internal error' src/Utils/SubmittedInputJson.cs src/WebAPI/API.cs src/WebAPI/T2IAPI.cs src/Text2Image/T2IParamSet.cs src/BuiltinExtensions/GridGenerator/GridGeneratorExtension.cs
+rg -n 'JSON parsing failed \(submitted content redacted\)|Failed to process submitted media object \(content redacted\)|user_input\.InternalSet\.ValuesInput\.Count|internal_error|Failed due to internal error' src/Utils/SubmittedInputJson.cs src/WebAPI/API.cs src/WebAPI/T2IAPI.cs src/Text2Image/T2IParamSet.cs src/BuiltinExtensions/GridGenerator/GridGeneratorExtension.cs
 git diff --check
 git status --short --branch --untracked-files=normal
 git log --oneline --decorate -12
