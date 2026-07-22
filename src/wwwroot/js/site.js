@@ -206,7 +206,6 @@ function genericRequest(url, in_data, callback, depth = 0, errorHandle = null, t
         }
         if (data.error) {
             console.log(`Tried making generic request ${url} but failed with error: ${data.error}`);
-            console.log(`Input was ${JSON.stringify(in_data)}`);
             fail(data.error);
             return;
         }
