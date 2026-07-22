@@ -31,13 +31,13 @@
 Run:
 
 ```bash
-git status --short --branch --untracked-files=normal
+git status --short --branch --untracked-files=no
 nl -ba src/Pages/GoogleOAuthVerify.cshtml | sed -n '24,38p'
 nl -ba src/WebAPI/BasicAPIFeatures.cs | sed -n '124,132p;314,324p'
 nl -ba src/Utils/WebUtil.cs | sed -n '257,322p'
 ```
 
-Expected: OAuth is the only `swarm_token` writer missing `Secure`; password login and logout use `context.Request.IsHttps`; the working tree contains only the maintainer-owned four tracked files and the untracked backup directory; cookie readers do not branch on login method.
+Expected: OAuth is the only `swarm_token` writer missing `Secure`; password login and logout use `context.Request.IsHttps`; the tracked working tree contains only the known four maintainer-owned modifications; cookie readers do not branch on login method.
 
 - [ ] **Step 2: Add only the approved request-aware property**
 
@@ -187,12 +187,15 @@ test "$(rg -F -o 'Secure = HttpContext.Request.IsHttps' src/Pages/GoogleOAuthVer
 test "$(rg -F -o 'Secure = context.Request.IsHttps' src/WebAPI/BasicAPIFeatures.cs | wc -l)" = "2"
 test "$(rg -F -o 'Response.Cookies.Append("swarm_token"' src/Pages/GoogleOAuthVerify.cshtml src/WebAPI/BasicAPIFeatures.cs | wc -l)" = "3"
 rg -n 'swarm_token|GetValidLogin|GetSwarmTokenFor|IsHttps|UseForwardedHeaders|ForwardedHeadersOptions' src/Pages/GoogleOAuthVerify.cshtml src/WebAPI/BasicAPIFeatures.cs src/Utils/WebUtil.cs src/Core/WebServer.cs
-git diff --check
-git status --short --branch --untracked-files=normal
+git diff --check 74bf9306^..2361d504
+git diff --name-only 74bf9306^..2361d504
+git status --short --branch --untracked-files=no
 git log --oneline --decorate -8
 ```
 
-Verify the committed implementation range contains only `src/Pages/GoogleOAuthVerify.cshtml` and the three approved documents. Confirm the maintainer-owned four tracked files and untracked backup directory remain untouched. Do not inspect the backup directory.
+Verify the committed path inventory has exactly these four unique paths: `src/Pages/GoogleOAuthVerify.cshtml`, `docs/superpowers/specs/2026-07-22-oauth-login-cookie-transport-design.md`, `docs/superpowers/plans/2026-07-22-oauth-login-cookie-transport.md`, and `docs/superpowers/audits/2026-07-21-maintainability-architecture-refresh.md`. Confirm the known four maintainer-owned tracked modifications remain untouched.
+
+Do not inspect the backup directory.
 
 - [ ] **Step 4: Hand off maintainer compilation and runtime validation**
 
