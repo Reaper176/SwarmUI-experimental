@@ -113,7 +113,7 @@ internal static class ComfyDiagnostics
         }
     }
 
-    /// <summary>Parses JSON without coercing ISO-looking strings into dates.</summary>
+    /// <summary>Parses exactly one JSON value without coercing ISO-looking strings into dates.</summary>
     private static JToken ParseJson(string json)
     {
         using StringReader stringReader = new(json);
@@ -121,7 +121,11 @@ internal static class ComfyDiagnostics
         {
             DateParseHandling = DateParseHandling.None
         };
-        return JToken.ReadFrom(reader);
+        JToken parsed = JToken.ReadFrom(reader);
+        while (reader.Read())
+        {
+        }
+        return parsed;
     }
 
     /// <summary>Describes a parsed workflow graph without reproducing submitted identifiers or input values.</summary>

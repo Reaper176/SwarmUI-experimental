@@ -332,8 +332,7 @@ public class ComfyUIRedirectHelper
                     using MemoryStream memStream = new();
                     await context.Request.Body.CopyToAsync(memStream);
                     byte[] data = memStream.ToArray();
-                    string promptText = StringConversionHelper.UTF8Encoding.GetString(data);
-                    JObject parsed = ComfySubmittedJson.ParseObject(promptText);
+                    JObject parsed = ComfySubmittedJson.ParseObject(StringConversionHelper.UTF8Encoding.GetString(data));
                     bool redirected = false;
                     if (parsed.TryGetValue("client_id", out JToken clientIdTok))
                     {
@@ -395,7 +394,7 @@ public class ComfyUIRedirectHelper
                             return;
                         }
                         Logs.Debug($"Was not able to redirect Comfy backend direct prompt request");
-                        Logs.Verbose($"Above is for opaque prompt structure: {ComfyDiagnostics.DescribePromptEnvelope(promptText)}");
+                        Logs.Verbose("Above is for an opaque prompt whose structure was not retained.");
                         backend.BackendData.UpdateLastReleaseTime();
                         Logs.Info($"Sent Comfy backend improper API call direct prompt requested to backend #{backend.BackendData.ID}");
                     }
