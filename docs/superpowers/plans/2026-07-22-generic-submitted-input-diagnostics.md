@@ -321,7 +321,7 @@ git commit -m "fix: sanitize submitted media object failures"
 **Files:**
 - Modify: `docs/superpowers/specs/2026-07-22-generic-submitted-input-diagnostics-design.md`
 - Modify: `docs/superpowers/audits/2026-07-21-maintainability-architecture-refresh.md`
-- Review: `docs/superpowers/plans/2026-07-22-generic-submitted-input-diagnostics.md`
+- Modify: `docs/superpowers/plans/2026-07-22-generic-submitted-input-diagnostics.md`
 
 - [ ] **Step 1: Record implementation status in the design**
 
@@ -355,16 +355,16 @@ Run:
 
 ```bash
 rg -n 'Status:|SubmittedInputJson|five|parameter count|media object|Grid|maintainer validation|S1|rank 3|24.*eight|32' docs/superpowers/specs/2026-07-22-generic-submitted-input-diagnostics-design.md docs/superpowers/audits/2026-07-21-maintainability-architecture-refresh.md docs/superpowers/plans/2026-07-22-generic-submitted-input-diagnostics.md
-if rg -n 'S1.*design.*pending|complete T2IParamInput|stringifies the complete|current mitigation.*do not provide' docs/superpowers/specs/2026-07-22-generic-submitted-input-diagnostics-design.md docs/superpowers/audits/2026-07-21-maintainability-architecture-refresh.md; then exit 1; fi
-git diff --check -- docs/superpowers/specs/2026-07-22-generic-submitted-input-diagnostics-design.md docs/superpowers/audits/2026-07-21-maintainability-architecture-refresh.md
+if rg -n 'S1.*design.*pending|complete T2IParamInput|stringifies the complete|current mitigation.*do not provide|recommended next project is unranked security prerequisite|must be separately designed and handled|must be designed and handled|Every unimplemented ranked production project and `S1`|S1.*must be handled before rank 3|S1.*requires its own.*brainstorming' docs/superpowers/specs/2026-07-22-generic-submitted-input-diagnostics-design.md docs/superpowers/audits/2026-07-21-maintainability-architecture-refresh.md; then exit 1; fi
+git diff --check -- docs/superpowers/specs/2026-07-22-generic-submitted-input-diagnostics-design.md docs/superpowers/audits/2026-07-21-maintainability-architecture-refresh.md docs/superpowers/plans/2026-07-22-generic-submitted-input-diagnostics.md
 ```
 
 - [ ] **Step 4: Commit the architecture record**
 
 ```bash
-git add docs/superpowers/specs/2026-07-22-generic-submitted-input-diagnostics-design.md docs/superpowers/audits/2026-07-21-maintainability-architecture-refresh.md
+git add docs/superpowers/specs/2026-07-22-generic-submitted-input-diagnostics-design.md docs/superpowers/audits/2026-07-21-maintainability-architecture-refresh.md docs/superpowers/plans/2026-07-22-generic-submitted-input-diagnostics.md
 git diff --cached --check
-test "$(git diff --cached --name-only | wc -l)" = "2"
+test "$(git diff --cached --name-only | wc -l)" = "3"
 git commit -m "docs: record generic submitted input redaction"
 ```
 
