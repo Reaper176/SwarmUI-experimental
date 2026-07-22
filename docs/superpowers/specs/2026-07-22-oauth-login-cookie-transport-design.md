@@ -2,7 +2,7 @@
 
 **Date:** 2026-07-22
 
-**Status:** Implemented; awaiting maintainer validation
+**Status:** Implemented and maintainer-validated
 
 ## Goal
 
@@ -87,6 +87,8 @@ Repository policy prohibits agents from running builds, automated tests, browser
 7. run repository-permitted whitespace and static search checks.
 
 ## Maintainer Validation
+
+Maintainer Reaper176 confirmed the agreed HTTP OAuth login/logout and session-usability, direct HTTPS OAuth Secure-cookie/session/logout, applicable HTTP/HTTPS password login/logout compatibility, supported HTTPS proxy behavior based on the scheme Swarm observes, OAuth registration/redirect, and protected-page/API-session matrix. No benchmark or performance measurement was made. Trusted proxy scheme establishment remains separately scoped, and raw forwarding headers remain untrusted and out of scope.
 
 The maintainer should inspect browser cookie attributes and complete the relevant flows in these environments:
 
