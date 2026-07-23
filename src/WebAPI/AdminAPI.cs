@@ -171,7 +171,7 @@ public static class AdminAPI
     {
         JObject settings = (JObject)rawData["settings"];
         List<string> changed = [];
-        bool pathsChanged = settings.Properties().Any(p => p.Name.StartsWith("paths.") || p.Name.StartsWith("performance.allowgpuspecific"));
+        bool pathsChanged = settings.Properties().Any(p => p.Name.StartsWith("paths.", StringComparison.OrdinalIgnoreCase) || p.Name.StartsWith("performance.allowgpuspecific", StringComparison.OrdinalIgnoreCase));
         JObject transactionError = Program.RunSettingsTransaction(() =>
         {
             if (Program.LockSettings)
@@ -213,7 +213,7 @@ public static class AdminAPI
                 {
                     continue;
                 }
-                if (key.ToLowerFast() == "authorization.authorizationrequired" && $"{obj}".ToLowerFast() == "true" && session.User.Data.PasswordHashed == "")
+                if (key.ToLowerFast() == "userauthorization.authorizationrequired" && $"{obj}".ToLowerFast() == "true" && session.User.Data.PasswordHashed == "")
                 {
                     return new JObject() { ["error"] = "Tried to enable authorization mode, but your account does not have a password. Configure your account login information before enabling authorization, so you don't get locked out." };
                 }
