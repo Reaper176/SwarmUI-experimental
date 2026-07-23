@@ -24,7 +24,7 @@ namespace SwarmUI.Core;
 /// <summary>Outcome of an attempted authoritative server-settings persistence operation.</summary>
 public enum SettingsSaveResult
 {
-    /// <summary>The authoritative settings FDS was written successfully.</summary>
+    /// <summary>The authoritative settings FDS contains the requested data.</summary>
     Saved,
 
     /// <summary>Settings persistence is disabled by the process lock-settings option.</summary>
@@ -155,6 +155,7 @@ public class Program
                 PrintCommandLineHelp();
                 return;
             }
+            LockSettings = GetCommandLineFlagAsBool("lock_settings", false);
             Logs.Init("Loading settings file...");
             DataDir = Utilities.CombinePathWithAbsolute(Environment.CurrentDirectory, GetCommandLineFlag("data_dir", "Data"));
             SettingsFilePath = GetCommandLineFlag("settings_file", $"{DataDir}/Settings.fds");
@@ -740,14 +741,41 @@ public class Program
             {
                 return SettingsSaveResult.Locked;
             }
+            FDSSection settingsData;
+            string serializedSettings;
             try
             {
-                FDSUtility.SaveToFile(settings.Save(true), SettingsFilePath);
+                settingsData = settings.Save(true);
+                serializedSettings = settingsData.SaveToString();
             }
             catch (Exception ex)
             {
-                Logs.Error($"Error saving settings file: {ex.ReadableString()}");
+                Logs.Error($"Error serializing settings file: {ex.ReadableString()}");
                 return SettingsSaveResult.Failed;
+            }
+            try
+            {
+                FDSUtility.SaveToFile(settingsData, SettingsFilePath);
+            }
+            catch (Exception ex)
+            {
+                bool authoritativeFileMatches;
+                try
+                {
+                    authoritativeFileMatches = File.Exists(SettingsFilePath) && File.ReadAllText(SettingsFilePath) == serializedSettings;
+                }
+                catch (Exception verificationEx)
+                {
+                    Logs.Error($"Error saving settings file: {ex.ReadableString()}");
+                    Logs.Error($"Error verifying authoritative settings file after the save failure: {verificationEx.ReadableString()}");
+                    return SettingsSaveResult.Failed;
+                }
+                if (!authoritativeFileMatches)
+                {
+                    Logs.Error($"Error saving settings file: {ex.ReadableString()}");
+                    return SettingsSaveResult.Failed;
+                }
+                Logs.Error($"Settings were committed, but settings journal cleanup reported an error: {ex.ReadableString()}");
             }
             try
             {
@@ -855,7 +883,6 @@ public class Program
         }
         WebServer.LogLevel = Enum.Parse<LogLevel>(GetCommandLineFlag("asp_loglevel", "warning"), true);
         SessionHandler.LocalUserID = GetCommandLineFlag("user_id", SessionHandler.LocalUserID);
-        LockSettings = GetCommandLineFlagAsBool("lock_settings", false);
         if (CommandLineFlags.ContainsKey("ngrok_path"))
         {
             ProxyHandler = new()
