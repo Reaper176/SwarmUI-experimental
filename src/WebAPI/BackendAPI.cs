@@ -15,6 +15,9 @@ namespace SwarmUI.WebAPI;
 [API.APIClass("API routes to manage the server's backends.")]
 public class BackendAPI
 {
+    /// <summary>Serializes IOPaint settings mutations and external lifecycle operations.</summary>
+    internal static readonly SemaphoreSlim IOPaintLifecycleSemaphore = new(1, 1);
+
     public static void Register()
     {
         API.RegisterAPICall(ListBackendTypes, false, Permissions.ViewBackendsList);
@@ -135,6 +138,12 @@ public class BackendAPI
     public static string GetIOPaintPythonPath(Settings.IOPaintServiceData settings)
     {
         string venvPath = string.IsNullOrWhiteSpace(settings.VenvPath) ? GetDefaultIOPaintVenvPath() : settings.VenvPath;
+        return GetIOPaintPythonPath(venvPath);
+    }
+
+    /// <summary>Gets the managed Python executable path for a captured IOPaint virtual-environment path.</summary>
+    private static string GetIOPaintPythonPath(string venvPath)
+    {
         string subPath = RuntimeInformation.IsOSPlatform(OSPlatform.Windows) ? "Scripts/python.exe" : "bin/python";
         return Path.Combine(venvPath, subPath);
     }
@@ -329,19 +338,27 @@ public class BackendAPI
         {
             return new() { ["error"] = "Settings are locked." };
         }
-        SettingsSaveResult saveResult = SaveIOPaintSettingsChange(settings =>
+        await IOPaintLifecycleSemaphore.WaitAsync(Program.GlobalProgramCancel);
+        try
         {
-            settings.Enabled = enabled;
-            settings.BootstrapPython = bootstrap_python?.Trim() ?? "";
-            settings.VenvPath = venv_path?.Trim() ?? "";
-            settings.Device = string.IsNullOrWhiteSpace(device) ? "cpu" : device.Trim().ToLowerInvariant();
-            settings.ModelCachePath = model_cache_path?.Trim() ?? "";
-        });
-        if (saveResult != SettingsSaveResult.Saved)
-        {
-            return IOPaintSettingsSaveError(saveResult);
+            SettingsSaveResult saveResult = SaveIOPaintSettingsChange(settings =>
+            {
+                settings.Enabled = enabled;
+                settings.BootstrapPython = bootstrap_python?.Trim() ?? "";
+                settings.VenvPath = venv_path?.Trim() ?? "";
+                settings.Device = string.IsNullOrWhiteSpace(device) ? "cpu" : device.Trim().ToLowerInvariant();
+                settings.ModelCachePath = model_cache_path?.Trim() ?? "";
+            });
+            if (saveResult != SettingsSaveResult.Saved)
+            {
+                return IOPaintSettingsSaveError(saveResult);
+            }
+            return await BuildIOPaintServiceStatus();
         }
-        return await BuildIOPaintServiceStatus();
+        finally
+        {
+            IOPaintLifecycleSemaphore.Release();
+        }
     }
 
     [API.APIDescription("Installs or reinstalls the managed IOPaint service into its dedicated virtual environment.", "\"success\": true")]
@@ -352,71 +369,80 @@ public class BackendAPI
         {
             return new() { ["error"] = "Settings are locked." };
         }
-        Settings.IOPaintServiceData settings = Program.ServerSettings.IOPaint;
-        string venvPath = string.IsNullOrWhiteSpace(settings.VenvPath) ? GetDefaultIOPaintVenvPath() : settings.VenvPath;
-        string rootPath = Path.GetDirectoryName(venvPath);
-        if (string.IsNullOrWhiteSpace(rootPath))
+        await IOPaintLifecycleSemaphore.WaitAsync(Program.GlobalProgramCancel);
+        try
         {
-            return new() { ["error"] = "Invalid IOPaint venv path." };
-        }
-        string configuredBootstrapPython = string.IsNullOrWhiteSpace(settings.BootstrapPython) ? GetDefaultIOPaintBootstrapPython() : settings.BootstrapPython;
-        string bootstrapPython = await ResolveEffectiveIOPaintBootstrapPython(configuredBootstrapPython, rootPath);
-        string bootstrapVersion = await GetCommandPythonVersionString(bootstrapPython, rootPath);
-        if (!IsPythonVersionCompatibleForIOPaint(bootstrapVersion))
-        {
-            return new()
+            Settings.IOPaintServiceData currentSettings = Program.ServerSettings.IOPaint;
+            string configuredVenvPath = currentSettings.VenvPath;
+            string configuredBootstrapPython = currentSettings.BootstrapPython;
+            string venvPath = string.IsNullOrWhiteSpace(configuredVenvPath) ? GetDefaultIOPaintVenvPath() : configuredVenvPath;
+            string rootPath = Path.GetDirectoryName(venvPath);
+            if (string.IsNullOrWhiteSpace(rootPath))
             {
-                ["error"] = $"Bootstrap interpreter '{bootstrapPython}' resolves to incompatible Python {bootstrapVersion ?? "unknown"}. Use an absolute Python 3.10 or 3.11 path."
-            };
-        }
-        if (!IsExplicitPythonPath(bootstrapPython))
-        {
-            return new()
-            {
-                ["error"] = $"Bootstrap interpreter '{bootstrapPython}' is not an absolute path. Use an explicit Python 3.10 or 3.11 binary path to avoid shim/version mismatches."
-            };
-        }
-        Directory.CreateDirectory(rootPath);
-        if (reinstall && Directory.Exists(venvPath))
-        {
-            Directory.Delete(venvPath, true);
-        }
-        if (!Directory.Exists(venvPath) || !File.Exists(GetIOPaintPythonPath(settings)))
-        {
-            await RunMonitoredProcess(bootstrapPython, ["-m", "venv", venvPath], rootPath, "IOPaint Install (venv)", "iopaintinstall");
-        }
-        string pythonPath = GetIOPaintPythonPath(settings);
-        string pythonVersion = await GetPythonVersionString(pythonPath, rootPath);
-        if (!IsPythonVersionCompatibleForIOPaint(pythonVersion))
-        {
-            if (Directory.Exists(venvPath))
-            {
-                Directory.Delete(venvPath, true);
+                return new() { ["error"] = "Invalid IOPaint venv path." };
             }
-            await RunMonitoredProcess(bootstrapPython, ["-m", "venv", venvPath], rootPath, "IOPaint Install (venv)", "iopaintinstall");
-            pythonPath = GetIOPaintPythonPath(settings);
-            pythonVersion = await GetPythonVersionString(pythonPath, rootPath);
-            if (!IsPythonVersionCompatibleForIOPaint(pythonVersion))
+            string bootstrapPythonInput = string.IsNullOrWhiteSpace(configuredBootstrapPython) ? GetDefaultIOPaintBootstrapPython() : configuredBootstrapPython;
+            string bootstrapPython = await ResolveEffectiveIOPaintBootstrapPython(bootstrapPythonInput, rootPath);
+            string bootstrapVersion = await GetCommandPythonVersionString(bootstrapPython, rootPath);
+            if (!IsPythonVersionCompatibleForIOPaint(bootstrapVersion))
             {
                 return new()
                 {
-                    ["error"] = $"Managed IOPaint requires Python 3.10 or 3.11, but bootstrap interpreter created Python {pythonVersion ?? "unknown"}."
+                    ["error"] = $"Bootstrap interpreter '{bootstrapPython}' resolves to incompatible Python {bootstrapVersion ?? "unknown"}. Use an absolute Python 3.10 or 3.11 path."
                 };
             }
+            if (!IsExplicitPythonPath(bootstrapPython))
+            {
+                return new()
+                {
+                    ["error"] = $"Bootstrap interpreter '{bootstrapPython}' is not an absolute path. Use an explicit Python 3.10 or 3.11 binary path to avoid shim/version mismatches."
+                };
+            }
+            Directory.CreateDirectory(rootPath);
+            if (reinstall && Directory.Exists(venvPath))
+            {
+                Directory.Delete(venvPath, true);
+            }
+            string pythonPath = GetIOPaintPythonPath(venvPath);
+            if (!Directory.Exists(venvPath) || !File.Exists(pythonPath))
+            {
+                await RunMonitoredProcess(bootstrapPython, ["-m", "venv", venvPath], rootPath, "IOPaint Install (venv)", "iopaintinstall");
+            }
+            string pythonVersion = await GetPythonVersionString(pythonPath, rootPath);
+            if (!IsPythonVersionCompatibleForIOPaint(pythonVersion))
+            {
+                if (Directory.Exists(venvPath))
+                {
+                    Directory.Delete(venvPath, true);
+                }
+                await RunMonitoredProcess(bootstrapPython, ["-m", "venv", venvPath], rootPath, "IOPaint Install (venv)", "iopaintinstall");
+                pythonVersion = await GetPythonVersionString(pythonPath, rootPath);
+                if (!IsPythonVersionCompatibleForIOPaint(pythonVersion))
+                {
+                    return new()
+                    {
+                        ["error"] = $"Managed IOPaint requires Python 3.10 or 3.11, but bootstrap interpreter created Python {pythonVersion ?? "unknown"}."
+                    };
+                }
+            }
+            await RunMonitoredProcess(pythonPath, ["-m", "pip", "install", "--upgrade", "pip", "setuptools", "wheel"], rootPath, "IOPaint Install (pip)", "iopaintinstall");
+            await RunMonitoredProcess(pythonPath, ["-m", "pip", "install", "iopaint"], rootPath, "IOPaint Install (iopaint)", "iopaintinstall");
+            SettingsSaveResult saveResult = SaveIOPaintSettingsChange(settings =>
+            {
+                settings.VenvPath = venvPath;
+                settings.BootstrapPython = bootstrapPython;
+                settings.Enabled = true;
+            });
+            if (saveResult != SettingsSaveResult.Saved)
+            {
+                return IOPaintSettingsSaveError(saveResult);
+            }
+            return await BuildIOPaintServiceStatus();
         }
-        await RunMonitoredProcess(pythonPath, ["-m", "pip", "install", "--upgrade", "pip", "setuptools", "wheel"], rootPath, "IOPaint Install (pip)", "iopaintinstall");
-        await RunMonitoredProcess(pythonPath, ["-m", "pip", "install", "iopaint"], rootPath, "IOPaint Install (iopaint)", "iopaintinstall");
-        SettingsSaveResult saveResult = SaveIOPaintSettingsChange(settings =>
+        finally
         {
-            settings.VenvPath = venvPath;
-            settings.BootstrapPython = bootstrapPython;
-            settings.Enabled = true;
-        });
-        if (saveResult != SettingsSaveResult.Saved)
-        {
-            return IOPaintSettingsSaveError(saveResult);
+            IOPaintLifecycleSemaphore.Release();
         }
-        return await BuildIOPaintServiceStatus();
     }
 
     [API.APIDescription("Deletes the current managed IOPaint install if it is under the Swarm-managed tools directory.", "\"success\": true")]
@@ -426,25 +452,33 @@ public class BackendAPI
         {
             return new() { ["error"] = "Settings are locked." };
         }
-        Settings.IOPaintServiceData settings = Program.ServerSettings.IOPaint;
-        string venvPath = string.IsNullOrWhiteSpace(settings.VenvPath) ? GetDefaultIOPaintVenvPath() : settings.VenvPath;
-        if (!IsManagedIOPaintPath(venvPath))
+        await IOPaintLifecycleSemaphore.WaitAsync(Program.GlobalProgramCancel);
+        try
         {
-            return new() { ["error"] = "Refusing to delete a non-managed IOPaint path." };
+            Settings.IOPaintServiceData settings = Program.ServerSettings.IOPaint;
+            string venvPath = string.IsNullOrWhiteSpace(settings.VenvPath) ? GetDefaultIOPaintVenvPath() : settings.VenvPath;
+            if (!IsManagedIOPaintPath(venvPath))
+            {
+                return new() { ["error"] = "Refusing to delete a non-managed IOPaint path." };
+            }
+            if (Directory.Exists(venvPath))
+            {
+                Directory.Delete(venvPath, true);
+            }
+            SettingsSaveResult saveResult = SaveIOPaintSettingsChange(settings =>
+            {
+                settings.Enabled = false;
+            });
+            if (saveResult != SettingsSaveResult.Saved)
+            {
+                return IOPaintSettingsSaveError(saveResult);
+            }
+            return await BuildIOPaintServiceStatus();
         }
-        if (Directory.Exists(venvPath))
+        finally
         {
-            Directory.Delete(venvPath, true);
+            IOPaintLifecycleSemaphore.Release();
         }
-        SettingsSaveResult saveResult = SaveIOPaintSettingsChange(settings =>
-        {
-            settings.Enabled = false;
-        });
-        if (saveResult != SettingsSaveResult.Saved)
-        {
-            return IOPaintSettingsSaveError(saveResult);
-        }
-        return await BuildIOPaintServiceStatus();
     }
 
     [API.APIDescription("Switches the managed IOPaint service to a new dedicated install path under the Swarm-managed tools directory.", "\"success\": true")]
@@ -454,16 +488,24 @@ public class BackendAPI
         {
             return new() { ["error"] = "Settings are locked." };
         }
-        SettingsSaveResult saveResult = SaveIOPaintSettingsChange(settings =>
+        await IOPaintLifecycleSemaphore.WaitAsync(Program.GlobalProgramCancel);
+        try
         {
-            settings.VenvPath = GetNextIOPaintVenvPath();
-            settings.Enabled = false;
-        });
-        if (saveResult != SettingsSaveResult.Saved)
-        {
-            return IOPaintSettingsSaveError(saveResult);
+            SettingsSaveResult saveResult = SaveIOPaintSettingsChange(settings =>
+            {
+                settings.VenvPath = GetNextIOPaintVenvPath();
+                settings.Enabled = false;
+            });
+            if (saveResult != SettingsSaveResult.Saved)
+            {
+                return IOPaintSettingsSaveError(saveResult);
+            }
+            return await BuildIOPaintServiceStatus();
         }
-        return await BuildIOPaintServiceStatus();
+        finally
+        {
+            IOPaintLifecycleSemaphore.Release();
+        }
     }
 
     [API.APIDescription("Returns of a list of all available backend types.",

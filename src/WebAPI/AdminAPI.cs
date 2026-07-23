@@ -170,136 +170,151 @@ public static class AdminAPI
         [API.APIParameter("Dynamic input of `\"settingname\": valuehere`.")] JObject rawData)
     {
         JObject settings = (JObject)rawData["settings"];
-        List<string> changed = [];
-        bool pathsChanged = settings.Properties().Any(p => p.Name.StartsWith("paths.", StringComparison.OrdinalIgnoreCase) || p.Name.StartsWith("performance.allowgpuspecific", StringComparison.OrdinalIgnoreCase));
-        bool runtimeWarning = false;
-        JObject transactionError = Program.RunSettingsTransaction(() =>
+        bool iopaintChanged = settings.Properties().Any(p => p.Name.StartsWith("iopaint.", StringComparison.OrdinalIgnoreCase));
+        if (iopaintChanged)
         {
-            if (Program.LockSettings)
+            await BackendAPI.IOPaintLifecycleSemaphore.WaitAsync(Program.GlobalProgramCancel);
+        }
+        try
+        {
+            List<string> changed = [];
+            bool pathsChanged = settings.Properties().Any(p => p.Name.StartsWith("paths.", StringComparison.OrdinalIgnoreCase) || p.Name.StartsWith("performance.allowgpuspecific", StringComparison.OrdinalIgnoreCase));
+            bool runtimeWarning = false;
+            JObject transactionError = Program.RunSettingsTransaction(() =>
             {
-                return new JObject() { ["error"] = "Settings are locked." };
-            }
-            Settings candidate = new();
-            candidate.Load(Program.ServerSettings.Save(true));
-            foreach ((string key, JToken val) in settings)
-            {
-                AutoConfiguration.Internal.SingleFieldData field = candidate.TryGetFieldInternalData(key, out AutoConfiguration candidateSection);
-                if (field is null)
+                if (Program.LockSettings)
                 {
-                    Logs.Error($"User '{session.User.UserID}' tried to set unknown server setting '{key}' to '{val}'.");
-                    continue;
+                    return new JObject() { ["error"] = "Settings are locked." };
                 }
-                if (field.Field.GetCustomAttribute<SettingHiddenAttribute>() is not null)
+                Settings candidate = new();
+                candidate.Load(Program.ServerSettings.Save(true));
+                foreach ((string key, JToken val) in settings)
                 {
-                    Logs.Error($"User '{session.User.UserID}' tried to set server setting '{key}' of type '{field.Field.FieldType.Name}' to '{val}', but that setting is marked as hidden from the normal interface.");
-                    continue;
-                }
-                bool isSecret = field.Field.GetCustomAttribute<ValueIsSecretAttribute>() is not null;
-                object obj;
-                try
-                {
-                    obj = DataToType(val, field.Field.FieldType);
-                }
-                catch (Exception)
-                {
-                    Logs.Error($"User '{session.User.UserID}' tried to set server setting '{key}' of type '{field.Field.FieldType.Name}' to '{val}', but type-conversion failed.");
-                    continue;
-                }
-                if (obj is null)
-                {
-                    Logs.Error($"User '{session.User.UserID}' tried to set server setting '{key}' of type '{field.Field.FieldType.Name}' to '{val}', but type-conversion failed.");
-                    continue;
-                }
-                if (isSecret && obj is string str && str == "\t<secret>")
-                {
-                    continue;
-                }
-                if (key.ToLowerFast() == "userauthorization.authorizationrequired" && $"{obj}".ToLowerFast() == "true" && session.User.Data.PasswordHashed == "")
-                {
-                    return new JObject() { ["error"] = "Tried to enable authorization mode, but your account does not have a password. Configure your account login information before enabling authorization, so you don't get locked out." };
-                }
-                try
-                {
-                    field.SetValue(candidateSection, obj);
-                    if (!candidate.TrySetFieldModified(key, true))
+                    AutoConfiguration.Internal.SingleFieldData field = candidate.TryGetFieldInternalData(key, out AutoConfiguration candidateSection);
+                    if (field is null)
                     {
-                        throw new InvalidOperationException();
+                        Logs.Error($"User '{session.User.UserID}' tried to set unknown server setting '{key}' to '{val}'.");
+                        continue;
+                    }
+                    if (field.Field.GetCustomAttribute<SettingHiddenAttribute>() is not null)
+                    {
+                        Logs.Error($"User '{session.User.UserID}' tried to set server setting '{key}' of type '{field.Field.FieldType.Name}' to '{val}', but that setting is marked as hidden from the normal interface.");
+                        continue;
+                    }
+                    bool isSecret = field.Field.GetCustomAttribute<ValueIsSecretAttribute>() is not null;
+                    object obj;
+                    try
+                    {
+                        obj = DataToType(val, field.Field.FieldType);
+                    }
+                    catch (Exception)
+                    {
+                        Logs.Error($"User '{session.User.UserID}' tried to set server setting '{key}' of type '{field.Field.FieldType.Name}' to '{val}', but type-conversion failed.");
+                        continue;
+                    }
+                    if (obj is null)
+                    {
+                        Logs.Error($"User '{session.User.UserID}' tried to set server setting '{key}' of type '{field.Field.FieldType.Name}' to '{val}', but type-conversion failed.");
+                        continue;
+                    }
+                    if (isSecret && obj is string str && str == "\t<secret>")
+                    {
+                        continue;
+                    }
+                    if (key.ToLowerFast() == "userauthorization.authorizationrequired" && $"{obj}".ToLowerFast() == "true" && session.User.Data.PasswordHashed == "")
+                    {
+                        return new JObject() { ["error"] = "Tried to enable authorization mode, but your account does not have a password. Configure your account login information before enabling authorization, so you don't get locked out." };
+                    }
+                    try
+                    {
+                        field.SetValue(candidateSection, obj);
+                        if (!candidate.TrySetFieldModified(key, true))
+                        {
+                            throw new InvalidOperationException();
+                        }
+                    }
+                    catch (Exception)
+                    {
+                        Logs.Error($"User '{session.User.UserID}' tried to set server setting '{key}' of type '{field.Field.FieldType.Name}' to '{val}', but type-assignment failed.");
+                        continue;
+                    }
+                    changed.Add(key);
+                }
+                if (pathsChanged)
+                {
+                    try
+                    {
+                        ValidateModelPaths(candidate);
+                    }
+                    catch (Exception ex)
+                    {
+                        Logs.Error($"Failed to create one or more directories: {ex.Message}");
+                        return new JObject() { ["error"] = "Model paths settings are invalid, rejected change." };
                     }
                 }
-                catch (Exception)
+                SettingsSaveResult saveResult = Program.TrySaveSettingsFile(candidate);
+                if (saveResult != SettingsSaveResult.Saved)
                 {
-                    Logs.Error($"User '{session.User.UserID}' tried to set server setting '{key}' of type '{field.Field.FieldType.Name}' to '{val}', but type-assignment failed.");
-                    continue;
+                    return new JObject() { ["error"] = saveResult == SettingsSaveResult.Locked ? "Settings are locked." : "Failed to save server settings." };
                 }
-                changed.Add(key);
+                Program.ServerSettings.Load(candidate.Save(true));
+                foreach (string key in changed)
+                {
+                    try
+                    {
+                        AutoConfiguration.Internal.SingleFieldData field = Program.ServerSettings.TryGetFieldInternalData(key, out _);
+                        field.OnChanged?.Invoke();
+                    }
+                    catch (Exception ex)
+                    {
+                        Logs.Error($"Server settings were saved, but change notification for '{key}' failed: {ex.ReadableString()}");
+                        runtimeWarning = true;
+                    }
+                }
+                return null;
+            });
+            if (transactionError is not null)
+            {
+                return transactionError;
             }
+            Logs.Warning($"User {session.User.UserID} changed server settings: {changed.JoinString(", ")}");
             if (pathsChanged)
             {
                 try
                 {
-                    ValidateModelPaths(candidate);
+                    Program.BuildModelLists();
+                    Program.RefreshAllModelSets();
+                    Program.ModelPathsChangedEvent?.Invoke();
                 }
                 catch (Exception ex)
                 {
-                    Logs.Error($"Failed to create one or more directories: {ex.Message}");
-                    return new JObject() { ["error"] = "Model paths settings are invalid, rejected change." };
-                }
-            }
-            SettingsSaveResult saveResult = Program.TrySaveSettingsFile(candidate);
-            if (saveResult != SettingsSaveResult.Saved)
-            {
-                return new JObject() { ["error"] = saveResult == SettingsSaveResult.Locked ? "Settings are locked." : "Failed to save server settings." };
-            }
-            Program.ServerSettings.Load(candidate.Save(true));
-            foreach (string key in changed)
-            {
-                try
-                {
-                    AutoConfiguration.Internal.SingleFieldData field = Program.ServerSettings.TryGetFieldInternalData(key, out _);
-                    field.OnChanged?.Invoke();
-                }
-                catch (Exception ex)
-                {
-                    Logs.Error($"Server settings were saved, but change notification for '{key}' failed: {ex.ReadableString()}");
+                    Logs.Error($"Server settings were saved, but model path refresh failed: {ex.ReadableString()}");
                     runtimeWarning = true;
                 }
             }
-            return null;
-        });
-        if (transactionError is not null)
-        {
-            return transactionError;
-        }
-        Logs.Warning($"User {session.User.UserID} changed server settings: {changed.JoinString(", ")}");
-        if (pathsChanged)
-        {
             try
             {
-                Program.BuildModelLists();
-                Program.RefreshAllModelSets();
-                Program.ModelPathsChangedEvent?.Invoke();
+                Program.ReapplySettings();
             }
             catch (Exception ex)
             {
-                Logs.Error($"Server settings were saved, but model path refresh failed: {ex.ReadableString()}");
+                Logs.Error($"Server settings were saved, but runtime settings reapplication failed: {ex.ReadableString()}");
                 runtimeWarning = true;
             }
+            JObject result = new() { ["success"] = true };
+            if (runtimeWarning)
+            {
+                result["warning"] = "Settings were saved, but one or more runtime refresh actions failed. A restart may be required.";
+            }
+            return result;
         }
-        try
+        finally
         {
-            Program.ReapplySettings();
+            if (iopaintChanged)
+            {
+                BackendAPI.IOPaintLifecycleSemaphore.Release();
+            }
         }
-        catch (Exception ex)
-        {
-            Logs.Error($"Server settings were saved, but runtime settings reapplication failed: {ex.ReadableString()}");
-            runtimeWarning = true;
-        }
-        JObject result = new() { ["success"] = true };
-        if (runtimeWarning)
-        {
-            result["warning"] = "Settings were saved, but one or more runtime refresh actions failed. A restart may be required.";
-        }
-        return result;
     }
 
     [API.APIDescription("Returns a list of the available log types.",
