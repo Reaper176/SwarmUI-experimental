@@ -291,6 +291,32 @@ public class BackendAPI
         return await BuildIOPaintServiceStatus();
     }
 
+    /// <summary>Applies an IOPaint settings mutation and restores the complete section if persistence fails.</summary>
+    private static SettingsSaveResult SaveIOPaintSettingsChange(Action<Settings.IOPaintServiceData> mutation)
+    {
+        return Program.RunSettingsTransaction(() =>
+        {
+            if (Program.LockSettings)
+            {
+                return SettingsSaveResult.Locked;
+            }
+            FDSSection original = Program.ServerSettings.IOPaint.Save(true);
+            mutation(Program.ServerSettings.IOPaint);
+            SettingsSaveResult result = Program.TrySaveSettingsFile();
+            if (result != SettingsSaveResult.Saved)
+            {
+                Program.ServerSettings.IOPaint.Load(original);
+            }
+            return result;
+        });
+    }
+
+    /// <summary>Builds the fixed API error for an IOPaint settings persistence failure.</summary>
+    private static JObject IOPaintSettingsSaveError(SettingsSaveResult result)
+    {
+        return new JObject() { ["error"] = result == SettingsSaveResult.Locked ? "Settings are locked." : "Failed to save server settings." };
+    }
+
     [API.APIDescription("Saves configuration for the managed IOPaint service.", "\"success\": true")]
     public static async Task<JObject> SaveIOPaintServiceSettings(Session session,
         [API.APIParameter("If true, enable the service.")] bool enabled,
@@ -303,13 +329,18 @@ public class BackendAPI
         {
             return new() { ["error"] = "Settings are locked." };
         }
-        Settings.IOPaintServiceData settings = Program.ServerSettings.IOPaint;
-        settings.Enabled = enabled;
-        settings.BootstrapPython = bootstrap_python?.Trim() ?? "";
-        settings.VenvPath = venv_path?.Trim() ?? "";
-        settings.Device = string.IsNullOrWhiteSpace(device) ? "cpu" : device.Trim().ToLowerInvariant();
-        settings.ModelCachePath = model_cache_path?.Trim() ?? "";
-        Program.SaveSettingsFile();
+        SettingsSaveResult saveResult = SaveIOPaintSettingsChange(settings =>
+        {
+            settings.Enabled = enabled;
+            settings.BootstrapPython = bootstrap_python?.Trim() ?? "";
+            settings.VenvPath = venv_path?.Trim() ?? "";
+            settings.Device = string.IsNullOrWhiteSpace(device) ? "cpu" : device.Trim().ToLowerInvariant();
+            settings.ModelCachePath = model_cache_path?.Trim() ?? "";
+        });
+        if (saveResult != SettingsSaveResult.Saved)
+        {
+            return IOPaintSettingsSaveError(saveResult);
+        }
         return await BuildIOPaintServiceStatus();
     }
 
@@ -375,10 +406,16 @@ public class BackendAPI
         }
         await RunMonitoredProcess(pythonPath, ["-m", "pip", "install", "--upgrade", "pip", "setuptools", "wheel"], rootPath, "IOPaint Install (pip)", "iopaintinstall");
         await RunMonitoredProcess(pythonPath, ["-m", "pip", "install", "iopaint"], rootPath, "IOPaint Install (iopaint)", "iopaintinstall");
-        settings.VenvPath = venvPath;
-        settings.BootstrapPython = bootstrapPython;
-        settings.Enabled = true;
-        Program.SaveSettingsFile();
+        SettingsSaveResult saveResult = SaveIOPaintSettingsChange(settings =>
+        {
+            settings.VenvPath = venvPath;
+            settings.BootstrapPython = bootstrapPython;
+            settings.Enabled = true;
+        });
+        if (saveResult != SettingsSaveResult.Saved)
+        {
+            return IOPaintSettingsSaveError(saveResult);
+        }
         return await BuildIOPaintServiceStatus();
     }
 
@@ -399,8 +436,14 @@ public class BackendAPI
         {
             Directory.Delete(venvPath, true);
         }
-        settings.Enabled = false;
-        Program.SaveSettingsFile();
+        SettingsSaveResult saveResult = SaveIOPaintSettingsChange(settings =>
+        {
+            settings.Enabled = false;
+        });
+        if (saveResult != SettingsSaveResult.Saved)
+        {
+            return IOPaintSettingsSaveError(saveResult);
+        }
         return await BuildIOPaintServiceStatus();
     }
 
@@ -411,10 +454,15 @@ public class BackendAPI
         {
             return new() { ["error"] = "Settings are locked." };
         }
-        Settings.IOPaintServiceData settings = Program.ServerSettings.IOPaint;
-        settings.VenvPath = GetNextIOPaintVenvPath();
-        settings.Enabled = false;
-        Program.SaveSettingsFile();
+        SettingsSaveResult saveResult = SaveIOPaintSettingsChange(settings =>
+        {
+            settings.VenvPath = GetNextIOPaintVenvPath();
+            settings.Enabled = false;
+        });
+        if (saveResult != SettingsSaveResult.Saved)
+        {
+            return IOPaintSettingsSaveError(saveResult);
+        }
         return await BuildIOPaintServiceStatus();
     }
 
