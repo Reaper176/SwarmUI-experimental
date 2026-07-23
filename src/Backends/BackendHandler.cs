@@ -999,7 +999,15 @@ public class BackendHandler
         if (BackendsEdited)
         {
             Logs.Info("All backends shut down, saving file...");
-            Save();
+            BackendSaveResult saveResult = TrySavePending();
+            if (saveResult == BackendSaveResult.Failed)
+            {
+                Logs.Error("Final backend persistence failed; later shutdown cleanup will continue.");
+            }
+            else if (saveResult == BackendSaveResult.SavedWithNewerChangesPending)
+            {
+                Logs.Error("A newer backend mutation remained pending after the final save attempt.");
+            }
             Logs.Info("Backend handler shutdown complete.");
         }
         else

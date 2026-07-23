@@ -423,10 +423,10 @@ public class Program
                 {
                     return;
                 }
-                if (Backends.BackendsEdited)
+                BackendHandler.BackendSaveResult saveResult = Backends.TrySavePending();
+                if (saveResult == BackendHandler.BackendSaveResult.Failed)
                 {
-                    Backends.BackendsEdited = false;
-                    Backends.Save();
+                    Logs.Error("Backend persistence remains pending and will retry on the next interval.");
                 }
             }
         });
