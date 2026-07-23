@@ -172,6 +172,7 @@ public static class AdminAPI
         JObject settings = (JObject)rawData["settings"];
         List<string> changed = [];
         bool pathsChanged = settings.Properties().Any(p => p.Name.StartsWith("paths.", StringComparison.OrdinalIgnoreCase) || p.Name.StartsWith("performance.allowgpuspecific", StringComparison.OrdinalIgnoreCase));
+        bool runtimeWarning = false;
         JObject transactionError = Program.RunSettingsTransaction(() =>
         {
             if (Program.LockSettings)
@@ -182,7 +183,7 @@ public static class AdminAPI
             candidate.Load(Program.ServerSettings.Save(true));
             foreach ((string key, JToken val) in settings)
             {
-                AutoConfiguration.Internal.SingleFieldData field = candidate.TryGetFieldInternalData(key, out _);
+                AutoConfiguration.Internal.SingleFieldData field = candidate.TryGetFieldInternalData(key, out AutoConfiguration candidateSection);
                 if (field is null)
                 {
                     Logs.Error($"User '{session.User.UserID}' tried to set unknown server setting '{key}' to '{val}'.");
@@ -217,7 +218,19 @@ public static class AdminAPI
                 {
                     return new JObject() { ["error"] = "Tried to enable authorization mode, but your account does not have a password. Configure your account login information before enabling authorization, so you don't get locked out." };
                 }
-                candidate.TrySetFieldValue(key, obj);
+                try
+                {
+                    field.SetValue(candidateSection, obj);
+                    if (!candidate.TrySetFieldModified(key, true))
+                    {
+                        throw new InvalidOperationException();
+                    }
+                }
+                catch (Exception)
+                {
+                    Logs.Error($"User '{session.User.UserID}' tried to set server setting '{key}' of type '{field.Field.FieldType.Name}' to '{val}', but type-assignment failed.");
+                    continue;
+                }
                 changed.Add(key);
             }
             if (pathsChanged)
@@ -238,6 +251,19 @@ public static class AdminAPI
                 return new JObject() { ["error"] = saveResult == SettingsSaveResult.Locked ? "Settings are locked." : "Failed to save server settings." };
             }
             Program.ServerSettings.Load(candidate.Save(true));
+            foreach (string key in changed)
+            {
+                try
+                {
+                    AutoConfiguration.Internal.SingleFieldData field = Program.ServerSettings.TryGetFieldInternalData(key, out _);
+                    field.OnChanged?.Invoke();
+                }
+                catch (Exception ex)
+                {
+                    Logs.Error($"Server settings were saved, but change notification for '{key}' failed: {ex.ReadableString()}");
+                    runtimeWarning = true;
+                }
+            }
             return null;
         });
         if (transactionError is not null)
@@ -245,7 +271,6 @@ public static class AdminAPI
             return transactionError;
         }
         Logs.Warning($"User {session.User.UserID} changed server settings: {changed.JoinString(", ")}");
-        bool runtimeWarning = false;
         if (pathsChanged)
         {
             try
