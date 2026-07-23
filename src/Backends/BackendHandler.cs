@@ -790,28 +790,114 @@ public class BackendHandler
         }
     }
 
-    /// <summary>Save the backends list to a file.</summary>
-    public void Save()
+    /// <summary>Builds the configured real-backend FDS snapshot.</summary>
+    private FDSSection BuildSaveFile()
+    {
+        FDSSection saveFile = new();
+        foreach (BackendData data in AllBackends.Values)
+        {
+            if (!data.AbstractBackend.IsReal)
+            {
+                continue;
+            }
+            FDSSection dataSection = new();
+            dataSection.Set("type", data.AbstractBackend.HandlerTypeData.ID);
+            dataSection.Set("title", data.AbstractBackend.Title);
+            dataSection.Set("enabled", data.AbstractBackend.IsEnabled);
+            dataSection.Set("settings", data.AbstractBackend.SettingsRaw.Save(true));
+            saveFile.Set(data.ID.ToString(), dataSection);
+        }
+        return saveFile;
+    }
+
+    /// <summary>Returns the saved result after acknowledging the captured generation.</summary>
+    private BackendSaveResult AcknowledgeSavedGeneration(long targetGeneration)
+    {
+        Volatile.Write(ref BackendSavedGeneration, targetGeneration);
+        return Volatile.Read(ref BackendMutationGeneration) == targetGeneration
+            ? BackendSaveResult.Saved
+            : BackendSaveResult.SavedWithNewerChangesPending;
+    }
+
+    /// <summary>Saves the backend file, optionally skipping clean state and isolating persistence failures.</summary>
+    private BackendSaveResult SaveInternal(bool onlyIfPending, bool isolateFailures)
     {
         lock (SaveLock)
         {
-            Logs.Info("Saving backends...");
-            FDSSection saveFile = new();
-            foreach (BackendData data in AllBackends.Values)
+            long savedGeneration = Volatile.Read(ref BackendSavedGeneration);
+            long targetGeneration = Volatile.Read(ref BackendMutationGeneration);
+            if (onlyIfPending && targetGeneration <= savedGeneration)
             {
-                if (!data.AbstractBackend.IsReal)
-                {
-                    continue;
-                }
-                FDSSection data_section = new();
-                data_section.Set("type", data.AbstractBackend.HandlerTypeData.ID);
-                data_section.Set("title", data.AbstractBackend.Title);
-                data_section.Set("enabled", data.AbstractBackend.IsEnabled);
-                data_section.Set("settings", data.AbstractBackend.SettingsRaw.Save(true));
-                saveFile.Set(data.ID.ToString(), data_section);
+                return BackendSaveResult.NoChanges;
             }
-            FDSUtility.SaveToFile(saveFile, SaveFilePath);
+            Logs.Info("Saving backends...");
+            FDSSection saveFile;
+            string serializedSaveFile;
+            try
+            {
+                saveFile = BuildSaveFile();
+                serializedSaveFile = saveFile.SaveToString();
+            }
+            catch (Exception ex)
+            {
+                if (!isolateFailures)
+                {
+                    throw;
+                }
+                Logs.Error($"Error serializing backend file: {ex.ReadableString()}");
+                return BackendSaveResult.Failed;
+            }
+            try
+            {
+                FDSUtility.SaveToFile(saveFile, SaveFilePath);
+            }
+            catch (Exception ex)
+            {
+                bool authoritativeFileMatches = false;
+                Exception verificationException = null;
+                try
+                {
+                    authoritativeFileMatches = File.Exists(SaveFilePath) && File.ReadAllText(SaveFilePath) == serializedSaveFile;
+                }
+                catch (Exception verificationEx)
+                {
+                    verificationException = verificationEx;
+                }
+                if (authoritativeFileMatches)
+                {
+                    BackendSaveResult result = AcknowledgeSavedGeneration(targetGeneration);
+                    Logs.Error($"Backends were committed, but backend journal cleanup reported an error: {ex.ReadableString()}");
+                    if (!isolateFailures)
+                    {
+                        throw;
+                    }
+                    return result;
+                }
+                Logs.Error($"Error saving backend file: {ex.ReadableString()}");
+                if (verificationException is not null)
+                {
+                    Logs.Error($"Error verifying authoritative backend file after the save failure: {verificationException.ReadableString()}");
+                }
+                if (!isolateFailures)
+                {
+                    throw;
+                }
+                return BackendSaveResult.Failed;
+            }
+            return AcknowledgeSavedGeneration(targetGeneration);
         }
+    }
+
+    /// <summary>Attempts to save pending backend changes and returns the authoritative persistence outcome.</summary>
+    public BackendSaveResult TrySavePending()
+    {
+        return SaveInternal(true, true);
+    }
+
+    /// <summary>Force-saves the backends list while preserving direct-caller exception behavior.</summary>
+    public void Save()
+    {
+        SaveInternal(false, false);
     }
 
     /// <summary>Tells all backends to load a given T2I model. Returns true if any backends have loaded it, or false if not.</summary>
