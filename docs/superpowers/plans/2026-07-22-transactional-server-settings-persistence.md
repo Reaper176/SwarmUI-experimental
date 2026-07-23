@@ -14,13 +14,13 @@
 
 **Approved design:** `docs/superpowers/specs/2026-07-22-transactional-server-settings-persistence-design.md` at commit `78bcca6f`.
 
-**Implementation outcome:** Production is implemented and statically reviewed; maintainer compilation and the named settings transaction/persistence matrix are pending.
+**Implementation outcome:** Production is implemented, statically reviewed, and maintainer-validated. On 2026-07-23, Reaper176 confirmed the normal build/launch workflow and the full thirteen-case settings transaction/persistence matrix.
 
 **Implementation provenance:** Original production commits are `37ae1982`, `761b101d`, `77e1ea66`, `ca6471a9`, `ac113e38`, and `0b31b59f`. Final-review corrections are `6dd92eed`, `6cc4a547`, `f13b1da7`, `9eba70d5`, and `4b54241a`, across `src/Core/Program.cs`, `src/WebAPI/AdminAPI.cs`, `src/Core/Installation.cs`, `src/WebAPI/BackendAPI.cs`, and `src/WebAPI/ClassicInpaintAPI.cs`.
 
 **Historical execution corrections:** The unchecked task steps and literal snippets below are retained as the execution record and must not be rerun as current instructions. Commit `77e1ea66` supersedes the original authorization/path literals with canonical `userauthorization.authorizationrequired` and case-insensitive path-trigger matching. Commit `6dd92eed` supersedes the original `Saved`/late-lock snippets: `Saved` means the authoritative file contains the intended serialization, including a verified committed write whose journal cleanup threw, and `--lock_settings` is assigned before load/normalization. Commit `6cc4a547` supersedes candidate assignment that could invoke shared tentative callbacks: assignment suppresses `OnChanged`, then guarded committed callbacks run after save/publication and contribute to the fixed success warning.
 
-Commit `f13b1da7` supersedes Task 4's literal live snapshot/rollback: installer selections are validation-only before backend work and merge into a fresh latest-live candidate at final save. Commits `9eba70d5` and `4b54241a` supersede Task 5's unlocked status/consumer snippets: the shared asynchronous IOPaint lifecycle semaphore covers dedicated mutations, generic `iopaint.*` settings edits, status, capability probes, and active Classic Inpaint execution; inputs are captured before awaits, lock order is lifecycle then settings transaction, and no destructive compensation is added. Fresh whole-project specification review and final quality re-review approved this corrected source state. No build, test, launcher, server, browser, backend, installer, or runtime validation was performed; maintainer compilation and the named matrix remain pending.
+Commit `f13b1da7` supersedes Task 4's literal live snapshot/rollback: installer selections are validation-only before backend work and merge into a fresh latest-live candidate at final save. Commits `9eba70d5` and `4b54241a` supersede Task 5's unlocked status/consumer snippets: the shared asynchronous IOPaint lifecycle semaphore covers dedicated mutations, generic `iopaint.*` settings edits, status, capability probes, and active Classic Inpaint execution; inputs are captured before awaits, lock order is lifecycle then settings transaction, and no destructive compensation is added. Fresh whole-project specification review and final quality re-review approved this corrected source state. On 2026-07-23, maintainer Reaper176 confirmed the normal build/launch workflow and the named thirteen-case matrix.
 
 ---
 
@@ -712,5 +712,7 @@ git commit -m "docs: record transactional server settings persistence"
 Ask maintainer Reaper176 to run the normal build/launch workflow and all thirteen cases from the approved design: valid/mixed edits; mixed invalid paths; unsupported fields; authorization lockout; locked APIs; storage failure/recovery; extension operations; IOPaint operations; startup/installation failure; concurrent mutations; model/runtime side effects; post-commit warning paths; and separate marker failure.
 
 Do not mark rank 4 maintainer-validated or advance the roadmap until confirmation.
+
+**Historical outcome:** Reaper176 supplied that confirmation on 2026-07-23. Rank 4 is maintainer-validated and the audit roadmap advances to rank 5; the unchecked steps above remain only as execution history.
 
 **Rollback:** retain the observable owner if any caller depends on it; do not restore false durable-success responses, partial `ChangeServerSettings` publication, destructive directory/environment compensation, or detailed exception transport.

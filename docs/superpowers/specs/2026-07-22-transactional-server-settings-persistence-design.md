@@ -2,7 +2,7 @@
 
 **Date:** 2026-07-22
 
-**Status:** Implemented; awaiting maintainer validation
+**Status:** Implemented and maintainer-validated
 
 ## Goal
 
@@ -187,11 +187,11 @@ Repository policy prohibits agents from running builds, automated tests, browser
 10. prove Core F7 model-catalog coordination, backend persistence, user settings, and external filesystem compensation remain outside scope; and
 11. run repository-permitted exact-scope, committed-range, whitespace, and static-search checks without inspecting excluded backup or user-data paths.
 
-Fresh whole-project specification and quality re-reviews approved the corrected production state. No build, test, launcher, server, browser, backend, installer, or runtime validation was performed; maintainer compilation and the full matrix below remain pending.
+Fresh whole-project specification and quality re-reviews approved the corrected production state. On 2026-07-23, maintainer Reaper176 confirmed the normal build/launch workflow and the full thirteen-case matrix below.
 
-## Maintainer Validation
+## Maintainer Validation — Completed
 
-Maintainer Reaper176 should use the normal build/launch workflow and validate:
+Maintainer Reaper176 confirmed the normal build/launch workflow and validated:
 
 1. valid single and mixed server-setting edits;
 2. a mixed non-path plus invalid-path request, confirming nothing from the request remains in memory, editor reload, or restart state;
