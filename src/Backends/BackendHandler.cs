@@ -42,8 +42,50 @@ public class BackendHandler
     /// <summary>Value to ensure unique IDs are given to new non-real backends.</summary>
     public int LastNonrealBackendID = -1;
 
-    /// <summary>If true, then at some point backends were edited, and re-saving is needed.</summary>
-    public bool BackendsEdited = false;
+    /// <summary>The latest generation containing a persistence-relevant backend mutation.</summary>
+    private long BackendMutationGeneration = 0;
+
+    /// <summary>The latest backend mutation generation represented by the authoritative save file.</summary>
+    private long BackendSavedGeneration = 0;
+
+    /// <summary>Whether persistence-relevant backend mutations are waiting to be saved.</summary>
+    public bool BackendsEdited
+    {
+        get
+        {
+            long savedGeneration = Volatile.Read(ref BackendSavedGeneration);
+            return Volatile.Read(ref BackendMutationGeneration) > savedGeneration;
+        }
+        set
+        {
+            if (value)
+            {
+                MarkBackendsEdited();
+            }
+        }
+    }
+
+    /// <summary>Publishes a persistence-relevant backend mutation after it becomes visible.</summary>
+    internal void MarkBackendsEdited()
+    {
+        Interlocked.Increment(ref BackendMutationGeneration);
+    }
+
+    /// <summary>Possible outcomes of an observable configured-backend save request.</summary>
+    public enum BackendSaveResult
+    {
+        /// <summary>No backend mutations are waiting to be saved.</summary>
+        NoChanges,
+
+        /// <summary>The captured generation was saved and no newer mutation is pending.</summary>
+        Saved,
+
+        /// <summary>The captured generation was saved, but a newer mutation remains pending.</summary>
+        SavedWithNewerChangesPending,
+
+        /// <summary>The authoritative backend file was not confirmed and nothing was acknowledged.</summary>
+        Failed
+    }
 
     /// <summary>The path to where the backend list is saved.</summary>
     public string SaveFilePath = "Data/Backends.fds";
