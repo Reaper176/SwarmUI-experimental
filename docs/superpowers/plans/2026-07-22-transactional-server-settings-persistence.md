@@ -696,7 +696,7 @@ git status --short --branch --untracked-files=no
 git log --oneline --decorate -12
 ```
 
-Verify the committed range changes only the four approved production files and three approved documents. Confirm the four tracked user modifications remain untouched. Do not inspect the backup directory.
+Verify the committed range changes only the five approved production files—`src/Core/Program.cs`, `src/WebAPI/AdminAPI.cs`, `src/Core/Installation.cs`, `src/WebAPI/BackendAPI.cs`, and `src/WebAPI/ClassicInpaintAPI.cs`—and three approved documents. Confirm the four tracked user modifications remain untouched. Do not inspect the backup directory.
 
 - [ ] **Step 5: Commit the implementation record**
 
