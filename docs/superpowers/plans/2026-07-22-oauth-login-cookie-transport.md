@@ -16,6 +16,8 @@
 
 **Implementation outcome:** Production is implemented, statically reviewed, and maintainer-validated for the named HTTP/HTTPS/proxy authentication matrix.
 
+**Historical plan note:** All unchecked tasks below are the completed pre-validation implementation plan retained only as an execution/provenance record. Their pending-validation statuses, guards, commit-range assumptions, and directions not to advance rank 4 are superseded by the validated outcome above and must not be rerun as current instructions. The checkboxes remain unchanged because they are historical, not a current tracker; no independent checkbox completion is claimed.
+
 ---
 
 ### Task 1: Align the Google OAuth cookie transport flag
