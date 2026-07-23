@@ -892,6 +892,39 @@ public static class AdminAPI
         return new JObject() { ["success"] = true, ["result"] = fails.Count > 0 ? fails.JoinString("\n") + "\nRestarting..." : "Update successful. Restarting... (please wait a moment, then refresh the page)" };
     }
 
+    /// <summary>Runs a disabled-extension settings mutation and restores the complete list if it is rejected or persistence fails.</summary>
+    private static (SettingsSaveResult SaveResult, bool Changed) SaveDisabledExtensionsChange(Func<bool> mutation)
+    {
+        return Program.RunSettingsTransaction(() =>
+        {
+            if (Program.LockSettings)
+            {
+                return (SettingsSaveResult.Locked, false);
+            }
+            List<string> original = [.. Program.ServerSettings.DisabledExtensions];
+            bool changed = mutation();
+            if (!changed)
+            {
+                Program.ServerSettings.DisabledExtensions.Clear();
+                Program.ServerSettings.DisabledExtensions.AddRange(original);
+                return (SettingsSaveResult.Saved, false);
+            }
+            SettingsSaveResult result = Program.TrySaveSettingsFile();
+            if (result != SettingsSaveResult.Saved)
+            {
+                Program.ServerSettings.DisabledExtensions.Clear();
+                Program.ServerSettings.DisabledExtensions.AddRange(original);
+            }
+            return (result, true);
+        });
+    }
+
+    /// <summary>Builds the fixed API error for a failed settings persistence prerequisite.</summary>
+    private static JObject SettingsSaveError(SettingsSaveResult result)
+    {
+        return new JObject() { ["error"] = result == SettingsSaveResult.Locked ? "Settings are locked." : "Failed to save server settings." };
+    }
+
     [API.APIDescription("Installs an extension from the known extensions list. Does not trigger a restart.",
         """
             "success": true
@@ -904,16 +937,26 @@ public static class AdminAPI
         {
             return new JObject() { ["error"] = "Unknown extension." };
         }
-        Program.Extensions.CleanDisabledExtensions();
         foreach (string folderName in ext.FolderNames)
         {
             if (Directory.Exists($"./src/Extensions/{folderName}"))
             {
                 return new JObject() { ["error"] = "Extension already installed." };
             }
-            Program.Extensions.RemoveDisabledExtensionSetting(folderName);
         }
-        Program.SaveSettingsFile();
+        (SettingsSaveResult saveResult, _) = SaveDisabledExtensionsChange(() =>
+        {
+            Program.Extensions.CleanDisabledExtensions();
+            foreach (string folderName in ext.FolderNames)
+            {
+                Program.Extensions.RemoveDisabledExtensionSetting(folderName);
+            }
+            return true;
+        });
+        if (saveResult != SettingsSaveResult.Saved)
+        {
+            return SettingsSaveError(saveResult);
+        }
         await Utilities.RunGitProcess($"clone {ext.URL}", Path.GetFullPath("./src/Extensions"));
         return new JObject() { ["success"] = true };
     }
@@ -926,16 +969,10 @@ public static class AdminAPI
         [API.APIParameter("The extension name (disable) or folder name (enable).")] string extensionName,
         [API.APIParameter("True to enable the extension, false to disable it.")] bool enabled)
     {
-        if (enabled)
+        Extension extension = null;
+        if (!enabled)
         {
-            if (!Program.Extensions.RemoveDisabledExtensionSetting(extensionName))
-            {
-                return new JObject() { ["error"] = "Unknown extension." };
-            }
-        }
-        else
-        {
-            Extension extension = Program.Extensions.Extensions.FirstOrDefault(e => e.ExtensionName == extensionName);
+            extension = Program.Extensions.Extensions.FirstOrDefault(e => e.ExtensionName == extensionName);
             if (extension is null)
             {
                 return new JObject() { ["error"] = "Unknown extension." };
@@ -944,12 +981,21 @@ public static class AdminAPI
             {
                 return new JObject() { ["error"] = "Core extensions cannot be enabled/disabled." };
             }
-            if (!Program.Extensions.AddDisabledExtensionSetting(ExtensionsManager.GetFolderNameFromPath(extension.FilePath)))
-            {
-                return new JObject() { ["error"] = "Extension is already disabled." };
-            }
         }
-        Program.SaveSettingsFile();
+        (SettingsSaveResult saveResult, bool changed) = SaveDisabledExtensionsChange(() =>
+        {
+            return enabled
+                ? Program.Extensions.RemoveDisabledExtensionSetting(extensionName)
+                : Program.Extensions.AddDisabledExtensionSetting(ExtensionsManager.GetFolderNameFromPath(extension.FilePath));
+        });
+        if (saveResult != SettingsSaveResult.Saved)
+        {
+            return SettingsSaveError(saveResult);
+        }
+        if (!changed)
+        {
+            return new JObject() { ["error"] = enabled ? "Unknown extension." : "Extension is already disabled." };
+        }
         Logs.Debug($"User {session.User.UserID} {(enabled ? "enabled" : "disabled")} extension '{extensionName}'. Restart required to apply.");
         return new JObject() { ["success"] = true };
     }
@@ -989,11 +1035,18 @@ public static class AdminAPI
         string folder = ext?.FilePath;
         if (folder is null)
         {
-            if (!Program.Extensions.RemoveDisabledExtensionSetting(extensionName))
+            (SettingsSaveResult saveResult, bool removed) = SaveDisabledExtensionsChange(() =>
+            {
+                return Program.Extensions.RemoveDisabledExtensionSetting(extensionName);
+            });
+            if (saveResult != SettingsSaveResult.Saved)
+            {
+                return SettingsSaveError(saveResult);
+            }
+            if (!removed)
             {
                 return new JObject() { ["error"] = "Unknown extension." };
             }
-            Program.SaveSettingsFile();
             folder = $"src/Extensions/{extensionName}/";
         }
         string path = Path.GetFullPath($"{Environment.CurrentDirectory}/{folder}");
