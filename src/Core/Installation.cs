@@ -1,3 +1,4 @@
+using FreneticUtilities.FreneticDataSyntax;
 using FreneticUtilities.FreneticExtensions;
 using Newtonsoft.Json.Linq;
 using SwarmUI.Backends;
@@ -288,17 +289,32 @@ public class Installation
         File.WriteAllText(path, content);
     }
 
-    /// <summary>Apply changes to server settings.</summary>
+    /// <summary>Applies and durably saves final installation settings.</summary>
     public static void SettingsApply()
     {
-        Program.ServerSettings.IsInstalled = true;
-        Program.ServerSettings.InstallDate = $"{DateTimeOffset.Now:yyyy-MM-dd}";
-        Program.ServerSettings.InstallVersion = Utilities.Version;
-        if (Program.ServerSettings.LaunchMode == "webinstall")
+        SettingsSaveResult saveResult = Program.RunSettingsTransaction(() =>
         {
-            Program.ServerSettings.LaunchMode = "web";
+            FDSSection original = Program.ServerSettings.Save(true);
+            Program.ServerSettings.IsInstalled = true;
+            Program.ServerSettings.InstallDate = $"{DateTimeOffset.Now:yyyy-MM-dd}";
+            Program.ServerSettings.InstallVersion = Utilities.Version;
+            if (Program.ServerSettings.LaunchMode == "webinstall")
+            {
+                Program.ServerSettings.LaunchMode = "web";
+            }
+            SettingsSaveResult result = Program.TrySaveSettingsFile();
+            if (result != SettingsSaveResult.Saved)
+            {
+                Program.ServerSettings.Load(original);
+            }
+            return result;
+        });
+        if (saveResult != SettingsSaveResult.Saved)
+        {
+            throw new SwarmReadableErrorException(saveResult == SettingsSaveResult.Locked
+                ? "Installation settings are locked and could not be saved."
+                : "Installation settings could not be saved.");
         }
-        Program.SaveSettingsFile();
     }
 
     /// <summary>Main install function entry point.</summary>
