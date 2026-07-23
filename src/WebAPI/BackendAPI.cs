@@ -151,6 +151,12 @@ public class BackendAPI
     public static string GetIOPaintExePath(Settings.IOPaintServiceData settings)
     {
         string venvPath = string.IsNullOrWhiteSpace(settings.VenvPath) ? GetDefaultIOPaintVenvPath() : settings.VenvPath;
+        return GetIOPaintExePath(venvPath);
+    }
+
+    /// <summary>Gets the managed IOPaint executable path for a captured virtual-environment path.</summary>
+    private static string GetIOPaintExePath(string venvPath)
+    {
         string subPath = RuntimeInformation.IsOSPlatform(OSPlatform.Windows) ? "Scripts/iopaint.exe" : "bin/iopaint";
         return Path.Combine(venvPath, subPath);
     }
@@ -231,12 +237,38 @@ public class BackendAPI
 
     public static async Task<JObject> BuildIOPaintServiceStatus()
     {
-        Settings.IOPaintServiceData settings = Program.ServerSettings.IOPaint;
-        string venvPath = string.IsNullOrWhiteSpace(settings.VenvPath) ? GetDefaultIOPaintVenvPath() : settings.VenvPath;
-        string configuredBootstrapPython = string.IsNullOrWhiteSpace(settings.BootstrapPython) ? GetDefaultIOPaintBootstrapPython() : settings.BootstrapPython;
-        string bootstrapPython = await ResolveEffectiveIOPaintBootstrapPython(configuredBootstrapPython, Path.GetDirectoryName(venvPath) ?? Program.DataDir);
-        string pythonPath = GetIOPaintPythonPath(settings);
-        string exePath = GetIOPaintExePath(settings);
+        await IOPaintLifecycleSemaphore.WaitAsync(Program.GlobalProgramCancel);
+        try
+        {
+            return await BuildIOPaintServiceStatusUnlocked();
+        }
+        finally
+        {
+            IOPaintLifecycleSemaphore.Release();
+        }
+    }
+
+    /// <summary>Builds IOPaint status while the caller holds the lifecycle semaphore.</summary>
+    private static async Task<JObject> BuildIOPaintServiceStatusUnlocked()
+    {
+        bool enabled;
+        string configuredVenvPath;
+        string configuredBootstrapPython;
+        string device;
+        string modelCachePath;
+        {
+            Settings.IOPaintServiceData currentSettings = Program.ServerSettings.IOPaint;
+            enabled = currentSettings.Enabled;
+            configuredVenvPath = currentSettings.VenvPath;
+            configuredBootstrapPython = currentSettings.BootstrapPython;
+            device = currentSettings.Device;
+            modelCachePath = currentSettings.ModelCachePath;
+        }
+        string venvPath = string.IsNullOrWhiteSpace(configuredVenvPath) ? GetDefaultIOPaintVenvPath() : configuredVenvPath;
+        string bootstrapPythonInput = string.IsNullOrWhiteSpace(configuredBootstrapPython) ? GetDefaultIOPaintBootstrapPython() : configuredBootstrapPython;
+        string bootstrapPython = await ResolveEffectiveIOPaintBootstrapPython(bootstrapPythonInput, Path.GetDirectoryName(venvPath) ?? Program.DataDir);
+        string pythonPath = GetIOPaintPythonPath(venvPath);
+        string exePath = GetIOPaintExePath(venvPath);
         bool pythonExists = File.Exists(pythonPath);
         bool exeExists = File.Exists(exePath);
         string pythonVersion = pythonExists ? await GetPythonVersionString(pythonPath, Path.GetDirectoryName(pythonPath)) : null;
@@ -265,15 +297,15 @@ public class BackendAPI
         }
         return new JObject()
         {
-            ["enabled"] = settings.Enabled,
+            ["enabled"] = enabled,
             ["venv_path"] = venvPath,
             ["bootstrap_python"] = bootstrapPython,
             ["python_path"] = pythonPath,
             ["python_version"] = pythonVersion ?? "",
             ["python_compatible"] = pythonCompatible,
             ["exe_path"] = exePath,
-            ["device"] = settings.Device,
-            ["model_cache_path"] = settings.ModelCachePath ?? "",
+            ["device"] = device,
+            ["model_cache_path"] = modelCachePath ?? "",
             ["python_exists"] = pythonExists,
             ["installed"] = exeExists,
             ["ready"] = ready,
@@ -353,7 +385,7 @@ public class BackendAPI
             {
                 return IOPaintSettingsSaveError(saveResult);
             }
-            return await BuildIOPaintServiceStatus();
+            return await BuildIOPaintServiceStatusUnlocked();
         }
         finally
         {
@@ -437,7 +469,7 @@ public class BackendAPI
             {
                 return IOPaintSettingsSaveError(saveResult);
             }
-            return await BuildIOPaintServiceStatus();
+            return await BuildIOPaintServiceStatusUnlocked();
         }
         finally
         {
@@ -473,7 +505,7 @@ public class BackendAPI
             {
                 return IOPaintSettingsSaveError(saveResult);
             }
-            return await BuildIOPaintServiceStatus();
+            return await BuildIOPaintServiceStatusUnlocked();
         }
         finally
         {
@@ -500,7 +532,7 @@ public class BackendAPI
             {
                 return IOPaintSettingsSaveError(saveResult);
             }
-            return await BuildIOPaintServiceStatus();
+            return await BuildIOPaintServiceStatusUnlocked();
         }
         finally
         {

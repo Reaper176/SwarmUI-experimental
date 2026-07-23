@@ -94,8 +94,23 @@ public static class ClassicInpaintAPI
 
     public static async Task<HashSet<string>> GetSupportedClassicInpaintBackends()
     {
+        await BackendAPI.IOPaintLifecycleSemaphore.WaitAsync(Program.GlobalProgramCancel);
+        try
+        {
+            string[] commandCandidates = GetIOPaintCommandCandidates();
+            return await GetSupportedClassicInpaintBackendsUnlocked(commandCandidates);
+        }
+        finally
+        {
+            BackendAPI.IOPaintLifecycleSemaphore.Release();
+        }
+    }
+
+    /// <summary>Probes Classic Inpaint capabilities while the caller holds the IOPaint lifecycle semaphore.</summary>
+    private static async Task<HashSet<string>> GetSupportedClassicInpaintBackendsUnlocked(string[] commandCandidates)
+    {
         HashSet<string> supported = ["lama", "mat"];
-        foreach (string candidate in GetIOPaintCommandCandidates())
+        foreach (string candidate in commandCandidates)
         {
             bool isDirectIopaint = Path.GetFileName(candidate).ToLowerInvariant().StartsWith("iopaint");
             string[] args = isDirectIopaint ? ["run", "--help"] : ["-m", "iopaint", "run", "--help"];
@@ -128,9 +143,34 @@ public static class ClassicInpaintAPI
 
     public static async Task<JObject> ClassicInpaint(Session session, string imageData, string maskData, string backend = "lama", int feather = 8, int expandMask = 4)
     {
+        await BackendAPI.IOPaintLifecycleSemaphore.WaitAsync(Program.GlobalProgramCancel);
+        try
+        {
+            return await ClassicInpaintUnlocked(session, imageData, maskData, backend, feather, expandMask);
+        }
+        finally
+        {
+            BackendAPI.IOPaintLifecycleSemaphore.Release();
+        }
+    }
+
+    /// <summary>Runs a Classic Inpaint request while the caller holds the IOPaint lifecycle semaphore.</summary>
+    private static async Task<JObject> ClassicInpaintUnlocked(Session session, string imageData, string maskData, string backend, int feather, int expandMask)
+    {
+        string[] commandCandidates = GetIOPaintCommandCandidates();
+        bool enabled;
+        string configuredDevice;
+        string modelCachePath;
+        {
+            Settings.IOPaintServiceData currentSettings = Program.ServerSettings.IOPaint;
+            enabled = currentSettings.Enabled;
+            configuredDevice = currentSettings.Device;
+            modelCachePath = currentSettings.ModelCachePath;
+        }
+        string device = string.IsNullOrWhiteSpace(configuredDevice) ? "cpu" : configuredDevice;
         Logs.Info($"ClassicInpaint request received from user '{session.User?.UserID ?? "unknown"}' with backend '{backend}', feather={feather}, expandMask={expandMask}, imageBytes={imageData?.Length ?? 0}, maskBytes={maskData?.Length ?? 0}.");
         backend = backend.ToLowerInvariant();
-        HashSet<string> supportedBackends = await GetSupportedClassicInpaintBackends();
+        HashSet<string> supportedBackends = await GetSupportedClassicInpaintBackendsUnlocked(commandCandidates);
         if (!supportedBackends.Contains(backend))
         {
             return new JObject() { ["error"] = $"Classic Inpaint backend '{backend}' is not supported by the installed IOPaint version. Supported backends: {supportedBackends.OrderBy(x => x).JoinString(", ")}" };
@@ -139,7 +179,7 @@ public static class ClassicInpaintAPI
         {
             return new JObject() { ["error"] = "Missing image or mask data." };
         }
-        if (!Program.ServerSettings.IOPaint.Enabled)
+        if (!enabled)
         {
             return new JObject() { ["error"] = "IOPaint is not enabled. Configure it under Server > Backends first." };
         }
@@ -159,21 +199,20 @@ public static class ClassicInpaintAPI
             PrepareClassicInpaintMask(maskImage, Math.Max(0, expandMask), Math.Max(0, feather));
             maskImage.SaveAsPng(maskPath);
             List<string[]> commands = [];
-            string device = string.IsNullOrWhiteSpace(Program.ServerSettings.IOPaint.Device) ? "cpu" : Program.ServerSettings.IOPaint.Device;
             commands.Add(["run", "--model", backend, "--device", device, "--image", imagePath, "--mask", maskPath, "--output", outputDir]);
             commands.Add(["run", "--model", backend, "--device", device, "--input", imagePath, "--mask", maskPath, "--output", outputDir]);
-            if (!string.IsNullOrWhiteSpace(Program.ServerSettings.IOPaint.ModelCachePath))
+            if (!string.IsNullOrWhiteSpace(modelCachePath))
             {
                 List<string[]> updatedCommands = [];
                 foreach (string[] command in commands)
                 {
-                    updatedCommands.Add([.. command, "--model-dir", Program.ServerSettings.IOPaint.ModelCachePath]);
+                    updatedCommands.Add([.. command, "--model-dir", modelCachePath]);
                 }
                 commands = updatedCommands;
             }
             List<string> errors = [];
             bool producedOutput = false;
-            foreach (string candidate in GetIOPaintCommandCandidates())
+            foreach (string candidate in commandCandidates)
             {
                 foreach (string[] args in commands)
                 {
