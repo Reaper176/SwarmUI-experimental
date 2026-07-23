@@ -417,7 +417,6 @@ public class BackendHandler
     /// <summary>Adds a new backend of the given type, and returns its data. Note that the backend will not be initialized at first.</summary>
     public BackendData AddNewOfType(BackendType type, AutoConfiguration config = null)
     {
-        BackendsEdited = true;
         BackendData data = RawInstantiate(type);
         data.AbstractBackend.AbstractBackendData = data;
         data.AbstractBackend.SettingsRaw = config ?? (Activator.CreateInstance(type.SettingsClass) as AutoConfiguration);
@@ -427,6 +426,7 @@ public class BackendHandler
             data.ID = LastBackendID++;
             AllBackends.TryAdd(data.ID, data);
         }
+        MarkBackendsEdited();
         DoInitBackend(data);
         NewBackendInitSignal.Set();
         return data;
@@ -476,10 +476,13 @@ public class BackendHandler
     /// <summary>Shutdown and delete a given backend.</summary>
     public async Task<bool> DeleteById(int id)
     {
-        BackendsEdited = true;
         if (!AllBackends.TryRemove(id, out BackendData data))
         {
             return false;
+        }
+        if (data.AbstractBackend.IsReal)
+        {
+            MarkBackendsEdited();
         }
         await ShutdownBackendCleanly(data);
         ReassignLoadedModelsList();
@@ -494,23 +497,35 @@ public class BackendHandler
             return null;
         }
         await ShutdownBackendCleanly(data);
-        if (new_id >= 0)
+        bool persistenceMutationAttempted = false;
+        try
         {
-            if (!AllBackends.TryAdd(new_id, data))
+            if (new_id >= 0)
             {
-                throw new SwarmReadableErrorException($"Backend new ID {new_id} is already in use!");
+                if (!AllBackends.TryAdd(new_id, data))
+                {
+                    throw new SwarmReadableErrorException($"Backend new ID {new_id} is already in use!");
+                }
+                persistenceMutationAttempted = true;
+                data.ID = new_id;
+                AllBackends.TryRemove(id, out _);
             }
-            data.ID = new_id;
-            AllBackends.TryRemove(id, out _);
+            newSettings = data.AbstractBackend.SettingsRaw.ExcludeSecretValuesThatMatch(newSettings, "\t<secret>");
+            persistenceMutationAttempted = true;
+            data.AbstractBackend.SettingsRaw.Load(newSettings);
+            Logs.Verbose($"Settings applied, now: {data.AbstractBackend.SettingsRaw.Save(true)}");
+            if (title is not null)
+            {
+                data.AbstractBackend.Title = title;
+            }
         }
-        newSettings = data.AbstractBackend.SettingsRaw.ExcludeSecretValuesThatMatch(newSettings, "\t<secret>");
-        data.AbstractBackend.SettingsRaw.Load(newSettings);
-        Logs.Verbose($"Settings applied, now: {data.AbstractBackend.SettingsRaw.Save(true)}");
-        if (title is not null)
+        finally
         {
-            data.AbstractBackend.Title = title;
+            if (persistenceMutationAttempted && data.AbstractBackend.IsReal)
+            {
+                MarkBackendsEdited();
+            }
         }
-        BackendsEdited = true;
         data.ModCount++;
         DoInitBackend(data);
         return data;
