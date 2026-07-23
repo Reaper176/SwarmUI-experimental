@@ -4,7 +4,7 @@
 
 **Goal:** Make all maintained server-settings writes observable and make `ChangeServerSettings` publish accepted values only as one validated, durable candidate.
 
-**Architecture:** Add a result-returning settings persistence owner and serialized transaction callback in `Program`, while retaining the public void compatibility facade. `ChangeServerSettings` validates and saves a separate `Settings` candidate before publishing it; extension, installation, and IOPaint callers snapshot their affected settings and roll back on failed persistence.
+**Architecture:** Add a result-returning settings persistence owner and serialized transaction callback in `Program`, while retaining the public void compatibility facade. `ChangeServerSettings` validates and saves a separate `Settings` candidate before publishing it and running guarded committed callbacks; extension and IOPaint mutations restore affected snapshots on failed persistence, installation merges its choices into a fresh latest-live candidate at final save, and one asynchronous IOPaint lifecycle owner protects mutations and active consumers.
 
 **Tech Stack:** C# 12, .NET 8, ASP.NET Core API handlers, FreneticUtilities `AutoConfiguration`/FDS persistence, Newtonsoft.Json.
 
@@ -16,7 +16,11 @@
 
 **Implementation outcome:** Production is implemented and statically reviewed; maintainer compilation and the named settings transaction/persistence matrix are pending.
 
-**Implementation provenance:** Corrective commit `77e1ea66` uses canonical `userauthorization.authorizationrequired` and case-insensitive path-trigger matching, superseding those two literal snippets below for historical execution accuracy.
+**Implementation provenance:** Original production commits are `37ae1982`, `761b101d`, `77e1ea66`, `ca6471a9`, `ac113e38`, and `0b31b59f`. Final-review corrections are `6dd92eed`, `6cc4a547`, `f13b1da7`, `9eba70d5`, and `4b54241a`, across `src/Core/Program.cs`, `src/WebAPI/AdminAPI.cs`, `src/Core/Installation.cs`, `src/WebAPI/BackendAPI.cs`, and `src/WebAPI/ClassicInpaintAPI.cs`.
+
+**Historical execution corrections:** The unchecked task steps and literal snippets below are retained as the execution record and must not be rerun as current instructions. Commit `77e1ea66` supersedes the original authorization/path literals with canonical `userauthorization.authorizationrequired` and case-insensitive path-trigger matching. Commit `6dd92eed` supersedes the original `Saved`/late-lock snippets: `Saved` means the authoritative file contains the intended serialization, including a verified committed write whose journal cleanup threw, and `--lock_settings` is assigned before load/normalization. Commit `6cc4a547` supersedes candidate assignment that could invoke shared tentative callbacks: assignment suppresses `OnChanged`, then guarded committed callbacks run after save/publication and contribute to the fixed success warning.
+
+Commit `f13b1da7` supersedes Task 4's literal live snapshot/rollback: installer selections are validation-only before backend work and merge into a fresh latest-live candidate at final save. Commits `9eba70d5` and `4b54241a` supersede Task 5's unlocked status/consumer snippets: the shared asynchronous IOPaint lifecycle semaphore covers dedicated mutations, generic `iopaint.*` settings edits, status, capability probes, and active Classic Inpaint execution; inputs are captured before awaits, lock order is lifecycle then settings transaction, and no destructive compensation is added. Fresh whole-project specification review and final quality re-review approved this corrected source state. No build, test, launcher, server, browser, backend, installer, or runtime validation was performed; maintainer compilation and the named matrix remain pending.
 
 ---
 
