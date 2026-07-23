@@ -1,4 +1,3 @@
-using FreneticUtilities.FreneticDataSyntax;
 using FreneticUtilities.FreneticExtensions;
 using Newtonsoft.Json.Linq;
 using SwarmUI.Backends;
@@ -40,13 +39,12 @@ public class Installation
         InstallSocket.SendJson(new JObject() { ["progress"] = progress, ["total"] = total, ["steps"] = StepsThusFar, ["total_steps"] = TotalSteps, ["per_second"] = perSec }, API.WebsocketTimeout).Wait();
     }
 
-    /// <summary>Configure the theme during installation.</summary>
+    /// <summary>Validate and announce the theme selected during installation.</summary>
     public static async Task Theme(string theme)
     {
         if (Program.Web.RegisteredThemes.ContainsKey(theme))
         {
             await Output($"Setting theme to {theme}.");
-            Program.ServerSettings.DefaultUser.Theme = theme;
         }
         else
         {
@@ -55,28 +53,22 @@ public class Installation
         }
     }
 
-    /// <summary>Configure the "installed for" setting during installation.</summary>
+    /// <summary>Resolve the install-type-specific output and host setting.</summary>
+    private static (string Message, string Host) GetInstalledForConfiguration(string installedFor)
+    {
+        return installedFor switch
+        {
+            "just_self" => ("Configuring settings as 'just yourself' install.", "localhost"),
+            "just_self_lan" => ("Configuring settings as 'just yourself (LAN)' install.", RuntimeInformation.IsOSPlatform(OSPlatform.Windows) ? "*" : "0.0.0.0"),
+            _ => throw new SwarmUserErrorException($"Invalid install type '{installedFor}'!")
+        };
+    }
+
+    /// <summary>Validate and announce the "installed for" selection during installation.</summary>
     public static async Task InstalledFor(string installed_for)
     {
-        switch (installed_for)
-        {
-            case "just_self":
-                await Output("Configuring settings as 'just yourself' install.");
-                Program.ServerSettings.Network.Host = "localhost";
-                Program.ServerSettings.Network.Port = 7801;
-                Program.ServerSettings.Network.PortCanChange = true;
-                Program.ServerSettings.LaunchMode = "web"; // TODO: Electron?
-                break;
-            case "just_self_lan":
-                await Output("Configuring settings as 'just yourself (LAN)' install.");
-                Program.ServerSettings.Network.Host = RuntimeInformation.IsOSPlatform(OSPlatform.Windows) ? "*" : "0.0.0.0";
-                Program.ServerSettings.Network.Port = 7801;
-                Program.ServerSettings.Network.PortCanChange = true;
-                Program.ServerSettings.LaunchMode = "web";
-                break;
-            default:
-                throw new SwarmUserErrorException($"Invalid install type '{installed_for}'!");
-        }
+        (string Message, string Host) configuration = GetInstalledForConfiguration(installed_for);
+        await Output(configuration.Message);
     }
 
     /// <summary>Configure the backend as ComfyUI specifically for Windows during installation.</summary>
@@ -289,23 +281,50 @@ public class Installation
         File.WriteAllText(path, content);
     }
 
-    /// <summary>Applies and durably saves final installation settings.</summary>
+    /// <summary>Applies and durably saves final installation metadata for the current settings.</summary>
     public static void SettingsApply()
+    {
+        FinalizeSettings(null);
+    }
+
+    /// <summary>Applies installer-owned choices and durably saves final installation settings.</summary>
+    private static void SettingsApply(string theme, string installedFor, string language)
+    {
+        FinalizeSettings(candidate =>
+        {
+            (string Message, string Host) configuration = GetInstalledForConfiguration(installedFor);
+            candidate.DefaultUser.Theme = theme;
+            candidate.DefaultUser.Language = language;
+            candidate.Network.Host = configuration.Host;
+            candidate.Network.Port = 7801;
+            candidate.Network.PortCanChange = true;
+            candidate.LaunchMode = "web"; // TODO: Electron?
+        });
+    }
+
+    /// <summary>Commits final installation settings from a fresh snapshot of the current live settings.</summary>
+    private static void FinalizeSettings(Action<Settings> applyInstallerChoices)
     {
         SettingsSaveResult saveResult = Program.RunSettingsTransaction(() =>
         {
-            FDSSection original = Program.ServerSettings.Save(true);
-            Program.ServerSettings.IsInstalled = true;
-            Program.ServerSettings.InstallDate = $"{DateTimeOffset.Now:yyyy-MM-dd}";
-            Program.ServerSettings.InstallVersion = Utilities.Version;
-            if (Program.ServerSettings.LaunchMode == "webinstall")
+            if (Program.LockSettings)
             {
-                Program.ServerSettings.LaunchMode = "web";
+                return SettingsSaveResult.Locked;
             }
-            SettingsSaveResult result = Program.TrySaveSettingsFile();
-            if (result != SettingsSaveResult.Saved)
+            Settings candidate = new();
+            candidate.Load(Program.ServerSettings.Save(true));
+            applyInstallerChoices?.Invoke(candidate);
+            candidate.IsInstalled = true;
+            candidate.InstallDate = $"{DateTimeOffset.Now:yyyy-MM-dd}";
+            candidate.InstallVersion = Utilities.Version;
+            if (candidate.LaunchMode == "webinstall")
             {
-                Program.ServerSettings.Load(original);
+                candidate.LaunchMode = "web";
+            }
+            SettingsSaveResult result = Program.TrySaveSettingsFile(candidate);
+            if (result == SettingsSaveResult.Saved)
+            {
+                Program.ServerSettings.Load(candidate.Save(true));
             }
             return result;
         });
@@ -327,7 +346,6 @@ public class Installation
         InstallSocket = socket;
         await Output("Installation request received, processing...");
         await Theme(theme);
-        Program.ServerSettings.DefaultUser.Language = language;
         await InstalledFor(installed_for);
         StepsThusFar = 1;
         TotalSteps = 4;
@@ -346,7 +364,7 @@ public class Installation
         {
             MakeShortcut();
         }
-        SettingsApply();
+        SettingsApply(theme, installed_for, language);
         await Models(models);
         StepsThusFar++;
         UpdateProgress(0, 0, 0);
