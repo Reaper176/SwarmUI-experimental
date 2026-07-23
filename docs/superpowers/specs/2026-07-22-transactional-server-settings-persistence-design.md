@@ -2,7 +2,7 @@
 
 **Date:** 2026-07-22
 
-**Status:** Approved design; implementation pending
+**Status:** Implemented; awaiting maintainer validation
 
 ## Goal
 

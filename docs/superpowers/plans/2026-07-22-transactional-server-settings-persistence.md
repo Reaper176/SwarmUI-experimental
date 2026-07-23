@@ -14,6 +14,10 @@
 
 **Approved design:** `docs/superpowers/specs/2026-07-22-transactional-server-settings-persistence-design.md` at commit `78bcca6f`.
 
+**Implementation outcome:** Production is implemented and statically reviewed; maintainer compilation and the named settings transaction/persistence matrix are pending.
+
+**Implementation provenance:** Corrective commit `77e1ea66` uses canonical `userauthorization.authorizationrequired` and case-insensitive path-trigger matching, superseding those two literal snippets below for historical execution accuracy.
+
 ---
 
 ### Task 1: Add the observable settings persistence owner
