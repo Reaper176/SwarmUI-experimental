@@ -21,6 +21,19 @@ using System.Runtime.Loader;
 
 namespace SwarmUI.Core;
 
+/// <summary>Outcome of an attempted authoritative server-settings persistence operation.</summary>
+public enum SettingsSaveResult
+{
+    /// <summary>The authoritative settings FDS was written successfully.</summary>
+    Saved,
+
+    /// <summary>Settings persistence is disabled by the process lock-settings option.</summary>
+    Locked,
+
+    /// <summary>The authoritative settings FDS could not be written.</summary>
+    Failed
+}
+
 /// <summary>Class that handles the core entry-point access to the program, and initialization of program layers.</summary>
 public class Program
 {
@@ -49,6 +62,9 @@ public class Program
 
     /// <summary>If enabled, settings will be locked to prevent user editing.</summary>
     public static bool LockSettings = false;
+
+    /// <summary>Serializes maintained runtime settings mutations and authoritative saves.</summary>
+    private static readonly object SettingsTransactionLock = new();
 
     /// <summary>Path to the settings file, as set by command line.</summary>
     public static string SettingsFilePath;
@@ -168,7 +184,11 @@ public class Program
             if (!LockSettings)
             {
                 Logs.Init("Re-saving settings file...");
-                SaveSettingsFile();
+                SettingsSaveResult settingsSaveResult = TrySaveSettingsFile();
+                if (settingsSaveResult != SettingsSaveResult.Saved)
+                {
+                    Logs.Error($"Startup settings normalization was not persisted: {settingsSaveResult}.");
+                }
             }
             Logs.Init("Applying command line settings...");
             ApplyCommandLineSettings();
@@ -696,31 +716,63 @@ public class Program
         ServerSettings.Load(section);
     }
 
-    /// <summary>Save the settings file.</summary>
+    /// <summary>Runs a maintained settings mutation under the shared transaction boundary.</summary>
+    internal static T RunSettingsTransaction<T>(Func<T> action)
+    {
+        lock (SettingsTransactionLock)
+        {
+            return action();
+        }
+    }
+
+    /// <summary>Attempts to save the current server settings and returns the authoritative persistence outcome.</summary>
+    public static SettingsSaveResult TrySaveSettingsFile()
+    {
+        return TrySaveSettingsFile(ServerSettings);
+    }
+
+    /// <summary>Attempts to save a supplied server-settings candidate and returns the authoritative persistence outcome.</summary>
+    public static SettingsSaveResult TrySaveSettingsFile(Settings settings)
+    {
+        lock (SettingsTransactionLock)
+        {
+            if (LockSettings)
+            {
+                return SettingsSaveResult.Locked;
+            }
+            try
+            {
+                FDSUtility.SaveToFile(settings.Save(true), SettingsFilePath);
+            }
+            catch (Exception ex)
+            {
+                Logs.Error($"Error saving settings file: {ex.ReadableString()}");
+                return SettingsSaveResult.Failed;
+            }
+            try
+            {
+                bool hasAlwaysPullFile = File.Exists("./src/bin/always_pull");
+                if (settings.Maintenance.AutoPullDevUpdates && !hasAlwaysPullFile)
+                {
+                    File.WriteAllText("./src/bin/always_pull", "true");
+                }
+                else if (!settings.Maintenance.AutoPullDevUpdates && hasAlwaysPullFile)
+                {
+                    File.Delete("./src/bin/always_pull");
+                }
+            }
+            catch (Exception ex)
+            {
+                Logs.Error($"Error synchronizing always-pull marker after settings save: {ex.ReadableString()}");
+            }
+            return SettingsSaveResult.Saved;
+        }
+    }
+
+    /// <summary>Compatibility facade that saves current server settings and logs failures through the observable owner.</summary>
     public static void SaveSettingsFile()
     {
-        if (LockSettings)
-        {
-            return;
-        }
-        try
-        {
-            FDSUtility.SaveToFile(ServerSettings.Save(true), SettingsFilePath);
-            bool hasAlwaysPullFile = File.Exists("./src/bin/always_pull");
-            if (ServerSettings.Maintenance.AutoPullDevUpdates && !hasAlwaysPullFile)
-            {
-                File.WriteAllText("./src/bin/always_pull", "true");
-            }
-            else if (!ServerSettings.Maintenance.AutoPullDevUpdates && hasAlwaysPullFile)
-            {
-                File.Delete("./src/bin/always_pull");
-            }
-        }
-        catch (Exception ex)
-        {
-            Logs.Error($"Error saving settings file: {ex.ReadableString()}");
-            return;
-        }
+        TrySaveSettingsFile();
     }
     #endregion
 
