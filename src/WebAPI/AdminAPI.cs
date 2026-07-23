@@ -147,77 +147,134 @@ public static class AdminAPI
         return new JObject() { ["settings"] = AutoConfigToParamData(Program.ServerSettings) };
     }
 
+    /// <summary>Validates and creates the maintained model directories for a server-settings candidate.</summary>
+    private static void ValidateModelPaths(Settings candidate)
+    {
+        string[] paths =
+        [
+            candidate.Paths.SDModelFolder, candidate.Paths.SDVAEFolder,
+            candidate.Paths.SDLoraFolder, candidate.Paths.SDControlNetsFolder,
+            candidate.Paths.SDClipVisionFolder
+        ];
+        foreach (string path in paths)
+        {
+            foreach (string subpath in path.Split(';').Where(p => !string.IsNullOrWhiteSpace(p)))
+            {
+                Utilities.EnsureDirectory(Utilities.CombinePathWithAbsolute(candidate.Paths.ActualModelRoot, subpath));
+            }
+        }
+    }
+
     [API.APIDescription("Changes server settings.", "\"success\": true")]
     public static async Task<JObject> ChangeServerSettings(Session session,
         [API.APIParameter("Dynamic input of `\"settingname\": valuehere`.")] JObject rawData)
     {
-        FDSSection origPaths = Program.ServerSettings.Paths.Save(true);
         JObject settings = (JObject)rawData["settings"];
         List<string> changed = [];
-        foreach ((string key, JToken val) in settings)
+        bool pathsChanged = settings.Properties().Any(p => p.Name.StartsWith("paths.") || p.Name.StartsWith("performance.allowgpuspecific"));
+        JObject transactionError = Program.RunSettingsTransaction(() =>
         {
-            AutoConfiguration.Internal.SingleFieldData field = Program.ServerSettings.TryGetFieldInternalData(key, out _);
-            if (field is null)
+            if (Program.LockSettings)
             {
-                Logs.Error($"User '{session.User.UserID}' tried to set unknown server setting '{key}' to '{val}'.");
-                continue;
+                return new JObject() { ["error"] = "Settings are locked." };
             }
-            if (field.Field.GetCustomAttribute<SettingHiddenAttribute>() is not null)
+            Settings candidate = new();
+            candidate.Load(Program.ServerSettings.Save(true));
+            foreach ((string key, JToken val) in settings)
             {
-                Logs.Error($"User '{session.User.UserID}' tried to set server setting '{key}' of type '{field.Field.FieldType.Name}' to '{val}', but that setting is marked as hidden from the normal interface.");
-                continue;
-            }
-            bool isSecret = field.Field.GetCustomAttribute<ValueIsSecretAttribute>() is not null;
-            object obj = DataToType(val, field.Field.FieldType);
-            if (obj is null)
-            {
-                Logs.Error($"User '{session.User.UserID}' tried to set server setting '{key}' of type '{field.Field.FieldType.Name}' to '{val}', but type-conversion failed.");
-                continue;
-            }
-            if (isSecret && obj is string str && str == "\t<secret>")
-            {
-                continue;
-            }
-            if (key.ToLowerFast() == "authorization.authorizationrequired" && $"{obj}".ToLowerFast() == "true" && session.User.Data.PasswordHashed == "")
-            {
-                return new JObject() { ["error"] = "Tried to enable authorization mode, but your account does not have a password. Configure your account login information before enabling authorization, so you don't get locked out." };
-            }
-            Program.ServerSettings.TrySetFieldValue(key, obj);
-            changed.Add(key);
-        }
-        Logs.Warning($"User {session.User.UserID} changed server settings: {changed.JoinString(", ")}");
-        Program.SaveSettingsFile();
-        if (settings.Properties().Any(p => p.Name.StartsWith("paths.") || p.Name.StartsWith("performance.allowgpuspecific")))
-        {
-            string[] paths =
-            [
-                Program.ServerSettings.Paths.SDModelFolder, Program.ServerSettings.Paths.SDVAEFolder,
-                Program.ServerSettings.Paths.SDLoraFolder, Program.ServerSettings.Paths.SDControlNetsFolder,
-                Program.ServerSettings.Paths.SDClipVisionFolder
-            ];
-            try
-            {
-                foreach (string path in paths)
+                AutoConfiguration.Internal.SingleFieldData field = candidate.TryGetFieldInternalData(key, out _);
+                if (field is null)
                 {
-                    foreach (string subpath in path.Split(';').Where(p => !string.IsNullOrWhiteSpace(p)))
-                    {
-                        Utilities.EnsureDirectory(Utilities.CombinePathWithAbsolute(Program.ServerSettings.Paths.ActualModelRoot, subpath));
-                    }
+                    Logs.Error($"User '{session.User.UserID}' tried to set unknown server setting '{key}' to '{val}'.");
+                    continue;
+                }
+                if (field.Field.GetCustomAttribute<SettingHiddenAttribute>() is not null)
+                {
+                    Logs.Error($"User '{session.User.UserID}' tried to set server setting '{key}' of type '{field.Field.FieldType.Name}' to '{val}', but that setting is marked as hidden from the normal interface.");
+                    continue;
+                }
+                bool isSecret = field.Field.GetCustomAttribute<ValueIsSecretAttribute>() is not null;
+                object obj;
+                try
+                {
+                    obj = DataToType(val, field.Field.FieldType);
+                }
+                catch (Exception)
+                {
+                    Logs.Error($"User '{session.User.UserID}' tried to set server setting '{key}' of type '{field.Field.FieldType.Name}' to '{val}', but type-conversion failed.");
+                    continue;
+                }
+                if (obj is null)
+                {
+                    Logs.Error($"User '{session.User.UserID}' tried to set server setting '{key}' of type '{field.Field.FieldType.Name}' to '{val}', but type-conversion failed.");
+                    continue;
+                }
+                if (isSecret && obj is string str && str == "\t<secret>")
+                {
+                    continue;
+                }
+                if (key.ToLowerFast() == "authorization.authorizationrequired" && $"{obj}".ToLowerFast() == "true" && session.User.Data.PasswordHashed == "")
+                {
+                    return new JObject() { ["error"] = "Tried to enable authorization mode, but your account does not have a password. Configure your account login information before enabling authorization, so you don't get locked out." };
+                }
+                candidate.TrySetFieldValue(key, obj);
+                changed.Add(key);
+            }
+            if (pathsChanged)
+            {
+                try
+                {
+                    ValidateModelPaths(candidate);
+                }
+                catch (Exception ex)
+                {
+                    Logs.Error($"Failed to create one or more directories: {ex.Message}");
+                    return new JObject() { ["error"] = "Model paths settings are invalid, rejected change." };
                 }
             }
-            catch (Exception e)
+            SettingsSaveResult saveResult = Program.TrySaveSettingsFile(candidate);
+            if (saveResult != SettingsSaveResult.Saved)
             {
-                Logs.Error($"Failed to create one or more directories: {e.Message}");
-                Program.ServerSettings.Paths.Load(origPaths);
-                Program.SaveSettingsFile();
-                return new JObject() { ["error"] = "Model paths settings are invalid, rejected change." };
+                return new JObject() { ["error"] = saveResult == SettingsSaveResult.Locked ? "Settings are locked." : "Failed to save server settings." };
             }
-            Program.BuildModelLists();
-            Program.RefreshAllModelSets();
-            Program.ModelPathsChangedEvent?.Invoke();
+            Program.ServerSettings.Load(candidate.Save(true));
+            return null;
+        });
+        if (transactionError is not null)
+        {
+            return transactionError;
         }
-        Program.ReapplySettings();
-        return new JObject() { ["success"] = true };
+        Logs.Warning($"User {session.User.UserID} changed server settings: {changed.JoinString(", ")}");
+        bool runtimeWarning = false;
+        if (pathsChanged)
+        {
+            try
+            {
+                Program.BuildModelLists();
+                Program.RefreshAllModelSets();
+                Program.ModelPathsChangedEvent?.Invoke();
+            }
+            catch (Exception ex)
+            {
+                Logs.Error($"Server settings were saved, but model path refresh failed: {ex.ReadableString()}");
+                runtimeWarning = true;
+            }
+        }
+        try
+        {
+            Program.ReapplySettings();
+        }
+        catch (Exception ex)
+        {
+            Logs.Error($"Server settings were saved, but runtime settings reapplication failed: {ex.ReadableString()}");
+            runtimeWarning = true;
+        }
+        JObject result = new() { ["success"] = true };
+        if (runtimeWarning)
+        {
+            result["warning"] = "Settings were saved, but one or more runtime refresh actions failed. A restart may be required.";
+        }
+        return result;
     }
 
     [API.APIDescription("Returns a list of the available log types.",
