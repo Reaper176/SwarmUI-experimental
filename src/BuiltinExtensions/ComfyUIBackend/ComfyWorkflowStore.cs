@@ -4,6 +4,7 @@ using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 using SwarmUI.Utils;
 using System.IO;
+using System.Security.Cryptography;
 
 namespace SwarmUI.Builtin_ComfyUIBackend;
 
@@ -15,6 +16,9 @@ public static class ComfyWorkflowStore
 
     /// <summary>Reserved workflow transaction journal filename.</summary>
     private const string JournalFileName = ".swarm-workflow-transaction";
+
+    /// <summary>Canonical content for a workflow deletion marker.</summary>
+    private const string DeletedMarkerContent = "deleted-by-user";
 
     /// <summary>Synchronizes workflow inventory and read operations.</summary>
     private static readonly object WorkflowLock = new();
@@ -453,6 +457,235 @@ public static class ComfyWorkflowStore
         return true;
     }
 
+    /// <summary>Gets the canonical lowercase SHA-256 hash for data.</summary>
+    private static string GetDataHash(byte[] data)
+    {
+        return Convert.ToHexString(SHA256.HashData(data)).ToLowerFast();
+    }
+
+    /// <summary>Checks whether a file exists and has the expected canonical SHA-256 hash.</summary>
+    private static bool FileMatchesHash(string path, string expectedHash)
+    {
+        if (expectedHash is null || !File.Exists(path))
+        {
+            return false;
+        }
+        using FileStream stream = File.OpenRead(path);
+        string actualHash = Convert.ToHexString(SHA256.HashData(stream)).ToLowerFast();
+        return string.Equals(actualHash, expectedHash, StringComparison.Ordinal);
+    }
+
+    /// <summary>Safely restores or removes an original file without overwriting unexpected content.</summary>
+    private static void RestoreOriginal(string finalPath, string backupPath, bool originallyExisted, string installedHash)
+    {
+        if (backupPath is not null && File.Exists(backupPath))
+        {
+            if (File.Exists(finalPath))
+            {
+                if (!FileMatchesHash(finalPath, installedHash))
+                {
+                    throw new IOException("Stored workflow recovery encountered unexpected file content.");
+                }
+                File.Delete(finalPath);
+            }
+            File.Move(backupPath, finalPath);
+            return;
+        }
+        if (originallyExisted)
+        {
+            if (!File.Exists(finalPath))
+            {
+                throw new IOException("Stored workflow recovery could not find an original file.");
+            }
+            return;
+        }
+        if (File.Exists(finalPath))
+        {
+            if (!FileMatchesHash(finalPath, installedHash))
+            {
+                throw new IOException("Stored workflow recovery encountered unexpected file content.");
+            }
+            File.Delete(finalPath);
+        }
+    }
+
+    /// <summary>Restores a transaction's original deletion-marker state.</summary>
+    private static void RestoreMarker(WorkflowTransaction transaction)
+    {
+        if (!transaction.CreateMarker)
+        {
+            return;
+        }
+        string markerPath = GetMarkerPath(transaction.SourceName);
+        string markerHash = GetDataHash(DeletedMarkerContent.EncodeUTF8());
+        if (transaction.MarkerExisted)
+        {
+            string markerBackupPath = GetArtifactPath(transaction, transaction.MarkerBackupPath, markerPath, "marker-backup");
+            RestoreOriginal(markerPath, markerBackupPath, true, markerHash);
+        }
+        else if (File.Exists(markerPath))
+        {
+            RestoreOriginal(markerPath, null, false, markerHash);
+        }
+    }
+
+    /// <summary>Rolls back a prepared workflow transaction and removes its journal last.</summary>
+    private static void RollbackPrepared(WorkflowTransaction transaction)
+    {
+        string sourcePath = GetWorkflowPath(transaction.SourceName);
+        string destinationPath = transaction.DestinationName is null ? null : GetWorkflowPath(transaction.DestinationName);
+        if (transaction.StagePath is not null)
+        {
+            GetArtifactPath(transaction, transaction.StagePath, destinationPath, "stage");
+        }
+        if (transaction.MarkerStagePath is not null)
+        {
+            GetArtifactPath(transaction, transaction.MarkerStagePath, GetMarkerPath(transaction.SourceName), "marker-stage");
+        }
+        RestoreMarker(transaction);
+        if (transaction.Operation == TransactionOperation.Save)
+        {
+            string destinationBackupPath = transaction.DestinationExisted
+                ? GetArtifactPath(transaction, transaction.DestinationBackupPath, destinationPath, "destination-backup")
+                : null;
+            RestoreOriginal(destinationPath, destinationBackupPath, transaction.DestinationExisted, transaction.DestinationHash);
+            if (transaction.SourceExisted && !PathsEqual(sourcePath, destinationPath))
+            {
+                string sourceBackupPath = GetArtifactPath(transaction, transaction.SourceBackupPath, sourcePath, "source-backup");
+                RestoreOriginal(sourcePath, sourceBackupPath, true, null);
+            }
+        }
+        else
+        {
+            string sourceBackupPath = GetArtifactPath(transaction, transaction.SourceBackupPath, sourcePath, "source-backup");
+            RestoreOriginal(sourcePath, sourceBackupPath, true, null);
+        }
+        if (transaction.StagePath is not null)
+        {
+            string stagePath = GetArtifactPath(transaction, transaction.StagePath, destinationPath, "stage");
+            if (File.Exists(stagePath))
+            {
+                File.Delete(stagePath);
+            }
+        }
+        if (transaction.MarkerStagePath is not null)
+        {
+            string markerStagePath = GetArtifactPath(transaction, transaction.MarkerStagePath, GetMarkerPath(transaction.SourceName), "marker-stage");
+            if (File.Exists(markerStagePath))
+            {
+                File.Delete(markerStagePath);
+            }
+        }
+        File.Delete(GetContainedPath(JournalFileName));
+    }
+
+    /// <summary>Removes the exact artifacts recorded by a committed transaction and its journal last.</summary>
+    private static void CleanupCommitted(WorkflowTransaction transaction)
+    {
+        string sourcePath = GetWorkflowPath(transaction.SourceName);
+        string destinationPath = transaction.DestinationName is null ? null : GetWorkflowPath(transaction.DestinationName);
+        string markerPath = GetMarkerPath(transaction.SourceName);
+        List<(string RelativePath, string FinalPath, string Role)> artifacts = [];
+        if (transaction.StagePath is not null)
+        {
+            artifacts.Add((transaction.StagePath, destinationPath, "stage"));
+        }
+        if (transaction.SourceBackupPath is not null)
+        {
+            artifacts.Add((transaction.SourceBackupPath, sourcePath, "source-backup"));
+        }
+        if (transaction.DestinationBackupPath is not null)
+        {
+            artifacts.Add((transaction.DestinationBackupPath, destinationPath, "destination-backup"));
+        }
+        if (transaction.MarkerStagePath is not null)
+        {
+            artifacts.Add((transaction.MarkerStagePath, markerPath, "marker-stage"));
+        }
+        if (transaction.MarkerBackupPath is not null)
+        {
+            artifacts.Add((transaction.MarkerBackupPath, markerPath, "marker-backup"));
+        }
+        foreach ((string relativePath, string finalPath, string role) in artifacts)
+        {
+            string artifactPath = GetArtifactPath(transaction, relativePath, finalPath, role);
+            if (File.Exists(artifactPath))
+            {
+                File.Delete(artifactPath);
+            }
+        }
+        File.Delete(GetContainedPath(JournalFileName));
+    }
+
+    /// <summary>Ensures a committed transaction's deletion marker is installed.</summary>
+    private static void EnsureCommittedMarker(WorkflowTransaction transaction)
+    {
+        if (!transaction.CreateMarker)
+        {
+            return;
+        }
+        string markerPath = GetMarkerPath(transaction.SourceName);
+        if (File.Exists(markerPath))
+        {
+            return;
+        }
+        string markerStagePath = GetArtifactPath(transaction, transaction.MarkerStagePath, markerPath, "marker-stage");
+        if (!File.Exists(markerStagePath))
+        {
+            WriteNewFlushedFile(markerStagePath, DeletedMarkerContent.EncodeUTF8());
+        }
+        File.Move(markerStagePath, markerPath);
+    }
+
+    /// <summary>Verifies the intended committed workflow state without removing unexpected final files.</summary>
+    private static void VerifyCommittedState(WorkflowTransaction transaction)
+    {
+        string sourcePath = GetWorkflowPath(transaction.SourceName);
+        if (transaction.Operation == TransactionOperation.Save)
+        {
+            string destinationPath = GetWorkflowPath(transaction.DestinationName);
+            if (!FileMatchesHash(destinationPath, transaction.DestinationHash))
+            {
+                throw new IOException("Stored workflow recovery could not verify the committed workflow.");
+            }
+            if (transaction.SourceExisted && !PathsEqual(sourcePath, destinationPath) && File.Exists(sourcePath))
+            {
+                throw new IOException("Stored workflow recovery encountered an unexpected workflow file.");
+            }
+        }
+        else if (File.Exists(sourcePath))
+        {
+            throw new IOException("Stored workflow recovery encountered an unexpected workflow file.");
+        }
+        EnsureCommittedMarker(transaction);
+    }
+
+    /// <summary>Recovers the single active workflow transaction, if present.</summary>
+    private static void RecoverPendingTransactionLocked()
+    {
+        string journalPath = GetContainedPath(JournalFileName);
+        if (!File.Exists(journalPath))
+        {
+            return;
+        }
+        try
+        {
+            WorkflowTransaction transaction = ReadJournal(journalPath);
+            if (transaction.Phase == TransactionPhase.Prepared)
+            {
+                RollbackPrepared(transaction);
+                return;
+            }
+            VerifyCommittedState(transaction);
+            CleanupCommitted(transaction);
+        }
+        catch (Exception)
+        {
+            Logs.Error("Error recovering stored workflow transaction (workflow content redacted).");
+            throw new InvalidDataException("Stored workflow recovery could not be completed safely.");
+        }
+    }
+
     /// <summary>Loads the available workflow files from the extension directory.</summary>
     public static void LoadWorkflowFiles(string extensionFilePath)
     {
@@ -460,6 +693,7 @@ public static class ComfyWorkflowStore
         {
             Directory.CreateDirectory($"{extensionFilePath}CustomWorkflows");
             Directory.CreateDirectory($"{extensionFilePath}CustomWorkflows/Examples");
+            RecoverPendingTransactionLocked();
             string[] getCustomFlows(string path) => [.. Directory.EnumerateFiles($"{extensionFilePath}/{path}", "*.*", new EnumerationOptions() { RecurseSubdirectories = true }).Select(f => f.Replace('\\', '/').After($"/{path}/")).Order()];
             ComfyUIBackendExtension.ExampleWorkflowNames = getCustomFlows("ExampleWorkflows");
             string[] customFlows = getCustomFlows("CustomWorkflows");
