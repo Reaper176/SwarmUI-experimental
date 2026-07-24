@@ -2,7 +2,7 @@
 
 **Date:** 2026-07-23
 
-**Status:** Designed; awaiting implementation planning
+**Status:** Implemented; awaiting maintainer validation
 
 ## Goal
 
@@ -344,3 +344,18 @@ The project is successful when:
 The production change is one coordinated rollback unit: store delegation, reader coordination, transaction files, recovery, and post-commit cache publication must be reverted together.
 
 Rollback restores the prior inline API and extension file methods. Existing workflow JSON files and example markers require no migration. Before rollback, any active valid journal should be allowed to recover or be resolved using its documented phase; removing recovery code while transaction artifacts remain could strand a recoverable operation.
+
+## Implementation Record
+
+Production implementation commits:
+
+- `6430aa6a` centralized maintained reads in `ComfyWorkflowStore.cs` and delegated the extension/API readers; `a11f7357` removed the superseded import.
+- `cf4b6cfc` added the journal protocol; `0402ac9d` enforced exact sibling artifacts; `5e73755a` hardened journal validation.
+- `4c6c96bc` added recovery; `53760f14` verified committed markers; `42194eee` made recovery fail closed; `99753fb1` redacted journal-probe failures.
+- `c9ab32fa` made save/overwrite/rename durable before cache publication; `6cf4764e` documented store-lock ownership.
+- `66fef832` made deletion durable; `83390178` fixed persistence-boundary redaction.
+- `d6baa03f` hardened recovery ownership by hash-verifying workflow and marker stages before every cleanup deletion.
+
+`ComfyWorkflowStore.cs` owns maintained workflow storage, transactions, recovery, hydration, snapshots, and cache publication. `ComfyUIBackendExtension.cs` and `ComfyUIWebAPI.cs` retain the public extension and route facades. `19ab77b4` is the approved stable-filesystem contract clarification, not a production implementation commit: `CustomWorkflows` must remain on a stable local filesystem without concurrent external modification during maintained operations.
+
+Static review covered all maintained read/list/parameter/generation/save/delete/refresh paths, the new-save/overwrite/same-name/A-to-B/delete state table, candidate validation, journal and artifact validation, mutation and recovery ordering, content-verified cleanup, redacted diagnostics, pre-rank-6 API/extension compatibility, public dictionary identity, and unchanged P8 hydration behavior. `git diff --check b417ace9..d6baa03f` passed. Per repository policy, no builds, automated tests, launchers, server, browser, backend, installer, or live-storage checks were run. The complete maintainer validation matrix above remains outstanding.
