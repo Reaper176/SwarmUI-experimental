@@ -394,8 +394,7 @@ public static class ComfyWorkflowStore
         {
             if (transaction.StagePath is not null)
             {
-                string destinationPath = RevalidateContainedPath(GetWorkflowPath(transaction.DestinationName));
-                File.Delete(RevalidateContainedPath(GetArtifactPath(transaction, transaction.StagePath, destinationPath, "stage")));
+                DeleteVerifiedStage(transaction, transaction.StagePath, GetWorkflowPath(transaction.DestinationName), "stage", transaction.DestinationHash);
             }
         }
         catch (Exception)
@@ -406,8 +405,8 @@ public static class ComfyWorkflowStore
         {
             if (transaction.MarkerStagePath is not null)
             {
-                string markerPath = RevalidateContainedPath(GetMarkerPath(transaction.SourceName));
-                File.Delete(RevalidateContainedPath(GetArtifactPath(transaction, transaction.MarkerStagePath, markerPath, "marker-stage")));
+                string markerHash = GetDataHash(DeletedMarkerContent.EncodeUTF8());
+                DeleteVerifiedStage(transaction, transaction.MarkerStagePath, GetMarkerPath(transaction.SourceName), "marker-stage", markerHash);
             }
         }
         catch (Exception)
@@ -651,6 +650,21 @@ public static class ComfyWorkflowStore
         return string.Equals(actualHash, expectedHash, StringComparison.Ordinal);
     }
 
+    /// <summary>Deletes an exact transaction stage only when its content proves transaction ownership.</summary>
+    private static void DeleteVerifiedStage(WorkflowTransaction transaction, string relativePath, string finalPath, string role, string expectedHash)
+    {
+        string stagePath = GetArtifactPath(transaction, relativePath, finalPath, role);
+        if (!FileExistsStrict(stagePath))
+        {
+            return;
+        }
+        if (!FileMatchesHash(stagePath, expectedHash))
+        {
+            throw new IOException("Stored workflow transaction encountered unexpected stage content.");
+        }
+        File.Delete(RevalidateContainedPath(GetArtifactPath(transaction, relativePath, finalPath, role)));
+    }
+
     /// <summary>Safely restores or removes an original file without overwriting unexpected content.</summary>
     private static void RestoreOriginal(string finalPath, string backupPath, bool originallyExisted, string installedHash)
     {
@@ -740,11 +754,12 @@ public static class ComfyWorkflowStore
         }
         if (transaction.StagePath is not null)
         {
-            File.Delete(RevalidateContainedPath(GetArtifactPath(transaction, transaction.StagePath, destinationPath, "stage")));
+            DeleteVerifiedStage(transaction, transaction.StagePath, GetWorkflowPath(transaction.DestinationName), "stage", transaction.DestinationHash);
         }
         if (transaction.MarkerStagePath is not null)
         {
-            File.Delete(RevalidateContainedPath(GetArtifactPath(transaction, transaction.MarkerStagePath, GetMarkerPath(transaction.SourceName), "marker-stage")));
+            string markerHash = GetDataHash(DeletedMarkerContent.EncodeUTF8());
+            DeleteVerifiedStage(transaction, transaction.MarkerStagePath, GetMarkerPath(transaction.SourceName), "marker-stage", markerHash);
         }
         File.Delete(RevalidateContainedPath(GetContainedPath(JournalFileName)));
     }
@@ -758,7 +773,12 @@ public static class ComfyWorkflowStore
         List<(string RelativePath, string FinalPath, string Role)> artifacts = [];
         if (transaction.StagePath is not null)
         {
-            artifacts.Add((transaction.StagePath, destinationPath, "stage"));
+            DeleteVerifiedStage(transaction, transaction.StagePath, GetWorkflowPath(transaction.DestinationName), "stage", transaction.DestinationHash);
+        }
+        if (transaction.MarkerStagePath is not null)
+        {
+            string markerHash = GetDataHash(DeletedMarkerContent.EncodeUTF8());
+            DeleteVerifiedStage(transaction, transaction.MarkerStagePath, GetMarkerPath(transaction.SourceName), "marker-stage", markerHash);
         }
         if (transaction.SourceBackupPath is not null)
         {
@@ -767,10 +787,6 @@ public static class ComfyWorkflowStore
         if (transaction.DestinationBackupPath is not null)
         {
             artifacts.Add((transaction.DestinationBackupPath, destinationPath, "destination-backup"));
-        }
-        if (transaction.MarkerStagePath is not null)
-        {
-            artifacts.Add((transaction.MarkerStagePath, markerPath, "marker-stage"));
         }
         if (transaction.MarkerBackupPath is not null)
         {
