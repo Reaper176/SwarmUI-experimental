@@ -592,11 +592,9 @@ In `ExtensionsManager.BuildExtension`, replace the extension hash and target set
         string dllName = $"SwarmExtension{folder.AfterLast('/')}";
         string extensionIdentity = (await Utilities.RunGitProcess("rev-parse HEAD", Path.GetFullPath(folder))).Trim();
         extensionIdentity = extensionIdentity.Length >= 8 && Utilities.AlphaNumericMatcher.IsOnlyMatches(extensionIdentity[0..8]) ? extensionIdentity[0..8] : "unknown";
-        string coreIdentity = Utilities.GitCommit;
-        if (coreIdentity.Length != 8 || !Utilities.AlphaNumericMatcher.IsOnlyMatches(coreIdentity))
-        {
-            coreIdentity = Utilities.Version.Replace('.', '-');
-        }
+        Assembly coreAssembly = typeof(ExtensionsManager).Assembly;
+        string coreVersion = coreAssembly.GetName().Version.ToString().Replace('.', '-');
+        string coreIdentity = $"{coreVersion}-{coreAssembly.ManifestModule.ModuleVersionId:N}";
         string targetName = $"{dllName}-{extensionIdentity}-core-{coreIdentity}";
         string target = $"./src/bin/extensions/{dllName}/{targetName}.dll";
 ```
@@ -627,7 +625,7 @@ Run:
 
 ```bash
 nl -ba src/Core/ExtensionsManager.cs | sed -n '203,240p'
-rg -n "extensionIdentity|coreIdentity|targetName|TargetName=|File.Exists\\(target\\)|LoadInExtensionContext" src/Core/ExtensionsManager.cs
+rg -n "extensionIdentity|coreAssembly|ModuleVersionId|coreIdentity|targetName|TargetName=|File.Exists\\(target\\)|LoadInExtensionContext" src/Core/ExtensionsManager.cs
 rg -n "Extension Binary Compatibility|managed DLL cache identity|binary-incompatible" AGENTS.md
 git diff --check -- src/Core/ExtensionsManager.cs AGENTS.md
 ```
@@ -635,10 +633,11 @@ git diff --check -- src/Core/ExtensionsManager.cs AGENTS.md
 Expected:
 
 - extension identity retains the existing commit/fallback behavior;
-- valid eight-character `Utilities.GitCommit` is preferred;
-- non-Git fallback uses the assembly version with dots replaced by hyphens;
+- core version comes from the assembly that contains `ExtensionsManager` and uses hyphens;
+- the full 32-character module MVID identifies the actual running core binary;
 - target path and compiler `TargetName` share `targetName`;
-- unchanged identities reuse the existing file check;
+- the same core binary reuses the existing file check regardless of Git layout;
+- a changed core binary identity selects a different target;
 - no cache deletion or loader behavior changed; and
 - the diff check returns no output.
 
@@ -651,10 +650,10 @@ git diff -- src/Core/ExtensionsManager.cs AGENTS.md
 git status --short --untracked-files=no
 git add -- src/Core/ExtensionsManager.cs AGENTS.md
 git diff --cached --check
-git commit -m "fix: invalidate extensions on core updates"
+git commit -m "fix: key extensions to core binary identity"
 ```
 
-Expected: only `ExtensionsManager.cs` and `AGENTS.md` are committed; the four user-owned modifications remain unstaged.
+Expected: the review correction commits only `ExtensionsManager.cs`; `AGENTS.md` already contains the approved invariant from `c7af5b4a`, and the four user-owned modifications remain unstaged.
 
 ### Task 5B: Complete the periodic save task normally on cancellation
 
@@ -737,16 +736,15 @@ Expected: all original persistence proofs still pass, and current status contain
 Run:
 
 ```bash
-rg -n "extensionIdentity|coreIdentity|targetName|TargetName=" src/Core/ExtensionsManager.cs
+rg -n "extensionIdentity|coreAssembly|ModuleVersionId|coreIdentity|targetName|TargetName=" src/Core/ExtensionsManager.cs
 rg -n "OperationCanceledException|GlobalProgramCancel.IsCancellationRequested|TrySavePending" src/Core/Program.cs
 rg -n "Extension Binary Compatibility|core identity|binary-incompatible" AGENTS.md
 ```
 
 Expected:
 
-- a core identity change selects a different managed extension target before the existing file-cache check;
-- unchanged extension/core identities select the same target;
-- packaged fallback is deterministic;
+- a changed core assembly MVID selects a different managed extension target before the existing file-cache check;
+- the same core binary and extension identity select the same target across Git, detached, worktree, packed-ref, and packaged layouts;
 - cancellation handling is delay-local and token-filtered; and
 - repository guidance preserves the new cache invariant.
 
@@ -808,7 +806,7 @@ Ask the maintainer to use the normal build/launch workflow and validate:
 10. authoritative commit followed by forced journal-cleanup failure is classified as committed and does not cause a false retry;
 11. public/direct `Save()` still force-writes and reports write exceptions to its caller;
 12. public `BackendsEdited = true` schedules a save while `BackendsEdited = false` cannot clear pending state;
-13. an external managed source extension that references `BackendsEdited` is rebuilt after a core identity change, loads without `MissingFieldException`, and reuses that rebuilt DLL on an unchanged-core restart; and
+13. an external managed source extension that references `BackendsEdited` is rebuilt after a changed core binary identity, loads without `MissingFieldException` across Git and packaged layouts, and reuses that rebuilt DLL with the same core binary; and
 14. normal shutdown/restart completes the periodic task without an unobserved cancellation fault.
 
 Stop here until Reaper176 reports the build/launch and matrix result.
