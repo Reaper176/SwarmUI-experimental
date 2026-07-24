@@ -2,7 +2,7 @@
 
 **Date:** 2026-07-23
 
-**Status:** Implemented; awaiting maintainer validation
+**Status:** Implemented and maintainer-validated
 
 ## Goal
 
@@ -331,6 +331,16 @@ The maintainer validation matrix covers:
 
 The maintainer performs runtime validation manually because this repository does not permit agent-run tests or builds.
 
+## Validation Record
+
+**Maintainer:** Reaper176
+
+**Date:** 2026-07-24
+
+Maintainer Reaper176 confirmed normal build/launch/browse/generation on Linux. The agreed runtime matrix covered new save, ordinary overwrite, explicit same-name replacement, cross-name rename, destination collision, a missing replacement predecessor, standalone deletion and built-in example markers; independent invalid `workflow`, `prompt`, `custom_params`, and `param_values` JSON plus invalid image data; image inheritance, replacement, explicit clearing, and placeholder fallback; refresh and restart; concurrent maintained readers; the available storage-failure cases; and interrupted-journal recovery.
+
+Runtime validation was performed on Linux. Windows received static cross-platform review only; no Windows runtime validation is claimed. This validation establishes the agreed compatibility and durability behavior and makes no performance claim.
+
 ## Success Criteria
 
 The project is successful when:
@@ -365,4 +375,4 @@ Production implementation commits:
 
 `ComfyWorkflowStore.cs` owns maintained workflow storage, transactions, recovery, hydration, snapshots, and cache publication. `ComfyUIBackendExtension.cs` and `ComfyUIWebAPI.cs` retain the public extension and route facades. `19ab77b4` is the approved stable-filesystem contract clarification, not a production implementation commit: `CustomWorkflows` must remain on a stable local filesystem without concurrent external modification during maintained operations.
 
-Static review covered all maintained read/list/parameter/generation/save/delete/refresh paths, the new-save/overwrite/same-name/A-to-B/delete state table, candidate validation, journal and artifact validation, mutation and recovery ordering, content-verified cleanup, recovery gating, staged same-instance cache refresh, redacted diagnostics, pre-rank-6 API/extension compatibility, public dictionary identity, and unchanged P8 hydration behavior. Endpoint review and `git diff --check b417ace9..575f7924` passed. Per repository policy, no builds, automated tests, launchers, server, browser, backend, installer, or live-storage checks were run. The complete maintainer validation matrix above remains outstanding.
+Static review covered all maintained read/list/parameter/generation/save/delete/refresh paths, the new-save/overwrite/same-name/A-to-B/delete state table, candidate validation, journal and artifact validation, mutation and recovery ordering, content-verified cleanup, recovery gating, staged same-instance cache refresh, redacted diagnostics, pre-rank-6 API/extension compatibility, public dictionary identity, and unchanged P8 hydration behavior. Endpoint review and `git diff --check b417ace9..575f7924` passed. Per repository policy, no agent-run builds, automated tests, launchers, server, browser, backend, installer, or live-storage checks were run. Maintainer runtime confirmation is recorded above.
