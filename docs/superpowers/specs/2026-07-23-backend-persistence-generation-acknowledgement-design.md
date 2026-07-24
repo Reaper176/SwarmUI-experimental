@@ -2,7 +2,7 @@
 
 **Date:** 2026-07-23
 
-**Status:** Implemented; awaiting maintainer validation
+**Status:** Implemented and maintainer-validated
 
 ## Goal
 
@@ -300,6 +300,10 @@ No benchmark or performance measurement is part of validation.
 - Managed source extensions are rebuilt after a core identity change before they can load a stale field token.
 - Normal periodic-task cancellation completes without an unobserved cancellation fault.
 - Memory and the latest successfully acknowledged `Backends.fds` generation agree after recovery and restart.
+
+## Validation Record
+
+Maintainer Reaper176 confirmed the normal build/launch workflow and the complete fourteen-case backend persistence and compatibility matrix: real API and installation mutations, non-real removal, periodic overlap and retry, storage failure and recovery, rapid convergence, final shutdown persistence and failure isolation, exit-code preservation, journal-cleanup classification, both public compatibility facades, managed extension rebuild/reuse, and normal cancellation completion.
 
 ## Non-Goals
 
