@@ -625,14 +625,27 @@ public static class ComfyWorkflowStore
             return;
         }
         string markerPath = GetMarkerPath(transaction.SourceName);
+        byte[] markerData = DeletedMarkerContent.EncodeUTF8();
+        string markerHash = GetDataHash(markerData);
         if (File.Exists(markerPath))
         {
+            if (!FileMatchesHash(markerPath, markerHash))
+            {
+                throw new IOException("Stored workflow recovery encountered unexpected marker content.");
+            }
             return;
         }
         string markerStagePath = GetArtifactPath(transaction, transaction.MarkerStagePath, markerPath, "marker-stage");
-        if (!File.Exists(markerStagePath))
+        if (File.Exists(markerStagePath))
         {
-            WriteNewFlushedFile(markerStagePath, DeletedMarkerContent.EncodeUTF8());
+            if (!FileMatchesHash(markerStagePath, markerHash))
+            {
+                throw new IOException("Stored workflow recovery encountered unexpected marker content.");
+            }
+        }
+        else
+        {
+            WriteNewFlushedFile(markerStagePath, markerData);
         }
         File.Move(markerStagePath, markerPath);
     }
