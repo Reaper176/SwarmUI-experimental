@@ -57,11 +57,11 @@ The public `BackendsEdited` field-to-property migration is source-compatible but
 - the existing extension repository commit; and
 - the current SwarmUI core identity.
 
-The core identity is `Utilities.GitCommit` when it contains exactly eight alphanumeric characters. Packaged or non-Git installations fall back to `Utilities.Version` with dots replaced by hyphens. Both values already exist in `Utilities`; the extension manager does not add a new version source or inspect repository content itself.
+The core identity is the running core assembly version with dots replaced by hyphens, followed by that assembly module's full `ModuleVersionId` in 32-character `N` format. The assembly version keeps the cache name recognizable, while the module MVID identifies the actual compiled core binary that extensions reference.
 
-The target DLL filename is `<dllName>-<extensionIdentity>-core-<coreIdentity>.dll`, and the build `TargetName` is the same value without `.dll`. An extension cache entry built against an older core therefore does not match after a SwarmUI update, causing one normal rebuild through the existing extension build path. Later launches with unchanged core and extension identities reuse that rebuilt cache. Older unmatched DLLs retain the existing cache-retention behavior; cleanup policy is not changed in this project.
+The target DLL filename is `<dllName>-<extensionIdentity>-core-<version>-<moduleMvid>.dll`, and the build `TargetName` is the same value without `.dll`. An extension cache entry built against a different core binary therefore does not match, causing one normal rebuild through the existing extension build path. Later launches with the same core binary and extension identity reuse that rebuilt cache. Older unmatched DLLs retain the existing cache-retention behavior; cleanup policy is not changed in this project.
 
-This intentionally favors automatic binary compatibility over retaining extension DLLs across core commits. It does not change extension discovery, source layout, dependency resolution, load contexts, build configuration, disabled-extension behavior, error reporting, or the extension repository commit calculation.
+This intentionally favors automatic binary compatibility over retaining extension DLLs across core builds. It is independent of Git layout, branch, detached-HEAD, worktree, packed-ref, and packaged-install behavior. Deterministic builds may reuse an identical MVID for identical output; any changed running core binary identity selects a distinct extension target. The correction does not change extension discovery, source layout, dependency resolution, load contexts, build configuration, disabled-extension behavior, error reporting, or the extension repository commit calculation.
 
 SwarmUI's managed source-build path is the compatibility owner. Independently supplied binary-only extensions that bypass this path remain outside scope.
 
@@ -262,7 +262,7 @@ Repository-permitted static checks will prove:
 9. public `BackendsEdited` and `Save()` source-level names and approved semantics remain;
 10. FDS schema, secret filtering, and real-backend selection remain unchanged; and
 11. managed extension cache target and build names contain both extension and core identities;
-12. a core-identity change invalidates the managed compiled-extension cache while unchanged identities reuse it;
+12. a changed core module MVID invalidates the managed compiled-extension cache while the same running binary reuses it;
 13. token cancellation exits the periodic task normally without swallowing persistence failures; and
 14. the implementation changes only the bounded backend persistence owners, managed extension cache identity, repository guidance, and documentation.
 
@@ -283,8 +283,8 @@ Maintainer Reaper176 should use the normal build/launch workflow and validate:
 9. requested restart/nonzero exit-code preservation during final-save failure;
 10. authoritative commit followed by journal-cleanup failure; and
 11. external/public `Save()` and `BackendsEdited = true` source compatibility;
-12. an external extension that references `BackendsEdited`, proving a core update rebuilds its managed DLL before load;
-13. unchanged-core restart proving the rebuilt extension DLL is reused; and
+12. an external extension that references `BackendsEdited`, proving a changed core binary rebuilds its managed DLL before load across normal Git, detached, worktree, packed-ref, and packaged layouts;
+13. same-core-binary restart proving the rebuilt extension DLL is reused; and
 14. normal shutdown/restart proving periodic cancellation produces no unobserved task fault.
 
 No benchmark or performance measurement is part of validation.
