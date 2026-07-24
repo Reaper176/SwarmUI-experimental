@@ -387,7 +387,7 @@ public static class ComfyWorkflowStore
         File.Move(markerStagePath, RevalidateContainedPath(GetMarkerPath(transaction.SourceName)));
     }
 
-    /// <summary>Best-effort removes only the exact save stages created before a journal was published.</summary>
+    /// <summary>Best-effort removes only the exact transaction stages created before a journal was published.</summary>
     private static void CleanupUnjournaledStages(WorkflowTransaction transaction)
     {
         try
@@ -400,7 +400,7 @@ public static class ComfyWorkflowStore
         }
         catch (Exception)
         {
-            Logs.Error("Error cleaning unjournaled workflow save artifacts (workflow content redacted).");
+            Logs.Error("Error cleaning unjournaled workflow transaction artifacts (workflow content redacted).");
         }
         try
         {
@@ -412,7 +412,7 @@ public static class ComfyWorkflowStore
         }
         catch (Exception)
         {
-            Logs.Error("Error cleaning unjournaled workflow save artifacts (workflow content redacted).");
+            Logs.Error("Error cleaning unjournaled workflow transaction artifacts (workflow content redacted).");
         }
     }
 
@@ -869,9 +869,17 @@ public static class ComfyWorkflowStore
     public static void SaveWorkflow(string name, string workflow, string prompt, string customParams, string paramValues, string image, string description, bool enableInSimple, string replace)
     {
         PreparedSave preparedSave = PrepareSave(name, workflow, prompt, customParams, paramValues, image, description, enableInSimple, replace);
-        lock (WorkflowLock)
+        try
         {
-            SaveWorkflowLocked(preparedSave);
+            lock (WorkflowLock)
+            {
+                SaveWorkflowLocked(preparedSave);
+            }
+        }
+        catch (Exception)
+        {
+            Logs.Error("Error persisting workflow save transaction (workflow content redacted).");
+            throw new IOException("Workflow save failed.");
         }
     }
 
@@ -879,72 +887,80 @@ public static class ComfyWorkflowStore
     public static bool DeleteWorkflow(string name)
     {
         string cleanedName = Utilities.StrictFilenameClean(name);
-        lock (WorkflowLock)
+        try
         {
-            if (!ComfyUIBackendExtension.CustomWorkflows.ContainsKey(cleanedName))
+            lock (WorkflowLock)
             {
-                return false;
-            }
-            string sourcePath = GetWorkflowPath(cleanedName);
-            if (!FileExistsStrict(sourcePath))
-            {
-                return false;
-            }
-            Guid id = Guid.NewGuid();
-            bool createMarker = IsExampleWorkflow(cleanedName);
-            WorkflowTransaction transaction = new()
-            {
-                Id = id,
-                Operation = TransactionOperation.Delete,
-                Phase = TransactionPhase.Prepared,
-                SourceName = cleanedName,
-                SourceBackupPath = CreateArtifactPath(sourcePath, id, "source-backup"),
-                SourceExisted = true,
-                CreateMarker = createMarker,
-                MarkerExisted = createMarker && FileExistsStrict(GetMarkerPath(cleanedName))
-            };
-            try
-            {
-                PrepareMarkerArtifacts(transaction);
-                WriteJournal(transaction);
-            }
-            catch
-            {
-                CleanupUnjournaledStages(transaction);
-                throw;
-            }
-            try
-            {
-                string freshSourcePath = RevalidateContainedPath(GetWorkflowPath(transaction.SourceName));
-                string sourceBackupPath = RevalidateContainedPath(GetArtifactPath(transaction, transaction.SourceBackupPath, freshSourcePath, "source-backup"));
-                File.Move(freshSourcePath, sourceBackupPath);
-                InstallPreparedMarker(transaction);
-                transaction.Phase = TransactionPhase.Committed;
-                WriteJournal(transaction);
-            }
-            catch
-            {
+                if (!ComfyUIBackendExtension.CustomWorkflows.ContainsKey(cleanedName))
+                {
+                    return false;
+                }
+                string sourcePath = GetWorkflowPath(cleanedName);
+                if (!FileExistsStrict(sourcePath))
+                {
+                    return false;
+                }
+                Guid id = Guid.NewGuid();
+                bool createMarker = IsExampleWorkflow(cleanedName);
+                WorkflowTransaction transaction = new()
+                {
+                    Id = id,
+                    Operation = TransactionOperation.Delete,
+                    Phase = TransactionPhase.Prepared,
+                    SourceName = cleanedName,
+                    SourceBackupPath = CreateArtifactPath(sourcePath, id, "source-backup"),
+                    SourceExisted = true,
+                    CreateMarker = createMarker,
+                    MarkerExisted = createMarker && FileExistsStrict(GetMarkerPath(cleanedName))
+                };
                 try
                 {
-                    RollbackPrepared(transaction);
+                    PrepareMarkerArtifacts(transaction);
+                    WriteJournal(transaction);
+                }
+                catch
+                {
+                    CleanupUnjournaledStages(transaction);
+                    throw;
+                }
+                try
+                {
+                    string freshSourcePath = RevalidateContainedPath(GetWorkflowPath(transaction.SourceName));
+                    string sourceBackupPath = RevalidateContainedPath(GetArtifactPath(transaction, transaction.SourceBackupPath, freshSourcePath, "source-backup"));
+                    File.Move(freshSourcePath, sourceBackupPath);
+                    InstallPreparedMarker(transaction);
+                    transaction.Phase = TransactionPhase.Committed;
+                    WriteJournal(transaction);
+                }
+                catch
+                {
+                    try
+                    {
+                        RollbackPrepared(transaction);
+                    }
+                    catch (Exception)
+                    {
+                        Logs.Error("Error rolling back workflow deletion transaction (workflow content redacted).");
+                        throw new IOException("Workflow deletion failed and requires journal recovery.");
+                    }
+                    throw;
+                }
+                ComfyUIBackendExtension.CustomWorkflows.TryRemove(cleanedName, out _);
+                try
+                {
+                    CleanupCommitted(transaction);
                 }
                 catch (Exception)
                 {
-                    Logs.Error("Error rolling back workflow deletion transaction (workflow content redacted).");
-                    throw new IOException("Workflow deletion failed and requires journal recovery.");
+                    Logs.Error("Error cleaning committed workflow deletion transaction (workflow content redacted).");
                 }
-                throw;
+                return true;
             }
-            ComfyUIBackendExtension.CustomWorkflows.TryRemove(cleanedName, out _);
-            try
-            {
-                CleanupCommitted(transaction);
-            }
-            catch (Exception)
-            {
-                Logs.Error("Error cleaning committed workflow deletion transaction (workflow content redacted).");
-            }
-            return true;
+        }
+        catch (Exception)
+        {
+            Logs.Error("Error persisting workflow deletion transaction (workflow content redacted).");
+            throw new IOException("Workflow deletion failed.");
         }
     }
 
