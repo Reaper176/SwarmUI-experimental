@@ -268,7 +268,7 @@ The implementation uses `Path` APIs for normalization and containment checks, ac
 
 `WorkflowLock` coordinates maintained in-process workflow-store operations only. Immediately before each recovery mutation, recovery revalidates lexical containment, ancestor reparse-point state, filesystem object type, and required content identity.
 
-.NET 8 has no portable cross-platform primitive that atomically verifies a file through an open handle and then unlinks or renames that same filesystem object. Concurrent out-of-process or adversarial replacement between verification and mutation is outside the supported contract. `CustomWorkflows` must be on a stable local filesystem and must not be modified externally while SwarmUI save, delete, refresh, or recovery is active.
+.NET 8 has no portable cross-platform primitive that atomically verifies a file through an open handle and then unlinks or renames that same filesystem object. Concurrent out-of-process or adversarial replacement between verification and mutation is outside the supported contract. The custom-workflow storage directory beneath the Comfy extension folder must be on a stable local filesystem and must not be modified externally while SwarmUI save, delete, refresh, or recovery is active.
 
 ## Error Handling and Diagnostics
 
@@ -339,7 +339,7 @@ The maintainer performs runtime validation manually because this repository does
 
 Maintainer Reaper176 confirmed normal build/launch/browse/generation on Linux. The agreed runtime matrix covered new save, ordinary overwrite, explicit same-name replacement, cross-name rename, destination collision, a missing replacement predecessor, standalone deletion and built-in example markers; independent invalid `workflow`, `prompt`, `custom_params`, and `param_values` JSON plus invalid image data; image inheritance, replacement, explicit clearing, and placeholder fallback; refresh and restart; concurrent maintained readers; the available storage-failure cases; and interrupted-journal recovery.
 
-Runtime validation was performed on Linux. Windows received static cross-platform review only; no Windows runtime validation is claimed. This validation establishes the agreed compatibility and durability behavior and makes no performance claim.
+Runtime validation was performed on Linux. Windows received static cross-platform review only; no Windows runtime validation is claimed. This validation confirms the listed Linux cases only; it does not claim exhaustive coverage of every storage-failure or interruption phase, and it makes no performance claim.
 
 ## Success Criteria
 
@@ -367,12 +367,12 @@ Production implementation commits:
 - `6430aa6a` centralized maintained reads in `ComfyWorkflowStore.cs` and delegated the extension/API readers; `a11f7357` removed the superseded import.
 - `cf4b6cfc` added the journal protocol; `0402ac9d` enforced exact sibling artifacts; `5e73755a` hardened journal validation.
 - `4c6c96bc` added recovery; `53760f14` verified committed markers; `42194eee` made recovery fail closed; `99753fb1` redacted journal-probe failures.
-- `c9ab32fa` made save/overwrite/rename durable before cache publication; `6cf4764e` documented store-lock ownership.
+- `c9ab32fa` made save/overwrite/rename durable before cache publication.
 - `66fef832` made deletion durable; `83390178` fixed persistence-boundary redaction.
 - `d6baa03f` hardened recovery ownership by hash-verifying workflow and marker stages before every cleanup deletion.
 - `8893503c` gated every maintained workflow consumer while recovery or refresh is required.
 - `575f7924` preserved public dictionary identity by staging refresh inventory and repopulating the existing instance under the lock and gate.
 
-`ComfyWorkflowStore.cs` owns maintained workflow storage, transactions, recovery, hydration, snapshots, and cache publication. `ComfyUIBackendExtension.cs` and `ComfyUIWebAPI.cs` retain the public extension and route facades. `19ab77b4` is the approved stable-filesystem contract clarification, not a production implementation commit: `CustomWorkflows` must remain on a stable local filesystem without concurrent external modification during maintained operations.
+`ComfyWorkflowStore.cs` owns maintained workflow storage, transactions, recovery, hydration, snapshots, and cache publication. `ComfyUIBackendExtension.cs` and `ComfyUIWebAPI.cs` retain the public extension and route facades. `19ab77b4` and `6cf4764e` are approved documentation/contract clarifications, not production implementation commits: `19ab77b4` requires the custom-workflow storage directory beneath the Comfy extension folder to remain on a stable local filesystem without concurrent external modification during maintained operations, and `6cf4764e` documents store-lock ownership.
 
 Static review covered all maintained read/list/parameter/generation/save/delete/refresh paths, the new-save/overwrite/same-name/A-to-B/delete state table, candidate validation, journal and artifact validation, mutation and recovery ordering, content-verified cleanup, recovery gating, staged same-instance cache refresh, redacted diagnostics, pre-rank-6 API/extension compatibility, public dictionary identity, and unchanged P8 hydration behavior. Endpoint review and `git diff --check b417ace9..575f7924` passed. Per repository policy, no agent-run builds, automated tests, launchers, server, browser, backend, installer, or live-storage checks were run. Maintainer runtime confirmation is recorded above.
