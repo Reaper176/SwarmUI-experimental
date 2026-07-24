@@ -82,7 +82,7 @@ public static class ComfyUIWebAPI
     public static JObject ReadCustomWorkflow(string name)
     {
         string path = Utilities.StrictFilenameClean(name);
-        ComfyUIBackendExtension.ComfyCustomWorkflow workflow = ComfyUIBackendExtension.GetWorkflowByName(path);
+        ComfyUIBackendExtension.ComfyCustomWorkflow workflow = ComfyWorkflowStore.GetWorkflowByName(path);
         if (workflow is null)
         {
             return new JObject() { ["error"] = "Unknown custom workflow name." };
@@ -114,13 +114,12 @@ public static class ComfyUIWebAPI
     {
         return new JObject()
         {
-            ["workflows"] = JToken.FromObject(ComfyUIBackendExtension.CustomWorkflows.Keys.ToList()
-            .Select(ComfyUIBackendExtension.GetWorkflowByName).Where(w => w is not null).OrderBy(w => w.Name).Select(w => new JObject()
+            ["workflows"] = JToken.FromObject(ComfyWorkflowStore.GetWorkflowSnapshot().OrderBy(workflow => workflow.Name).Select(workflow => new JObject()
             {
-                ["name"] = w.Name,
-                ["image"] = w.Image ?? "/imgs/model_placeholder.jpg",
-                ["description"] = w.Description,
-                ["enable_in_simple"] = w.EnableInSimple
+                ["name"] = workflow.Name,
+                ["image"] = workflow.Image ?? "/imgs/model_placeholder.jpg",
+                ["description"] = workflow.Description,
+                ["enable_in_simple"] = workflow.EnableInSimple
             }).ToList())
         };
     }

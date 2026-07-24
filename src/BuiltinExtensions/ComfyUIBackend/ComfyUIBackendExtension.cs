@@ -272,78 +272,12 @@ public class ComfyUIBackendExtension : Extension
 
     public void LoadWorkflowFiles()
     {
-        CustomWorkflows.Clear();
-        Directory.CreateDirectory($"{FilePath}CustomWorkflows");
-        Directory.CreateDirectory($"{FilePath}CustomWorkflows/Examples");
-        string[] getCustomFlows(string path) => [.. Directory.EnumerateFiles($"{FilePath}/{path}", "*.*", new EnumerationOptions() { RecurseSubdirectories = true }).Select(f => f.Replace('\\', '/').After($"/{path}/")).Order()];
-        ExampleWorkflowNames = getCustomFlows("ExampleWorkflows");
-        string[] customFlows = getCustomFlows("CustomWorkflows");
-        bool anyCopied = false;
-        foreach (string workflow in ExampleWorkflowNames.Where(f => f.EndsWith(".json")))
-        {
-            if (!customFlows.Contains($"Examples/{workflow}") && !customFlows.Contains($"Examples/{workflow}.deleted"))
-            {
-                File.Copy($"{FilePath}ExampleWorkflows/{workflow}", $"{FilePath}CustomWorkflows/Examples/{workflow}");
-                anyCopied = true;
-            }
-        }
-        if (anyCopied)
-        {
-            customFlows = getCustomFlows("CustomWorkflows");
-        }
-        foreach (string workflow in customFlows.Where(f => f.EndsWith(".json")))
-        {
-            CustomWorkflows.TryAdd(workflow.BeforeLast('.'), null);
-        }
+        ComfyWorkflowStore.LoadWorkflowFiles(FilePath);
     }
 
     public static ComfyCustomWorkflow GetWorkflowByName(string name)
     {
-        if (!CustomWorkflows.TryGetValue(name, out ComfyCustomWorkflow workflow))
-        {
-            return null;
-        }
-        if (workflow is not null)
-        {
-            return workflow;
-        }
-        string path = $"{Folder}/CustomWorkflows/{name}.json";
-        if (!File.Exists(path))
-        {
-            CustomWorkflows.TryRemove(name, out _);
-            return null;
-        }
-        try
-        {
-            JObject json = ComfySubmittedJson.ParseObject(File.ReadAllText(path));
-            string getStringFor(string key)
-            {
-                if (!json.TryGetValue(key, out JToken data))
-                {
-                    return null;
-                }
-                if (data.Type == JTokenType.String)
-                {
-                    return data.ToString();
-                }
-                return data.ToString(Formatting.None);
-            }
-            string workflowData = getStringFor("workflow");
-            string prompt = getStringFor("prompt");
-            string customParams = getStringFor("custom_params");
-            string paramValues = getStringFor("param_values");
-            string image = getStringFor("image") ?? "/imgs/model_placeholder.jpg";
-            string description = getStringFor("description");
-            bool enableInSimple = json.TryGetValue("enable_in_simple", out JToken enableInSimpleTok) && enableInSimpleTok.ToObject<bool>();
-            workflow = new(name, workflowData, prompt, customParams, paramValues, image, description, enableInSimple);
-            CustomWorkflows[name] = workflow;
-            return workflow;
-        }
-        catch (Exception)
-        {
-            Logs.Error("Error loading ComfyUI custom workflow (submitted content redacted).");
-            return null;
-        }
+        return ComfyWorkflowStore.GetWorkflowByName(name);
     }
 
     public void Refresh()
@@ -725,8 +659,8 @@ public class ComfyUIBackendExtension : Extension
         ComfyAdvancedGroup = new("ComfyUI Advanced", Toggles: false, IsAdvanced: true, Open: false);
         CustomWorkflowParam = T2IParamTypes.Register<string>(new("ComfyUI Custom Workflow", "What custom workflow to use in ComfyUI (built in the Comfy Workflow Editor tab).\nGenerally, do not use this directly.",
             "", Toggleable: true, FeatureFlag: "comfyui", Group: T2IParamTypes.GroupSwarmInternal, IsAdvanced: true, ValidateValues: false, ChangeWeight: 8, Permission: PermStoredCustomWorkflows,
-            GetValues: (_) => [.. CustomWorkflows.Keys.Order()],
-            Clean: (_, val) => CustomWorkflows.ContainsKey(val) ? $"PARSED%{val}%{ComfyUIWebAPI.ReadCustomWorkflow(val)["prompt"]}" : val,
+            GetValues: (_) => ComfyWorkflowStore.GetWorkflowNames(),
+            Clean: (_, val) => ComfyWorkflowStore.TryGetWorkflowParameterPrompt(val, out string prompt) ? $"PARSED%{val}%{prompt}" : val,
             MetadataFormat: v => v.StartsWith("PARSED%") ? v.After("%").Before("%") : v
             ));
         SamplerParam = T2IParamTypes.Register<string>(new("Sampler", "Sampler type (for ComfyUI backends).\nGenerally, 'Euler' is fine, but for SD1 and SDXL 'DPM++ 2M' is popular when paired with the 'Karras' scheduler.\n'Ancestral' and 'SDE' samplers only work with non-rectified models (eg SD1/SDXL) and randomly move over time.\nSome special model variants require specific Samplers or Schedulers.\n'CFG++' samplers have a different CFG range than normal (between 0 to 2, depending).",
