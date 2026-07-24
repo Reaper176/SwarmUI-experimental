@@ -728,13 +728,13 @@ public static class ComfyWorkflowStore
     /// <summary>Recovers the single active workflow transaction, if present.</summary>
     private static void RecoverPendingTransactionLocked()
     {
-        string journalPath = GetContainedPath(JournalFileName);
-        if (!FileExistsStrict(journalPath))
-        {
-            return;
-        }
         try
         {
+            string journalPath = GetContainedPath(JournalFileName);
+            if (!FileExistsStrict(journalPath))
+            {
+                return;
+            }
             WorkflowTransaction transaction = ReadJournal(journalPath);
             if (transaction.Phase == TransactionPhase.Prepared)
             {
