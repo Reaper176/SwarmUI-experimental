@@ -4,7 +4,6 @@ using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 using SwarmUI.Media;
 using SwarmUI.Utils;
-using System.Collections.Concurrent;
 using System.IO;
 using System.Security.Cryptography;
 
@@ -1100,6 +1099,7 @@ public static class ComfyWorkflowStore
     {
         lock (WorkflowLock)
         {
+            MarkRecoveryRequiredLocked();
             try
             {
                 Directory.CreateDirectory($"{extensionFilePath}CustomWorkflows");
@@ -1121,13 +1121,17 @@ public static class ComfyWorkflowStore
                 {
                     customFlows = getCustomFlows("CustomWorkflows");
                 }
-                ConcurrentDictionary<string, ComfyUIBackendExtension.ComfyCustomWorkflow> refreshedWorkflows = new();
+                Dictionary<string, ComfyUIBackendExtension.ComfyCustomWorkflow> refreshedWorkflows = [];
                 foreach (string workflow in customFlows.Where(f => f.EndsWith(".json")))
                 {
                     refreshedWorkflows.TryAdd(workflow.BeforeLast('.'), null);
                 }
                 ComfyUIBackendExtension.ExampleWorkflowNames = exampleWorkflowNames;
-                ComfyUIBackendExtension.CustomWorkflows = refreshedWorkflows;
+                ComfyUIBackendExtension.CustomWorkflows.Clear();
+                foreach (KeyValuePair<string, ComfyUIBackendExtension.ComfyCustomWorkflow> workflow in refreshedWorkflows)
+                {
+                    ComfyUIBackendExtension.CustomWorkflows.TryAdd(workflow.Key, workflow.Value);
+                }
                 RecoveryRequired = false;
             }
             catch
