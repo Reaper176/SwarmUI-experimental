@@ -890,6 +890,7 @@ Ranks 25-32 are bounded measurement projects, not implementation projects. For e
 ### 5. Make backend persistence generation-acknowledged and failure-isolated
 
 - **Implementation status:** **Implemented, awaiting maintainer validation.** The monotonic mutation/saved-generation protocol, post-visibility real-mutation publication, exact authoritative-file classification, periodic retry isolation, contained final shutdown attempt, core-aware managed-extension cache identity, and normal periodic cancellation exit are present. Runtime durability, failure recovery, extension rebuild/reuse, restart, and downstream cleanup remain for maintainer validation.
+
 Ranks 3 and 4 are implemented and maintainer-validated. Unranked security prerequisite `S1` is implemented and maintainer-validated. Frontend F4 and Comfy F25 remain implemented awaiting their own maintainer validation. The roadmap remains 24 production projects and eight measurement prerequisites, or 32 numbered ranks, with `S1` retained as an additional unranked prerequisite. Rank 5 is now the Recommended Next Project.
 
 - **Boundary and owner:** `BackendHandler` dirty publication, periodic save loop, and final shutdown save. **Evidence/consumers:** Backend F14 and F21 share the configured-backend persistence owner; installation/API add, real API delete, periodic persistence, and shutdown are the maintained mutation/save paths.
