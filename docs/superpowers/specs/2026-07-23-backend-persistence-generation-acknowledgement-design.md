@@ -2,7 +2,7 @@
 
 **Date:** 2026-07-23
 
-**Status:** Design sections approved; awaiting written-spec review
+**Status:** Compatibility correction approved; awaiting written-spec review
 
 ## Goal
 
@@ -47,6 +47,25 @@ The generation protocol preserves:
 - non-real backend exclusion;
 - the public `void Save()` signature and force-save behavior; and
 - the current requested process exit code during shutdown.
+
+The public `BackendsEdited` field-to-property migration is source-compatible but not binary-compatible with an extension assembly compiled against the old field token. SwarmUI's managed external-extension loader caches each built DLL by the extension repository commit alone, so a core update does not currently force that assembly to rebuild. The compatibility correction therefore extends the bounded project to the managed extension build-cache identity and the touched periodic task's cancellation exit.
+
+## Managed Extension Binary Compatibility
+
+`ExtensionsManager.BuildExtension` keys each managed external-extension DLL by two independent identities:
+
+- the existing extension repository commit; and
+- the current SwarmUI core identity.
+
+The core identity is `Utilities.GitCommit` when it contains exactly eight alphanumeric characters. Packaged or non-Git installations fall back to `Utilities.Version` with dots replaced by hyphens. Both values already exist in `Utilities`; the extension manager does not add a new version source or inspect repository content itself.
+
+The target DLL filename is `<dllName>-<extensionIdentity>-core-<coreIdentity>.dll`, and the build `TargetName` is the same value without `.dll`. An extension cache entry built against an older core therefore does not match after a SwarmUI update, causing one normal rebuild through the existing extension build path. Later launches with unchanged core and extension identities reuse that rebuilt cache. Older unmatched DLLs retain the existing cache-retention behavior; cleanup policy is not changed in this project.
+
+This intentionally favors automatic binary compatibility over retaining extension DLLs across core commits. It does not change extension discovery, source layout, dependency resolution, load contexts, build configuration, disabled-extension behavior, error reporting, or the extension repository commit calculation.
+
+SwarmUI's managed source-build path is the compatibility owner. Independently supplied binary-only extensions that bypass this path remain outside scope.
+
+The core repository guidance records that managed compiled-extension cache keys must change with the host identity whenever extensions can reference core public members. This prevents a future core ABI change from silently reusing a stale assembly.
 
 ## Generation Ownership
 
@@ -184,6 +203,8 @@ It no longer clears `BackendsEdited`. Each interval asks the observable owner to
 
 Persistent failures remain visible in server logs. This design does not add backoff, rate limiting, a new worker, or synchronous mutation responses.
 
+Cancellation of the tokenized ten-second delay is handled with a `try`/`catch` around that delay only. An `OperationCanceledException` filtered by `GlobalProgramCancel.IsCancellationRequested` returns from the periodic task normally. The existing post-delay cancellation check remains, and persistence exceptions continue through `TrySavePending`; cancellation handling does not become a general exception boundary.
+
 ## Shutdown Persistence
 
 `BackendHandler.Shutdown` retains its current backend-drain and webhook ordering. When a generation remains pending, it makes one final observable save attempt.
@@ -238,9 +259,12 @@ Repository-permitted static checks will prove:
 6. save failure retains pending work and the periodic loop continues;
 7. verified journal-cleanup failure acknowledges only the captured generation;
 8. shutdown failure is contained before later `Program.Shutdown` owners;
-9. public `BackendsEdited` and `Save()` compatibility signatures remain;
+9. public `BackendsEdited` and `Save()` source-level names and approved semantics remain;
 10. FDS schema, secret filtering, and real-backend selection remain unchanged; and
-11. the implementation changes only the bounded backend persistence owners and documentation.
+11. managed extension cache target and build names contain both extension and core identities;
+12. a core-identity change invalidates the managed compiled-extension cache while unchanged identities reuse it;
+13. token cancellation exits the periodic task normally without swallowing persistence failures; and
+14. the implementation changes only the bounded backend persistence owners, managed extension cache identity, repository guidance, and documentation.
 
 Agents will not run builds, tests, launchers, servers, browsers, backends, installers, or live storage mutations.
 
@@ -258,7 +282,10 @@ Maintainer Reaper176 should use the normal build/launch workflow and validate:
 8. forced final-save failure while later sessions, proxy, models, extensions, output metadata, temporary-data, and log cleanup still run;
 9. requested restart/nonzero exit-code preservation during final-save failure;
 10. authoritative commit followed by journal-cleanup failure; and
-11. external/public `Save()` and `BackendsEdited = true` compatibility.
+11. external/public `Save()` and `BackendsEdited = true` source compatibility;
+12. an external extension that references `BackendsEdited`, proving a core update rebuilds its managed DLL before load;
+13. unchanged-core restart proving the rebuilt extension DLL is reused; and
+14. normal shutdown/restart proving periodic cancellation produces no unobserved task fault.
 
 No benchmark or performance measurement is part of validation.
 
@@ -270,6 +297,8 @@ No benchmark or performance measurement is part of validation.
 - A final failure cannot skip later shutdown cleanup or change the requested exit code.
 - Runtime-only non-real removal does not independently dirty `Backends.fds`.
 - Existing backend API timing, payloads, lifecycle behavior, FDS data, and public compatibility facades remain intact.
+- Managed source extensions are rebuilt after a core identity change before they can load a stale field token.
+- Normal periodic-task cancellation completes without an unobserved cancellation fault.
 - Memory and the latest successfully acknowledged `Backends.fds` generation agree after recovery and restart.
 
 ## Non-Goals
@@ -281,11 +310,12 @@ No benchmark or performance measurement is part of validation.
 - No retry backoff, new persistence thread, shutdown wait loop, or exit-code policy change.
 - No attempt to persist non-real backend instances.
 - No performance optimization or benchmark claim.
+- No general extension build-system, dependency-loader, or binary-only extension redesign.
 
 ## Risks and Rollback
 
-Primary risks are publishing before visibility, acknowledging a generation newer than the actual snapshot, missing partially visible edit failures, introducing a lock-order cycle, changing public Boolean/facade behavior, or suppressing a failure without retaining retry state.
+Primary risks are publishing before visibility, acknowledging a generation newer than the actual snapshot, missing partially visible edit failures, introducing a lock-order cycle, changing public Boolean/facade behavior, reusing a managed extension binary compiled against the old field token, or suppressing a failure without retaining retry state.
 
-The monotonic counters, post-visibility publication, captured target, serialized save owner, exact authoritative comparison, explicit result, and unchanged asynchronous lifecycle boundary contain those risks.
+The monotonic counters, post-visibility publication, captured target, serialized save owner, exact authoritative comparison, explicit result, core-aware extension cache identity, targeted delay cancellation boundary, and unchanged asynchronous lifecycle boundary contain those risks.
 
-Rollback must treat generation publication, acknowledgement, periodic retry, and shutdown isolation as one protocol. Reverting only generation acknowledgement can strand dirty work; reverting only failure isolation can restore writer termination; restoring clear-before-save recreates the original lost-update race.
+Rollback must treat generation publication, acknowledgement, periodic retry, shutdown isolation, and managed-extension cache invalidation as one compatibility protocol. Reverting only generation acknowledgement can strand dirty work; reverting only failure isolation can restore writer termination; restoring clear-before-save recreates the original lost-update race; and retaining the property while reverting core-aware cache invalidation can reload a stale extension field token.
