@@ -2,7 +2,7 @@
 
 **Date:** 2026-07-23
 
-**Status:** Compatibility correction approved; awaiting written-spec review
+**Status:** Implemented; awaiting maintainer validation
 
 ## Goal
 
