@@ -208,9 +208,15 @@ public class ExtensionsManager
     {
         string mode = Program.IsDevMode ? "Debug" : "Release";
         string dllName = $"SwarmExtension{folder.AfterLast('/')}";
-        string hash = (await Utilities.RunGitProcess("rev-parse HEAD", Path.GetFullPath(folder))).Trim();
-        hash = hash.Length >= 8 && Utilities.AlphaNumericMatcher.IsOnlyMatches(hash[0..8]) ? hash[0..8] : "unknown";
-        string target = $"./src/bin/extensions/{dllName}/{dllName}-{hash}.dll";
+        string extensionIdentity = (await Utilities.RunGitProcess("rev-parse HEAD", Path.GetFullPath(folder))).Trim();
+        extensionIdentity = extensionIdentity.Length >= 8 && Utilities.AlphaNumericMatcher.IsOnlyMatches(extensionIdentity[0..8]) ? extensionIdentity[0..8] : "unknown";
+        string coreIdentity = Utilities.GitCommit;
+        if (coreIdentity.Length != 8 || !Utilities.AlphaNumericMatcher.IsOnlyMatches(coreIdentity))
+        {
+            coreIdentity = Utilities.Version.Replace('.', '-');
+        }
+        string targetName = $"{dllName}-{extensionIdentity}-core-{coreIdentity}";
+        string target = $"./src/bin/extensions/{dllName}/{targetName}.dll";
         // bin/obj shouldn't exist but sometimes are accidentally created. They will break things if they form, so get rid of them.
         if (Directory.Exists($"{folder}/bin"))
         {
@@ -226,7 +232,7 @@ public class ExtensionsManager
             return LoadInExtensionContext(dllName, Path.GetFullPath(target));
         }
         Logs.Debug($"Building extension project: {projFile}...");
-        string buildParam = $"-p:BaseIntermediateOutputPath={Path.GetFullPath($"./src/obj/extensions/{dllName}/")};TargetName={dllName}-{hash}";
+        string buildParam = $"-p:BaseIntermediateOutputPath={Path.GetFullPath($"./src/obj/extensions/{dllName}/")};TargetName={targetName}";
         string output = await Utilities.QuickRunProcess("dotnet", ["build", Path.GetFullPath(projFile), "-c", mode, "-o", Path.GetFullPath($"./src/bin/extensions/{dllName}/"), buildParam], Path.GetFullPath(folder));
         if (!File.Exists(target))
         {

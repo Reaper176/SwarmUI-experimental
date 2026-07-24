@@ -95,6 +95,12 @@ This project contains multiple parts all in one repo. Please observe unique expe
 - `src/BuiltinExtensions`: extensions to SwarmUI that are built in and part of the main repo.
 - `src/Extensions`: externally downloaded extensions. If you are asked to work within an extension, contain your work only to that extension's folder. If you were not asked to work there, do not modify anything in the extensions folder.
 
+## Extension Binary Compatibility
+
+External C# extensions are compiled and cached by `ExtensionsManager.BuildExtension`. The managed DLL cache identity must include both the extension source identity and the SwarmUI core identity so a core update cannot reuse an extension assembly compiled against an older public-member ABI.
+
+Changes between public fields, properties, and methods can be source-compatible while remaining binary-incompatible. Do not remove the core identity from the managed extension build target/cache key unless an equivalent host-ABI invalidation mechanism replaces it.
+
 ## CSS Info
 
 This section applies to `src/wwwroot/css`, generally you also co-edit `src/Pages` and `src/wwwroot/js` at the same time.
