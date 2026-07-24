@@ -418,7 +418,14 @@ public class Program
         {
             while (true)
             {
-                await Task.Delay(TimeSpan.FromSeconds(10), GlobalProgramCancel);
+                try
+                {
+                    await Task.Delay(TimeSpan.FromSeconds(10), GlobalProgramCancel);
+                }
+                catch (OperationCanceledException) when (GlobalProgramCancel.IsCancellationRequested)
+                {
+                    return;
+                }
                 if (GlobalProgramCancel.IsCancellationRequested)
                 {
                     return;
