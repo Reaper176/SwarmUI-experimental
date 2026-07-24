@@ -210,11 +210,9 @@ public class ExtensionsManager
         string dllName = $"SwarmExtension{folder.AfterLast('/')}";
         string extensionIdentity = (await Utilities.RunGitProcess("rev-parse HEAD", Path.GetFullPath(folder))).Trim();
         extensionIdentity = extensionIdentity.Length >= 8 && Utilities.AlphaNumericMatcher.IsOnlyMatches(extensionIdentity[0..8]) ? extensionIdentity[0..8] : "unknown";
-        string coreIdentity = Utilities.GitCommit;
-        if (coreIdentity.Length != 8 || !Utilities.AlphaNumericMatcher.IsOnlyMatches(coreIdentity))
-        {
-            coreIdentity = Utilities.Version.Replace('.', '-');
-        }
+        Assembly coreAssembly = typeof(ExtensionsManager).Assembly;
+        string coreVersion = coreAssembly.GetName().Version.ToString().Replace('.', '-');
+        string coreIdentity = $"{coreVersion}-{coreAssembly.ManifestModule.ModuleVersionId:N}";
         string targetName = $"{dllName}-{extensionIdentity}-core-{coreIdentity}";
         string target = $"./src/bin/extensions/{dllName}/{targetName}.dll";
         // bin/obj shouldn't exist but sometimes are accidentally created. They will break things if they form, so get rid of them.
