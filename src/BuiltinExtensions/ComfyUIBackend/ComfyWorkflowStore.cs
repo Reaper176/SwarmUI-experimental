@@ -21,7 +21,7 @@ public static class ComfyWorkflowStore
     /// <summary>Canonical content for a workflow deletion marker.</summary>
     private const string DeletedMarkerContent = "deleted-by-user";
 
-    /// <summary>Synchronizes workflow inventory and read operations.</summary>
+    /// <summary>Serializes workflow transactions, recovery, inventory, hydration, publication, and maintained readers.</summary>
     private static readonly object WorkflowLock = new();
 
     /// <summary>Supported workflow transaction operations.</summary>
