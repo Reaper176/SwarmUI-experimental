@@ -27,7 +27,9 @@
 
 - Modify `src/Backends/BackendHandler.cs`: own generation state, compatibility facade, mutation publication, save result/classification, and final shutdown persistence.
 - Modify `src/WebAPI/BackendAPI.cs`: publish the already-visible toggle through the explicit generation owner.
-- Modify `src/Core/Program.cs`: replace clear-before-save with result-observing periodic retries.
+- Modify `src/Core/Program.cs`: replace clear-before-save with result-observing periodic retries and make token cancellation complete that task normally.
+- Modify `src/Core/ExtensionsManager.cs`: key managed compiled-extension caches by both extension and SwarmUI core identities.
+- Modify `AGENTS.md`: retain the learned host-identity requirement for compiled-extension cache compatibility.
 - Modify `docs/superpowers/specs/2026-07-23-backend-persistence-generation-acknowledgement-design.md`: record implementation and validation status without changing the approved design.
 - Modify `docs/superpowers/audits/2026-07-21-maintainability-architecture-refresh.md`: reconcile rank 5 and advance the roadmap only after maintainer validation.
 
@@ -557,9 +559,9 @@ Expected:
 Run:
 
 ```bash
-git diff HEAD~4..HEAD -- src/Backends/BackendHandler.cs src/WebAPI/BackendAPI.cs src/Core/Program.cs
+git diff 0ba55ebd..HEAD -- src/Backends/BackendHandler.cs src/WebAPI/BackendAPI.cs src/Core/Program.cs
 rg -n 'Set\\(\"(type|title|enabled|settings)\"|SaveFilePath = \"Data/Backends\\.fds\"|ExcludeSecretValuesThatMatch|LockSettings|ShutDownReserve|DoShutdownNow' src/Backends/BackendHandler.cs src/WebAPI/BackendAPI.cs
-git diff --check HEAD~4..HEAD
+git diff --check 0ba55ebd..HEAD
 git status --short --untracked-files=no
 ```
 
@@ -573,7 +575,184 @@ Expected:
 
 - [ ] **Step 4: Stop for source review**
 
-Present the four production commits and the static proof to Reaper176. Do not run or claim a build or runtime success. Address any source-review correction in a narrowly scoped follow-up commit, then repeat Steps 1-3 before requesting runtime validation.
+Present the initial four production commits and the static proof to Reaper176. Do not run or claim a build or runtime success. Address any source-review correction in a narrowly scoped follow-up commit, then repeat Steps 1-3 before requesting runtime validation.
+
+### Task 5A: Invalidate managed extension binaries after core updates
+
+**Files:**
+- Modify: `src/Core/ExtensionsManager.cs:207-230`
+- Modify: `AGENTS.md`
+
+- [ ] **Step 1: Add the core identity to the extension build target**
+
+In `ExtensionsManager.BuildExtension`, replace the extension hash and target setup with:
+
+```csharp
+        string mode = Program.IsDevMode ? "Debug" : "Release";
+        string dllName = $"SwarmExtension{folder.AfterLast('/')}";
+        string extensionIdentity = (await Utilities.RunGitProcess("rev-parse HEAD", Path.GetFullPath(folder))).Trim();
+        extensionIdentity = extensionIdentity.Length >= 8 && Utilities.AlphaNumericMatcher.IsOnlyMatches(extensionIdentity[0..8]) ? extensionIdentity[0..8] : "unknown";
+        string coreIdentity = Utilities.GitCommit;
+        if (coreIdentity.Length != 8 || !Utilities.AlphaNumericMatcher.IsOnlyMatches(coreIdentity))
+        {
+            coreIdentity = Utilities.Version.Replace('.', '-');
+        }
+        string targetName = $"{dllName}-{extensionIdentity}-core-{coreIdentity}";
+        string target = $"./src/bin/extensions/{dllName}/{targetName}.dll";
+```
+
+Keep the existing `bin`/`obj` cleanup, release-cache lookup, logging, build command, output check, and load context unchanged. Replace the build parameter assignment with:
+
+```csharp
+        string buildParam = $"-p:BaseIntermediateOutputPath={Path.GetFullPath($"./src/obj/extensions/{dllName}/")};TargetName={targetName}";
+```
+
+This gives the cache filename and compiler output the same identity. Do not delete older unmatched cache files or alter extension discovery.
+
+- [ ] **Step 2: Record the core extension-cache compatibility rule**
+
+Add this section to `AGENTS.md` after `Project Structure` and before language-specific guidance:
+
+```markdown
+## Extension Binary Compatibility
+
+External C# extensions are compiled and cached by `ExtensionsManager.BuildExtension`. The managed DLL cache identity must include both the extension source identity and the SwarmUI core identity so a core update cannot reuse an extension assembly compiled against an older public-member ABI.
+
+Changes between public fields, properties, and methods can be source-compatible while remaining binary-incompatible. Do not remove the core identity from the managed extension build target/cache key unless an equivalent host-ABI invalidation mechanism replaces it.
+```
+
+- [ ] **Step 3: Prove target/build identity parity**
+
+Run:
+
+```bash
+nl -ba src/Core/ExtensionsManager.cs | sed -n '203,240p'
+rg -n "extensionIdentity|coreIdentity|targetName|TargetName=|File.Exists\\(target\\)|LoadInExtensionContext" src/Core/ExtensionsManager.cs
+rg -n "Extension Binary Compatibility|managed DLL cache identity|binary-incompatible" AGENTS.md
+git diff --check -- src/Core/ExtensionsManager.cs AGENTS.md
+```
+
+Expected:
+
+- extension identity retains the existing commit/fallback behavior;
+- valid eight-character `Utilities.GitCommit` is preferred;
+- non-Git fallback uses the assembly version with dots replaced by hyphens;
+- target path and compiler `TargetName` share `targetName`;
+- unchanged identities reuse the existing file check;
+- no cache deletion or loader behavior changed; and
+- the diff check returns no output.
+
+- [ ] **Step 4: Review and commit the compatibility correction**
+
+Run:
+
+```bash
+git diff -- src/Core/ExtensionsManager.cs AGENTS.md
+git status --short --untracked-files=no
+git add -- src/Core/ExtensionsManager.cs AGENTS.md
+git diff --cached --check
+git commit -m "fix: invalidate extensions on core updates"
+```
+
+Expected: only `ExtensionsManager.cs` and `AGENTS.md` are committed; the four user-owned modifications remain unstaged.
+
+### Task 5B: Complete the periodic save task normally on cancellation
+
+**Files:**
+- Modify: `src/Core/Program.cs:417-432`
+
+- [ ] **Step 1: Contain cancellation at the tokenized delay**
+
+Replace the single delay statement inside the periodic loop:
+
+```csharp
+                try
+                {
+                    await Task.Delay(TimeSpan.FromSeconds(10), GlobalProgramCancel);
+                }
+                catch (OperationCanceledException) when (GlobalProgramCancel.IsCancellationRequested)
+                {
+                    return;
+                }
+```
+
+Keep the existing post-delay cancellation check and `TrySavePending` result handling unchanged. Do not wrap persistence in this catch and do not add a general exception boundary.
+
+- [ ] **Step 2: Prove cancellation and persistence boundaries remain separate**
+
+Run:
+
+```bash
+nl -ba src/Core/Program.cs | sed -n '417,445p'
+rg -n "Task.Delay\\(TimeSpan.FromSeconds\\(10\\)|OperationCanceledException|TrySavePending|will retry" src/Core/Program.cs
+git diff --check -- src/Core/Program.cs
+```
+
+Expected:
+
+- the catch surrounds only the delay;
+- its filter requires `GlobalProgramCancel.IsCancellationRequested`;
+- cancellation returns normally;
+- persistence still flows through `TrySavePending`;
+- the post-delay check remains; and
+- the diff check returns no output.
+
+- [ ] **Step 3: Review and commit the cancellation correction**
+
+Run:
+
+```bash
+git diff -- src/Core/Program.cs
+git status --short --untracked-files=no
+git add -- src/Core/Program.cs
+git diff --cached --check
+git commit -m "fix: complete backend save task on cancellation"
+```
+
+Expected: only `src/Core/Program.cs` is committed.
+
+### Task 5C: Repeat the integrated static and quality review
+
+**Files:**
+- Inspect: `src/Backends/BackendHandler.cs`
+- Inspect: `src/WebAPI/BackendAPI.cs`
+- Inspect: `src/Core/Program.cs`
+- Inspect: `src/Core/ExtensionsManager.cs`
+- Inspect: `AGENTS.md`
+
+- [ ] **Step 1: Repeat Task 5's mutation, persistence, compatibility, and interleaving proofs**
+
+Run every command from Task 5 Steps 1-3 again, replacing its range commands with:
+
+```bash
+git diff 0ba55ebd..HEAD -- src/Backends/BackendHandler.cs src/WebAPI/BackendAPI.cs src/Core/Program.cs src/Core/ExtensionsManager.cs AGENTS.md
+git diff --check 0ba55ebd..HEAD
+git status --short --untracked-files=no
+```
+
+Expected: all original persistence proofs still pass, and current status contains only the four preserved user-owned tracked modifications.
+
+- [ ] **Step 2: Add the corrected binary and cancellation proofs**
+
+Run:
+
+```bash
+rg -n "extensionIdentity|coreIdentity|targetName|TargetName=" src/Core/ExtensionsManager.cs
+rg -n "OperationCanceledException|GlobalProgramCancel.IsCancellationRequested|TrySavePending" src/Core/Program.cs
+rg -n "Extension Binary Compatibility|core identity|binary-incompatible" AGENTS.md
+```
+
+Expected:
+
+- a core identity change selects a different managed extension target before the existing file-cache check;
+- unchanged extension/core identities select the same target;
+- packaged fallback is deterministic;
+- cancellation handling is delay-local and token-filtered; and
+- repository guidance preserves the new cache invariant.
+
+- [ ] **Step 3: Repeat independent specification and code-quality reviews**
+
+Dispatch a fresh specification reviewer over `0ba55ebd..HEAD`, followed only after approval by a fresh code-quality reviewer. Both must inspect the actual integrated diff, the corrected written specification, cache invalidation, cancellation, persistence interleavings, public source compatibility, and scope. Resolve every Critical or Important issue and repeat both reviews before Task 6.
 
 ### Task 6: Record implementation status and request maintainer validation
 
@@ -594,7 +773,7 @@ Change the design status to:
 In the roadmap's rank-5 entry and Recommended Next Project introduction, add this exact status:
 
 ```markdown
-- **Implementation status:** **Implemented, awaiting maintainer validation.** The monotonic mutation/saved-generation protocol, post-visibility real-mutation publication, exact authoritative-file classification, periodic retry isolation, and contained final shutdown attempt are present. Runtime durability, failure recovery, restart, and downstream cleanup remain for maintainer validation.
+- **Implementation status:** **Implemented, awaiting maintainer validation.** The monotonic mutation/saved-generation protocol, post-visibility real-mutation publication, exact authoritative-file classification, periodic retry isolation, contained final shutdown attempt, core-aware managed-extension cache identity, and normal periodic cancellation exit are present. Runtime durability, failure recovery, extension rebuild/reuse, restart, and downstream cleanup remain for maintainer validation.
 ```
 
 Keep rank 5 as the recommended active project until validation is confirmed. Do not mark F14/F21 fully mitigated and do not advance rank 6 yet.
@@ -627,8 +806,10 @@ Ask the maintainer to use the normal build/launch workflow and validate:
 8. forced final-save failure still allows session, proxy, model, extension, output-metadata, temporary-data, and log cleanup;
 9. restart/nonzero requested exit code remains unchanged during forced final-save failure;
 10. authoritative commit followed by forced journal-cleanup failure is classified as committed and does not cause a false retry;
-11. public/direct `Save()` still force-writes and reports write exceptions to its caller; and
-12. public `BackendsEdited = true` schedules a save while `BackendsEdited = false` cannot clear pending state.
+11. public/direct `Save()` still force-writes and reports write exceptions to its caller;
+12. public `BackendsEdited = true` schedules a save while `BackendsEdited = false` cannot clear pending state;
+13. an external managed source extension that references `BackendsEdited` is rebuilt after a core identity change, loads without `MissingFieldException`, and reuses that rebuilt DLL on an unchanged-core restart; and
+14. normal shutdown/restart completes the periodic task without an unobserved cancellation fault.
 
 Stop here until Reaper176 reports the build/launch and matrix result.
 
@@ -651,7 +832,7 @@ Add this section after `Success Criteria`:
 ```markdown
 ## Validation Record
 
-Maintainer Reaper176 confirmed the normal build/launch workflow and the complete twelve-case backend persistence matrix: real API and installation mutations, non-real removal, periodic overlap and retry, storage failure and recovery, rapid convergence, final shutdown persistence and failure isolation, exit-code preservation, journal-cleanup classification, and both public compatibility facades.
+Maintainer Reaper176 confirmed the normal build/launch workflow and the complete fourteen-case backend persistence and compatibility matrix: real API and installation mutations, non-real removal, periodic overlap and retry, storage failure and recovery, rapid convergence, final shutdown persistence and failure isolation, exit-code preservation, journal-cleanup classification, both public compatibility facades, managed extension rebuild/reuse, and normal cancellation completion.
 ```
 
 If any case was not run or failed, retain `awaiting maintainer validation` and add a concise sentence naming the incomplete case instead of adding this completed record.
@@ -673,7 +854,7 @@ Add this line directly after the Backend F21 heading:
 Add this line directly after both `### 5. Make backend persistence generation-acknowledged and failure-isolated` headings:
 
 ```markdown
-- **Implementation status:** **Implemented and maintainer-validated.** The complete generation publication, captured acknowledgement, retry, and shutdown-isolation protocol is the rollback unit. Maintainer Reaper176 confirmed the normal build/launch workflow and complete twelve-case matrix; no performance claim is made.
+- **Implementation status:** **Implemented and maintainer-validated.** The complete generation publication, captured acknowledgement, retry, shutdown-isolation, managed extension cache invalidation, and cancellation-completion protocol is the rollback unit. Maintainer Reaper176 confirmed the normal build/launch workflow and complete fourteen-case matrix; no performance claim is made.
 ```
 
 Add this line to `Current finding dispositions`:
@@ -730,7 +911,7 @@ Before claiming rank 5 complete:
 
 - confirm all production and documentation commits are present on `master`;
 - rerun Task 5's complete static review after any correction;
-- obtain Reaper176's explicit normal build/launch and twelve-case validation confirmation;
+- obtain Reaper176's explicit normal build/launch and fourteen-case validation confirmation;
 - confirm the design and audit both say implemented and maintainer-validated;
 - confirm rank 6, not rank 5, is Recommended Next; and
 - report that no agent-run build or test was performed.
