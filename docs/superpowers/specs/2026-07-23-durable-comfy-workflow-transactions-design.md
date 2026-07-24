@@ -206,6 +206,7 @@ After commit:
 
 - a failure to clean a backup, staging remnant, or journal is logged with redacted context;
 - cleanup failure does not convert a durably committed request into an ambiguous API error;
+- cleanup failure after coherent cache publication does not set the recovery gate;
 - the committed journal remains sufficient for later cleanup; and
 - a subsequent refresh or restart reconstructs the committed cache state from authoritative JSON files.
 
@@ -213,7 +214,7 @@ The API returns success only after durable commit and cache publication. A proce
 
 ## Crash Recovery
 
-`LoadWorkflowFiles` acquires the workflow-store lock and performs recovery before clearing or repopulating `CustomWorkflows` and before copying missing built-in examples.
+`RecoveryRequired` is protected by `WorkflowLock` and begins enabled. `LoadWorkflowFiles` acquires the lock, enables the gate at the start of every initial load or refresh, and performs recovery before copying missing built-in examples or publishing refreshed workflow state.
 
 For a valid `Prepared` journal, recovery restores the complete recorded pre-state:
 
@@ -226,9 +227,11 @@ For a valid `Committed` journal, recovery retains the intended post-state, compl
 
 Cleanup is idempotent. Recovery can stop and retry on a later refresh if storage remains unavailable.
 
-If the active journal is malformed, unsupported, path-unsafe, or inconsistent with its owned artifacts, recovery does not guess. It logs a content-redacted error and aborts workflow inventory before mutating the existing dictionary or copying examples. On refresh, the last published dictionary therefore remains intact. On initial startup, workflows remain unpublished until the journal is repaired or safely recoverable, which is preferable to deleting or publishing ambiguous user data.
+If the active journal is malformed, unsupported, path-unsafe, or inconsistent with its owned artifacts, recovery does not guess. It logs a content-redacted error, leaves `RecoveryRequired` enabled, and aborts workflow inventory before mutating the existing dictionary or copying examples. A recovery, rollback, inventory, example-copy, or repopulation failure likewise leaves the gate enabled. On refresh, the last published dictionary therefore remains intact or inaccessible to maintained consumers until a complete refresh succeeds. On initial startup, workflows remain unpublished until the journal is repaired or safely recoverable, which is preferable to deleting or publishing ambiguous user data.
 
 Unjournaled reserved-looking artifacts are ignored rather than removed automatically.
+
+Only successful recovery followed by complete example and custom-workflow inventory, required example copying, staged cache construction, and repopulation clears `RecoveryRequired`. A committed transaction whose post-publication cleanup fails remains coherent and available; its durable journal supports cleanup on a later refresh.
 
 ## Reader and Publication Coordination
 
@@ -242,6 +245,8 @@ All maintained state access uses the same store boundary:
 - parameter cleaning performs its existence/read decision through the store; and
 - refresh/recovery/inventory hold the lock through dictionary repopulation.
 
+Before maintained read, list, name snapshot, parameter lookup, generation resolution, save, or delete code can access workflow cache or files, it checks `RecoveryRequired` while holding `WorkflowLock`. Recovery and rollback failures therefore close every coordinated consumer until a complete load succeeds.
+
 The monitor used by C# `lock` is reentrant, so a maintained facade may safely call an internal locked lookup without opening a second state window. Response formatting and other work that does not require shared state occurs after the required snapshot is captured.
 
 During a rename, maintained readers see either:
@@ -251,7 +256,7 @@ During a rename, maintained readers see either:
 
 They cannot observe the interval between filesystem moves or the two dictionary-key mutations.
 
-`LoadWorkflowFiles` clears and repopulates the existing dictionary instance rather than assigning a replacement object. It retains null placeholders and existing lazy-hydration behavior after recovery.
+`LoadWorkflowFiles` first builds the complete refreshed inventory in a private staged dictionary. While still holding `WorkflowLock` with `RecoveryRequired` enabled, it clears and repopulates the existing public `CustomWorkflows` instance rather than assigning a replacement object, then clears the gate. This retains public dictionary identity, null placeholders, and existing lazy-hydration behavior. Direct external access to the public dictionary cannot be forced through the lock or recovery gate and remains the documented compatibility limitation.
 
 ## Filesystem and Platform Behavior
 
@@ -355,7 +360,9 @@ Production implementation commits:
 - `c9ab32fa` made save/overwrite/rename durable before cache publication; `6cf4764e` documented store-lock ownership.
 - `66fef832` made deletion durable; `83390178` fixed persistence-boundary redaction.
 - `d6baa03f` hardened recovery ownership by hash-verifying workflow and marker stages before every cleanup deletion.
+- `8893503c` gated every maintained workflow consumer while recovery or refresh is required.
+- `575f7924` preserved public dictionary identity by staging refresh inventory and repopulating the existing instance under the lock and gate.
 
 `ComfyWorkflowStore.cs` owns maintained workflow storage, transactions, recovery, hydration, snapshots, and cache publication. `ComfyUIBackendExtension.cs` and `ComfyUIWebAPI.cs` retain the public extension and route facades. `19ab77b4` is the approved stable-filesystem contract clarification, not a production implementation commit: `CustomWorkflows` must remain on a stable local filesystem without concurrent external modification during maintained operations.
 
-Static review covered all maintained read/list/parameter/generation/save/delete/refresh paths, the new-save/overwrite/same-name/A-to-B/delete state table, candidate validation, journal and artifact validation, mutation and recovery ordering, content-verified cleanup, redacted diagnostics, pre-rank-6 API/extension compatibility, public dictionary identity, and unchanged P8 hydration behavior. `git diff --check b417ace9..d6baa03f` passed. Per repository policy, no builds, automated tests, launchers, server, browser, backend, installer, or live-storage checks were run. The complete maintainer validation matrix above remains outstanding.
+Static review covered all maintained read/list/parameter/generation/save/delete/refresh paths, the new-save/overwrite/same-name/A-to-B/delete state table, candidate validation, journal and artifact validation, mutation and recovery ordering, content-verified cleanup, recovery gating, staged same-instance cache refresh, redacted diagnostics, pre-rank-6 API/extension compatibility, public dictionary identity, and unchanged P8 hydration behavior. Endpoint review and `git diff --check b417ace9..575f7924` passed. Per repository policy, no builds, automated tests, launchers, server, browser, backend, installer, or live-storage checks were run. The complete maintainer validation matrix above remains outstanding.
