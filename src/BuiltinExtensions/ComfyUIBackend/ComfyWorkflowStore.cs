@@ -4,6 +4,7 @@ using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 using SwarmUI.Media;
 using SwarmUI.Utils;
+using System.Collections.Concurrent;
 using System.IO;
 using System.Security.Cryptography;
 
@@ -23,6 +24,9 @@ public static class ComfyWorkflowStore
 
     /// <summary>Serializes workflow transactions, recovery, inventory, hydration, publication, and maintained readers.</summary>
     private static readonly object WorkflowLock = new();
+
+    /// <summary>Whether maintained workflow access is blocked pending recovery and refresh. Direct public dictionary access is a compatibility limit and cannot be gated.</summary>
+    private static bool RecoveryRequired = true;
 
     /// <summary>Supported workflow transaction operations.</summary>
     private enum TransactionOperation
@@ -110,6 +114,21 @@ public static class ComfyWorkflowStore
         public bool MarkerExisted { get; set; }
 
         public bool CreateMarker { get; set; }
+    }
+
+    /// <summary>Rejects maintained workflow access while recovery and refresh are required.</summary>
+    private static void EnsureRecoveryReadyLocked()
+    {
+        if (RecoveryRequired)
+        {
+            throw new InvalidDataException("Stored workflows are unavailable pending safe recovery.");
+        }
+    }
+
+    /// <summary>Marks maintained workflow access as requiring recovery and refresh.</summary>
+    private static void MarkRecoveryRequiredLocked()
+    {
+        RecoveryRequired = true;
     }
 
     /// <summary>Gets the normalized root directory for custom workflows.</summary>
@@ -876,6 +895,7 @@ public static class ComfyWorkflowStore
         }
         catch (Exception)
         {
+            MarkRecoveryRequiredLocked();
             Logs.Error("Error recovering stored workflow transaction (workflow content redacted).");
             throw new InvalidDataException("Stored workflow recovery could not be completed safely.");
         }
@@ -907,6 +927,7 @@ public static class ComfyWorkflowStore
         {
             lock (WorkflowLock)
             {
+                EnsureRecoveryReadyLocked();
                 if (!ComfyUIBackendExtension.CustomWorkflows.ContainsKey(cleanedName))
                 {
                     return false;
@@ -956,6 +977,7 @@ public static class ComfyWorkflowStore
                     }
                     catch (Exception)
                     {
+                        MarkRecoveryRequiredLocked();
                         Logs.Error("Error rolling back workflow deletion transaction (workflow content redacted).");
                         throw new IOException("Workflow deletion failed and requires journal recovery.");
                     }
@@ -983,6 +1005,7 @@ public static class ComfyWorkflowStore
     /// <summary>Commits a prepared custom workflow save while the workflow lock is held.</summary>
     private static void SaveWorkflowLocked(PreparedSave preparedSave)
     {
+        EnsureRecoveryReadyLocked();
         (ComfyUIBackendExtension.ComfyCustomWorkflow Record, byte[] Data) completedSave = CompleteSaveLocked(preparedSave);
         string destinationPath = GetWorkflowPath(preparedSave.DestinationName);
         string sourcePath = GetWorkflowPath(preparedSave.SourceName);
@@ -1051,6 +1074,7 @@ public static class ComfyWorkflowStore
             }
             catch (Exception)
             {
+                MarkRecoveryRequiredLocked();
                 Logs.Error("Error rolling back workflow save transaction (workflow content redacted).");
                 throw new IOException("Workflow save failed and requires journal recovery.");
             }
@@ -1076,29 +1100,40 @@ public static class ComfyWorkflowStore
     {
         lock (WorkflowLock)
         {
-            Directory.CreateDirectory($"{extensionFilePath}CustomWorkflows");
-            Directory.CreateDirectory($"{extensionFilePath}CustomWorkflows/Examples");
-            RecoverPendingTransactionLocked();
-            string[] getCustomFlows(string path) => [.. Directory.EnumerateFiles($"{extensionFilePath}/{path}", "*.*", new EnumerationOptions() { RecurseSubdirectories = true }).Select(f => f.Replace('\\', '/').After($"/{path}/")).Order()];
-            ComfyUIBackendExtension.ExampleWorkflowNames = getCustomFlows("ExampleWorkflows");
-            string[] customFlows = getCustomFlows("CustomWorkflows");
-            bool anyCopied = false;
-            foreach (string workflow in ComfyUIBackendExtension.ExampleWorkflowNames.Where(f => f.EndsWith(".json")))
+            try
             {
-                if (!customFlows.Contains($"Examples/{workflow}") && !customFlows.Contains($"Examples/{workflow}.deleted"))
+                Directory.CreateDirectory($"{extensionFilePath}CustomWorkflows");
+                Directory.CreateDirectory($"{extensionFilePath}CustomWorkflows/Examples");
+                RecoverPendingTransactionLocked();
+                string[] getCustomFlows(string path) => [.. Directory.EnumerateFiles($"{extensionFilePath}/{path}", "*.*", new EnumerationOptions() { RecurseSubdirectories = true }).Select(f => f.Replace('\\', '/').After($"/{path}/")).Order()];
+                string[] exampleWorkflowNames = getCustomFlows("ExampleWorkflows");
+                string[] customFlows = getCustomFlows("CustomWorkflows");
+                bool anyCopied = false;
+                foreach (string workflow in exampleWorkflowNames.Where(f => f.EndsWith(".json")))
                 {
-                    File.Copy($"{extensionFilePath}ExampleWorkflows/{workflow}", $"{extensionFilePath}CustomWorkflows/Examples/{workflow}");
-                    anyCopied = true;
+                    if (!customFlows.Contains($"Examples/{workflow}") && !customFlows.Contains($"Examples/{workflow}.deleted"))
+                    {
+                        File.Copy($"{extensionFilePath}ExampleWorkflows/{workflow}", $"{extensionFilePath}CustomWorkflows/Examples/{workflow}");
+                        anyCopied = true;
+                    }
                 }
+                if (anyCopied)
+                {
+                    customFlows = getCustomFlows("CustomWorkflows");
+                }
+                ConcurrentDictionary<string, ComfyUIBackendExtension.ComfyCustomWorkflow> refreshedWorkflows = new();
+                foreach (string workflow in customFlows.Where(f => f.EndsWith(".json")))
+                {
+                    refreshedWorkflows.TryAdd(workflow.BeforeLast('.'), null);
+                }
+                ComfyUIBackendExtension.ExampleWorkflowNames = exampleWorkflowNames;
+                ComfyUIBackendExtension.CustomWorkflows = refreshedWorkflows;
+                RecoveryRequired = false;
             }
-            if (anyCopied)
+            catch
             {
-                customFlows = getCustomFlows("CustomWorkflows");
-            }
-            ComfyUIBackendExtension.CustomWorkflows.Clear();
-            foreach (string workflow in customFlows.Where(f => f.EndsWith(".json")))
-            {
-                ComfyUIBackendExtension.CustomWorkflows.TryAdd(workflow.BeforeLast('.'), null);
+                MarkRecoveryRequiredLocked();
+                throw;
             }
         }
     }
@@ -1108,6 +1143,7 @@ public static class ComfyWorkflowStore
     {
         lock (WorkflowLock)
         {
+            EnsureRecoveryReadyLocked();
             return GetWorkflowByNameLocked(name);
         }
     }
@@ -1115,6 +1151,7 @@ public static class ComfyWorkflowStore
     /// <summary>Gets a workflow by its stored name while the workflow lock is held.</summary>
     private static ComfyUIBackendExtension.ComfyCustomWorkflow GetWorkflowByNameLocked(string name)
     {
+        EnsureRecoveryReadyLocked();
         if (!ComfyUIBackendExtension.CustomWorkflows.TryGetValue(name, out ComfyUIBackendExtension.ComfyCustomWorkflow workflow))
         {
             return null;
@@ -1167,6 +1204,7 @@ public static class ComfyWorkflowStore
     {
         lock (WorkflowLock)
         {
+            EnsureRecoveryReadyLocked();
             List<string> names = ComfyUIBackendExtension.CustomWorkflows.Keys.ToList();
             List<ComfyUIBackendExtension.ComfyCustomWorkflow> workflows = [];
             foreach (string name in names)
@@ -1186,6 +1224,7 @@ public static class ComfyWorkflowStore
     {
         lock (WorkflowLock)
         {
+            EnsureRecoveryReadyLocked();
             return [.. ComfyUIBackendExtension.CustomWorkflows.Keys.Order()];
         }
     }
@@ -1195,6 +1234,7 @@ public static class ComfyWorkflowStore
     {
         lock (WorkflowLock)
         {
+            EnsureRecoveryReadyLocked();
             if (!ComfyUIBackendExtension.CustomWorkflows.ContainsKey(name))
             {
                 prompt = null;
