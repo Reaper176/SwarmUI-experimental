@@ -127,6 +127,7 @@ The active journal records:
 - transaction identifier;
 - operation type;
 - cleaned source and destination names where applicable;
+- the SHA-256 identity of the staged destination, used only to verify transaction ownership during recovery;
 - relative staging and backup paths;
 - whether the original source and destination files existed;
 - original source and destination `.deleted` marker states; and
@@ -186,8 +187,8 @@ Any exception before `Committed` journal installation triggers rollback while th
 
 Rollback:
 
-- removes an installed candidate destination when the pre-state had no destination;
-- restores the prior destination from its verified backup when one existed;
+- removes an installed candidate destination when the pre-state had no destination, but only after its content matches the journaled candidate identity;
+- restores the prior destination from its verified backup when one existed, verifying any installed candidate before removing it;
 - restores the predecessor from its verified backup;
 - restores both marker states exactly;
 - removes the verified staging file; and
@@ -291,9 +292,10 @@ Repository-permitted static verification will prove:
 12. maintained list, read, parameter, generation, refresh, save, and delete paths share the store boundary;
 13. refresh performs recovery before cache clear and example copying;
 14. malformed recovery state cannot trigger broad deletion or partial republication;
-15. the public dictionary instance is never replaced;
-16. workflow JSON structure and API surfaces are unchanged; and
-17. no cold-list hydration optimization is introduced.
+15. recovery verifies an installed candidate's journaled identity before deleting it;
+16. the public dictionary instance is never replaced;
+17. workflow JSON structure and API surfaces are unchanged; and
+18. no cold-list hydration optimization is introduced.
 
 Permitted mechanical checks are whitespace/format inspection and `git diff --check`. Per repository policy, the agent does not run builds, automated tests, launchers, the server, or a Comfy backend.
 
