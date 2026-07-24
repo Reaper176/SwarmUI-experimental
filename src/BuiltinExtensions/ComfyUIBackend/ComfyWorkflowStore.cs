@@ -43,7 +43,7 @@ public static class ComfyWorkflowStore
         string CustomParams,
         string ParamValues,
         string SuppliedImage,
-        string InheritImage,
+        bool InheritImage,
         string Description,
         bool EnableInSimple,
         JObject ParsedWorkflow,
@@ -120,7 +120,37 @@ public static class ComfyWorkflowStore
         {
             throw new InvalidDataException("Invalid workflow transaction path.");
         }
+        EnsureNoReparsePointAncestors(root, fullPath);
         return fullPath;
+    }
+
+    /// <summary>Rejects existing reparse-point directories beneath the trusted workflow root.</summary>
+    private static void EnsureNoReparsePointAncestors(string root, string fullPath)
+    {
+        StringComparison comparison = OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal;
+        string rootPrefix = $"{root}{Path.DirectorySeparatorChar}";
+        string currentPath = Path.GetDirectoryName(fullPath);
+        while (currentPath is not null && !PathsEqual(currentPath, root))
+        {
+            if (!currentPath.StartsWith(rootPrefix, comparison))
+            {
+                throw new InvalidDataException("Invalid workflow transaction path.");
+            }
+            if (Directory.Exists(currentPath) && (File.GetAttributes(currentPath) & FileAttributes.ReparsePoint) != 0)
+            {
+                throw new InvalidDataException("Invalid workflow transaction path.");
+            }
+            string parentPath = Path.GetDirectoryName(currentPath);
+            if (parentPath is null || PathsEqual(parentPath, currentPath))
+            {
+                throw new InvalidDataException("Invalid workflow transaction path.");
+            }
+            currentPath = parentPath;
+        }
+        if (currentPath is null)
+        {
+            throw new InvalidDataException("Invalid workflow transaction path.");
+        }
     }
 
     /// <summary>Creates the relative path for a reserved transaction artifact beside a final path.</summary>
@@ -152,6 +182,11 @@ public static class ComfyWorkflowStore
         }
         string artifactPath = GetContainedPath(relativePath);
         string expectedPath = Path.Combine(Path.GetDirectoryName(finalPath), expectedName);
+        string canonicalRelativePath = Path.GetRelativePath(GetWorkflowRoot(), expectedPath);
+        if (!string.Equals(relativePath, canonicalRelativePath, StringComparison.Ordinal))
+        {
+            throw new InvalidDataException("Invalid workflow transaction artifact path.");
+        }
         if (!PathsEqual(artifactPath, expectedPath))
         {
             throw new InvalidDataException("Invalid workflow transaction artifact path.");
@@ -172,9 +207,31 @@ public static class ComfyWorkflowStore
     private static void WriteNewFlushedFile(string path, byte[] data)
     {
         Directory.CreateDirectory(Path.GetDirectoryName(path));
-        using FileStream stream = new(path, FileMode.CreateNew, FileAccess.Write, FileShare.None);
-        stream.Write(data);
-        stream.Flush(true);
+        FileStream stream = new(path, FileMode.CreateNew, FileAccess.Write, FileShare.None);
+        try
+        {
+            stream.Write(data);
+            stream.Flush(true);
+        }
+        catch
+        {
+            try
+            {
+                stream.Dispose();
+            }
+            catch (Exception)
+            {
+            }
+            try
+            {
+                File.Delete(path);
+            }
+            catch (Exception)
+            {
+            }
+            throw;
+        }
+        stream.Dispose();
     }
 
     /// <summary>Serializes content-free workflow transaction metadata.</summary>
@@ -314,6 +371,11 @@ public static class ComfyWorkflowStore
                 }
                 string sourcePath = GetWorkflowPath(transaction.SourceName);
                 string destinationPath = GetWorkflowPath(transaction.DestinationName);
+                bool samePath = PathsEqual(sourcePath, destinationPath);
+                if (samePath && transaction.SourceExisted != transaction.DestinationExisted)
+                {
+                    throw new InvalidDataException("Invalid workflow transaction journal.");
+                }
                 GetArtifactPath(transaction, transaction.StagePath, destinationPath, "stage");
                 if (transaction.DestinationExisted != (transaction.DestinationBackupPath is not null))
                 {
@@ -323,7 +385,7 @@ public static class ComfyWorkflowStore
                 {
                     GetArtifactPath(transaction, transaction.DestinationBackupPath, destinationPath, "destination-backup");
                 }
-                bool sourceBackupRequired = transaction.SourceExisted && !PathsEqual(sourcePath, destinationPath);
+                bool sourceBackupRequired = transaction.SourceExisted && !samePath;
                 if (sourceBackupRequired != (transaction.SourceBackupPath is not null))
                 {
                     throw new InvalidDataException("Invalid workflow transaction journal.");
@@ -346,7 +408,8 @@ public static class ComfyWorkflowStore
             }
             if (transaction.CreateMarker)
             {
-                if (transaction.SourceName is null || transaction.MarkerStagePath is null || transaction.MarkerExisted != (transaction.MarkerBackupPath is not null))
+                if (transaction.SourceName is null || !transaction.SourceExisted || transaction.MarkerStagePath is null
+                    || transaction.MarkerExisted != (transaction.MarkerBackupPath is not null))
                 {
                     throw new InvalidDataException("Invalid workflow transaction journal.");
                 }
