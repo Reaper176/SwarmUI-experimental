@@ -261,6 +261,10 @@ Same-filesystem moves provide the atomic name transition used by the protocol on
 
 The implementation uses `Path` APIs for normalization and containment checks, accepts both platform separator conventions through existing cleaned names, and never constructs recovery targets from unchecked journal or request strings.
 
+`WorkflowLock` coordinates maintained in-process workflow-store operations only. Immediately before each recovery mutation, recovery revalidates lexical containment, ancestor reparse-point state, filesystem object type, and required content identity.
+
+.NET 8 has no portable cross-platform primitive that atomically verifies a file through an open handle and then unlinks or renames that same filesystem object. Concurrent out-of-process or adversarial replacement between verification and mutation is outside the supported contract. `CustomWorkflows` must be on a stable local filesystem and must not be modified externally while SwarmUI save, delete, refresh, or recovery is active.
+
 ## Error Handling and Diagnostics
 
 Candidate validation errors occur before transaction creation. Persistence errors before commit trigger rollback and then flow to the existing shared API error boundary. The project does not add route-specific response schemas.
