@@ -2,6 +2,7 @@ using FreneticUtilities.FreneticExtensions;
 using FreneticUtilities.FreneticToolkit;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
+using SwarmUI.Media;
 using SwarmUI.Utils;
 using System.IO;
 using System.Security.Cryptography;
@@ -54,6 +55,26 @@ public static class ComfyWorkflowStore
         JObject ParsedPrompt,
         JObject ParsedCustomParams,
         JObject ParsedParamValues);
+
+    /// <summary>Validates and parses submitted workflow data before taking the workflow lock.</summary>
+    private static PreparedSave PrepareSave(string name, string workflow, string prompt, string customParams, string paramValues, string image, string description, bool enableInSimple, string replace)
+    {
+        string destinationName = Utilities.StrictFilenameClean(name);
+        bool hasReplacement = !string.IsNullOrWhiteSpace(replace);
+        string sourceName = hasReplacement ? Utilities.StrictFilenameClean(replace) : destinationName;
+        JObject parsedWorkflow = ComfySubmittedJson.ParseObject(workflow);
+        JObject parsedPrompt = ComfySubmittedJson.ParseObject(prompt);
+        JObject parsedCustomParams = ComfySubmittedJson.ParseObject(customParams);
+        JObject parsedParamValues = ComfySubmittedJson.ParseObject(paramValues);
+        bool inheritImage = string.IsNullOrWhiteSpace(image);
+        string suppliedImage = null;
+        if (!inheritImage)
+        {
+            suppliedImage = image == "clear" ? null : ImageFile.FromDataString(image).ToMetadataFormat();
+        }
+        return new(destinationName, sourceName, hasReplacement, workflow, prompt, customParams, paramValues, suppliedImage, inheritImage,
+            description, enableInSimple, parsedWorkflow, parsedPrompt, parsedCustomParams, parsedParamValues);
+    }
 
     /// <summary>Content-free durable metadata for a workflow filesystem transaction.</summary>
     private sealed class WorkflowTransaction
@@ -302,6 +323,99 @@ public static class ComfyWorkflowStore
         stream.Dispose();
     }
 
+    /// <summary>Completes a prepared save using workflow state protected by the workflow lock.</summary>
+    private static (ComfyUIBackendExtension.ComfyCustomWorkflow Record, byte[] Data) CompleteSaveLocked(PreparedSave preparedSave)
+    {
+        string image = preparedSave.SuppliedImage;
+        if (preparedSave.InheritImage && ComfyUIBackendExtension.CustomWorkflows.ContainsKey(preparedSave.SourceName))
+        {
+            image = GetWorkflowByNameLocked(preparedSave.SourceName)?.Image;
+        }
+        if (string.IsNullOrWhiteSpace(image))
+        {
+            image = "/imgs/model_placeholder.jpg";
+        }
+        ComfyUIBackendExtension.ComfyCustomWorkflow record = new(preparedSave.DestinationName, preparedSave.Workflow, preparedSave.Prompt,
+            preparedSave.CustomParams, preparedSave.ParamValues, image, preparedSave.Description, preparedSave.EnableInSimple);
+        JObject data = new()
+        {
+            ["workflow"] = preparedSave.ParsedWorkflow,
+            ["prompt"] = preparedSave.ParsedPrompt,
+            ["custom_params"] = preparedSave.ParsedCustomParams,
+            ["param_values"] = preparedSave.ParsedParamValues,
+            ["image"] = image,
+            ["description"] = preparedSave.Description ?? "",
+            ["enable_in_simple"] = preparedSave.EnableInSimple
+        };
+        return (record, data.ToString().EncodeUTF8());
+    }
+
+    /// <summary>Checks whether a cleaned workflow name identifies a bundled example workflow.</summary>
+    private static bool IsExampleWorkflow(string cleanedName)
+    {
+        return ComfyUIBackendExtension.ExampleWorkflowNames.Contains(cleanedName.After("Examples/") + ".json");
+    }
+
+    /// <summary>Creates the exact deletion-marker artifacts needed by a prepared transaction.</summary>
+    private static void PrepareMarkerArtifacts(WorkflowTransaction transaction)
+    {
+        if (!transaction.CreateMarker)
+        {
+            return;
+        }
+        string markerPath = RevalidateContainedPath(GetMarkerPath(transaction.SourceName));
+        transaction.MarkerStagePath = CreateArtifactPath(markerPath, transaction.Id, "marker-stage");
+        transaction.MarkerBackupPath = transaction.MarkerExisted ? CreateArtifactPath(markerPath, transaction.Id, "marker-backup") : null;
+        WriteNewFlushedFile(GetArtifactPath(transaction, transaction.MarkerStagePath, markerPath, "marker-stage"), DeletedMarkerContent.EncodeUTF8());
+    }
+
+    /// <summary>Installs a prepared deletion marker using freshly revalidated exact paths.</summary>
+    private static void InstallPreparedMarker(WorkflowTransaction transaction)
+    {
+        if (!transaction.CreateMarker)
+        {
+            return;
+        }
+        if (transaction.MarkerExisted)
+        {
+            string markerPath = RevalidateContainedPath(GetMarkerPath(transaction.SourceName));
+            string markerBackupPath = RevalidateContainedPath(GetArtifactPath(transaction, transaction.MarkerBackupPath, markerPath, "marker-backup"));
+            File.Move(RevalidateContainedPath(GetMarkerPath(transaction.SourceName)), markerBackupPath);
+        }
+        string freshMarkerPath = RevalidateContainedPath(GetMarkerPath(transaction.SourceName));
+        string markerStagePath = RevalidateContainedPath(GetArtifactPath(transaction, transaction.MarkerStagePath, freshMarkerPath, "marker-stage"));
+        File.Move(markerStagePath, RevalidateContainedPath(GetMarkerPath(transaction.SourceName)));
+    }
+
+    /// <summary>Best-effort removes only the exact save stages created before a journal was published.</summary>
+    private static void CleanupUnjournaledStages(WorkflowTransaction transaction)
+    {
+        try
+        {
+            if (transaction.StagePath is not null)
+            {
+                string destinationPath = RevalidateContainedPath(GetWorkflowPath(transaction.DestinationName));
+                File.Delete(RevalidateContainedPath(GetArtifactPath(transaction, transaction.StagePath, destinationPath, "stage")));
+            }
+        }
+        catch (Exception)
+        {
+            Logs.Error("Error cleaning unjournaled workflow save artifacts (workflow content redacted).");
+        }
+        try
+        {
+            if (transaction.MarkerStagePath is not null)
+            {
+                string markerPath = RevalidateContainedPath(GetMarkerPath(transaction.SourceName));
+                File.Delete(RevalidateContainedPath(GetArtifactPath(transaction, transaction.MarkerStagePath, markerPath, "marker-stage")));
+            }
+        }
+        catch (Exception)
+        {
+            Logs.Error("Error cleaning unjournaled workflow save artifacts (workflow content redacted).");
+        }
+    }
+
     /// <summary>Serializes content-free workflow transaction metadata.</summary>
     private static byte[] SerializeTransaction(WorkflowTransaction transaction)
     {
@@ -437,7 +551,7 @@ public static class ComfyWorkflowStore
                 string sourcePath = GetWorkflowPath(transaction.SourceName);
                 string destinationPath = GetWorkflowPath(transaction.DestinationName);
                 bool samePath = PathsEqual(sourcePath, destinationPath);
-                if (samePath && transaction.SourceExisted != transaction.DestinationExisted)
+                if (samePath && transaction.SourceExisted && !transaction.DestinationExisted)
                 {
                     throw new InvalidDataException("Invalid workflow transaction journal.");
                 }
@@ -748,6 +862,107 @@ public static class ComfyWorkflowStore
         {
             Logs.Error("Error recovering stored workflow transaction (workflow content redacted).");
             throw new InvalidDataException("Stored workflow recovery could not be completed safely.");
+        }
+    }
+
+    /// <summary>Saves a custom workflow using a durable filesystem transaction.</summary>
+    public static void SaveWorkflow(string name, string workflow, string prompt, string customParams, string paramValues, string image, string description, bool enableInSimple, string replace)
+    {
+        PreparedSave preparedSave = PrepareSave(name, workflow, prompt, customParams, paramValues, image, description, enableInSimple, replace);
+        lock (WorkflowLock)
+        {
+            SaveWorkflowLocked(preparedSave);
+        }
+    }
+
+    /// <summary>Commits a prepared custom workflow save while the workflow lock is held.</summary>
+    private static void SaveWorkflowLocked(PreparedSave preparedSave)
+    {
+        (ComfyUIBackendExtension.ComfyCustomWorkflow Record, byte[] Data) completedSave = CompleteSaveLocked(preparedSave);
+        string destinationPath = GetWorkflowPath(preparedSave.DestinationName);
+        string sourcePath = GetWorkflowPath(preparedSave.SourceName);
+        Directory.CreateDirectory(Path.GetDirectoryName(destinationPath));
+        destinationPath = RevalidateContainedPath(GetWorkflowPath(preparedSave.DestinationName));
+        sourcePath = RevalidateContainedPath(GetWorkflowPath(preparedSave.SourceName));
+        bool sourcePublished = preparedSave.HasReplacement && ComfyUIBackendExtension.CustomWorkflows.ContainsKey(preparedSave.SourceName);
+        bool sourceExisted = sourcePublished && FileExistsStrict(sourcePath);
+        bool samePath = PathsEqual(sourcePath, destinationPath);
+        bool destinationExisted = FileExistsStrict(destinationPath);
+        bool createMarker = sourceExisted && preparedSave.HasReplacement && IsExampleWorkflow(preparedSave.SourceName);
+        Guid id = Guid.NewGuid();
+        WorkflowTransaction transaction = new()
+        {
+            Id = id,
+            Operation = TransactionOperation.Save,
+            Phase = TransactionPhase.Prepared,
+            SourceName = preparedSave.SourceName,
+            DestinationName = preparedSave.DestinationName,
+            DestinationHash = GetDataHash(completedSave.Data),
+            StagePath = CreateArtifactPath(destinationPath, id, "stage"),
+            SourceBackupPath = sourceExisted && !samePath ? CreateArtifactPath(sourcePath, id, "source-backup") : null,
+            DestinationBackupPath = destinationExisted ? CreateArtifactPath(destinationPath, id, "destination-backup") : null,
+            SourceExisted = sourceExisted,
+            DestinationExisted = destinationExisted,
+            CreateMarker = createMarker,
+            MarkerExisted = createMarker && FileExistsStrict(GetMarkerPath(preparedSave.SourceName))
+        };
+        WriteNewFlushedFile(GetArtifactPath(transaction, transaction.StagePath, destinationPath, "stage"), completedSave.Data);
+        try
+        {
+            PrepareMarkerArtifacts(transaction);
+            WriteJournal(transaction);
+        }
+        catch
+        {
+            CleanupUnjournaledStages(transaction);
+            throw;
+        }
+        try
+        {
+            if (transaction.DestinationExisted)
+            {
+                string freshDestinationPath = RevalidateContainedPath(GetWorkflowPath(transaction.DestinationName));
+                string destinationBackupPath = RevalidateContainedPath(GetArtifactPath(transaction, transaction.DestinationBackupPath, freshDestinationPath, "destination-backup"));
+                File.Move(freshDestinationPath, destinationBackupPath);
+            }
+            string installedDestinationPath = RevalidateContainedPath(GetWorkflowPath(transaction.DestinationName));
+            string stagePath = RevalidateContainedPath(GetArtifactPath(transaction, transaction.StagePath, installedDestinationPath, "stage"));
+            File.Move(stagePath, installedDestinationPath);
+            if (transaction.SourceExisted && !samePath)
+            {
+                string freshSourcePath = RevalidateContainedPath(GetWorkflowPath(transaction.SourceName));
+                string sourceBackupPath = RevalidateContainedPath(GetArtifactPath(transaction, transaction.SourceBackupPath, freshSourcePath, "source-backup"));
+                File.Move(freshSourcePath, sourceBackupPath);
+            }
+            InstallPreparedMarker(transaction);
+            transaction.Phase = TransactionPhase.Committed;
+            WriteJournal(transaction);
+        }
+        catch
+        {
+            try
+            {
+                RollbackPrepared(transaction);
+            }
+            catch (Exception)
+            {
+                Logs.Error("Error rolling back workflow save transaction (workflow content redacted).");
+                throw new IOException("Workflow save failed and requires journal recovery.");
+            }
+            throw;
+        }
+        if (preparedSave.HasReplacement && !string.Equals(preparedSave.SourceName, preparedSave.DestinationName, StringComparison.Ordinal))
+        {
+            ComfyUIBackendExtension.CustomWorkflows.TryRemove(preparedSave.SourceName, out _);
+        }
+        ComfyUIBackendExtension.CustomWorkflows[preparedSave.DestinationName] = completedSave.Record;
+        try
+        {
+            CleanupCommitted(transaction);
+        }
+        catch (Exception)
+        {
+            Logs.Error("Error cleaning committed workflow save transaction (workflow content redacted).");
         }
     }
 
