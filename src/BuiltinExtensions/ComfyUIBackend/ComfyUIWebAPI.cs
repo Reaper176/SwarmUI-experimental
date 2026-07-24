@@ -87,20 +87,9 @@ public static class ComfyUIWebAPI
     /// <summary>API route to read a delete a saved Comfy custom workflows.</summary>
     public static async Task<JObject> ComfyDeleteWorkflow(Session session, string name)
     {
-        string path = Utilities.StrictFilenameClean(name);
-        if (!ComfyUIBackendExtension.CustomWorkflows.Remove(path, out _))
+        if (!ComfyWorkflowStore.DeleteWorkflow(name))
         {
             return new JObject() { ["error"] = "Unknown custom workflow name." };
-        }
-        string fullPath = $"{ComfyUIBackendExtension.Folder}/CustomWorkflows/{path}.json";
-        if (!File.Exists(fullPath))
-        {
-            return new JObject() { ["error"] = "Unknown custom workflow name." };
-        }
-        File.Delete(fullPath);
-        if (ComfyUIBackendExtension.ExampleWorkflowNames.Contains(path.After("Examples/") + ".json"))
-        {
-            File.WriteAllText($"{fullPath}.deleted", "deleted-by-user");
         }
         return new JObject() { ["success"] = true };
     }

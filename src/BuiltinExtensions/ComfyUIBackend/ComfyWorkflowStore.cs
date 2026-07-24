@@ -875,6 +875,79 @@ public static class ComfyWorkflowStore
         }
     }
 
+    /// <summary>Deletes a custom workflow using a durable filesystem transaction.</summary>
+    public static bool DeleteWorkflow(string name)
+    {
+        string cleanedName = Utilities.StrictFilenameClean(name);
+        lock (WorkflowLock)
+        {
+            if (!ComfyUIBackendExtension.CustomWorkflows.ContainsKey(cleanedName))
+            {
+                return false;
+            }
+            string sourcePath = GetWorkflowPath(cleanedName);
+            if (!FileExistsStrict(sourcePath))
+            {
+                return false;
+            }
+            Guid id = Guid.NewGuid();
+            bool createMarker = IsExampleWorkflow(cleanedName);
+            WorkflowTransaction transaction = new()
+            {
+                Id = id,
+                Operation = TransactionOperation.Delete,
+                Phase = TransactionPhase.Prepared,
+                SourceName = cleanedName,
+                SourceBackupPath = CreateArtifactPath(sourcePath, id, "source-backup"),
+                SourceExisted = true,
+                CreateMarker = createMarker,
+                MarkerExisted = createMarker && FileExistsStrict(GetMarkerPath(cleanedName))
+            };
+            try
+            {
+                PrepareMarkerArtifacts(transaction);
+                WriteJournal(transaction);
+            }
+            catch
+            {
+                CleanupUnjournaledStages(transaction);
+                throw;
+            }
+            try
+            {
+                string freshSourcePath = RevalidateContainedPath(GetWorkflowPath(transaction.SourceName));
+                string sourceBackupPath = RevalidateContainedPath(GetArtifactPath(transaction, transaction.SourceBackupPath, freshSourcePath, "source-backup"));
+                File.Move(freshSourcePath, sourceBackupPath);
+                InstallPreparedMarker(transaction);
+                transaction.Phase = TransactionPhase.Committed;
+                WriteJournal(transaction);
+            }
+            catch
+            {
+                try
+                {
+                    RollbackPrepared(transaction);
+                }
+                catch (Exception)
+                {
+                    Logs.Error("Error rolling back workflow deletion transaction (workflow content redacted).");
+                    throw new IOException("Workflow deletion failed and requires journal recovery.");
+                }
+                throw;
+            }
+            ComfyUIBackendExtension.CustomWorkflows.TryRemove(cleanedName, out _);
+            try
+            {
+                CleanupCommitted(transaction);
+            }
+            catch (Exception)
+            {
+                Logs.Error("Error cleaning committed workflow deletion transaction (workflow content redacted).");
+            }
+            return true;
+        }
+    }
+
     /// <summary>Commits a prepared custom workflow save while the workflow lock is held.</summary>
     private static void SaveWorkflowLocked(PreparedSave preparedSave)
     {
