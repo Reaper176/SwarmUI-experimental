@@ -139,7 +139,7 @@ public static class ComfyWorkflowStore
     }
 
     /// <summary>Validates and resolves a transaction artifact path for its expected role.</summary>
-    private static string GetArtifactPath(WorkflowTransaction transaction, string relativePath, string role)
+    private static string GetArtifactPath(WorkflowTransaction transaction, string relativePath, string finalPath, string role)
     {
         if (string.IsNullOrWhiteSpace(relativePath))
         {
@@ -150,7 +150,13 @@ public static class ComfyWorkflowStore
         {
             throw new InvalidDataException("Invalid workflow transaction artifact path.");
         }
-        return GetContainedPath(relativePath);
+        string artifactPath = GetContainedPath(relativePath);
+        string expectedPath = Path.Combine(Path.GetDirectoryName(finalPath), expectedName);
+        if (!PathsEqual(artifactPath, expectedPath))
+        {
+            throw new InvalidDataException("Invalid workflow transaction artifact path.");
+        }
+        return artifactPath;
     }
 
     /// <summary>Checks whether two normalized filesystem paths identify the same path.</summary>
@@ -306,17 +312,17 @@ public static class ComfyWorkflowStore
                 {
                     throw new InvalidDataException("Invalid workflow transaction journal.");
                 }
-                GetArtifactPath(transaction, transaction.StagePath, "stage");
+                string sourcePath = GetWorkflowPath(transaction.SourceName);
+                string destinationPath = GetWorkflowPath(transaction.DestinationName);
+                GetArtifactPath(transaction, transaction.StagePath, destinationPath, "stage");
                 if (transaction.DestinationExisted != (transaction.DestinationBackupPath is not null))
                 {
                     throw new InvalidDataException("Invalid workflow transaction journal.");
                 }
                 if (transaction.DestinationBackupPath is not null)
                 {
-                    GetArtifactPath(transaction, transaction.DestinationBackupPath, "destination-backup");
+                    GetArtifactPath(transaction, transaction.DestinationBackupPath, destinationPath, "destination-backup");
                 }
-                string sourcePath = GetWorkflowPath(transaction.SourceName);
-                string destinationPath = GetWorkflowPath(transaction.DestinationName);
                 bool sourceBackupRequired = transaction.SourceExisted && !PathsEqual(sourcePath, destinationPath);
                 if (sourceBackupRequired != (transaction.SourceBackupPath is not null))
                 {
@@ -324,7 +330,7 @@ public static class ComfyWorkflowStore
                 }
                 if (transaction.SourceBackupPath is not null)
                 {
-                    GetArtifactPath(transaction, transaction.SourceBackupPath, "source-backup");
+                    GetArtifactPath(transaction, transaction.SourceBackupPath, sourcePath, "source-backup");
                 }
             }
             else
@@ -335,7 +341,8 @@ public static class ComfyWorkflowStore
                 {
                     throw new InvalidDataException("Invalid workflow transaction journal.");
                 }
-                GetArtifactPath(transaction, transaction.SourceBackupPath, "source-backup");
+                string sourcePath = GetWorkflowPath(transaction.SourceName);
+                GetArtifactPath(transaction, transaction.SourceBackupPath, sourcePath, "source-backup");
             }
             if (transaction.CreateMarker)
             {
@@ -343,10 +350,11 @@ public static class ComfyWorkflowStore
                 {
                     throw new InvalidDataException("Invalid workflow transaction journal.");
                 }
-                GetArtifactPath(transaction, transaction.MarkerStagePath, "marker-stage");
+                string markerPath = GetMarkerPath(transaction.SourceName);
+                GetArtifactPath(transaction, transaction.MarkerStagePath, markerPath, "marker-stage");
                 if (transaction.MarkerBackupPath is not null)
                 {
-                    GetArtifactPath(transaction, transaction.MarkerBackupPath, "marker-backup");
+                    GetArtifactPath(transaction, transaction.MarkerBackupPath, markerPath, "marker-backup");
                 }
             }
             else if (transaction.MarkerStagePath is not null || transaction.MarkerBackupPath is not null || transaction.MarkerExisted)
