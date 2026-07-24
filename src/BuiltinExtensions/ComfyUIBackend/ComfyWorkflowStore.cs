@@ -128,6 +128,54 @@ public static class ComfyWorkflowStore
         return fullPath;
     }
 
+    /// <summary>Gets path attributes while distinguishing true absence from filesystem access failures.</summary>
+    private static bool TryGetAttributesStrict(string path, out FileAttributes attributes)
+    {
+        try
+        {
+            attributes = File.GetAttributes(path);
+            return true;
+        }
+        catch (FileNotFoundException)
+        {
+            attributes = default;
+            return false;
+        }
+        catch (DirectoryNotFoundException)
+        {
+            attributes = default;
+            return false;
+        }
+    }
+
+    /// <summary>Checks for a file without treating filesystem errors or directories as absence.</summary>
+    private static bool FileExistsStrict(string path)
+    {
+        if (!TryGetAttributesStrict(path, out FileAttributes attributes))
+        {
+            return false;
+        }
+        if ((attributes & FileAttributes.Directory) != 0)
+        {
+            throw new IOException("Stored workflow transaction expected a file.");
+        }
+        return true;
+    }
+
+    /// <summary>Checks for a directory and returns its attributes without hiding filesystem errors.</summary>
+    private static bool DirectoryExistsStrict(string path, out FileAttributes attributes)
+    {
+        if (!TryGetAttributesStrict(path, out attributes))
+        {
+            return false;
+        }
+        if ((attributes & FileAttributes.Directory) == 0)
+        {
+            throw new IOException("Stored workflow transaction expected a directory.");
+        }
+        return true;
+    }
+
     /// <summary>Rejects existing reparse-point directories beneath the trusted workflow root.</summary>
     private static void EnsureNoReparsePointAncestors(string root, string fullPath)
     {
@@ -140,7 +188,7 @@ public static class ComfyWorkflowStore
             {
                 throw new InvalidDataException("Invalid workflow transaction path.");
             }
-            if (Directory.Exists(currentPath) && (File.GetAttributes(currentPath) & FileAttributes.ReparsePoint) != 0)
+            if (DirectoryExistsStrict(currentPath, out FileAttributes attributes) && (attributes & FileAttributes.ReparsePoint) != 0)
             {
                 throw new InvalidDataException("Invalid workflow transaction path.");
             }
@@ -155,6 +203,20 @@ public static class ComfyWorkflowStore
         {
             throw new InvalidDataException("Invalid workflow transaction path.");
         }
+    }
+
+    /// <summary>Revalidates that a full path still resolves to its canonical location beneath the workflow root.</summary>
+    private static string RevalidateContainedPath(string fullPath)
+    {
+        // WorkflowLock coordinates maintained operations; portable Path APIs cannot make external adversarial replacement atomic.
+        string root = GetWorkflowRoot();
+        string normalizedPath = Path.GetFullPath(fullPath);
+        string containedPath = GetContainedPath(Path.GetRelativePath(root, normalizedPath));
+        if (!PathsEqual(normalizedPath, containedPath))
+        {
+            throw new InvalidDataException("Invalid workflow transaction path.");
+        }
+        return containedPath;
     }
 
     /// <summary>Creates the relative path for a reserved transaction artifact beside a final path.</summary>
@@ -210,7 +272,9 @@ public static class ComfyWorkflowStore
     /// <summary>Creates, fully writes, and durably flushes a new file.</summary>
     private static void WriteNewFlushedFile(string path, byte[] data)
     {
+        path = RevalidateContainedPath(path);
         Directory.CreateDirectory(Path.GetDirectoryName(path));
+        path = RevalidateContainedPath(path);
         FileStream stream = new(path, FileMode.CreateNew, FileAccess.Write, FileShare.None);
         try
         {
@@ -228,7 +292,7 @@ public static class ComfyWorkflowStore
             }
             try
             {
-                File.Delete(path);
+                File.Delete(RevalidateContainedPath(path));
             }
             catch (Exception)
             {
@@ -268,25 +332,22 @@ public static class ComfyWorkflowStore
     {
         string journalPath = GetContainedPath(JournalFileName);
         string temporaryPath = GetContainedPath($"{JournalFileName}-{transaction.Id}-new");
-        if (transaction.Phase == TransactionPhase.Prepared && File.Exists(journalPath))
+        if (transaction.Phase == TransactionPhase.Prepared && FileExistsStrict(journalPath))
         {
             throw new InvalidOperationException("A workflow transaction journal is already active.");
         }
-        if (File.Exists(temporaryPath))
+        if (FileExistsStrict(temporaryPath))
         {
             throw new InvalidOperationException("A workflow transaction journal temporary file already exists.");
         }
         try
         {
             WriteNewFlushedFile(temporaryPath, SerializeTransaction(transaction));
-            File.Move(temporaryPath, journalPath, true);
+            File.Move(RevalidateContainedPath(temporaryPath), RevalidateContainedPath(journalPath), true);
         }
         catch
         {
-            if (File.Exists(temporaryPath))
-            {
-                File.Delete(temporaryPath);
-            }
+            File.Delete(RevalidateContainedPath(temporaryPath));
             throw;
         }
     }
@@ -466,11 +527,12 @@ public static class ComfyWorkflowStore
     /// <summary>Checks whether a file exists and has the expected canonical SHA-256 hash.</summary>
     private static bool FileMatchesHash(string path, string expectedHash)
     {
-        if (expectedHash is null || !File.Exists(path))
+        path = RevalidateContainedPath(path);
+        if (expectedHash is null || !FileExistsStrict(path))
         {
             return false;
         }
-        using FileStream stream = File.OpenRead(path);
+        using FileStream stream = File.OpenRead(RevalidateContainedPath(path));
         string actualHash = Convert.ToHexString(SHA256.HashData(stream)).ToLowerFast();
         return string.Equals(actualHash, expectedHash, StringComparison.Ordinal);
     }
@@ -478,34 +540,36 @@ public static class ComfyWorkflowStore
     /// <summary>Safely restores or removes an original file without overwriting unexpected content.</summary>
     private static void RestoreOriginal(string finalPath, string backupPath, bool originallyExisted, string installedHash)
     {
-        if (backupPath is not null && File.Exists(backupPath))
+        finalPath = RevalidateContainedPath(finalPath);
+        backupPath = backupPath is null ? null : RevalidateContainedPath(backupPath);
+        if (backupPath is not null && FileExistsStrict(backupPath))
         {
-            if (File.Exists(finalPath))
+            if (FileExistsStrict(finalPath))
             {
                 if (!FileMatchesHash(finalPath, installedHash))
                 {
                     throw new IOException("Stored workflow recovery encountered unexpected file content.");
                 }
-                File.Delete(finalPath);
+                File.Delete(RevalidateContainedPath(finalPath));
             }
-            File.Move(backupPath, finalPath);
+            File.Move(RevalidateContainedPath(backupPath), RevalidateContainedPath(finalPath));
             return;
         }
         if (originallyExisted)
         {
-            if (!File.Exists(finalPath))
+            if (!FileExistsStrict(finalPath))
             {
                 throw new IOException("Stored workflow recovery could not find an original file.");
             }
             return;
         }
-        if (File.Exists(finalPath))
+        if (FileExistsStrict(finalPath))
         {
             if (!FileMatchesHash(finalPath, installedHash))
             {
                 throw new IOException("Stored workflow recovery encountered unexpected file content.");
             }
-            File.Delete(finalPath);
+            File.Delete(RevalidateContainedPath(finalPath));
         }
     }
 
@@ -521,11 +585,11 @@ public static class ComfyWorkflowStore
         if (transaction.MarkerExisted)
         {
             string markerBackupPath = GetArtifactPath(transaction, transaction.MarkerBackupPath, markerPath, "marker-backup");
-            RestoreOriginal(markerPath, markerBackupPath, true, markerHash);
+            RestoreOriginal(GetMarkerPath(transaction.SourceName), markerBackupPath, true, markerHash);
         }
-        else if (File.Exists(markerPath))
+        else if (FileExistsStrict(GetMarkerPath(transaction.SourceName)))
         {
-            RestoreOriginal(markerPath, null, false, markerHash);
+            RestoreOriginal(GetMarkerPath(transaction.SourceName), null, false, markerHash);
         }
     }
 
@@ -548,35 +612,27 @@ public static class ComfyWorkflowStore
             string destinationBackupPath = transaction.DestinationExisted
                 ? GetArtifactPath(transaction, transaction.DestinationBackupPath, destinationPath, "destination-backup")
                 : null;
-            RestoreOriginal(destinationPath, destinationBackupPath, transaction.DestinationExisted, transaction.DestinationHash);
+            RestoreOriginal(GetWorkflowPath(transaction.DestinationName), destinationBackupPath, transaction.DestinationExisted, transaction.DestinationHash);
             if (transaction.SourceExisted && !PathsEqual(sourcePath, destinationPath))
             {
                 string sourceBackupPath = GetArtifactPath(transaction, transaction.SourceBackupPath, sourcePath, "source-backup");
-                RestoreOriginal(sourcePath, sourceBackupPath, true, null);
+                RestoreOriginal(GetWorkflowPath(transaction.SourceName), sourceBackupPath, true, null);
             }
         }
         else
         {
             string sourceBackupPath = GetArtifactPath(transaction, transaction.SourceBackupPath, sourcePath, "source-backup");
-            RestoreOriginal(sourcePath, sourceBackupPath, true, null);
+            RestoreOriginal(GetWorkflowPath(transaction.SourceName), sourceBackupPath, true, null);
         }
         if (transaction.StagePath is not null)
         {
-            string stagePath = GetArtifactPath(transaction, transaction.StagePath, destinationPath, "stage");
-            if (File.Exists(stagePath))
-            {
-                File.Delete(stagePath);
-            }
+            File.Delete(RevalidateContainedPath(GetArtifactPath(transaction, transaction.StagePath, destinationPath, "stage")));
         }
         if (transaction.MarkerStagePath is not null)
         {
-            string markerStagePath = GetArtifactPath(transaction, transaction.MarkerStagePath, GetMarkerPath(transaction.SourceName), "marker-stage");
-            if (File.Exists(markerStagePath))
-            {
-                File.Delete(markerStagePath);
-            }
+            File.Delete(RevalidateContainedPath(GetArtifactPath(transaction, transaction.MarkerStagePath, GetMarkerPath(transaction.SourceName), "marker-stage")));
         }
-        File.Delete(GetContainedPath(JournalFileName));
+        File.Delete(RevalidateContainedPath(GetContainedPath(JournalFileName)));
     }
 
     /// <summary>Removes the exact artifacts recorded by a committed transaction and its journal last.</summary>
@@ -608,13 +664,9 @@ public static class ComfyWorkflowStore
         }
         foreach ((string relativePath, string finalPath, string role) in artifacts)
         {
-            string artifactPath = GetArtifactPath(transaction, relativePath, finalPath, role);
-            if (File.Exists(artifactPath))
-            {
-                File.Delete(artifactPath);
-            }
+            File.Delete(RevalidateContainedPath(GetArtifactPath(transaction, relativePath, finalPath, role)));
         }
-        File.Delete(GetContainedPath(JournalFileName));
+        File.Delete(RevalidateContainedPath(GetContainedPath(JournalFileName)));
     }
 
     /// <summary>Ensures a committed transaction's deletion marker is installed.</summary>
@@ -624,30 +676,30 @@ public static class ComfyWorkflowStore
         {
             return;
         }
-        string markerPath = GetMarkerPath(transaction.SourceName);
         byte[] markerData = DeletedMarkerContent.EncodeUTF8();
         string markerHash = GetDataHash(markerData);
-        if (File.Exists(markerPath))
+        if (FileExistsStrict(GetMarkerPath(transaction.SourceName)))
         {
-            if (!FileMatchesHash(markerPath, markerHash))
+            if (!FileMatchesHash(GetMarkerPath(transaction.SourceName), markerHash))
             {
                 throw new IOException("Stored workflow recovery encountered unexpected marker content.");
             }
             return;
         }
-        string markerStagePath = GetArtifactPath(transaction, transaction.MarkerStagePath, markerPath, "marker-stage");
-        if (File.Exists(markerStagePath))
+        if (FileExistsStrict(GetArtifactPath(transaction, transaction.MarkerStagePath, GetMarkerPath(transaction.SourceName), "marker-stage")))
         {
-            if (!FileMatchesHash(markerStagePath, markerHash))
+            if (!FileMatchesHash(GetArtifactPath(transaction, transaction.MarkerStagePath, GetMarkerPath(transaction.SourceName), "marker-stage"), markerHash))
             {
                 throw new IOException("Stored workflow recovery encountered unexpected marker content.");
             }
         }
         else
         {
-            WriteNewFlushedFile(markerStagePath, markerData);
+            WriteNewFlushedFile(GetArtifactPath(transaction, transaction.MarkerStagePath, GetMarkerPath(transaction.SourceName), "marker-stage"), markerData);
         }
-        File.Move(markerStagePath, markerPath);
+        File.Move(
+            RevalidateContainedPath(GetArtifactPath(transaction, transaction.MarkerStagePath, GetMarkerPath(transaction.SourceName), "marker-stage")),
+            RevalidateContainedPath(GetMarkerPath(transaction.SourceName)));
     }
 
     /// <summary>Verifies the intended committed workflow state without removing unexpected final files.</summary>
@@ -661,12 +713,12 @@ public static class ComfyWorkflowStore
             {
                 throw new IOException("Stored workflow recovery could not verify the committed workflow.");
             }
-            if (transaction.SourceExisted && !PathsEqual(sourcePath, destinationPath) && File.Exists(sourcePath))
+            if (transaction.SourceExisted && !PathsEqual(sourcePath, destinationPath) && FileExistsStrict(GetWorkflowPath(transaction.SourceName)))
             {
                 throw new IOException("Stored workflow recovery encountered an unexpected workflow file.");
             }
         }
-        else if (File.Exists(sourcePath))
+        else if (FileExistsStrict(GetWorkflowPath(transaction.SourceName)))
         {
             throw new IOException("Stored workflow recovery encountered an unexpected workflow file.");
         }
@@ -677,7 +729,7 @@ public static class ComfyWorkflowStore
     private static void RecoverPendingTransactionLocked()
     {
         string journalPath = GetContainedPath(JournalFileName);
-        if (!File.Exists(journalPath))
+        if (!FileExistsStrict(journalPath))
         {
             return;
         }
