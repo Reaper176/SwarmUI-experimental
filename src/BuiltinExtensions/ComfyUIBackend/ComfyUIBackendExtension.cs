@@ -722,7 +722,7 @@ public class ComfyUIBackendExtension : Extension
     }
 
     /// <summary>Publishes owner-aware object info only if its owner remains registered when publication begins.</summary>
-    private static ComfyBackendCapabilitySnapshot AssignValuesFromRaw(object owner, JObject rawObjectInfo, IReadOnlySet<string> nodeTypes, string modelFolderFormat, Func<bool> canPublish)
+    internal static ComfyBackendCapabilitySnapshot AssignValuesFromRaw(object owner, JObject rawObjectInfo, IReadOnlySet<string> nodeTypes, string modelFolderFormat, Func<bool> canPublish)
     {
         SharedValueDelta sharedDelta = BuildSharedValueDelta(rawObjectInfo);
         FrozenSet<string> frozenNodeTypes = nodeTypes.ToFrozenSet();

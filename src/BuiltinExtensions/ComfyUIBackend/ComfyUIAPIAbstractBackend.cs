@@ -117,7 +117,15 @@ public abstract class ComfyUIAPIAbstractBackend : AbstractT2IBackend
                 modelFolderFormatCandidate = "/";
                 Logs.Verbose($"Comfy backend {BackendData.ID} using model folder format: forward slash / as no backslash was found");
             }
-            ComfyBackendCapabilitySnapshot capabilitySnapshot = ComfyUIBackendExtension.AssignValuesFromRaw(this, rawObjectInfoCandidate, nodeTypesCandidate, modelFolderFormatCandidate);
+            ComfyBackendCapabilitySnapshot capabilitySnapshot = ComfyUIBackendExtension.AssignValuesFromRaw(this, rawObjectInfoCandidate, nodeTypesCandidate, modelFolderFormatCandidate, () =>
+            {
+                return Program.Backends.AllBackends.TryGetValue(BackendData.ID, out BackendHandler.BackendData registered)
+                    && ReferenceEquals(registered.AbstractBackend, this);
+            });
+            if (capabilitySnapshot is null)
+            {
+                return;
+            }
             RawObjectInfo = rawObjectInfoCandidate;
             NodeTypes = [.. capabilitySnapshot.NodeTypes];
             Models = modelsCandidate;
