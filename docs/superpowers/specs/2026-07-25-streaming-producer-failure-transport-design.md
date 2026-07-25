@@ -38,15 +38,15 @@ There are five route owners because the T2I route contains two call sites. `RunW
 
 ## Pre-Implementation Caller Control Flow
 
-`ModelsAPI.SelectModelWS` awaits the helper and then sends the current server status. An unexpected model-selection producer fault therefore appears as a normal final status.
+`ModelsAPI.SelectModelWS` awaited the helper and then sent the current server status. An unexpected model-selection producer fault therefore appeared as a normal final status.
 
-The TensorRT wrapper awaits the helper and returns `null`. Its refresh and `"Complete!"` frame currently occur inside the producer after successful artifact movement. A fault before those steps is logged only on the server, after which the route returns as though its producer completed normally.
+The TensorRT wrapper awaited the helper and returned `null`. Its refresh and `"Complete!"` frame occurred inside the producer after successful artifact movement. A fault before those steps was logged only on the server, after which the route returned as though its producer completed normally.
 
-The LoRA wrapper awaits the helper, refreshes the LoRA model set, checks for the expected output, and then emits a success or readable missing-output failure. An unexpected producer fault can therefore be obscured by post-fault refresh and derived output handling.
+The LoRA wrapper awaited the helper, refreshed the LoRA model set, checked for the expected output, and then emitted a success or readable missing-output failure. An unexpected producer fault could therefore be obscured by post-fault refresh and derived output handling.
 
-Image Batch awaits the helper, logs `"Image Batcher completed successfully"`, and sends `{ "success": "complete" }`. That contradictory success after an unexpected producer fault is statically confirmed.
+Image Batch awaited the helper, logged `"Image Batcher completed successfully"`, and sent `{ "success": "complete" }`. That contradictory success after an unexpected producer fault was statically confirmed.
 
-T2I stores the initial and socket-reuse helper tasks in a concurrent task set. It removes completed tasks without observing a result, emits `{ "socket_intention": "close" }` when the set becomes empty, allows a two-second reuse window, and finally sends the current status. A producer fault is therefore not available to stop new reuse work or suppress the close-intention/final-status success path.
+T2I stored the initial and socket-reuse helper tasks in a concurrent task set. It removed completed tasks without observing a result, emitted `{ "socket_intention": "close" }` when the set became empty, allowed a two-second reuse window, and finally sent the current status. A producer fault was therefore unavailable to stop new reuse work or suppress the close-intention/final-status success path.
 
 ## Selected Approach
 
@@ -113,26 +113,22 @@ The route methods continue returning `null`, so `API.HandleAsyncRequest` retains
 
 ## T2I Socket-Reuse Coordination
 
-T2I changes its tracked task type to `Task<bool>` for both the initial call and every socket-reuse call. It adds one route-local failure state visible to the receive loop and the task-drain loop.
+The approved pre-final concept changed the initial and socket-reuse calls plus their tracked set to `Task<bool>` and proposed one route-local producer-failure state for a successfully completed helper that returned `false`. Final implementation refined that concept to two distinct one-way states: `producerFailed` for a successfully completed `Task<bool>` whose result is `false`, and `helperTaskFailed` plus the first captured `ExceptionDispatchInfo` in `helperTaskException` for a tracked helper task that faults or is canceled.
 
-When a completed helper returns `false`:
+When a completed helper returns `false`, T2I:
 
-1. mark the route as producer-failed;
-2. stop accepting follow-on generation requests;
-3. cancel/wake the receive loop through its existing route-local cancellation path without canceling already active generation producers;
-4. retain every already-started helper in the task set until it completes;
-5. drain and remove all active helper tasks; and
-6. return `null` without sending `socket_intention: "close"` or the final current-status frame.
+1. marks `producerFailed`;
+2. stops accepting follow-on generation requests;
+3. cancels/wakes the receive loop through its existing route-local cancellation path without canceling already active generation producers;
+4. retains every already-started helper in the task set until it completes;
+5. observes, drains, and removes all active tracked helper tasks; and
+6. returns `null` after that drain without sending `socket_intention: "close"` or the final current-status frame.
 
-The outer dispatcher then performs the established normal WebSocket close.
+The helper returns `false` only after its queued progress and one generic producer-failure frame have been sent. The T2I route therefore returns normally after all tracked helpers drain, and the outer dispatcher performs the established normal WebSocket close. Other active producers may still finish and drain their existing outputs. Their completion does not clear `producerFailed` or restore follow-on acceptance.
 
-The receive loop checks the failure state after receiving data and before creating a new helper. A reuse request that was already accepted and started before the failure became visible is treated as active work and is drained. A request observed after the failure state is set is not started. This bounds the unavoidable race without canceling unrelated active work or redesigning the socket-reuse protocol.
+When a tracked helper task faults or is canceled, T2I awaits it to observe the exception, captures an `ExceptionDispatchInfo` into `helperTaskException` only if no earlier capture has been retained, marks `helperTaskFailed`, and cancels/wakes the receive loop. It does not translate that helper-task exception into `producerFailed`, send another generic frame, or abandon the other tracked helpers. After all active tracked helpers have been observed, drained, and removed, `helperTaskException.Throw()` rethrows the first captured helper-task exception before any final current-status send. This preserves socket-send and helper-task exception propagation to `API.HandleAsyncRequest`; if both states were observed, the captured helper-task exception takes precedence after the common drain.
 
-The helper returns `false` only after its queued progress and generic failure frames have been sent, so the T2I route cannot suppress its final status until the failure transport for that invocation has completed. Other active producers may still finish and drain their existing outputs. Their completion does not clear the route failure state or restore follow-on acceptance.
-
-Socket-send exceptions are not converted into `false`. They retain their current exception/remote-disconnect path rather than being mislabeled as producer failures. The T2I task-drain logic must distinguish a successfully completed `Task<bool>` result from a faulted helper task and must not hide a socket-send exception behind the new Boolean state.
-
-Concretely, T2I reads the Boolean only from a successfully completed helper task. If a tracked helper task itself faults—for example, because `SendJson` failed—the drain loop awaits that task so the exception reaches `API.HandleAsyncRequest`; it does not translate the exception into the producer-failure flag or attempt another generic frame.
+The receive loop checks both `producerFailed` and `helperTaskFailed` before waiting for input, after receiving data, and immediately before creating a new helper. A reuse request that was already accepted and started before either state became visible is treated as active work and is drained. A request observed after either state is set is not started. This bounds the unavoidable race without canceling unrelated active work or redesigning the socket-reuse protocol.
 
 ## Concurrency and Race Considerations
 
@@ -140,11 +136,11 @@ Concretely, T2I reads the Boolean only from a successfully completed helper task
 - The producer continuation continues waking the drain loop so a fault cannot leave it waiting for the two-second poll interval indefinitely.
 - The queue-empty check remains paired with producer completion; the generic error is appended only after the producer can enqueue no more frames.
 - Independent T2I helper invocations may interleave socket sends as they do today. No new cross-invocation serialization or ordering guarantee is claimed.
-- The route failure state is one-way. Once any T2I producer reports `false`, no later successful producer can reset it.
-- Failure observation stops new reuse work but does not cancel or abandon helpers already in the tracked set.
-- A reuse receive racing with failure is checked before producer creation; already-created work is drained, while later work is rejected by the stopped receive loop.
+- `producerFailed` and `helperTaskFailed` are distinct one-way states. A later successful helper resets neither state.
+- Observation of either state stops new reuse work but does not cancel or abandon helpers already in the tracked set.
+- A reuse receive racing with either state is checked before producer creation; already-created work is observed and drained, while later work is rejected by the stopped receive loop.
 - The normal success path retains the two-second socket-reuse window, close-intention frame, and final status.
-- The failure path suppresses only T2I's advisory close-intention and final status; actual normal closure remains dispatcher-owned.
+- Both non-success paths suppress T2I's advisory close-intention and final status. The producer-`false` path returns normally for dispatcher-owned closure; the helper-task-exception path rethrows only after the common active-task drain.
 
 ## Compatibility Requirements and Non-Goals
 
@@ -170,7 +166,7 @@ The C# implementation must follow repository conventions: explicit types rather 
 
 1. Change the shared helper to `Task<bool>`, retain its existing queue/drain loop, add the post-drain detailed log plus one generic error send, and return `false` for a producer fault or `true` for normal producer completion.
 2. Update Models, TensorRT, LoRA, and Image Batch to consume the Boolean and return before their applicable final status, refresh, success/failure derivation, logs, or success frames when it is `false`.
-3. Change both T2I call sites and the tracked task set to `Task<bool>`, add the one-way failure state, stop follow-on acceptance after failure, drain active tasks, and suppress the failure-path close intention and final status.
+3. Change both T2I call sites and the tracked task set to `Task<bool>`; distinguish one-way `producerFailed` for a successful `false` result from one-way `helperTaskFailed` plus the first captured `ExceptionDispatchInfo` for a faulted or canceled helper task; stop follow-on acceptance for either state; observe and drain all active tasks; return normally after the drain for producer `false`; rethrow the captured helper-task exception after the drain and before final status; and suppress close intention/final status on both non-success paths without sending a duplicate generic frame.
 4. Repeat the complete static inventory and control-flow review before maintainer runtime validation.
 
 These stages form one behavior unit. Landing a Boolean helper without updating wrappers would preserve contradictory success paths; updating wrappers before the helper result exists would not compile.
@@ -189,7 +185,7 @@ Agents will not build, launch, run tests, open sockets, inject faults, or exerci
 8. prove LoRA branches on `false` before refresh, output inspection, terminal logs, and terminal frames;
 9. prove TensorRT returns on `false` without adding duplicate completion work and retains its successful internal refresh/completion order;
 10. prove Image Batch branches on `false` before its success log and success frame;
-11. trace both T2I `Task<bool>` call sites, the one-way failure state, receive-loop stop, active-task drain, race check, and failure-path suppression of close intention/final status;
+11. trace both T2I `Task<bool>` call sites; distinct one-way `producerFailed` and `helperTaskFailed` states; first captured `ExceptionDispatchInfo`; receive-loop stop for either state; active-task observation and drain; race checks; producer-`false` normal return after drain; helper-task exception rethrow after drain and before final status; no duplicate generic frame; and close-intention/final-status suppression on both non-success paths;
 12. prove successful T2I still retains socket reuse, batch offsets, the two-second reuse window, close intention, and final status;
 13. confirm route registrations/signatures, producer signatures, dispatcher close/error behavior, browser code, and direct helper are unchanged;
 14. inspect extension-cache core-identity handling and record source compatibility without claiming arbitrary binary ABI compatibility;
@@ -220,7 +216,7 @@ The final helper inventory is exactly one `RunWebsocketHandlerCallWS<T>` definit
 
 The four non-T2I owners use the accurate result name `producerCompletedWithoutFault` and return immediately when it is `false`. Models suppresses its final current-status frame. LoRA suppresses model-set refresh, output inspection, terminal logs, and terminal success/readable-failure frames. Image Batch suppresses its wrapper success log and success frame. TensorRT returns from the wrapper on `false`; its existing artifact move, model refresh, and `"Complete!"` frame remain internal to the producer and unchanged on the successful path. All four wrappers retain their prior post-await behavior on `true`.
 
-T2I now tracks both helper call sites as `Task<bool>` and deliberately separates `producerFailed` from `helperTaskFailed`. A successful helper task returning `false` sets the one-way producer-failure state and cancels the receive wait; a faulted helper task, such as a socket-send failure, captures the first exception in `helperTaskException` with `ExceptionDispatchInfo`, sets the separate helper-task-failure state, and also cancels the receive wait. The receive loop checks both failure states before waiting, after receiving, and immediately before starting a reuse helper, which bounds the receive/failure race: already-started helpers remain tracked, while work observed after failure is not started. The task loop continues removing and observing every active helper. Only after the tracked set drains does it rethrow the first captured helper-task exception. Both failure paths suppress T2I's advisory close-intention and final current-status work; the producer-`false` path returns normally for dispatcher-owned closure, while a helper-task exception reaches the dispatcher after the drain. On success, batch offsets, follow-on acceptance, the two-second reuse window, advisory close intention, final status, and dispatcher closure remain in their existing flow.
+T2I now tracks both helper call sites as `Task<bool>` and deliberately separates `producerFailed` from `helperTaskFailed`. A successful helper task returning `false` sets the one-way producer-failure state and cancels the receive wait; a faulted or canceled helper task—for example, one faulted by a socket-send exception—captures an exception in `helperTaskException` with `ExceptionDispatchInfo` only when no earlier capture has been retained, sets the separate helper-task-failure state, and also cancels the receive wait. The receive loop checks both failure states before waiting, after receiving, and immediately before starting a reuse helper, which bounds the receive/failure race: already-started helpers remain tracked, while work observed after failure is not started. The task loop continues removing and observing every active helper. Only after the tracked set drains does it rethrow the first captured helper-task exception. Both failure paths suppress T2I's advisory close-intention and final current-status work; the producer-`false` path returns normally for dispatcher-owned closure, while a helper-task exception reaches the dispatcher after the drain. On success, batch offsets, follow-on acceptance, the two-second reuse window, advisory close intention, final status, and dispatcher closure remain in their existing flow.
 
 Static review used the following bounded commands and results:
 
