@@ -426,7 +426,7 @@ public static class ComfyUIWebAPI
             };
         }
         long ticks = Environment.TickCount64;
-        bool producerSucceeded = await API.RunWebsocketHandlerCallWS<object>(async (s, t, a, b) =>
+        bool producerCompletedWithoutFault = await API.RunWebsocketHandlerCallWS<object>(async (s, t, a, b) =>
         {
             await backend.AwaitJobLive(workflow.ToString(), "0", data =>
             {
@@ -472,7 +472,7 @@ public static class ComfyUIWebAPI
             Program.RefreshAllModelSets();
             a(new() { ["status"] = "Complete!", ["complete"] = true });
         }, session, null, ws);
-        if (!producerSucceeded)
+        if (!producerCompletedWithoutFault)
         {
             return null;
         }
@@ -597,7 +597,7 @@ public static class ComfyUIWebAPI
         };
         Logs.Info($"Starting LoRA extraction (for user {session.User.UserID}) for base '{baseModel}', other '{otherModel}', rank {rank}, output to '{outName}'...");
         long ticks = Environment.TickCount64;
-        bool producerSucceeded = await API.RunWebsocketHandlerCallWS<object>(async (s, t, a, b) =>
+        bool producerCompletedWithoutFault = await API.RunWebsocketHandlerCallWS<object>(async (s, t, a, b) =>
         {
             await backend.AwaitJobLive(workflow.ToString(), "0", data =>
             {
@@ -612,7 +612,7 @@ public static class ComfyUIWebAPI
                 }
             }, new(null), Program.GlobalProgramCancel);
         }, session, null, ws);
-        if (!producerSucceeded)
+        if (!producerCompletedWithoutFault)
         {
             return null;
         }
