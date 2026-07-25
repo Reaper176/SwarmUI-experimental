@@ -1,10 +1,16 @@
 # Model-Load Cleanup Ownership Design
 
-**Status:** Approved for implementation; awaiting plan
+**Status:** Implemented; awaiting maintainer validation
 
 **Date:** 2026-07-25
 
-**Fixed design boundary:** `513367f33d25eb482ac478c59511e12fd3ea63a0`
+**Original fixed design boundary:** `513367f33d25eb482ac478c59511e12fd3ea63a0`
+
+**Final reviewed design boundary:** `c67c0b8b64f4570b09cd2f36dca22532b52ce109`
+
+**Final reviewed implementation plan:** `42467376b9da88bfe8ae2760c81929ec400bd072`
+
+**Production range:** `42467376..25859d6e` (one production commit, `25859d6e`)
 
 ## Purpose
 
@@ -16,13 +22,13 @@ The selected design retains the cancellation-gated scheduling policy and introdu
 
 This guarantee covers every `Session.GenClaim` instance that construction successfully returns and the implementation captures. It cannot transactionally recover counters or other mutations if construction throws before return. If cleanup `Dispose` throws, the Rank 11 cleanup owner does not retry it; it separately attempts `GC.SuppressFinalize(claim)` so the finalizer cannot normally repeat a partial counter mutation. Failed disposal may retain partial claim/resource/session state, and failed finalizer suppression leaves a later finalizer-invoked `Dispose` possible. Neither condition has a transactional baseline guarantee.
 
-## Boundary and Current Ownership
+## Boundary and Pre-Implementation Ownership
 
 The production boundary is one method in one file:
 
 - `BackendHandler.LoadHighestPressureNow` in `src/Backends/BackendHandler.cs`.
 
-The method currently:
+At the original fixed design boundary, the method:
 
 1. filters available model-capable backends;
 2. orders non-loading model pressure by the existing count/wait heuristic;
@@ -294,6 +300,18 @@ Agents will not build, launch, run tests, start the server, load a model, interr
 30. run `git diff --check`.
 
 Static review can establish ownership, branch ordering, token placement, call-site scope, and signature preservation. It cannot prove the cancellation race, runtime counter values, backend behavior, thread timing, performance, or platform behavior.
+
+## Implementation Record
+
+Rank 11 is implemented in production commit `25859d6e` (`fix: make model-load cleanup ownership atomic`). The exact production range `42467376..25859d6e` changes only `src/Backends/BackendHandler.cs`, with 148 insertions and 40 deletions; `src/Accounts/Session.cs` is unchanged. The final design was reviewed through `c67c0b8b`, and the corrected implementation plan and review criteria were reviewed through `42467376`.
+
+`LoadHighestPressureNow` now creates its lifecycle state and captured-claims list before publication. Delegate entry, pre-start cancellation, and publication/scheduling failure arbitrate through one interlocked lifecycle. The winning terminal state owns one ordered cleanup pass: pre-start cleanup resets only published selected-pressure state and captured claims, while started cleanup retains reservation release, mismatch classification, selected-pressure reset, captured-claim disposal, and loaded-model reassignment. A delegate dispatched after pre-start ownership returns before reserving or loading.
+
+Both cleanup paths use the same nonthrowing diagnostic and per-step cleanup boundaries. Each independent cleanup primitive is attempted even if an earlier primitive or its diagnostic fails. The winning owner makes one `Dispose` attempt per captured claim in captured order; after a disposal failure it makes one separately guarded `GC.SuppressFinalize` attempt and then continues without a cleanup-owner retry. Post-failure finalizer suppression reduces the known double-disposal risk but does not transactionally repair partial claim/resource/session mutation. A suppression failure still leaves a later finalizer-invoked `Dispose` possible, and a constructor that throws before returning a claim remains outside the owner's recovery boundary.
+
+The production change preserves the cancellation-gated `Task.Factory.StartNew` policy, busy-loop and load-wait token domains, pressure heuristic and selection, reservation/load behavior, failure classification, and caller-local notification/refusal/failure-delivery behavior. The scheduling caller still supplies `cancel` and `releasePressure` even when `LoadHighestPressureNow` selects a different global pressure; cleanup owns only the selected pressure's published state and captured claims. No caller pressure release, generic refusal, `Failure` assignment, or detailed-exception delivery moved into cleanup.
+
+Task specification and code-quality review both passed. Source-only static review confirmed the exact one-file production range, lifecycle/continuation inputs, cleanup ordering, caller/selected-pressure coupling, unchanged public signatures, unchanged `Session.cs`, and clean fixed-range whitespace. In accordance with repository policy, agents performed no build, test, launch, model load, cancellation injection, runtime validation, platform validation, or performance measurement. Linux, Windows, other-platform, concurrency, backend, counter, and performance results remain pending maintainer validation.
 
 ## Maintainer Validation Matrix
 
