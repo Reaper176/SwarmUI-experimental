@@ -110,9 +110,9 @@ public static class ComfyUIWebAPI
                     ?? throw new SwarmReadableErrorException("No ComfyUI backend available.");
                 return await remoteBackend.SendAPIJSON("ComfyGetGeneratedWorkflow", rawInput);
             }
-            string format = backend.SupportedFeatures.Contains("folderbackslash") ? "\\" : "/";
+            ComfyBackendCapabilitySnapshot capabilitySnapshot = backend.CapabilitySnapshot;
             Logs.Verbose($"ComfyGetWorkflow for parameters: {ComfyDiagnostics.DescribeParameters(input)}");
-            string flow = ComfyUIAPIAbstractBackend.CreateWorkflow(input, w => w, format, features: [.. backend.SupportedFeatures]);
+            string flow = ComfyUIAPIAbstractBackend.CreateWorkflow(input, w => w, capabilitySnapshot.ModelFolderFormat, features: [.. capabilitySnapshot.Features]);
             return new JObject() { ["workflow"] = flow };
         }
         catch (SwarmReadableErrorException ex)
@@ -126,7 +126,8 @@ public static class ComfyUIWebAPI
     {
         if (Program.Backends.AllBackends.TryGetValue(backend, out BackendHandler.BackendData data) && data.AbstractBackend is ComfyUIAPIAbstractBackend comfyBack)
         {
-            return new JObject() { ["node_types"] = JArray.FromObject(comfyBack.NodeTypes.ToList()) };
+            ComfyBackendCapabilitySnapshot capabilitySnapshot = comfyBack.CapabilitySnapshot;
+            return new JObject() { ["node_types"] = JArray.FromObject(capabilitySnapshot.NodeTypes.ToList()) };
         }
         return new JObject() { ["error"] = "Unknown backend ID or not a ComfyUI backend." };
     }
@@ -368,7 +369,8 @@ public static class ComfyUIWebAPI
             await ws.SendJson(new JObject() { ["error"] = "No ComfyUI self-start backend available." }, API.WebsocketTimeout);
             return null;
         }
-        string format = backend.ModelFolderFormat;
+        ComfyBackendCapabilitySnapshot capabilitySnapshot = backend.CapabilitySnapshot;
+        string format = capabilitySnapshot.ModelFolderFormat;
         string prefix = $"{Guid.NewGuid()}";
         JObject workflow = new()
         {
@@ -507,7 +509,12 @@ public static class ComfyUIWebAPI
             await ws.SendJson(new JObject() { ["error"] = "Unknown input model name." }, API.WebsocketTimeout);
             return null;
         }
-        string format = ComfyUIBackendExtension.RunningComfyBackends.FirstOrDefault()?.ModelFolderFormat;
+        string format = null;
+        if (ComfyUIBackendExtension.RunningComfyBackends.FirstOrDefault() is ComfyUIAPIAbstractBackend backend)
+        {
+            ComfyBackendCapabilitySnapshot capabilitySnapshot = backend.CapabilitySnapshot;
+            format = capabilitySnapshot.ModelFolderFormat;
+        }
         string arch = otherModelData.ModelClass is null ? "unknown/lora" : $"{otherModelData.ModelClass.ID}/lora";
         JObject metadata = new()
         {

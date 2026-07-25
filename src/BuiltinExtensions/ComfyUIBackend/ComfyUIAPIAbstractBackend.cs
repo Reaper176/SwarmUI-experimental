@@ -30,6 +30,12 @@ public abstract class ComfyUIAPIAbstractBackend : AbstractT2IBackend
     /// <summary>Internal HTTP handler.</summary>
     public static HttpClient HttpClient = NetworkBackendUtils.MakeHttpClient();
 
+    /// <summary>Serializes capability refreshes for this backend instance.</summary>
+    private readonly SemaphoreSlim CapabilityRefreshGate = new(1, 1);
+
+    /// <summary>Gets the current immutable capability snapshot for this backend.</summary>
+    public ComfyBackendCapabilitySnapshot CapabilitySnapshot => ComfyCapabilityRegistry.GetSnapshot(this);
+
     public JObject RawObjectInfo;
 
     public HashSet<string> NodeTypes = [];
@@ -51,77 +57,82 @@ public abstract class ComfyUIAPIAbstractBackend : AbstractT2IBackend
 
     public async Task LoadValueSet(double maxMinutes = 1)
     {
-        Logs.Verbose($"Comfy backend {BackendData.ID} loading value set...");
-        using CancellationTokenSource cancel = Utilities.TimedCancel(TimeSpan.FromMinutes(maxMinutes));
-        JObject result;
-        if (cancel.IsCancellationRequested) // Obscure fallback: I've seen this insta-cancel, possibly related to system clock instability, so give a giant timeout in that case.
-        {
-            using CancellationTokenSource altCancel = Utilities.TimedCancel(TimeSpan.FromMinutes(maxMinutes + 10));
-            result = await SendGet<JObject>("object_info", altCancel.Token);
-        }
-        else
-        {
-            result = await SendGet<JObject>("object_info", cancel.Token);
-        }
-        if (result.TryGetValue("error", out JToken errorToken))
-        {
-            Logs.Verbose($"Comfy backend {BackendData.ID} failed to load value set: {errorToken}");
-            throw new Exception($"Remote error: {errorToken}");
-        }
-        AddLoadStatus("Got valid value set, will parse...");
-        Logs.Verbose($"Comfy backend {BackendData.ID} loaded value set, parsing...");
-        RawObjectInfo = result;
-        ConcurrentDictionary<string, List<string>> newModels = [];
-        string firstBackSlash = null;
-        NodeTypes = [.. RawObjectInfo.Properties().Select(p => p.Name)];
-        void trackModels(string subtype, string node, string param)
-        {
-            if (RawObjectInfo.TryGetValue(node, out JToken loaderNode))
-            {
-                string[] modelList = [.. loaderNode["input"]["required"][param][0].Select(t => (string)t)];
-                firstBackSlash ??= modelList.FirstOrDefault(m => m.Contains('\\'));
-                if (newModels.TryGetValue(subtype, out List<string> existingList))
-                {
-                    modelList = [.. modelList.Concat(existingList)];
-                }
-                newModels[subtype] = [.. modelList.Select(m => m.Replace('\\', '/'))];
-            }
-        }
-        trackModels("Stable-Diffusion", "CheckpointLoaderSimple", "ckpt_name");
-        trackModels("Stable-Diffusion", "UNETLoader", "unet_name");
-        trackModels("Stable-Diffusion", "UnetLoaderGGUF", "unet_name");
-        trackModels("Stable-Diffusion", "TensorRTLoader", "unet_name");
-        trackModels("LoRA", "LoraLoader", "lora_name");
-        trackModels("VAE", "VAELoader", "vae_name");
-        trackModels("ControlNet", "ControlNetLoader", "control_net_name");
-        trackModels("ControlNet", ComfyNodeNames.AnimaLLLite, ComfyNodeInputNames.AnimaLLLite.LLLiteName);
-        trackModels("ClipVision", "CLIPVisionLoader", "clip_name");
-        trackModels("Embedding", ComfyNodeNames.EmbedLoaderListProvider, ComfyNodeInputNames.EmbedLoaderListProvider.EmbedName);
-        Models = newModels;
-        if (firstBackSlash is not null)
-        {
-            ModelFolderFormat = "\\";
-            Logs.Verbose($"Comfy backend {BackendData.ID} using model folder format: backslash \\ due to model {firstBackSlash}");
-        }
-        else
-        {
-            ModelFolderFormat = "/";
-            Logs.Verbose($"Comfy backend {BackendData.ID} using model folder format: forward slash / as no backslash was found");
-        }
+        await CapabilityRefreshGate.WaitAsync(Program.GlobalProgramCancel);
         try
         {
-            ComfyUIBackendExtension.AssignValuesFromRaw(RawObjectInfo);
+            Logs.Verbose($"Comfy backend {BackendData.ID} loading value set...");
+            using CancellationTokenSource cancel = Utilities.TimedCancel(TimeSpan.FromMinutes(maxMinutes));
+            JObject result;
+            if (cancel.IsCancellationRequested) // Obscure fallback: I've seen this insta-cancel, possibly related to system clock instability, so give a giant timeout in that case.
+            {
+                using CancellationTokenSource altCancel = Utilities.TimedCancel(TimeSpan.FromMinutes(maxMinutes + 10));
+                result = await SendGet<JObject>("object_info", altCancel.Token);
+            }
+            else
+            {
+                result = await SendGet<JObject>("object_info", cancel.Token);
+            }
+            if (result.TryGetValue("error", out JToken errorToken))
+            {
+                Logs.Verbose($"Comfy backend {BackendData.ID} failed to load value set: {errorToken}");
+                throw new Exception($"Remote error: {errorToken}");
+            }
+            AddLoadStatus("Got valid value set, will parse...");
+            Logs.Verbose($"Comfy backend {BackendData.ID} loaded value set, parsing...");
+            JObject rawObjectInfoCandidate = result;
+            HashSet<string> nodeTypesCandidate = [.. rawObjectInfoCandidate.Properties().Select(p => p.Name)];
+            ConcurrentDictionary<string, List<string>> modelsCandidate = [];
+            string firstBackSlash = null;
+            void trackModels(string subtype, string node, string param)
+            {
+                if (rawObjectInfoCandidate.TryGetValue(node, out JToken loaderNode))
+                {
+                    string[] modelList = [.. loaderNode["input"]["required"][param][0].Select(t => (string)t)];
+                    firstBackSlash ??= modelList.FirstOrDefault(m => m.Contains('\\'));
+                    if (modelsCandidate.TryGetValue(subtype, out List<string> existingList))
+                    {
+                        modelList = [.. modelList.Concat(existingList)];
+                    }
+                    modelsCandidate[subtype] = [.. modelList.Select(m => m.Replace('\\', '/'))];
+                }
+            }
+            trackModels("Stable-Diffusion", "CheckpointLoaderSimple", "ckpt_name");
+            trackModels("Stable-Diffusion", "UNETLoader", "unet_name");
+            trackModels("Stable-Diffusion", "UnetLoaderGGUF", "unet_name");
+            trackModels("Stable-Diffusion", "TensorRTLoader", "unet_name");
+            trackModels("LoRA", "LoraLoader", "lora_name");
+            trackModels("VAE", "VAELoader", "vae_name");
+            trackModels("ControlNet", "ControlNetLoader", "control_net_name");
+            trackModels("ControlNet", ComfyNodeNames.AnimaLLLite, ComfyNodeInputNames.AnimaLLLite.LLLiteName);
+            trackModels("ClipVision", "CLIPVisionLoader", "clip_name");
+            trackModels("Embedding", ComfyNodeNames.EmbedLoaderListProvider, ComfyNodeInputNames.EmbedLoaderListProvider.EmbedName);
+            string modelFolderFormatCandidate;
+            if (firstBackSlash is not null)
+            {
+                modelFolderFormatCandidate = "\\";
+                Logs.Verbose($"Comfy backend {BackendData.ID} using model folder format: backslash \\ due to model {firstBackSlash}");
+            }
+            else
+            {
+                modelFolderFormatCandidate = "/";
+                Logs.Verbose($"Comfy backend {BackendData.ID} using model folder format: forward slash / as no backslash was found");
+            }
+            ComfyBackendCapabilitySnapshot capabilitySnapshot = ComfyUIBackendExtension.AssignValuesFromRaw(this, rawObjectInfoCandidate, nodeTypesCandidate, modelFolderFormatCandidate);
+            RawObjectInfo = rawObjectInfoCandidate;
+            NodeTypes = [.. capabilitySnapshot.NodeTypes];
+            Models = modelsCandidate;
+            ModelFolderFormat = capabilitySnapshot.ModelFolderFormat;
+            Logs.Verbose($"Comfy backend {BackendData.ID} loaded value set and parsed.");
+            if (!capabilitySnapshot.NodeTypes.Contains(ComfyNodeNames.KSampler))
+            {
+                Logs.Warning($"Comfy backend {BackendData.ID} is missing the Swarm core nodes! Core functionalities will be missing. Please ensure you are using a well-installed ComfyUI Self-Starting backend. If you are, check debug logs for backend errors.");
+            }
+            AddLoadStatus("Done parsing value set.");
         }
-        catch (Exception ex)
+        finally
         {
-            Logs.Error($"Comfy backend {BackendData.ID} failed to load raw node backend info: {ex.ReadableString()}");
+            CapabilityRefreshGate.Release();
         }
-        Logs.Verbose($"Comfy backend {BackendData.ID} loaded value set and parsed.");
-        if (!NodeTypes.Contains(ComfyNodeNames.KSampler))
-        {
-            Logs.Warning($"Comfy backend {BackendData.ID} is missing the Swarm core nodes! Core functionalities will be missing. Please ensure you are using a well-installed ComfyUI Self-Starting backend. If you are, check debug logs for backend errors.");
-        }
-        AddLoadStatus("Done parsing value set.");
     }
 
     public abstract bool CanIdle { get; }
@@ -924,6 +935,7 @@ public abstract class ComfyUIAPIAbstractBackend : AbstractT2IBackend
     /// <inheritdoc/>
     public override async Task GenerateLive(T2IParamInput user_input, string batchId, Action<object> takeOutput)
     {
+        ComfyBackendCapabilitySnapshot capabilitySnapshot = CapabilitySnapshot;
         List<Action> completeSteps = [];
         string initImageFixer(string workflow) // This is a hack, backup for if Swarm nodes are missing
         {
@@ -986,7 +998,7 @@ public abstract class ComfyUIAPIAbstractBackend : AbstractT2IBackend
             }
             return workflow;
         }
-        string workflow = CreateWorkflow(user_input, initImageFixer, ModelFolderFormat, [.. SupportedFeatures]);
+        string workflow = CreateWorkflow(user_input, initImageFixer, capabilitySnapshot.ModelFolderFormat, [.. capabilitySnapshot.Features]);
         try
         {
             await AwaitJobLive(workflow, batchId, takeOutput, user_input, user_input.InterruptToken);
@@ -1009,13 +1021,14 @@ public abstract class ComfyUIAPIAbstractBackend : AbstractT2IBackend
     /// <inheritdoc/>
     public override bool IsValidForThisBackend(T2IParamInput input)
     {
-        return TryIsValid(input, NodeTypes);
+        ComfyBackendCapabilitySnapshot capabilitySnapshot = CapabilitySnapshot;
+        return TryIsValid(input, capabilitySnapshot.NodeTypes);
     }
 
     /// <summary>
     /// Implementation for <see cref="IsValidForThisBackend(T2IParamInput)"/>.
     /// </summary>
-    public static bool TryIsValid(T2IParamInput input, HashSet<string> nodeTypes)
+    public static bool TryIsValid(T2IParamInput input, IReadOnlySet<string> nodeTypes)
     {
         if (nodeTypes is null)
         {
@@ -1075,9 +1088,10 @@ public abstract class ComfyUIAPIAbstractBackend : AbstractT2IBackend
     /// <inheritdoc/>
     public override async Task<bool> LoadModel(T2IModel model, T2IParamInput upstreamInput)
     {
+        ComfyBackendCapabilitySnapshot capabilitySnapshot = CapabilitySnapshot;
         T2IParamInput input = new(null);
         input.Set(T2IParamTypes.Model, model);
-        if (ComfyUIBackendExtension.FeaturesSupported.Contains("comfy_just_load_model"))
+        if (capabilitySnapshot.Features.Contains("comfy_just_load_model"))
         {
             input.Set(T2IParamTypes.Steps, 0);
             input.Set(T2IParamTypes.DoNotSave, true);
@@ -1118,7 +1132,7 @@ public abstract class ComfyUIAPIAbstractBackend : AbstractT2IBackend
             copyParam(T2IParamTypes.GemmaModel);
             copyParam(T2IParamTypes.GptOssModel);
         }
-        WorkflowGenerator wg = new() { UserInput = input, ModelFolderFormat = ModelFolderFormat, Features = [.. SupportedFeatures] };
+        WorkflowGenerator wg = new() { UserInput = input, ModelFolderFormat = capabilitySnapshot.ModelFolderFormat, Features = [.. capabilitySnapshot.Features] };
         JObject workflow = wg.Generate();
         await AwaitJobLive(workflow.ToString(), "0", _ => { }, new(null), Program.GlobalProgramCancel);
         CurrentModelName = model.Name;
@@ -1133,5 +1147,5 @@ public abstract class ComfyUIAPIAbstractBackend : AbstractT2IBackend
     }
 
     /// <inheritdoc/>
-    public override IEnumerable<string> SupportedFeatures => ComfyUIBackendExtension.FeaturesSupported.Append(ModelFolderFormat == "\\" ? "folderbackslash" : "folderslash");
+    public override IEnumerable<string> SupportedFeatures => CapabilitySnapshot.Features;
 }

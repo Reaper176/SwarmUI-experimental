@@ -265,7 +265,17 @@ public class ComfyUser
             string[] classTypes = [.. prompt.Properties().Select(p => p.Value is JObject jobj ? (string)jobj["class_type"] : null).Where(ct => ct is not null)];
             ComfyClientData[] validClients = [.. available.Where(c =>
             {
-                HashSet<string> nodes = c.Backend is SwarmSwarmBackend swarmBack ? ((HashSet<string>)swarmBack.ExtensionData.GetValueOrDefault("ComfyNodeTypes", new HashSet<string>())) : (c.Backend as ComfyUIAPIAbstractBackend).NodeTypes;
+                IReadOnlySet<string> nodes;
+                if (c.Backend is SwarmSwarmBackend swarmBack)
+                {
+                    nodes = (HashSet<string>)swarmBack.ExtensionData.GetValueOrDefault("ComfyNodeTypes", new HashSet<string>());
+                }
+                else
+                {
+                    ComfyUIAPIAbstractBackend localBackend = c.Backend as ComfyUIAPIAbstractBackend;
+                    ComfyBackendCapabilitySnapshot capabilitySnapshot = localBackend.CapabilitySnapshot;
+                    nodes = capabilitySnapshot.NodeTypes;
+                }
                 return classTypes.All(ct => nodes.Contains(ct));
             })];
             if (validClients.Length == 0)
@@ -353,7 +363,17 @@ public class ComfyClientData
     /// <summary>Auto-fixer for some workflow features, notably Windows vs Linux instances need different file path formats (backslash vs forward slash).</summary>
     public void FixUpPrompt(JObject prompt)
     {
-        bool isBackSlash = Backend.SupportedFeatures.Contains("folderbackslash");
+        IEnumerable<string> supportedFeatures;
+        if (Backend is ComfyUIAPIAbstractBackend localBackend)
+        {
+            ComfyBackendCapabilitySnapshot capabilitySnapshot = localBackend.CapabilitySnapshot;
+            supportedFeatures = capabilitySnapshot.Features;
+        }
+        else
+        {
+            supportedFeatures = Backend.SupportedFeatures;
+        }
+        bool isBackSlash = supportedFeatures.Contains("folderbackslash");
         foreach (JProperty node in prompt.Properties())
         {
             JObject inputs = node.Value["inputs"] as JObject;
