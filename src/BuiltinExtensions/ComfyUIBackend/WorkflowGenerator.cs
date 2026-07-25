@@ -39,10 +39,10 @@ public partial class WorkflowGenerator
     /// <summary>CLIP model names mapped to the destination paths at which they were validated or downloaded.</summary>
     public static ConcurrentDictionary<string, string> ClipModelsValid = [];
 
-    /// <summary>Vision model names mapped to the destination paths at which they were downloaded.</summary>
+    /// <summary>Vision model names mapped to the destination paths at which they were validated or downloaded.</summary>
     public static ConcurrentDictionary<string, string> VisionModelsValid = [];
 
-    /// <summary>IP-Adapter model cache keys mapped to the destination paths at which they were downloaded.</summary>
+    /// <summary>IP-Adapter model cache keys mapped to the destination paths at which they were validated or downloaded.</summary>
     public static ConcurrentDictionary<string, string> IPAdapterModelsValid = [];
 
     /// <summary>Register a new step to the workflow generator.</summary>
