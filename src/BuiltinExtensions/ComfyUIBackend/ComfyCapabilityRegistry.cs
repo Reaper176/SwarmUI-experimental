@@ -8,8 +8,15 @@ public static class ComfyCapabilityRegistry
     /// <summary>Stores the immutable evidence and interpreted snapshot for one backend owner.</summary>
     internal sealed record CapabilityEntry(FrozenSet<string> NodeTypes, string ModelFolderFormat, ComfyBackendCapabilitySnapshot Snapshot);
 
-    /// <summary>Stores a complete replacement registry and its aggregate feature set before publication.</summary>
-    internal sealed record RegistryCandidate(Dictionary<object, CapabilityEntry> Entries, HashSet<string> Aggregate);
+    /// <summary>Stores candidate compatibility tracking state without changing current observations.</summary>
+    internal sealed record CompatibilityTrackingState(
+        HashSet<string> ForcedFeatures,
+        HashSet<string> SuppressedFeatures,
+        HashSet<string> LastDiscardHints,
+        Dictionary<string, string> LastNodeMap);
+
+    /// <summary>Stores a complete replacement registry, aggregate, and compatibility state before publication.</summary>
+    internal sealed record RegistryCandidate(Dictionary<object, CapabilityEntry> Entries, HashSet<string> Aggregate, CompatibilityTrackingState Compatibility);
 
     /// <summary>Current capability entries, keyed by backend owner identity.</summary>
     private static Dictionary<object, CapabilityEntry> Entries = new(ReferenceEqualityComparer.Instance);
@@ -25,6 +32,9 @@ public static class ComfyCapabilityRegistry
 
     /// <summary>Last aggregate published to the public compatibility feature set.</summary>
     private static HashSet<string> LastPublishedAggregate = [];
+
+    /// <summary>Cached immutable copy of the last aggregate published by maintained code.</summary>
+    private static FrozenSet<string> LastPublishedAggregateSnapshot = Array.Empty<string>().ToFrozenSet();
 
     /// <summary>Last observed copy of the mutable discard-if-not-found compatibility hints.</summary>
     private static HashSet<string> LastDiscardHints = [];
@@ -54,11 +64,11 @@ public static class ComfyCapabilityRegistry
     /// <returns>The immutable capability snapshot published for the owner.</returns>
     public static ComfyBackendCapabilitySnapshot Publish(object owner, IEnumerable<string> nodeTypes, string modelFolderFormat)
     {
+        FrozenSet<string> frozenNodeTypes = nodeTypes.ToFrozenSet();
         lock (ComfyUIBackendExtension.ValueAssignmentLocker)
         {
             InitializeLocked();
-            CaptureCompatibilityChanges();
-            RegistryCandidate candidate = PreparePublish(owner, nodeTypes, modelFolderFormat);
+            RegistryCandidate candidate = PreparePublish(owner, frozenNodeTypes, modelFolderFormat);
             Commit(candidate);
             return Entries[owner].Snapshot;
         }
@@ -72,9 +82,12 @@ public static class ComfyCapabilityRegistry
         lock (ComfyUIBackendExtension.ValueAssignmentLocker)
         {
             InitializeLocked();
-            CaptureCompatibilityChanges();
-            RegistryCandidate candidate = BuildCandidate(CopyEntries());
-            Commit(candidate);
+            bool compatibilityChanged = CaptureCompatibilityChanges(out CompatibilityTrackingState compatibility);
+            if (compatibilityChanged)
+            {
+                RegistryCandidate candidate = BuildCandidate(CopyEntries(), compatibility);
+                Commit(candidate);
+            }
             if (Entries.TryGetValue(owner, out CapabilityEntry entry))
             {
                 return entry.Snapshot;
@@ -90,10 +103,13 @@ public static class ComfyCapabilityRegistry
         lock (ComfyUIBackendExtension.ValueAssignmentLocker)
         {
             InitializeLocked();
-            CaptureCompatibilityChanges();
-            RegistryCandidate candidate = BuildCandidate(CopyEntries());
-            Commit(candidate);
-            return candidate.Aggregate.ToFrozenSet();
+            bool compatibilityChanged = CaptureCompatibilityChanges(out CompatibilityTrackingState compatibility);
+            if (compatibilityChanged)
+            {
+                RegistryCandidate candidate = BuildCandidate(CopyEntries(), compatibility);
+                Commit(candidate);
+            }
+            return LastPublishedAggregateSnapshot;
         }
     }
 
@@ -104,30 +120,31 @@ public static class ComfyCapabilityRegistry
         lock (ComfyUIBackendExtension.ValueAssignmentLocker)
         {
             InitializeLocked();
-            CaptureCompatibilityChanges();
-            if (!Entries.ContainsKey(owner))
+            bool compatibilityChanged = CaptureCompatibilityChanges(out CompatibilityTrackingState compatibility);
+            bool ownerExists = Entries.ContainsKey(owner);
+            if (!ownerExists && !compatibilityChanged)
             {
                 return;
             }
             Dictionary<object, CapabilityEntry> candidateEntries = CopyEntries();
             candidateEntries.Remove(owner);
-            RegistryCandidate candidate = BuildCandidate(candidateEntries);
+            RegistryCandidate candidate = BuildCandidate(candidateEntries, compatibility);
             Commit(candidate);
         }
     }
 
     /// <summary>Prepares a complete replacement candidate containing fresh evidence for one owner.</summary>
-    /// <remarks>The caller must own <see cref="ComfyUIBackendExtension.ValueAssignmentLocker"/> and reconcile compatibility changes first. This method mutates no state.</remarks>
+    /// <remarks>The caller must own <see cref="ComfyUIBackendExtension.ValueAssignmentLocker"/>. This method mutates no state.</remarks>
     /// <param name="owner">The backend object whose identity owns the snapshot.</param>
-    /// <param name="nodeTypes">The ComfyUI node types exposed by the backend.</param>
+    /// <param name="nodeTypes">The frozen ComfyUI node types exposed by the backend.</param>
     /// <param name="modelFolderFormat">The path separator format used by the backend's model folders.</param>
     /// <returns>A complete candidate ready to commit atomically with related shared values.</returns>
-    internal static RegistryCandidate PreparePublish(object owner, IEnumerable<string> nodeTypes, string modelFolderFormat)
+    internal static RegistryCandidate PreparePublish(object owner, FrozenSet<string> nodeTypes, string modelFolderFormat)
     {
+        CaptureCompatibilityChanges(out CompatibilityTrackingState compatibility);
         Dictionary<object, CapabilityEntry> candidateEntries = CopyEntries();
-        FrozenSet<string> frozenNodeTypes = nodeTypes.ToFrozenSet();
-        candidateEntries[owner] = new(frozenNodeTypes, modelFolderFormat, ComfyBackendCapabilitySnapshot.Empty);
-        return BuildCandidate(candidateEntries);
+        candidateEntries[owner] = new(nodeTypes, modelFolderFormat, ComfyBackendCapabilitySnapshot.Empty);
+        return BuildCandidate(candidateEntries, compatibility);
     }
 
     /// <summary>Commits a previously prepared complete registry candidate.</summary>
@@ -135,10 +152,15 @@ public static class ComfyCapabilityRegistry
     /// <param name="candidate">The complete candidate to publish.</param>
     internal static void Commit(RegistryCandidate candidate)
     {
-        Entries = candidate.Entries;
+        Entries = CopyEntries(candidate.Entries);
+        ForcedFeatures = [.. candidate.Compatibility.ForcedFeatures];
+        SuppressedFeatures = [.. candidate.Compatibility.SuppressedFeatures];
+        LastDiscardHints = [.. candidate.Compatibility.LastDiscardHints];
+        LastNodeMap = new(candidate.Compatibility.LastNodeMap);
         ComfyUIBackendExtension.FeaturesSupported.Clear();
         ComfyUIBackendExtension.FeaturesSupported.UnionWith(candidate.Aggregate);
         LastPublishedAggregate = [.. candidate.Aggregate];
+        LastPublishedAggregateSnapshot = candidate.Aggregate.ToFrozenSet();
         NextGeneration++;
     }
 
@@ -151,6 +173,7 @@ public static class ComfyCapabilityRegistry
         }
         InitialFeatures = [.. ComfyUIBackendExtension.FeaturesSupported];
         LastPublishedAggregate = [.. ComfyUIBackendExtension.FeaturesSupported];
+        LastPublishedAggregateSnapshot = LastPublishedAggregate.ToFrozenSet();
         LastDiscardHints = [.. ComfyUIBackendExtension.FeaturesDiscardIfNotFound];
         LastNodeMap = new(ComfyUIBackendExtension.NodeToFeatureMap);
         IsInitialized = true;
@@ -158,21 +181,24 @@ public static class ComfyCapabilityRegistry
 
     /// <summary>Captures direct mutations to the public compatibility collections.</summary>
     /// <remarks>The caller must own <see cref="ComfyUIBackendExtension.ValueAssignmentLocker"/>.</remarks>
-    /// <returns>Whether any public compatibility collection changed since it was last observed or published.</returns>
-    private static bool CaptureCompatibilityChanges()
+    /// <param name="compatibility">Receives candidate compatibility state containing all current observations.</param>
+    /// <returns>Whether any public compatibility collection changed since it was last published.</returns>
+    private static bool CaptureCompatibilityChanges(out CompatibilityTrackingState compatibility)
     {
         bool changed = false;
+        HashSet<string> candidateForcedFeatures = [.. ForcedFeatures];
+        HashSet<string> candidateSuppressedFeatures = [.. SuppressedFeatures];
         HashSet<string> observedFeatures = [.. ComfyUIBackendExtension.FeaturesSupported];
         foreach (string feature in observedFeatures.Except(LastPublishedAggregate))
         {
-            ForcedFeatures.Add(feature);
-            SuppressedFeatures.Remove(feature);
+            candidateForcedFeatures.Add(feature);
+            candidateSuppressedFeatures.Remove(feature);
             changed = true;
         }
         foreach (string feature in LastPublishedAggregate.Except(observedFeatures))
         {
-            SuppressedFeatures.Add(feature);
-            ForcedFeatures.Remove(feature);
+            candidateSuppressedFeatures.Add(feature);
+            candidateForcedFeatures.Remove(feature);
             changed = true;
         }
 
@@ -188,29 +214,28 @@ public static class ComfyCapabilityRegistry
             changed = true;
         }
 
-        LastPublishedAggregate = observedFeatures;
-        LastDiscardHints = observedDiscardHints;
-        LastNodeMap = observedNodeMap;
+        compatibility = new(candidateForcedFeatures, candidateSuppressedFeatures, observedDiscardHints, observedNodeMap);
         return changed;
     }
 
     /// <summary>Builds a complete candidate without mutating current registry or public state.</summary>
     /// <param name="sourceEntries">The owner evidence to reinterpret into fresh snapshots.</param>
+    /// <param name="compatibility">The candidate compatibility state to apply during interpretation.</param>
     /// <returns>A complete replacement candidate.</returns>
-    private static RegistryCandidate BuildCandidate(Dictionary<object, CapabilityEntry> sourceEntries)
+    private static RegistryCandidate BuildCandidate(Dictionary<object, CapabilityEntry> sourceEntries, CompatibilityTrackingState compatibility)
     {
         HashSet<string> effectiveBaseline = [.. InitialFeatures];
-        effectiveBaseline.UnionWith(ForcedFeatures);
-        effectiveBaseline.ExceptWith(SuppressedFeatures);
+        effectiveBaseline.UnionWith(compatibility.ForcedFeatures);
+        effectiveBaseline.ExceptWith(compatibility.SuppressedFeatures);
 
         Dictionary<object, CapabilityEntry> candidateEntries = new(ReferenceEqualityComparer.Instance);
         HashSet<string> noNodeTypes = [];
         HashSet<string> aggregate = ComfyCapabilityCatalog.Interpret(
             noNodeTypes,
             effectiveBaseline,
-            LastDiscardHints,
-            LastNodeMap,
-            SuppressedFeatures,
+            compatibility.LastDiscardHints,
+            compatibility.LastNodeMap,
+            compatibility.SuppressedFeatures,
             "/");
         aggregate.Remove("folderbackslash");
         aggregate.Remove("folderslash");
@@ -220,9 +245,9 @@ public static class ComfyCapabilityRegistry
             HashSet<string> features = ComfyCapabilityCatalog.Interpret(
                 entry.NodeTypes,
                 effectiveBaseline,
-                LastDiscardHints,
-                LastNodeMap,
-                SuppressedFeatures,
+                compatibility.LastDiscardHints,
+                compatibility.LastNodeMap,
+                compatibility.SuppressedFeatures,
                 entry.ModelFolderFormat);
             ComfyBackendCapabilitySnapshot snapshot = new(features, entry.NodeTypes, entry.ModelFolderFormat, NextGeneration);
             candidateEntries[owner] = new(entry.NodeTypes, entry.ModelFolderFormat, snapshot);
@@ -235,15 +260,23 @@ public static class ComfyCapabilityRegistry
             }
         }
 
-        return new(candidateEntries, aggregate);
+        return new(candidateEntries, aggregate, compatibility);
     }
 
     /// <summary>Copies current entries into a reference-identity keyed candidate map.</summary>
     /// <returns>A mutable copy of the current owner entry map.</returns>
     private static Dictionary<object, CapabilityEntry> CopyEntries()
     {
+        return CopyEntries(Entries);
+    }
+
+    /// <summary>Copies supplied entries into a reference-identity keyed candidate map.</summary>
+    /// <param name="sourceEntries">The entries to copy.</param>
+    /// <returns>A mutable reference-identity keyed copy of the supplied owner entry map.</returns>
+    private static Dictionary<object, CapabilityEntry> CopyEntries(IReadOnlyDictionary<object, CapabilityEntry> sourceEntries)
+    {
         Dictionary<object, CapabilityEntry> result = new(ReferenceEqualityComparer.Instance);
-        foreach ((object owner, CapabilityEntry entry) in Entries)
+        foreach ((object owner, CapabilityEntry entry) in sourceEntries)
         {
             result[owner] = entry;
         }
