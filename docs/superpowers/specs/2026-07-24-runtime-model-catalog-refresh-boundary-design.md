@@ -64,6 +64,9 @@ The initial maintained inventory contains the direct or derived catalog consumer
 - `src/WebAPI/ModelsAPI.cs`
 - `src/WebAPI/T2IAPI.cs`
 - `src/WebAPI/UtilAPI.cs`
+- `src/Pages/_Generate/UtilitiesTab.cshtml`
+
+The corrected implementation baseline contains 21 maintained consumer files and 71 matching source lines beyond `Program.cs`; `src/WebAPI/ModelsAPI.cs:375` contains two literal identifiers on one matching line, for 72 literal identifier references. The baseline classification is two startup-only accesses, three write-side accesses, five protected accesses, and 61 uncovered accesses, including the runtime Razor category enumeration at `src/Pages/_Generate/UtilitiesTab.cshtml:50`.
 
 The implementation inventory must be repeated against the implementation baseline. This list is evidence, not permission to ignore a newly discovered maintained consumer.
 

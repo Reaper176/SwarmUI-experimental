@@ -22,6 +22,7 @@
 - `src/WebAPI/T2IAPI.cs`: protect the complete parameter-list serialization boundary.
 - `src/WebAPI/UtilAPI.cs`: protect conversion-path discovery and metadata-handler use without holding claims over child processes or backend-drain waits.
 - `src/Core/WebServer.cs`: protect special-model preview lookup and copy result data before awaiting output.
+- `src/Pages/_Generate/UtilitiesTab.cshtml`: snapshot model category names under a short read claim before rendering the utilities metadata-scanner options.
 - `src/Core/Installation.cs`: use the write-owning Stable-Diffusion refresh operation.
 - `src/Backends/BackendHandler.cs`: protect loaded-model annotation and pass a write-side category snapshot into refresh-event remote work.
 - `src/Backends/SwarmSwarmBackend.cs`: accept an optional caller-owned category snapshot and otherwise acquire one before asynchronous remote requests.
@@ -47,7 +48,7 @@
 
 **Files:**
 - Inspect: `src/Core/Program.cs`
-- Inspect: all maintained `*.cs` files returned by the commands below
+- Inspect: all maintained `*.cs` and `*.cshtml` files returned by the commands below
 - Modify later: `docs/superpowers/specs/2026-07-24-runtime-model-catalog-refresh-boundary-design.md`
 
 - [ ] **Step 1: Capture the direct and derived consumer inventory**
@@ -57,18 +58,20 @@ Run:
 ```bash
 rg -n 'Program\.(T2IModelSets|MainSDModels)' src \
   --glob '*.cs' \
+  --glob '*.cshtml' \
   --glob '!src/bin/**' \
   --glob '!src/obj/**' \
   --glob '!src/Extensions/**'
 
 rg -l 'Program\.(T2IModelSets|MainSDModels)' src \
   --glob '*.cs' \
+  --glob '*.cshtml' \
   --glob '!src/bin/**' \
   --glob '!src/obj/**' \
   --glob '!src/Extensions/**' | sort
 ```
 
-Expected baseline: 20 maintained consumer files in addition to the declaration in `Program.cs`. Record every occurrence in the task notes as startup-only, existing write-side, protected already, or uncovered.
+Expected baseline: 21 maintained consumer files and 71 matching source lines beyond the declaration in `Program.cs`. `ModelsAPI.cs:375` has two literal references on one matching line, for 72 literal identifier references. Classify the baseline as startup-only 2, write-side 3, protected 5, and uncovered 61; the new uncovered reader is `src/Pages/_Generate/UtilitiesTab.cshtml:50`. Record every occurrence in the task notes as startup-only, existing write-side, protected already, or uncovered.
 
 - [ ] **Step 2: Capture every writer and event publisher**
 
@@ -451,6 +454,7 @@ git commit -m "refactor: route model catalog writes through owner"
 - Modify: `src/WebAPI/T2IAPI.cs`
 - Modify: `src/WebAPI/UtilAPI.cs`
 - Modify: `src/Core/WebServer.cs`
+- Modify: `src/Pages/_Generate/UtilitiesTab.cshtml`
 
 - [ ] **Step 1: Move Models API claims before handler resolution**
 
@@ -598,31 +602,60 @@ if (previewImage is not null)
 }
 ```
 
-- [ ] **Step 7: Verify API reader coverage and claim duration**
+- [ ] **Step 7: Snapshot Utilities tab category names before rendering**
+
+Before the existing metadata-scanner `<option>` loop in `UtilitiesTab.cshtml`, snapshot the category names while a short claim is active, then render from the snapshot after the claim is disposed:
+
+```cshtml
+@{
+    string[] modelTypes;
+    using (FreneticUtilities.FreneticToolkit.ManyReadOneWriteLock.ReadClaim claim = Program.RefreshLock.LockRead())
+    {
+        modelTypes = [.. Program.T2IModelSets.Keys];
+    }
+}
+```
+
+Replace the direct enumeration with:
+
+```cshtml
+@foreach (string key in modelTypes)
+{
+    <option value="@key" class="translate">@key</option>
+}
+```
+
+The claim must be released before markup rendering begins.
+
+- [ ] **Step 8: Verify API reader coverage and claim duration**
 
 Run:
 
 ```bash
 rg -n -C 8 'Program\.(T2IModelSets|MainSDModels)' \
-  src/WebAPI/ModelsAPI.cs src/WebAPI/T2IAPI.cs src/WebAPI/UtilAPI.cs src/Core/WebServer.cs
+  src/WebAPI/ModelsAPI.cs src/WebAPI/T2IAPI.cs src/WebAPI/UtilAPI.cs src/Core/WebServer.cs \
+  src/Pages/_Generate/UtilitiesTab.cshtml
 
 rg -n -C 5 'LockRead\(\)|LockWrite\(\)|RefreshModelSet\(' \
-  src/WebAPI/ModelsAPI.cs src/WebAPI/T2IAPI.cs src/WebAPI/UtilAPI.cs src/Core/WebServer.cs
+  src/WebAPI/ModelsAPI.cs src/WebAPI/T2IAPI.cs src/WebAPI/UtilAPI.cs src/Core/WebServer.cs \
+  src/Pages/_Generate/UtilitiesTab.cshtml
 
 git diff --check -- \
-  src/WebAPI/ModelsAPI.cs src/WebAPI/T2IAPI.cs src/WebAPI/UtilAPI.cs src/Core/WebServer.cs
+  src/WebAPI/ModelsAPI.cs src/WebAPI/T2IAPI.cs src/WebAPI/UtilAPI.cs src/Core/WebServer.cs \
+  src/Pages/_Generate/UtilitiesTab.cshtml
 ```
 
-Expected: every lookup precedes handler use under a read claim; no read claim spans child-process waits, model-download HTTP work, or preview output awaits; no read claim encloses `RefreshModelSet`.
+Expected: every lookup precedes handler use under a read claim; the Utilities tab copies category names before rendering markup; no read claim spans child-process waits, model-download HTTP work, or preview output awaits; no read claim encloses `RefreshModelSet`.
 
-- [ ] **Step 8: Commit core API coverage**
+- [ ] **Step 9: Commit core API coverage**
 
 ```bash
 git add -- \
   src/WebAPI/ModelsAPI.cs \
   src/WebAPI/T2IAPI.cs \
   src/WebAPI/UtilAPI.cs \
-  src/Core/WebServer.cs
+  src/Core/WebServer.cs \
+  src/Pages/_Generate/UtilitiesTab.cshtml
 git diff --cached --check
 git commit -m "fix: protect core model catalog readers"
 ```
@@ -1098,6 +1131,7 @@ Run:
 ```bash
 rg -n 'Program\.(T2IModelSets|MainSDModels)' src \
   --glob '*.cs' \
+  --glob '*.cshtml' \
   --glob '!src/bin/**' \
   --glob '!src/obj/**' \
   --glob '!src/Extensions/**'
@@ -1314,6 +1348,7 @@ rg -n 'Implemented and maintainer-validated|Core F7|Recommended Next' \
   docs/superpowers/audits/2026-07-21-maintainability-architecture-refresh.md
 rg -n 'Program\.(T2IModelSets|MainSDModels)' src \
   --glob '*.cs' \
+  --glob '*.cshtml' \
   --glob '!src/bin/**' \
   --glob '!src/obj/**' \
   --glob '!src/Extensions/**'
