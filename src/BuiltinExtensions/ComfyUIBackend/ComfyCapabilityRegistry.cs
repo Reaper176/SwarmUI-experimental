@@ -48,6 +48,9 @@ public static class ComfyCapabilityRegistry
     /// <summary>Whether the compatibility baseline and mutable extension points have been captured.</summary>
     private static bool IsInitialized;
 
+    /// <summary>Whether an interpreted registry candidate has replaced the raw startup compatibility aggregate.</summary>
+    private static bool HasCommittedCandidate;
+
     /// <summary>Captures the compatibility baseline after built-in initialization hints have been registered.</summary>
     public static void Initialize()
     {
@@ -83,7 +86,7 @@ public static class ComfyCapabilityRegistry
         {
             InitializeLocked();
             bool compatibilityChanged = CaptureCompatibilityChanges(out CompatibilityTrackingState compatibility);
-            if (compatibilityChanged)
+            if (!HasCommittedCandidate || compatibilityChanged)
             {
                 RegistryCandidate candidate = BuildCandidate(CopyEntries(), compatibility);
                 Commit(candidate);
@@ -104,7 +107,7 @@ public static class ComfyCapabilityRegistry
         {
             InitializeLocked();
             bool compatibilityChanged = CaptureCompatibilityChanges(out CompatibilityTrackingState compatibility);
-            if (compatibilityChanged)
+            if (!HasCommittedCandidate || compatibilityChanged)
             {
                 RegistryCandidate candidate = BuildCandidate(CopyEntries(), compatibility);
                 Commit(candidate);
@@ -162,6 +165,7 @@ public static class ComfyCapabilityRegistry
         LastPublishedAggregate = [.. candidate.Aggregate];
         LastPublishedAggregateSnapshot = candidate.Aggregate.ToFrozenSet();
         NextGeneration++;
+        HasCommittedCandidate = true;
     }
 
     /// <summary>Captures initial public compatibility values while the shared value-assignment lock is owned.</summary>
