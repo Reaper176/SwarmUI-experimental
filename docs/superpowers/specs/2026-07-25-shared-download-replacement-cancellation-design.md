@@ -165,7 +165,7 @@ Maintainer Reaper176 will validate:
 
 1. a pre-existing destination longer than a successful response is replaced with exactly the response bytes;
 2. caller cancellation before response headers returns promptly without changing a pre-existing destination;
-3. caller cancellation during known-length streaming deletes the incomplete replacement through the length-mismatch path, while unknown-length cancellation may leave a partial replacement;
+3. caller cancellation during known-length streaming deletes the incomplete replacement through the established length-mismatch or writer-task failure cleanup paths, while unknown-length cancellation may leave a partial replacement;
 4. global shutdown cancellation still interrupts acquisition and streaming;
 5. successful range continuation produces exact bytes;
 6. failed or non-partial range continuation preserves its established known-length failure cleanup;
