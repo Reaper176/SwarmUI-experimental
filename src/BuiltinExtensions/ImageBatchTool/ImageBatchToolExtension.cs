@@ -62,7 +62,11 @@ public class ImageBatchToolExtension : Extension
             return null;
         }
         Directory.CreateDirectory(output_folder);
-        await API.RunWebsocketHandlerCallWS(GenBatchRun_Internal, session, (rawInput, input_folder, output_folder, init_image, revision, controlnet, imageFiles, resMode, append_filename_to_prompt), socket);
+        bool producerSucceeded = await API.RunWebsocketHandlerCallWS(GenBatchRun_Internal, session, (rawInput, input_folder, output_folder, init_image, revision, controlnet, imageFiles, resMode, append_filename_to_prompt), socket);
+        if (!producerSucceeded)
+        {
+            return null;
+        }
         Logs.Info("Image Batcher completed successfully");
         await socket.SendJson(new JObject() { ["success"] = "complete" }, API.WebsocketTimeout);
         return null;

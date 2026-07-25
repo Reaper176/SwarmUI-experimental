@@ -343,7 +343,11 @@ public static class ModelsAPI
     [API.APIDescription("Forcibly loads a model immediately on some or all backends, with live status updates over websocket.", "\"success\": true")]
     public static async Task<JObject> SelectModelWS(WebSocket socket, Session session, string model)
     {
-        await API.RunWebsocketHandlerCallWS(SelectModelInternal, session, (model, (string)null), socket);
+        bool producerSucceeded = await API.RunWebsocketHandlerCallWS(SelectModelInternal, session, (model, (string)null), socket);
+        if (!producerSucceeded)
+        {
+            return null;
+        }
         await socket.SendJson(BasicAPIFeatures.GetCurrentStatusRaw(session), API.WebsocketTimeout);
         return null;
     }
