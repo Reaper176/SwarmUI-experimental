@@ -753,8 +753,7 @@ public static class Utilities
         cancel ??= new();
         using CancellationTokenSource combinedCancel = CancellationTokenSource.CreateLinkedTokenSource(Program.GlobalProgramCancel, cancel.Token);
         Directory.CreateDirectory(Path.GetDirectoryName(filepath));
-        using FileStream writer = File.OpenWrite(filepath);
-        HttpRequestMessage request = new(HttpMethod.Get, url);
+        using HttpRequestMessage request = new(HttpMethod.Get, url);
         if (headers is not null)
         {
             foreach ((string key, string value) in headers)
@@ -762,15 +761,16 @@ public static class Utilities
                 request.Headers.Add(key, value);
             }
         }
-        HttpResponseMessage response = await UtilWebClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, Program.GlobalProgramCancel);
-        long length = response.Content.Headers.ContentLength ?? 0;
-        ConcurrentQueue<byte[]> chunks = new();
-        ConcurrentQueue<(long, long, long, bool)> progUpdates = new();
+        using HttpResponseMessage response = await UtilWebClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, Program.GlobalProgramCancel);
         if (response.StatusCode != HttpStatusCode.OK)
         {
             throw new SwarmReadableErrorException($"Failed to download {altUrl}: got response code {(int)response.StatusCode} {response.StatusCode}");
         }
+        long length = response.Content.Headers.ContentLength ?? 0;
+        ConcurrentQueue<byte[]> chunks = new();
+        ConcurrentQueue<(long, long, long, bool)> progUpdates = new();
         using Stream dlStream = await response.Content.ReadAsStreamAsync();
+        using FileStream writer = new(filepath, FileMode.Create, FileAccess.Write, FileShare.None);
         Task loadData = Task.Run(async () =>
         {
             HttpResponseMessage workingResponse = response;
@@ -840,16 +840,16 @@ public static class Utilities
                             workingStream.Dispose();
                             workingStream = null;
                             workingResponse.Dispose();
-                            request = new(HttpMethod.Get, url);
+                            using HttpRequestMessage retryRequest = new(HttpMethod.Get, url);
                             if (headers is not null)
                             {
                                 foreach ((string key, string value) in headers)
                                 {
-                                    request.Headers.Add(key, value);
+                                    retryRequest.Headers.Add(key, value);
                                 }
                             }
-                            request.Headers.Range = new(totalRead, length);
-                            workingResponse = await UtilWebClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, Program.GlobalProgramCancel);
+                            retryRequest.Headers.Range = new(totalRead, length);
+                            workingResponse = await UtilWebClient.SendAsync(retryRequest, HttpCompletionOption.ResponseHeadersRead, Program.GlobalProgramCancel);
                             if (workingResponse.StatusCode != HttpStatusCode.PartialContent)
                             {
                                 throw new SwarmReadableErrorException($"Failed to download {altUrl} (expecting Partial range continue): got response code {(int)workingResponse.StatusCode} {workingResponse.StatusCode}");
