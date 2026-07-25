@@ -200,8 +200,8 @@ public class API
     /// <summary>Placeholder default WebSocket timeout.</summary>
     public static TimeSpan WebsocketTimeout = TimeSpan.FromMinutes(2); // TODO: Configurable timeout
 
-    /// <summary>Helper to run simple websocket-multiresult action API calls.</summary>
-    public static async Task RunWebsocketHandlerCallWS<T>(Func<Session, T, Action<JObject>, bool, Task> handler, Session session, T val, WebSocket socket)
+    /// <summary>Helper to run simple websocket-multiresult action API calls. Returns whether the producer completed without faulting.</summary>
+    public static async Task<bool> RunWebsocketHandlerCallWS<T>(Func<Session, T, Action<JObject>, bool, Task> handler, Session session, T val, WebSocket socket)
     {
         ConcurrentQueue<JObject> outputs = new();
         AsyncAutoResetEvent signal = new(false);
@@ -226,7 +226,10 @@ public class API
         if (t.IsFaulted)
         {
             Logs.Error($"Error in websocket handler: {t.Exception.ReadableString()}");
+            await socket.SendJson(Utilities.ErrorObj("An internal error occurred", "internal_error"), WebsocketTimeout);
+            return false;
         }
+        return true;
     }
 
     /// <summary>Helper to run simple websocket-multiresult action API calls without a websocket.</summary>
