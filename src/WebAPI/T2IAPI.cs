@@ -94,10 +94,10 @@ public static class T2IAPI
         [API.APIParameter("Raw mapping of input should contain general T2I parameters (see listing on Generate tab of main interface) to values, eg `{ \"prompt\": \"a photo of a cat\", \"model\": \"OfficialStableDiffusion/sd_xl_base_1.0\", \"steps\": 20, ... }`. Note that this is the root raw map, ie all params go on the same level as `images`, `session_id`, etc.\nThe key 'extra_metadata' may be used to apply extra internal metadata as a JSON string:string map.")] JObject rawInput)
     {
         using CancellationTokenSource cancelTok = new();
-        bool retain = false, ended = false;
+        bool retain = false, ended = false, producerFailed = false;
         using CancellationTokenSource linked = CancellationTokenSource.CreateLinkedTokenSource(Program.GlobalProgramCancel, cancelTok.Token);
         SharedGenT2IData data = new();
-        ConcurrentDictionary<Task, Task> tasks = [];
+        ConcurrentDictionary<Task<bool>, Task<bool>> tasks = [];
         static int guessBatchSize(JObject input)
         {
             if (input.TryGetValue("batchsize", out JToken batch))
@@ -111,17 +111,21 @@ public static class T2IAPI
             try
             {
                 int batchOffset = images * guessBatchSize(rawInput);
-                while (!cancelTok.IsCancellationRequested)
+                while (!cancelTok.IsCancellationRequested && !Volatile.Read(ref producerFailed))
                 {
                     byte[] rec = await socket.ReceiveData(Program.ServerSettings.Network.MaxReceiveBytes, linked.Token);
                     Volatile.Write(ref retain, true);
-                    if (socket.State != WebSocketState.Open || cancelTok.IsCancellationRequested || Volatile.Read(ref ended))
+                    if (socket.State != WebSocketState.Open || cancelTok.IsCancellationRequested || Volatile.Read(ref ended) || Volatile.Read(ref producerFailed))
                     {
                         return;
                     }
                     JObject newInput = SubmittedInputJson.ParseObject(StringConversionHelper.UTF8Encoding.GetString(rec));
                     int newImages = newInput.Value<int>("images");
-                    Task handleMore = API.RunWebsocketHandlerCallWS(GenT2I_Internal, session, (newImages, newInput, data, batchOffset), socket);
+                    if (Volatile.Read(ref producerFailed))
+                    {
+                        return;
+                    }
+                    Task<bool> handleMore = API.RunWebsocketHandlerCallWS(GenT2I_Internal, session, (newImages, newInput, data, batchOffset), socket);
                     tasks.TryAdd(handleMore, handleMore);
                     Volatile.Write(ref retain, false);
                     batchOffset += newImages * guessBatchSize(newInput);
@@ -136,7 +140,7 @@ public static class T2IAPI
                 Volatile.Write(ref retain, false);
             }
         });
-        Task handle = API.RunWebsocketHandlerCallWS(GenT2I_Internal, session, (images, rawInput, data, 0), socket);
+        Task<bool> handle = API.RunWebsocketHandlerCallWS(GenT2I_Internal, session, (images, rawInput, data, 0), socket);
         tasks.TryAdd(handle, handle);
         while (Volatile.Read(ref retain) || tasks.Any())
         {
@@ -144,11 +148,20 @@ public static class T2IAPI
             {
                 await Task.WhenAny(tasks.Keys.ToList());
             }
-            foreach (Task t in tasks.Keys.Where(t => t.IsCompleted).ToList())
+            foreach (Task<bool> task in tasks.Keys.Where(task => task.IsCompleted).ToList())
             {
-                tasks.TryRemove(t, out _);
+                if (!task.IsCompletedSuccessfully)
+                {
+                    await task;
+                }
+                else if (!task.Result)
+                {
+                    Volatile.Write(ref producerFailed, true);
+                    cancelTok.Cancel();
+                }
+                tasks.TryRemove(task, out _);
             }
-            if (tasks.IsEmpty())
+            if (!Volatile.Read(ref producerFailed) && tasks.IsEmpty())
             {
                 await socket.SendJson(new JObject() { ["socket_intention"] = "close" }, API.WebsocketTimeout);
                 await Task.Delay(TimeSpan.FromSeconds(2)); // Give 2 seconds to allow a new gen request before actually closing
@@ -158,7 +171,10 @@ public static class T2IAPI
                 }
             }
         }
-        await socket.SendJson(BasicAPIFeatures.GetCurrentStatusRaw(session), API.WebsocketTimeout);
+        if (!Volatile.Read(ref producerFailed))
+        {
+            await socket.SendJson(BasicAPIFeatures.GetCurrentStatusRaw(session), API.WebsocketTimeout);
+        }
         return null;
     }
 
