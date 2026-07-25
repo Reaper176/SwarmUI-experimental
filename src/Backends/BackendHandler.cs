@@ -1537,73 +1537,181 @@ public class BackendHandler
                         throw new SwarmReadableErrorException($"Invalid server setting for ModelLoadOrderPreference: '{orderMode}' unrecognized");
                     }
                     Logs.Debug($"[BackendHandler] backend #{availableBackend.ID} will load a model: {highestPressure.Model.RawFilePath}, with {highestPressure.Count} requests waiting for {timeWait / 1000f:0.#} seconds");
-                    highestPressure.IsLoading = true;
+                    const int Published = 0;
+                    const int Started = 1;
+                    const int PreStartCleanupOwned = 2;
+                    const int StartedCleanupOwned = 3;
+                    int lifecycle = Published;
+                    bool isLoadingPublished = false;
                     List<Session.GenClaim> claims = [];
-                    foreach (Session sess in highestPressure.Sessions)
-                    {
-                        claims.Add(sess.Claim(0, 1, 0, 0));
-                    }
-                    Task.Factory.StartNew(() =>
+
+                    void logCleanupFailure(string step, Exception ex)
                     {
                         try
                         {
-                            availableBackend.ReserveModelLoad = true;
-                            int ticks = 0;
-                            while (availableBackend.CheckIsInUseNoModelReserve && availableBackend.Backend.MaxUsages > 0)
-                            {
-                                if (Program.GlobalProgramCancel.IsCancellationRequested)
-                                {
-                                    return;
-                                }
-                                if (ticks++ % 5 == 0)
-                                {
-                                    Logs.Debug($"[BackendHandler] model loader is waiting for backend #{availableBackend.ID} to be released from use ({availableBackend.Usages}/{availableBackend.Backend.MaxUsages})...");
-                                }
-                                Thread.Sleep(100);
-                            }
-                            Utilities.CleanRAM();
-                            if (highestPressure.Model.Name.ToLowerFast() == "(none)")
-                            {
-                                availableBackend.Backend.CurrentModelName = highestPressure.Model.Name;
-                            }
-                            else
-                            {
-                                availableBackend.Backend.LoadModel(highestPressure.Model, highestPressure.Requests.FirstOrDefault()?.UserInput).Wait(cancel);
-                            }
-                            Logs.Debug($"[BackendHandler] backend #{availableBackend.ID} loaded model, returning to pool");
+                            string detail = ex.ReadableString();
+                            string message = $"[BackendHandler] Model-load cleanup step '{step}' failed: {detail}";
+                            Logs.Error(message);
+                        }
+                        catch
+                        {
+                            // Cleanup diagnostics are best-effort and must not interrupt cleanup.
+                        }
+                    }
+
+                    void attemptCleanup(string step, Action action)
+                    {
+                        try
+                        {
+                            action();
                         }
                         catch (Exception ex)
                         {
-                            while (ex is AggregateException ae && ae.InnerException is not null)
-                            {
-                                ex = ae.InnerException;
-                            }
-                            Logs.Error($"[BackendHandler] backend #{availableBackend.ID} failed to load model with error: {ex.ReadableString()}");
-                            lock (highestPressure.Locker)
-                            {
-                                highestPressure.BackendFailReasons.Add(ex.ReadableString());
-                            }
+                            logCleanupFailure(step, ex);
                         }
-                        finally
+                    }
+
+                    void disposeClaims()
+                    {
+                        foreach (Session.GenClaim claim in claims)
                         {
-                            availableBackend.ReserveModelLoad = false;
-                            if (availableBackend.Backend.CurrentModelName != highestPressure.Model.Name)
-                            {
-                                Logs.Warning($"[BackendHandler] backend #{availableBackend.ID} failed to load model {highestPressure.Model.Name}");
-                                lock (highestPressure.Locker)
-                                {
-                                    highestPressure.BadBackends.Add(availableBackend.ID);
-                                    Logs.Debug($"Will deny backends: {highestPressure.BadBackends.JoinString(", ")}");
-                                }
-                            }
-                            highestPressure.IsLoading = false;
-                            foreach (Session.GenClaim claim in claims)
+                            try
                             {
                                 claim.Dispose();
                             }
+                            catch (Exception ex)
+                            {
+                                logCleanupFailure("dispose captured model-load claim", ex);
+                                try
+                                {
+                                    GC.SuppressFinalize(claim);
+                                }
+                                catch (Exception suppressEx)
+                                {
+                                    logCleanupFailure("suppress failed model-load claim finalizer", suppressEx);
+                                }
+                            }
                         }
-                        ReassignLoadedModelsList();
-                    }, cancel);
+                    }
+
+                    void cleanupPreStart()
+                    {
+                        if (Interlocked.CompareExchange(ref lifecycle, PreStartCleanupOwned, Published) != Published)
+                        {
+                            return;
+                        }
+                        if (isLoadingPublished)
+                        {
+                            attemptCleanup("reset selected pressure pre-start loading state", () => highestPressure.IsLoading = false);
+                        }
+                        attemptCleanup("visit captured pre-start model-load claims", disposeClaims);
+                    }
+
+                    void cleanupStarted()
+                    {
+                        if (Interlocked.CompareExchange(ref lifecycle, StartedCleanupOwned, Started) != Started)
+                        {
+                            return;
+                        }
+                        attemptCleanup("release backend model-load reservation", () => availableBackend.ReserveModelLoad = false);
+                        bool modelMismatch = false;
+                        attemptCleanup("compare loaded model name", () => modelMismatch = availableBackend.Backend.CurrentModelName != highestPressure.Model.Name);
+                        if (modelMismatch)
+                        {
+                            attemptCleanup("log model-load mismatch warning", () =>
+                            {
+                                Logs.Warning($"[BackendHandler] backend #{availableBackend.ID} failed to load model {highestPressure.Model.Name}");
+                            });
+                            attemptCleanup("classify model-load mismatch", () =>
+                            {
+                                lock (highestPressure.Locker)
+                                {
+                                    highestPressure.BadBackends.Add(availableBackend.ID);
+                                }
+                            });
+                            attemptCleanup("log denied model-load backends", () =>
+                            {
+                                lock (highestPressure.Locker)
+                                {
+                                    Logs.Debug($"Will deny backends: {highestPressure.BadBackends.JoinString(", ")}");
+                                }
+                            });
+                        }
+                        attemptCleanup("reset selected pressure started loading state", () => highestPressure.IsLoading = false);
+                        attemptCleanup("visit captured started model-load claims", disposeClaims);
+                        attemptCleanup("reassign loaded model list", ReassignLoadedModelsList);
+                    }
+
+                    try
+                    {
+                        highestPressure.IsLoading = true;
+                        isLoadingPublished = true;
+                        foreach (Session sess in highestPressure.Sessions)
+                        {
+                            Session.GenClaim claim = sess.Claim(0, 1, 0, 0);
+                            claims.Add(claim);
+                        }
+                        Task loadTask = Task.Factory.StartNew(() =>
+                        {
+                            if (Interlocked.CompareExchange(ref lifecycle, Started, Published) != Published)
+                            {
+                                return;
+                            }
+                            try
+                            {
+                                availableBackend.ReserveModelLoad = true;
+                                int ticks = 0;
+                                while (availableBackend.CheckIsInUseNoModelReserve && availableBackend.Backend.MaxUsages > 0)
+                                {
+                                    if (Program.GlobalProgramCancel.IsCancellationRequested)
+                                    {
+                                        return;
+                                    }
+                                    if (ticks++ % 5 == 0)
+                                    {
+                                        Logs.Debug($"[BackendHandler] model loader is waiting for backend #{availableBackend.ID} to be released from use ({availableBackend.Usages}/{availableBackend.Backend.MaxUsages})...");
+                                    }
+                                    Thread.Sleep(100);
+                                }
+                                Utilities.CleanRAM();
+                                if (highestPressure.Model.Name.ToLowerFast() == "(none)")
+                                {
+                                    availableBackend.Backend.CurrentModelName = highestPressure.Model.Name;
+                                }
+                                else
+                                {
+                                    availableBackend.Backend.LoadModel(highestPressure.Model, highestPressure.Requests.FirstOrDefault()?.UserInput).Wait(cancel);
+                                }
+                                Logs.Debug($"[BackendHandler] backend #{availableBackend.ID} loaded model, returning to pool");
+                            }
+                            catch (Exception ex)
+                            {
+                                while (ex is AggregateException ae && ae.InnerException is not null)
+                                {
+                                    ex = ae.InnerException;
+                                }
+                                Logs.Error($"[BackendHandler] backend #{availableBackend.ID} failed to load model with error: {ex.ReadableString()}");
+                                lock (highestPressure.Locker)
+                                {
+                                    highestPressure.BackendFailReasons.Add(ex.ReadableString());
+                                }
+                            }
+                            finally
+                            {
+                                cleanupStarted();
+                            }
+                        }, cancel);
+                        loadTask.ContinueWith(
+                            _ => cleanupPreStart(),
+                            CancellationToken.None,
+                            TaskContinuationOptions.OnlyOnCanceled | TaskContinuationOptions.ExecuteSynchronously,
+                            TaskScheduler.Default);
+                    }
+                    catch
+                    {
+                        cleanupPreStart();
+                        throw;
+                    }
                 }
                 else
                 {
