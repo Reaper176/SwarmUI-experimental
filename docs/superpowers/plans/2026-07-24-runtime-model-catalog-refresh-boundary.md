@@ -527,13 +527,15 @@ git commit -m "refactor: route model catalog writes through owner"
 
 - [ ] **Step 1: Move Models API claims before handler resolution**
 
-For `DescribeModel`, `ListModels`, `GetModelHeaders`, `OpenModelFolder`, `DeleteModel`, and `RenameModel`, ensure the method acquires:
+For the model-backed branches of `DescribeModel` and `ListModels`, acquire:
 
 ```csharp
 using ManyReadOneWriteLock.ReadClaim claim = Program.RefreshLock.LockRead();
 ```
 
-before the first `Program.T2IModelSets.TryGetValue(...)`. Remove later duplicate claims in the same synchronous handler-use scope.
+before the first `Program.T2IModelSets.TryGetValue(...)`. Keep wildcard loading outside the catalog claim because it can perform independent filesystem reads.
+
+For `GetModelHeaders`, acquire the claim before the first outer lookup, copy `actualModel.RawFilePath`, release the claim, and only then inspect the file header. For `OpenModelFolder`, `DeleteModel`, and `RenameModel`, acquire the claim before the first outer lookup. Remove later duplicate claims in the same synchronous handler-use scope.
 
 `BulkEditModelMetadata` and `EditModelMetadata` must likewise acquire the read claim before their first outer lookup, but they preserve deferred file-save behavior, so their existing claim must outlive the synchronous method when a resave is scheduled. Box the original claim once as `IDisposable`, protect every synchronous early return with `try`/`finally`, then transfer the same interface reference exclusively to the callback by nulling the synchronous owner before calling `RunCheckedTask`. The callback atomically clears and disposes the transferred owner in `finally` after every `ResaveModel` call. If scheduling throws, atomically clear and dispose the transferred owner in `catch`, then rethrow. Do not acquire a nested or second read claim in the callback: a catalog writer may already be waiting for the original reader to drain.
 
@@ -780,16 +782,26 @@ Program.ModelRefreshEvent += () =>
 };
 ```
 
-Change the remote methods to accept the optional snapshot:
+Preserve the existing public remote method signatures and route catalog snapshots through internal overloads:
 
 ```csharp
-public Task TriggerRefresh(string[] modelTypes = null)
+public Task TriggerRefresh()
+{
+    return TriggerRefresh(null);
+}
+
+internal Task TriggerRefresh(string[] modelTypes)
 ```
 
 and:
 
 ```csharp
-public async Task ReviseRemoteDataList(bool fullLoad, string[] modelTypes = null)
+public async Task ReviseRemoteDataList(bool fullLoad)
+{
+    await ReviseRemoteDataList(fullLoad, null);
+}
+
+internal async Task ReviseRemoteDataList(bool fullLoad, string[] modelTypes)
 ```
 
 Pass `modelTypes` from `TriggerRefresh` to the full-load `ReviseRemoteDataList` call. At the start of `ReviseRemoteDataList`, before its first `await`, acquire a snapshot only when the caller did not supply one and this invocation will enumerate local categories:

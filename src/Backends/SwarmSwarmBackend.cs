@@ -162,7 +162,12 @@ public class SwarmSwarmBackend : AbstractT2IBackend
         }
     }
 
-    public Task TriggerRefresh(string[] modelTypes = null)
+    public Task TriggerRefresh()
+    {
+        return TriggerRefresh(null);
+    }
+
+    internal Task TriggerRefresh(string[] modelTypes)
     {
         if (!IsAControlInstance)
         {
@@ -184,7 +189,12 @@ public class SwarmSwarmBackend : AbstractT2IBackend
         });
     }
 
-    public async Task ReviseRemoteDataList(bool fullLoad, string[] modelTypes = null)
+    public async Task ReviseRemoteDataList(bool fullLoad)
+    {
+        await ReviseRemoteDataList(fullLoad, null);
+    }
+
+    internal async Task ReviseRemoteDataList(bool fullLoad, string[] modelTypes)
     {
         string[] effectiveModelTypes = modelTypes;
         if (IsAControlInstance && fullLoad && effectiveModelTypes is null)

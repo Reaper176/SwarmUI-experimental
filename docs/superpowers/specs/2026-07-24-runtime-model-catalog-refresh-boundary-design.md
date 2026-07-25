@@ -203,6 +203,7 @@ Prompt contexts can span several parsing blocks, so cached embedding and LoRA na
 
 Claims should not remain held during work that no longer reads the handler generation, including:
 
+- independent filesystem reads such as wildcard loading or metadata-header inspection after the required path or branch has been copied;
 - external HTTP requests;
 - file downloads;
 - child-process waits;
@@ -286,6 +287,7 @@ The implementation preserves:
 - `T2IModelHandler` and `T2IModel` object behavior;
 - public `BuildModelLists`, `RefreshAllModelSets`, `RefreshModelSet`, `RebuildModelListsForPathChange`, and `RefreshLock` access;
 - `ModelRefreshEvent` and `ModelPathsChangedEvent` delegate surfaces and relative purpose;
+- the existing public `SwarmSwarmBackend.TriggerRefresh()` and `ReviseRemoteDataList(bool)` method signatures, with catalog snapshots passed through internal overloads;
 - synchronous `ChangeServerSettings` completion;
 - the settings route name, permission, inputs, success payload, and warning payload;
 - model list and parameter response schemas;
