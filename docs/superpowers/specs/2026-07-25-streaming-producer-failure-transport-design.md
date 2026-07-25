@@ -1,6 +1,6 @@
 # Streaming Producer Failure Transport Design
 
-**Status:** Approved; awaiting implementation
+**Status:** Implemented; awaiting maintainer validation
 
 **Date:** 2026-07-25
 
@@ -8,13 +8,13 @@
 
 Correct the confirmed failure-transport gap in `API.RunWebsocketHandlerCallWS<T>` without redesigning WebSocket routing or producer callbacks.
 
-Today, an unexpected producer exception is logged after already-enqueued frames drain, but the helper then completes normally. Its route owner cannot distinguish that fault from success. The client can therefore receive progress followed by a clean close, a final status, or an explicit success frame without any failure frame.
+Before implementation, an unexpected producer exception was logged after already-enqueued frames drained, but the helper then completed normally. Its route owner could not distinguish that fault from success. The client could therefore receive progress followed by a clean close, a final status, or an explicit success frame without any failure frame.
 
 The selected change gives the shared helper an explicit Boolean result. After preserving all previously queued output, an unexpected producer fault produces exactly one generic `internal_error` frame for that helper invocation and returns `false`. Normal producer completion returns `true`. Route owners use that result to suppress only the success/finalization work that would contradict the failure.
 
 ## Original Boundary and Evidence
 
-`API.RunWebsocketHandlerCallWS<T>` currently:
+At the approved design boundary, `API.RunWebsocketHandlerCallWS<T>`:
 
 1. creates a per-invocation `ConcurrentQueue<JObject>` and `AsyncAutoResetEvent`;
 2. gives the producer an `Action<JObject>` that enqueues non-null frames and signals the drain loop;
@@ -36,7 +36,7 @@ The exact maintained helper-call inventory is six calls:
 
 There are five route owners because the T2I route contains two call sites. `RunWebsocketHandlerCallDirect<T>` is a separate direct-call helper and is outside this change.
 
-## Current Caller Control Flow
+## Pre-Implementation Caller Control Flow
 
 `ModelsAPI.SelectModelWS` awaits the helper and then sends the current server status. An unexpected model-selection producer fault therefore appears as a normal final status.
 
@@ -195,6 +195,45 @@ Agents will not build, launch, run tests, open sockets, inject faults, or exerci
 14. inspect extension-cache core-identity handling and record source compatibility without claiming arbitrary binary ABI compatibility;
 15. inspect the exact changed-file and commit range; and
 16. run `git diff --check`.
+
+## Implementation Record
+
+**Implementation status:** **Implemented; awaiting maintainer validation.** The approved design was recorded in commit `47d32f4e`. Production is the exact range `5511d3a6^..84df8dfe`, whose parent is `51268f31` and whose final source commit is `84df8dfe`:
+
+1. `5511d3a6` — `fix: transport streaming producer failures`
+2. `f5f041b4` — `fix: stop streaming wrappers after producer faults`
+3. `a1e32947` — `refactor: clarify streaming producer result`
+4. `f02bb90d` — `fix: stop generation finalization after producer faults`
+5. `84df8dfe` — `fix: drain generation helpers before rethrow`
+
+The range changes exactly five source files:
+
+- `src/WebAPI/API.cs`
+- `src/WebAPI/ModelsAPI.cs`
+- `src/BuiltinExtensions/ComfyUIBackend/ComfyUIWebAPI.cs`
+- `src/BuiltinExtensions/ImageBatchTool/ImageBatchToolExtension.cs`
+- `src/WebAPI/T2IAPI.cs`
+
+The final helper inventory is exactly one `RunWebsocketHandlerCallWS<T>` definition plus six maintained calls: the initial and socket-reuse T2I calls, Models, TensorRT, LoRA, and Image Batch. `RunWebsocketHandlerCallDirect<T>`, its callers, producer callback signatures, dispatcher handling, route registrations, public route signatures, request parameters, permissions, and browser code are unchanged.
+
+`API.RunWebsocketHandlerCallWS<T>` now returns `Task<bool>`. Its existing loop first drains every queued producer frame in FIFO order. Only after the producer is complete and that invocation's queue is empty does it inspect `t.IsFaulted`, log the detailed `t.Exception.ReadableString()`, send exactly one `Utilities.ErrorObj("An internal error occurred", "internal_error")`, and return `false`. Normal and canceled producer tasks are not faulted and return `true`. Producer-enqueued readable errors and other frames are transported without interpretation, so an explicit readable error followed by normal producer completion remains `true`. Socket sends remain outside a new catch; a send timeout, disconnect, or other send exception escapes rather than becoming `false`.
+
+The four non-T2I owners use the accurate result name `producerCompletedWithoutFault` and return immediately when it is `false`. Models suppresses its final current-status frame. LoRA suppresses model-set refresh, output inspection, terminal logs, and terminal success/readable-failure frames. Image Batch suppresses its wrapper success log and success frame. TensorRT returns from the wrapper on `false`; its existing artifact move, model refresh, and `"Complete!"` frame remain internal to the producer and unchanged on the successful path. All four wrappers retain their prior post-await behavior on `true`.
+
+T2I now tracks both helper call sites as `Task<bool>` and deliberately separates `producerFailed` from `helperTaskFailed`. A successful helper task returning `false` sets the one-way producer-failure state and cancels the receive wait; a faulted helper task, such as a socket-send failure, captures the first exception in `helperTaskException` with `ExceptionDispatchInfo`, sets the separate helper-task-failure state, and also cancels the receive wait. The receive loop checks both failure states before waiting, after receiving, and immediately before starting a reuse helper, which bounds the receive/failure race: already-started helpers remain tracked, while work observed after failure is not started. The task loop continues removing and observing every active helper. Only after the tracked set drains does it rethrow the first captured helper-task exception. Both failure paths suppress T2I's advisory close-intention and final current-status work; the producer-`false` path returns normally for dispatcher-owned closure, while a helper-task exception reaches the dispatcher after the drain. On success, batch offsets, follow-on acceptance, the two-second reuse window, advisory close intention, final status, and dispatcher closure remain in their existing flow.
+
+Static review used the following bounded commands and results:
+
+- `git log --oneline --reverse 5511d3a6^..84df8dfe` returned exactly the five source commits above.
+- `git diff --name-status 5511d3a6^ 84df8dfe` and `git diff --stat 5511d3a6^ 84df8dfe` returned exactly the five source files above, with 68 insertions and 16 deletions.
+- `rg -n "RunWebsocketHandlerCallWS" src` with user-data, build-output, and protected frontend exclusions returned exactly one definition and six maintained calls; the separately named direct helper was unchanged.
+- Fixed-range diffs and current-source inspection confirmed post-drain log/error/result ordering, uninterpreted readable errors, canceled-task `true`, escaping send exceptions, every wrapper branch, both T2I result/fault paths, the receive race checks, active-helper drain, drain-before-rethrow ordering, and successful-flow retention.
+- `git diff --name-only 5511d3a6^ 84df8dfe -- 'src/Pages/**' 'src/wwwroot/**'` returned no browser changes.
+- `git diff --check 5511d3a6^ 84df8dfe` returned no whitespace errors.
+
+The public helper return type is source-compatible for maintained source calls in the forms used here, but arbitrary precompiled binary ABI compatibility is not guaranteed. The managed source-extension build path in `ExtensionsManager.BuildExtension` derives its cache target from both extension source identity and the current core assembly identity, including `ManifestModule.ModuleVersionId`, so a new core MVID prevents reuse of a cached extension assembly built for the prior core. This is evidence for recompilation of that maintained source-extension path, not a guarantee for independently supplied precompiled binaries.
+
+No agent build, test, launcher, server, socket, browser, backend, Comfy, fault injection, performance measurement, or platform runtime exercise was performed. Windows behavior, other platform behavior, runtime ordering, failure frequency, and performance remain unvalidated. The legacy Image Batch behavior in which a producer can enqueue a readable error and then complete normally, allowing the wrapper's existing success continuation, is unchanged and outside this unexpected-task-fault project.
 
 ## Maintainer Validation
 
