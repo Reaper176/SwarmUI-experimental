@@ -1,6 +1,6 @@
 # Immutable Per-Backend Comfy Capabilities Design
 
-**Status:** Approved
+**Status:** Implemented; awaiting maintainer validation
 
 **Date:** 2026-07-25
 
@@ -313,6 +313,59 @@ Static verification must:
 18. run `git diff --check` over the implementation range.
 
 No build, launcher, automated test, GPU operation, live concurrency exercise, or performance benchmark is run by the agent.
+
+## Implementation Record
+
+The fixed pre-plan boundary is design commit `efa1e48b`; plan commit `3978b00d` is documentation only. The inclusive production range is `8bcc4677` through `670ddbf9` (`8bcc4677^..670ddbf9` in Git range notation):
+
+1. `8bcc4677 refactor: define Comfy capability snapshots`
+2. `81daefcf refactor: add Comfy capability registry`
+3. `24a5dfa5 fix: stabilize Comfy capability registry reads`
+4. `92770afc fix: normalize initial Comfy capability aggregate`
+5. `2d0564c3 refactor: stage Comfy object info parsing`
+6. `6c3fcefe fix: publish Comfy shared lists atomically`
+7. `8c9efa13 fix: merge Comfy object info deltas under lock`
+8. `bcbb5d71 refactor: publish local Comfy capabilities`
+9. `13085c02 fix: pin Comfy helper workflow backends`
+10. `3c79eaa0 refactor: publish linked Comfy capabilities`
+11. `8ad398a9 fix: serialize remote capability revisions`
+12. `ca75af24 fix: complete Comfy capability readers`
+13. `670ddbf9 fix: register backends before initialization`
+
+The exact production source-file set is:
+
+- `src/Backends/BackendHandler.cs`
+- `src/Backends/SwarmSwarmBackend.cs`
+- `src/BuiltinExtensions/ComfyUIBackend/ComfyBackendCapabilitySnapshot.cs`
+- `src/BuiltinExtensions/ComfyUIBackend/ComfyCapabilityCatalog.cs`
+- `src/BuiltinExtensions/ComfyUIBackend/ComfyCapabilityRegistry.cs`
+- `src/BuiltinExtensions/ComfyUIBackend/ComfyUIAPIAbstractBackend.cs`
+- `src/BuiltinExtensions/ComfyUIBackend/ComfyUIBackendExtension.cs`
+- `src/BuiltinExtensions/ComfyUIBackend/ComfyUIWebAPI.cs`
+- `src/BuiltinExtensions/ComfyUIBackend/ComfyUser.cs`
+
+The final primary compatibility-field search contains 54 matching lines and 55 token occurrences across four Comfy files. Its complete classification is five public compatibility declarations, 18 startup-hint writes, 17 registry lock/reconciliation/publication lines, one mapping-factory declaration, one local owner-aware publication call, one linked owner-aware publication call, and 11 shared parser/facade lines. The maintained supplemental search adds seven `NodeToFeatureMap` writers: one Dynamic Thresholding mapping and six Latent Tools mappings. The final `SupportedFeatures`/`GetAllSupportedFeatures` search contains 14 matching lines and 14 occurrences: seven backend feature producers, three per-backend decision/serialization readers, and four aggregate declaration/reader lines. The full node/remote publication search contains 26 matching lines and 29 occurrences: six immutable node-evidence/snapshot lines, five local mirror or local-snapshot consumer lines, four linked node publication/consumer lines, seven linked-remote lifecycle callback lines, and four `RemoteFeatureCombo` compatibility-mirror lines. The Task 7 subset without lifecycle event names contains 19 matching lines and 21 occurrences.
+
+Local API and self-start backends now serialize `object_info` refreshes, build raw-info, node, model, folder, shared-value, and capability candidates before publication, and expose `FrozenSet`-backed backend-local snapshots. Generation, model loading, generated-workflow preview, node listing, direct prompt routing, path fixup, validation, and helper workflow execution use the selected backend's snapshot; helper workflows remain pinned to the backend whose folder convention built the workflow. Linked remotes publish one immutable remote-status feature snapshot for scheduling, retain `RemoteFeatureCombo` as a compatibility mirror, and publish frozen backend-specific node evidence for raw validation. Per-owner gates prevent overlapping successful publication, while deletion removes only the departed owner after it leaves `AllBackends`; edit, reload, idle, and shutdown preparation retain last-good evidence.
+
+`ComfyCapabilityRegistry` interprets every owner from its own frozen node evidence plus the preserved compatibility baseline. It detects direct additions/removals in `FeaturesSupported`, discard-hint changes, and node-map changes under `ValueAssignmentLocker`, reevaluates stored evidence without another fetch, republishes the same public `FeaturesSupported` object, and returns immutable aggregate copies. The three established public compatibility fields retain their declarations and object identities. Parser callbacks still run in registration order after maintained shared parsing, retain per-callback failure isolation, and reconcile callback-driven compatibility mutations. The established feature IDs, node mappings, folder flags, API route/request/response fields, status filtering, permissions, parameter visibility path, and remote forwarding contract remain unchanged.
+
+Static review reran the Task 1 and Task 7 inventories; the lifecycle search; the contextual gate/lock/I/O trace; public declaration, assignment, mapping, parser, folder-flag, linked-node, and remote-authority searches; the four Task 8 negative searches; and the fixed-range changed-file, log, and whitespace checks. Results were:
+
+- `git diff --name-only efa1e48b..670ddbf9` contains only the approved plan plus the nine production source files above; the design commit is the fixed boundary and is therefore not part of that diff;
+- `git diff --check efa1e48b..670ddbf9` reports no whitespace errors;
+- all five direct `ComfyUIBackendExtension.FeaturesSupported` matches are registry-owned compatibility capture/publication, with no maintained backend-local decision read;
+- the sole `RemoteFeatureCombo.Keys` match is the compatibility-mirror removal loop, not a maintained feature reader;
+- no `ComfyNodeTypes` consumer casts the linked frozen value to `HashSet<string>`;
+- only the three established declaration initializers assign `FeaturesSupported`, `FeaturesDiscardIfNotFound`, or `NodeToFeatureMap`;
+- the catalog has no process-wide feature-set reference, and its established node-to-feature mapping block is unchanged;
+- the 52 direct gate/lock/I/O trace matches show per-owner gates may enclose their own fetches, while `ValueAssignmentLocker` encloses only candidate merge, compatibility reconciliation, publication, and parser dispatch—no network, WebSocket, process, backend shutdown, model, or GPU work;
+- local and remote failed fetch/parse paths reach no publication, owner checks reject deleted backends, serialized refreshes prevent overlapping stale completion, and first local discovery failure returns through normal initialization error handling rather than publishing guessed evidence; and
+- deletion notifies isolated subscribers after `AllBackends.TryRemove`, while edit and reload retain the registered backend object.
+
+The four protected maintainer files—`src/Data/Settings.fds`, `src/Pages/Text2Image.cshtml`, `src/wwwroot/js/genpage/gentab/loras.js`, and `src/wwwroot/js/genpage/main.js`—were excluded from inspection, editing, staging, and this production range. The protected `Data.pre-restore-2026-07-19/` content was not inspected.
+
+No agent ran a build, test, launcher, backend, browser, Comfy process, live concurrency exercise, GPU operation, or benchmark. All runtime, cross-platform, concurrency, and performance claims remain pending the maintainer validation below.
 
 ## Maintainer Validation
 
