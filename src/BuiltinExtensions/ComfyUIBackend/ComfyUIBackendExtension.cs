@@ -8,6 +8,7 @@ using SwarmUI.Core;
 using SwarmUI.Text2Image;
 using SwarmUI.Utils;
 using SwarmUI.WebAPI;
+using System.Collections.Frozen;
 using System.IO;
 using System.Net.Http;
 
@@ -359,6 +360,49 @@ public class ComfyUIBackendExtension : Extension
     /// <summary>Add handlers here to do additional parsing of RawObjectInfo data.</summary>
     public static List<Action<JObject>> RawObjectInfoParsers = [];
 
+    /// <summary>Sentinel registry owner used to retain accumulated node evidence from legacy object-info callers.</summary>
+    private static readonly object LegacyObjectInfoOwner = new();
+
+    /// <summary>Accumulated node evidence published through the legacy object-info facade.</summary>
+    private static FrozenSet<string> LegacyObjectInfoNodeTypes = Array.Empty<string>().ToFrozenSet();
+
+    /// <summary>Candidate copies of shared object-info values that can be fully parsed before publication.</summary>
+    private sealed class SharedValueCandidate
+    {
+        /// <summary>Candidate upscale model values.</summary>
+        public List<string> UpscalerModels;
+
+        /// <summary>Candidate sampler values.</summary>
+        public List<string> Samplers;
+
+        /// <summary>Candidate scheduler values.</summary>
+        public List<string> Schedulers;
+
+        /// <summary>Candidate IP-Adapter model values.</summary>
+        public List<string> IPAdapterModels;
+
+        /// <summary>Candidate IP-Adapter weight type values.</summary>
+        public List<string> IPAdapterWeightTypes;
+
+        /// <summary>Candidate GLIGEN model values.</summary>
+        public List<string> GligenModels;
+
+        /// <summary>Candidate YOLO model values.</summary>
+        public List<string> YoloModels;
+
+        /// <summary>Candidate style model values.</summary>
+        public List<string> StyleModels;
+
+        /// <summary>Candidate ControlNet union type values.</summary>
+        public List<string> ControlnetUnionTypes;
+
+        /// <summary>Candidate CLIP device values.</summary>
+        public List<string> SetClipDevices;
+
+        /// <summary>Candidate ControlNet preprocessor definitions.</summary>
+        public Dictionary<string, JToken> ControlNetPreprocessors;
+    }
+
     public static bool TryGetRequiredInputs(JObject raw, string node, string id, out JToken list)
     {
         if (!raw.TryGetValue(node, out JToken key))
@@ -379,134 +423,196 @@ public class ComfyUIBackendExtension : Extension
         return false;
     }
 
-    private static void DetectHookLoraSchedulingSupport(JObject rawObjectInfo)
+    /// <summary>Builds a complete candidate for shared values discovered in raw ComfyUI object info.</summary>
+    /// <param name="rawObjectInfo">The raw ComfyUI object-info response to parse.</param>
+    /// <returns>A complete shared-value candidate that has not yet changed published state.</returns>
+    private static SharedValueCandidate BuildSharedValueCandidate(JObject rawObjectInfo)
     {
-        string feature = "hook_lora_scheduling";
-        string interpolatedFeature = "hook_lora_interpolated_scheduling";
-        string[] requiredNodes = ["CreateHookLora", "CreateHookKeyframe", "SetHookKeyframes", "SetClipHooks"];
-        bool supported = requiredNodes.All(rawObjectInfo.ContainsKey);
-        if (supported)
+        SharedValueCandidate candidate = new()
         {
-            FeaturesSupported.Add(feature);
-            if (rawObjectInfo.ContainsKey("CreateHookKeyframesInterpolated"))
+            UpscalerModels = [.. UpscalerModels],
+            Samplers = [.. Samplers],
+            Schedulers = [.. Schedulers],
+            IPAdapterModels = [.. IPAdapterModels],
+            IPAdapterWeightTypes = [.. IPAdapterWeightTypes],
+            GligenModels = [.. GligenModels],
+            YoloModels = [.. YoloModels],
+            StyleModels = [.. StyleModels],
+            ControlnetUnionTypes = [.. ControlnetUnionTypes],
+            SetClipDevices = [.. SetClipDevices],
+            ControlNetPreprocessors = new(ControlNetPreprocessors)
+        };
+        if (TryGetRequiredInputs(rawObjectInfo, "UpscaleModelLoader", "model_name", out JToken upscaleModels))
+        {
+            T2IParamTypes.ConcatDropdownValsClean(ref candidate.UpscalerModels, upscaleModels.Select(u => $"model-{u}///Model: {u}"));
+        }
+        if (TryGetRequiredInputs(rawObjectInfo, "LatentUpscaleModelLoader", "model_name", out JToken latentUpscaleModels))
+        {
+            T2IParamTypes.ConcatDropdownValsClean(ref candidate.UpscalerModels, latentUpscaleModels.Select(u => $"latentmodel-{u}///Latent Model: {u}"));
+        }
+        if (TryGetRequiredInputs(rawObjectInfo, ComfyNodeNames.KSampler, ComfyNodeInputNames.KSampler.SamplerName, out JToken swarmksamplerNames))
+        {
+            string[] dropped = [.. candidate.Samplers.Select(s => s.Before("///")).Except([.. swarmksamplerNames.Select(u => $"{u}")])];
+            if (dropped.Any())
             {
-                FeaturesSupported.Add(interpolatedFeature);
+                Logs.Warning($"Samplers are listed, but not included in SwarmKSampler internal list: {dropped.JoinString(", ")}");
             }
-            else
+            T2IParamTypes.ConcatDropdownValsClean(ref candidate.Samplers, swarmksamplerNames.Select(u => $"{u}///{u} (New)"));
+        }
+        if (TryGetRequiredInputs(rawObjectInfo, ComfyNodeNames.KSampler, ComfyNodeInputNames.KSampler.Scheduler, out JToken swarmksamplerSchedulers))
+        {
+            T2IParamTypes.ConcatDropdownValsClean(ref candidate.Schedulers, swarmksamplerSchedulers.Select(u => $"{u}///{u} (New)"));
+        }
+        if (TryGetRequiredInputs(rawObjectInfo, "KSampler", "sampler_name", out JToken ksamplerSamplers))
+        {
+            T2IParamTypes.ConcatDropdownValsClean(ref candidate.Samplers, ksamplerSamplers.Select(u => $"{u}///{u} (New in KS)"));
+        }
+        if (TryGetRequiredInputs(rawObjectInfo, "KSampler", "scheduler", out JToken ksamplerSchedulers))
+        {
+            T2IParamTypes.ConcatDropdownValsClean(ref candidate.Schedulers, ksamplerSchedulers.Select(u => $"{u}///{u} (New in KS)"));
+        }
+        if (TryGetRequiredInputs(rawObjectInfo, "IPAdapterUnifiedLoader", "preset", out JToken ipadapterCubiqUnified))
+        {
+            T2IParamTypes.ConcatDropdownValsClean(ref candidate.IPAdapterModels, ipadapterCubiqUnified.Select(m => $"{m}"));
+        }
+        else if (rawObjectInfo.TryGetValue("IPAdapter", out JToken ipadapter) && (ipadapter["input"]["required"] as JObject).TryGetValue("model_name", out JToken ipAdapterModelName))
+        {
+            T2IParamTypes.ConcatDropdownValsClean(ref candidate.IPAdapterModels, ipAdapterModelName[0].Select(m => $"{m}"));
+        }
+        if (TryGetRequiredInputs(rawObjectInfo, "IPAdapterModelLoader", "ipadapter_file", out JToken ipadapterCubiq))
+        {
+            HashSet<string> native = ["ip-adapter-faceid-portrait-v11_sd15.bin", "ip-adapter-faceid-portrait_sdxl.bin", "ip-adapter-faceid-portrait_sdxl_unnorm.bin", "ip-adapter-faceid-plusv2_sd15.bin", "ip-adapter-faceid-plusv2_sdxl.bin", "ip-adapter-faceid-plus_sd15.bin", "ip-adapter-faceid_sd15.bin", "ip-adapter-faceid_sdxl.bin", "full_face_sd15.safetensors", "ip-adapter-plus-face_sd15.safetensors", "ip-adapter-plus-face_sdxl_vit-h.safetensors", "ip-adapter-plus_sd15.safetensors", "ip-adapter-plus_sdxl_vit-h.safetensors", "ip-adapter_sd15_vit-G.safetensors", "ip-adapter_sdxl.safetensors", "ip-adapter_sd15.safetensors", "ip-adapter_sdxl_vit-h.safetensors", "sd15_light_v11.bin"];
+            string[] models = [.. ipadapterCubiq.Select(m => $"{m}").Where(m => !native.Contains(m))];
+            T2IParamTypes.ConcatDropdownValsClean(ref candidate.IPAdapterModels, models.Select(m => $"file:{m}///Model File: {m}"));
+        }
+        if (rawObjectInfo.TryGetValue("IPAdapter", out JToken ipadapter2) && (ipadapter2["input"]["required"] as JObject).TryGetValue("weight_type", out JToken ipAdapterWeightType))
+        {
+            T2IParamTypes.ConcatDropdownValsClean(ref candidate.IPAdapterWeightTypes, ipAdapterWeightType[0].Select(m => $"{m}///{m} (New)"));
+        }
+        if (TryGetRequiredInputs(rawObjectInfo, "IPAdapterUnifiedLoaderFaceID", "preset", out JToken ipadapterCubiqUnifiedFace))
+        {
+            T2IParamTypes.ConcatDropdownValsClean(ref candidate.IPAdapterModels, ipadapterCubiqUnifiedFace.Select(m => $"{m}"));
+        }
+        if (TryGetRequiredInputs(rawObjectInfo, "GLIGENLoader", "gligen_name", out JToken gligenLoader))
+        {
+            T2IParamTypes.ConcatDropdownValsClean(ref candidate.GligenModels, gligenLoader.Select(m => $"{m}"));
+        }
+        if (TryGetRequiredInputs(rawObjectInfo, "StyleModelLoader", "style_model_name", out JToken styleModelLoader))
+        {
+            T2IParamTypes.ConcatDropdownValsClean(ref candidate.StyleModels, styleModelLoader.Select(m => $"{m}"));
+        }
+        if (TryGetRequiredInputs(rawObjectInfo, ComfyNodeNames.YoloDetection, ComfyNodeInputNames.YoloDetection.ModelName, out JToken yoloDetection))
+        {
+            T2IParamTypes.ConcatDropdownValsClean(ref candidate.YoloModels, yoloDetection.Select(m => $"{m}"));
+        }
+        if (TryGetRequiredInputs(rawObjectInfo, "SetUnionControlNetType", "type", out JToken unionCtrlNet))
+        {
+            T2IParamTypes.ConcatDropdownValsClean(ref candidate.ControlnetUnionTypes, unionCtrlNet.Select(m => $"{m}///{m} (New)"));
+        }
+        if (TryGetRequiredInputs(rawObjectInfo, "OverrideCLIPDevice", "device", out JToken overrideClipDevice))
+        {
+            T2IParamTypes.ConcatDropdownValsClean(ref candidate.SetClipDevices, overrideClipDevice.Select(m => $"{m}"));
+        }
+        foreach ((string key, JToken data) in rawObjectInfo)
+        {
+            if (data["category"].ToString() == "image/preprocessors")
             {
-                FeaturesSupported.Remove(interpolatedFeature);
+                candidate.ControlNetPreprocessors[key] = data;
+            }
+            else if (key.EndsWith("Preprocessor") && key != "MeshGraphormer+ImpactDetector-DepthMapPreprocessor")
+            {
+                candidate.ControlNetPreprocessors[key] = data;
             }
         }
-        else
+        return candidate;
+    }
+
+    /// <summary>Publishes a fully built shared-value candidate while preserving public collection identities.</summary>
+    /// <param name="candidate">The candidate values to publish.</param>
+    private static void PublishSharedValues(SharedValueCandidate candidate)
+    {
+        UpscalerModels.Clear();
+        UpscalerModels.AddRange(candidate.UpscalerModels);
+        Samplers.Clear();
+        Samplers.AddRange(candidate.Samplers);
+        Schedulers.Clear();
+        Schedulers.AddRange(candidate.Schedulers);
+        IPAdapterModels.Clear();
+        IPAdapterModels.AddRange(candidate.IPAdapterModels);
+        IPAdapterWeightTypes.Clear();
+        IPAdapterWeightTypes.AddRange(candidate.IPAdapterWeightTypes);
+        GligenModels.Clear();
+        GligenModels.AddRange(candidate.GligenModels);
+        YoloModels.Clear();
+        YoloModels.AddRange(candidate.YoloModels);
+        StyleModels.Clear();
+        StyleModels.AddRange(candidate.StyleModels);
+        ControlnetUnionTypes.Clear();
+        ControlnetUnionTypes.AddRange(candidate.ControlnetUnionTypes);
+        SetClipDevices.Clear();
+        SetClipDevices.AddRange(candidate.SetClipDevices);
+        ControlNetPreprocessors.Clear();
+        foreach ((string key, JToken data) in candidate.ControlNetPreprocessors)
         {
-            FeaturesSupported.Remove(feature);
-            FeaturesSupported.Remove(interpolatedFeature);
+            ControlNetPreprocessors[key] = data;
         }
     }
 
+    /// <summary>Runs extension object-info parsers in registration order with isolated failures.</summary>
+    /// <param name="rawObjectInfo">The raw ComfyUI object-info response to pass to each parser.</param>
+    private static void RunRawObjectInfoParsers(JObject rawObjectInfo)
+    {
+        foreach (Action<JObject> parser in RawObjectInfoParsers)
+        {
+            try
+            {
+                parser(rawObjectInfo);
+            }
+            catch (Exception ex)
+            {
+                Logs.Error($"Error while running extension parsing on raw object info: {ex.ReadableString()}");
+            }
+        }
+    }
+
+    /// <summary>Publishes object-info values and accumulated capability evidence for legacy callers.</summary>
+    /// <param name="rawObjectInfo">The raw ComfyUI object-info response to parse.</param>
     public static void AssignValuesFromRaw(JObject rawObjectInfo)
     {
+        SharedValueCandidate sharedCandidate = BuildSharedValueCandidate(rawObjectInfo);
+        FrozenSet<string> rawNodeTypes = rawObjectInfo.Properties().Select(property => property.Name).ToFrozenSet();
         lock (ValueAssignmentLocker)
         {
-            if (TryGetRequiredInputs(rawObjectInfo, "UpscaleModelLoader", "model_name", out JToken upscaleModels))
-            {
-                T2IParamTypes.ConcatDropdownValsClean(ref UpscalerModels, upscaleModels.Select(u => $"model-{u}///Model: {u}"));
-            }
-            if (TryGetRequiredInputs(rawObjectInfo, "LatentUpscaleModelLoader", "model_name", out JToken latentUpscaleModels))
-            {
-                T2IParamTypes.ConcatDropdownValsClean(ref UpscalerModels, latentUpscaleModels.Select(u => $"latentmodel-{u}///Latent Model: {u}"));
-            }
-            if (TryGetRequiredInputs(rawObjectInfo, ComfyNodeNames.KSampler, ComfyNodeInputNames.KSampler.SamplerName, out JToken swarmksamplerNames))
-            {
-                string[] dropped = [.. Samplers.Select(s => s.Before("///")).Except([.. swarmksamplerNames.Select(u => $"{u}")])];
-                if (dropped.Any())
-                {
-                    Logs.Warning($"Samplers are listed, but not included in SwarmKSampler internal list: {dropped.JoinString(", ")}");
-                }
-                T2IParamTypes.ConcatDropdownValsClean(ref Samplers, swarmksamplerNames.Select(u => $"{u}///{u} (New)"));
-            }
-            if (TryGetRequiredInputs(rawObjectInfo, ComfyNodeNames.KSampler, ComfyNodeInputNames.KSampler.Scheduler, out JToken swarmksamplerSchedulers))
-            {
-                T2IParamTypes.ConcatDropdownValsClean(ref Schedulers, swarmksamplerSchedulers.Select(u => $"{u}///{u} (New)"));
-            }
-            if (TryGetRequiredInputs(rawObjectInfo, "KSampler", "sampler_name", out JToken ksamplerSamplers))
-            {
-                T2IParamTypes.ConcatDropdownValsClean(ref Samplers, ksamplerSamplers.Select(u => $"{u}///{u} (New in KS)"));
-            }
-            if (TryGetRequiredInputs(rawObjectInfo, "KSampler", "scheduler", out JToken ksamplerSchedulers))
-            {
-                T2IParamTypes.ConcatDropdownValsClean(ref Schedulers, ksamplerSchedulers.Select(u => $"{u}///{u} (New in KS)"));
-            }
-            if (TryGetRequiredInputs(rawObjectInfo, "IPAdapterUnifiedLoader", "preset", out JToken ipadapterCubiqUnified))
-            {
-                T2IParamTypes.ConcatDropdownValsClean(ref IPAdapterModels, ipadapterCubiqUnified.Select(m => $"{m}"));
-            }
-            else if (rawObjectInfo.TryGetValue("IPAdapter", out JToken ipadapter) && (ipadapter["input"]["required"] as JObject).TryGetValue("model_name", out JToken ipAdapterModelName))
-            {
-                T2IParamTypes.ConcatDropdownValsClean(ref IPAdapterModels, ipAdapterModelName[0].Select(m => $"{m}"));
-            }
-            if (TryGetRequiredInputs(rawObjectInfo, "IPAdapterModelLoader", "ipadapter_file", out JToken ipadapterCubiq))
-            {
-                HashSet<string> native = ["ip-adapter-faceid-portrait-v11_sd15.bin", "ip-adapter-faceid-portrait_sdxl.bin", "ip-adapter-faceid-portrait_sdxl_unnorm.bin", "ip-adapter-faceid-plusv2_sd15.bin", "ip-adapter-faceid-plusv2_sdxl.bin", "ip-adapter-faceid-plus_sd15.bin", "ip-adapter-faceid_sd15.bin", "ip-adapter-faceid_sdxl.bin", "full_face_sd15.safetensors", "ip-adapter-plus-face_sd15.safetensors", "ip-adapter-plus-face_sdxl_vit-h.safetensors", "ip-adapter-plus_sd15.safetensors", "ip-adapter-plus_sdxl_vit-h.safetensors", "ip-adapter_sd15_vit-G.safetensors", "ip-adapter_sdxl.safetensors", "ip-adapter_sd15.safetensors", "ip-adapter_sdxl_vit-h.safetensors", "sd15_light_v11.bin"];
-                string[] models = [.. ipadapterCubiq.Select(m => $"{m}").Where(m => !native.Contains(m))];
-                T2IParamTypes.ConcatDropdownValsClean(ref IPAdapterModels, models.Select(m => $"file:{m}///Model File: {m}"));
-            }
-            if (rawObjectInfo.TryGetValue("IPAdapter", out JToken ipadapter2) && (ipadapter2["input"]["required"] as JObject).TryGetValue("weight_type", out JToken ipAdapterWeightType))
-            {
-                T2IParamTypes.ConcatDropdownValsClean(ref IPAdapterWeightTypes, ipAdapterWeightType[0].Select(m => $"{m}///{m} (New)"));
-            }
-            if (TryGetRequiredInputs(rawObjectInfo, "IPAdapterUnifiedLoaderFaceID", "preset", out JToken ipadapterCubiqUnifiedFace))
-            {
-                T2IParamTypes.ConcatDropdownValsClean(ref IPAdapterModels, ipadapterCubiqUnifiedFace.Select(m => $"{m}"));
-            }
-            if (TryGetRequiredInputs(rawObjectInfo, "GLIGENLoader", "gligen_name", out JToken gligenLoader))
-            {
-                T2IParamTypes.ConcatDropdownValsClean(ref GligenModels, gligenLoader.Select(m => $"{m}"));
-            }
-            if (TryGetRequiredInputs(rawObjectInfo, "StyleModelLoader", "style_model_name", out JToken styleModelLoader))
-            {
-                T2IParamTypes.ConcatDropdownValsClean(ref StyleModels, styleModelLoader.Select(m => $"{m}"));
-            }
-            if (TryGetRequiredInputs(rawObjectInfo, ComfyNodeNames.YoloDetection, ComfyNodeInputNames.YoloDetection.ModelName, out JToken yoloDetection))
-            {
-                T2IParamTypes.ConcatDropdownValsClean(ref YoloModels, yoloDetection.Select(m => $"{m}"));
-            }
-            if (TryGetRequiredInputs(rawObjectInfo, "SetUnionControlNetType", "type", out JToken unionCtrlNet))
-            {
-                T2IParamTypes.ConcatDropdownValsClean(ref ControlnetUnionTypes, unionCtrlNet.Select(m => $"{m}///{m} (New)"));
-            }
-            if (TryGetRequiredInputs(rawObjectInfo, "OverrideCLIPDevice", "device", out JToken overrideClipDevice))
-            {
-                T2IParamTypes.ConcatDropdownValsClean(ref SetClipDevices, overrideClipDevice.Select(m => $"{m}"));
-            }
-            foreach ((string key, JToken data) in rawObjectInfo)
-            {
-                if (data["category"].ToString() == "image/preprocessors")
-                {
-                    ControlNetPreprocessors[key] = data;
-                }
-                else if (key.EndsWith("Preprocessor") && key != "MeshGraphormer+ImpactDetector-DepthMapPreprocessor")
-                {
-                    ControlNetPreprocessors[key] = data;
-                }
-                ComfyCapabilityCatalog.ApplyDetectedNodeFeature(key, NodeToFeatureMap, FeaturesSupported, FeaturesDiscardIfNotFound);
-            }
-            DetectHookLoraSchedulingSupport(rawObjectInfo);
-            foreach (string feature in FeaturesDiscardIfNotFound)
-            {
-                FeaturesSupported.Remove(feature);
-            }
-            foreach (Action<JObject> parser in RawObjectInfoParsers)
-            {
-                try
-                {
-                    parser(rawObjectInfo);
-                }
-                catch (Exception ex)
-                {
-                    Logs.Error($"Error while running extension parsing on raw object info: {ex.ReadableString()}");
-                }
-            }
+            HashSet<string> accumulatedNodeTypes = [.. LegacyObjectInfoNodeTypes];
+            accumulatedNodeTypes.UnionWith(rawNodeTypes);
+            FrozenSet<string> frozenAccumulatedNodeTypes = accumulatedNodeTypes.ToFrozenSet();
+            ComfyCapabilityRegistry.RegistryCandidate capabilityCandidate = ComfyCapabilityRegistry.PreparePublish(LegacyObjectInfoOwner, frozenAccumulatedNodeTypes, "/");
+            PublishSharedValues(sharedCandidate);
+            ComfyCapabilityRegistry.Commit(capabilityCandidate);
+            LegacyObjectInfoNodeTypes = frozenAccumulatedNodeTypes;
+            RunRawObjectInfoParsers(rawObjectInfo);
+            ComfyCapabilityRegistry.GetSnapshot(LegacyObjectInfoOwner);
+            ComfyCapabilityRegistry.GetAggregateSnapshot();
+        }
+    }
+
+    /// <summary>Publishes object-info values and capability evidence for a specific backend owner.</summary>
+    /// <param name="owner">The backend object whose identity owns the capability snapshot.</param>
+    /// <param name="rawObjectInfo">The raw ComfyUI object-info response to parse.</param>
+    /// <param name="nodeTypes">The ComfyUI node types exposed by the backend.</param>
+    /// <param name="modelFolderFormat">The path separator format used by the backend's model folders.</param>
+    /// <returns>The final immutable capability snapshot published for the owner.</returns>
+    public static ComfyBackendCapabilitySnapshot AssignValuesFromRaw(object owner, JObject rawObjectInfo, IReadOnlySet<string> nodeTypes, string modelFolderFormat)
+    {
+        SharedValueCandidate sharedCandidate = BuildSharedValueCandidate(rawObjectInfo);
+        FrozenSet<string> frozenNodeTypes = nodeTypes.ToFrozenSet();
+        lock (ValueAssignmentLocker)
+        {
+            ComfyCapabilityRegistry.RegistryCandidate capabilityCandidate = ComfyCapabilityRegistry.PreparePublish(owner, frozenNodeTypes, modelFolderFormat);
+            PublishSharedValues(sharedCandidate);
+            ComfyCapabilityRegistry.Commit(capabilityCandidate);
+            RunRawObjectInfoParsers(rawObjectInfo);
+            return ComfyCapabilityRegistry.GetSnapshot(owner);
         }
     }
 
