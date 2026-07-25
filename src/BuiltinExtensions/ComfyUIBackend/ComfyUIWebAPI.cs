@@ -428,7 +428,7 @@ public static class ComfyUIWebAPI
         long ticks = Environment.TickCount64;
         await API.RunWebsocketHandlerCallWS<object>(async (s, t, a, b) =>
         {
-            await ComfyUIBackendExtension.RunArbitraryWorkflowOnFirstBackend(workflow.ToString(), data =>
+            await backend.AwaitJobLive(workflow.ToString(), "0", data =>
             {
                 if (data is JObject jData && jData.ContainsKey("overall_percent"))
                 {
@@ -439,7 +439,7 @@ public static class ComfyUIWebAPI
                         a(new() { ["status"] = $"Running, monitor Server logs for precise progress...\nOverall progress estimate: {jData["overall_percent"]}%" });
                     }
                 }
-            }, false);
+            }, new(null), Program.GlobalProgramCancel);
             a(new() { ["status"] = "Process completed, moving engine..." });
             string directory = $"{backend.ComfyPathBase}/output/swarmtemptrt/{prefix}/";
             if (!Directory.Exists(directory))
@@ -509,12 +509,10 @@ public static class ComfyUIWebAPI
             await ws.SendJson(new JObject() { ["error"] = "Unknown input model name." }, API.WebsocketTimeout);
             return null;
         }
-        string format = null;
-        if (ComfyUIBackendExtension.RunningComfyBackends.FirstOrDefault() is ComfyUIAPIAbstractBackend backend)
-        {
-            ComfyBackendCapabilitySnapshot capabilitySnapshot = backend.CapabilitySnapshot;
-            format = capabilitySnapshot.ModelFolderFormat;
-        }
+        ComfyUIAPIAbstractBackend backend = ComfyUIBackendExtension.RunningComfyBackends.FirstOrDefault()
+            ?? throw new SwarmUserErrorException("No available ComfyUI Backend to run this operation");
+        ComfyBackendCapabilitySnapshot capabilitySnapshot = backend.CapabilitySnapshot;
+        string format = capabilitySnapshot.ModelFolderFormat;
         string arch = otherModelData.ModelClass is null ? "unknown/lora" : $"{otherModelData.ModelClass.ID}/lora";
         JObject metadata = new()
         {
@@ -597,7 +595,7 @@ public static class ComfyUIWebAPI
         long ticks = Environment.TickCount64;
         await API.RunWebsocketHandlerCallWS<object>(async (s, t, a, b) =>
         {
-            await ComfyUIBackendExtension.RunArbitraryWorkflowOnFirstBackend(workflow.ToString(), data =>
+            await backend.AwaitJobLive(workflow.ToString(), "0", data =>
             {
                 if (data is JObject jData && jData.ContainsKey("overall_percent"))
                 {
@@ -608,7 +606,7 @@ public static class ComfyUIWebAPI
                         a(jData);
                     }
                 }
-            });
+            }, new(null), Program.GlobalProgramCancel);
         }, session, null, ws);
         Program.RefreshModelSet("LoRA");
         bool outputExists;
