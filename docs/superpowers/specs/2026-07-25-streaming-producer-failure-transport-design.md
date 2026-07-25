@@ -1,6 +1,6 @@
 # Streaming Producer Failure Transport Design
 
-**Status:** Implemented; awaiting maintainer validation
+**Status:** Implemented and maintainer-validated
 
 **Date:** 2026-07-25
 
@@ -194,7 +194,7 @@ Agents will not build, launch, run tests, open sockets, inject faults, or exerci
 
 ## Implementation Record
 
-**Implementation status:** **Implemented; awaiting maintainer validation.** The approved design was recorded in commit `47d32f4e`. Production is the exact range `5511d3a6^..84df8dfe`, whose parent is `51268f31` and whose final source commit is `84df8dfe`:
+**Implementation status:** **Implemented and maintainer-validated.** The approved design was recorded in commit `47d32f4e`. Production is the exact range `5511d3a6^..84df8dfe`, whose parent is `51268f31` and whose final source commit is `84df8dfe`:
 
 1. `5511d3a6` — `fix: transport streaming producer failures`
 2. `f5f041b4` — `fix: stop streaming wrappers after producer faults`
@@ -233,25 +233,17 @@ No agent build, test, launcher, server, socket, browser, backend, Comfy, fault i
 
 ## Maintainer Validation
 
-The maintainer will inject one unexpected producer fault after at least one progress frame in each maintained flow:
+**Result:** **Passed on Linux.** Maintainer Reaper176 explicitly confirmed the complete matrix on 2026-07-25.
 
-1. initial generation;
-2. socket-reuse generation, including a race with another already-active generation;
-3. model selection;
-4. LoRA extraction;
-5. TensorRT creation; and
-6. Image Batch.
+The maintainer injected one unexpected producer fault after at least one progress frame in all six maintained flows: initial generation; socket-reuse generation while another generation was active; model selection; LoRA extraction; TensorRT creation; and Image Batch. For every faulted helper invocation, prior progress remained ordered, exactly one client frame contained `error_id: "internal_error"` and `error: "An internal error occurred"`, detailed exception context remained server-side, the owning wrapper emitted no contradictory final status, refresh-derived terminal result, success log, success frame, close intention, or final status, the dispatcher performed normal WebSocket closure, and no duplicate generic frame followed.
 
-For every injected fault, confirm that all earlier progress remains ordered, exactly one generic `internal_error` frame is visible for the faulted helper invocation, detailed exception context appears only in server logs, no contradictory final status/success log/success frame follows from the owning wrapper, and the dispatcher closes the WebSocket normally. For T2I, also confirm no new follow-on is accepted after the failure becomes visible, already-active helpers drain, and the failure path emits neither `socket_intention: "close"` nor final status.
+The T2I-specific coordination matrix also passed: no follow-on request was accepted after the failure became visible; work already started before that transition drained; a later successful producer did not reset the failure state; the failure path emitted neither `socket_intention: "close"` nor final current status; and the socket-reuse race did not abandon an already-tracked helper.
 
-Separately validate:
+The preserved-behavior and security matrix passed: producer-enqueued readable errors remained unchanged without gaining a generic frame on non-fault completion; established producer cancellation did not become `internal_error`; socket-send failure and remote disconnect followed the existing dispatcher path without a duplicate generic error; premature remote disconnect retained its established server diagnostic; route names, permissions, and browser error/progress cleanup remained functional; and no client fault frame exposed exception type, message, stack, submitted values, paths, or backend-response details.
 
-- producer-enqueued readable errors remain unchanged and are not replaced by the generic fault frame;
-- remote disconnect and socket-send failure retain their established behavior without a duplicate generic frame;
-- successful model selection, LoRA extraction, TensorRT creation, and Image Batch retain their current progress, refresh, logs, status, and success frames; and
-- successful initial and socket-reuse generation retains progress/images, batch offsets, follow-on acceptance, the two-second reuse window, close intention, final status, and normal close.
+Every successful-flow category passed: model selection retained progress and final current status; TensorRT retained progress, artifact movement, model refresh, and its `"Complete!"` frame; LoRA retained progress, model refresh, output verification, success/error logs, and terminal frame; Image Batch retained progress, successful-completion log, and `{ "success": "complete" }`; initial generation retained progress/images, final status, and normal closure; and socket-reuse generation retained batch offsets, follow-on acceptance, concurrent active work, the two-second reuse window, `socket_intention: "close"`, final status, and normal closure.
 
-No agent runtime result, performance result, or platform-specific result will be claimed.
+Windows and other-platform runtime behavior and performance remain unvalidated. Arbitrary precompiled binary ABI compatibility remains unclaimed; the maintained source-extension path retains core-MVID cache invalidation. The legacy Image Batch readable-error-then-success behavior remains unchanged and outside this project. Agents performed no build, test, launcher, server, socket, browser, backend, Comfy, fault injection, performance measurement, platform runtime exercise, or other runtime validation.
 
 ## Rollback
 
