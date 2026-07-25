@@ -259,7 +259,7 @@ public class Installation
             UpdateProgress(0, 0, 0);
             await Output("Model download complete.");
         }
-        Program.MainSDModels.Refresh();
+        Program.RefreshModelSet("Stable-Diffusion");
     }
 
     /// <summary>Make a desktop shortcut (Windows only).</summary>

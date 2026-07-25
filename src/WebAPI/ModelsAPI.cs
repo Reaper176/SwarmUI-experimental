@@ -863,10 +863,7 @@ public static class ModelsAPI
             {
                 File.WriteAllText($"{folder}/{name}.swarm.json", metadata);
             }
-            using (ManyReadOneWriteLock.WriteClaim claim = Program.RefreshLock.LockWrite())
-            {
-                handler.Refresh();
-            }
+            Program.RefreshModelSet(type);
             if (Program.ServerSettings.Paths.DownloaderAlwaysResave && extension == "safetensors")
             {
                 if (handler.Models.TryGetValue($"{name}.safetensors", out T2IModel model))

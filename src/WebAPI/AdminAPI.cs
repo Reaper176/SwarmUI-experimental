@@ -282,9 +282,7 @@ public static class AdminAPI
             {
                 try
                 {
-                    Program.BuildModelLists();
-                    Program.RefreshAllModelSets();
-                    Program.ModelPathsChangedEvent?.Invoke();
+                    Program.RebuildModelListsForPathChange();
                 }
                 catch (Exception ex)
                 {

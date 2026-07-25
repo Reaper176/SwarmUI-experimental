@@ -591,7 +591,7 @@ public static class ComfyUIWebAPI
             });
         }, session, null, ws);
         T2IModelHandler loras = Program.T2IModelSets["LoRA"];
-        loras.Refresh();
+        Program.RefreshModelSet("LoRA");
         if (loras.Models.ContainsKey($"{outName}.safetensors"))
         {
             Logs.Info($"Completed successful LoRA extraction for user '{session.User.UserID}' saved as '{outName}'.");
