@@ -71,7 +71,7 @@ rg -l 'Program\.(T2IModelSets|MainSDModels)' src \
   --glob '!src/Extensions/**' | sort
 ```
 
-Expected baseline: 21 maintained consumer files and 71 matching source lines beyond the declaration in `Program.cs`. `ModelsAPI.cs:375` has two literal references on one matching line, for 72 literal identifier references. Classify the baseline as startup-only 2, write-side 3, protected 5, and uncovered 61; the new uncovered reader is `src/Pages/_Generate/UtilitiesTab.cshtml:50`. Record every occurrence in the task notes as startup-only, existing write-side, protected already, or uncovered.
+Expected baseline: 21 maintained consumer files and 71 matching source lines beyond the declaration in `Program.cs`. `ModelsAPI.cs:375` has two literal references on one matching line, for 72 literal identifier references. Classify the 71 matching source lines as startup-only 2, write-side 3, protected 5, and uncovered 61; the new uncovered matching source line is `src/Pages/_Generate/UtilitiesTab.cshtml:50`. Record every matching source line in the task notes as startup-only, existing write-side, protected already, or uncovered.
 
 - [ ] **Step 2: Capture every writer and event publisher**
 
@@ -1173,8 +1173,9 @@ Run:
 
 ```bash
 rg -n -C 15 'LockRead\(\)|LockWrite\(\)|RefreshAllModelSets\(|RefreshModelSet\(|DownloadNow\(\)|DownloadModel\(|RunWebsocketHandlerCallWS|WaitForExitAsync|PostJson\(' \
-  src/Core src/WebAPI src/Text2Image src/Backends src/BuiltinExtensions \
+  src/Core src/WebAPI src/Text2Image src/Backends src/BuiltinExtensions src/Pages \
   --glob '*.cs' \
+  --glob '*.cshtml' \
   --glob '!src/Extensions/**'
 ```
 
