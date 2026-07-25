@@ -877,18 +877,17 @@ using ManyReadOneWriteLock.ReadClaim claim = Program.RefreshLock.LockRead();
 T2IModelHandler handler = Program.T2IModelSets[param.Subtype ?? "Stable-Diffusion"];
 ```
 
-In the model branch of `T2IParamTypes.Clean`, acquire a read claim before `TryGetValue` and retain it through `ListModelNamesFor`.
+In `T2IParamTypes.ValidateParam`, acquire one read claim at the start of the method and retain it through value-provider execution, validation, and model resolution. This is the other maintained central boundary for catalog-backed `GetValues` delegates, alongside `T2IAPI.ListT2IParams`. Do not add a second claim specifically in the model branch.
 
 In `T2IParamInput` metadata generation, acquire a read claim around the `ModelListExtraKeys` loop that resolves string names back to models and calls `addModel` for those resolved objects. Hash generation can re-enter the model's handler and must finish before that handler can be displaced. Keep unrelated processing outside the claim.
 
 - [ ] **Step 4: Protect model-backed parameter providers**
 
-`T2IAPI.ListT2IParams` now provides an outer read boundary for `T2IParamType.ToNet` value-provider execution. For public provider helpers that are also callable elsewhere, add focused read claims inside named helper functions:
+`T2IAPI.ListT2IParams` provides one outer read boundary for `T2IParamType.ToNet` value-provider execution. `T2IParamTypes.ValidateParam` provides the other maintained boundary around direct `GetValues` execution and model validation. Keep every catalog-backed provider delegate lock-free so it can execute beneath either boundary without nested acquisition. For example, retain the existing provider shape:
 
 ```csharp
 static List<string> listRefinerModels(Session session)
 {
-    using ManyReadOneWriteLock.ReadClaim claim = Program.RefreshLock.LockRead();
     List<T2IModel> baseList = [.. Program.MainSDModels.ListModelsFor(session).OrderBy(m => m.Name)];
     List<T2IModel> refinerList = [.. baseList.Where(m => m.ModelClass is not null
         && (m.ModelClass.Name.Contains("Refiner") || m.ModelClass.ID.Contains("wan-2_1-text2video-14b")))];
@@ -897,9 +896,7 @@ static List<string> listRefinerModels(Session session)
 }
 ```
 
-Convert expression lambdas that directly access `MainSDModels` into named local functions with the same return values and a read claim. Apply the same pattern to VAE and LoRA providers that directly access `T2IModelSets`.
-
-Nested read claims during `ListT2IParams` are acceptable; no provider may call a write-owning refresh.
+Expression lambdas and named helpers that directly access `MainSDModels` or `T2IModelSets` remain unchanged and acquire no claim themselves. External code that invokes a provider delegate directly must coordinate through `Program.RefreshLock`. No provider may acquire a nested read claim or call a write-owning refresh.
 
 - [ ] **Step 5: Protect prompt embedding and LoRA phases**
 
@@ -1000,7 +997,6 @@ Convert `PidUpscaleModels` from an expression body to:
 ```csharp
 public static List<string> PidUpscaleModels(Session session)
 {
-    using ManyReadOneWriteLock.ReadClaim claim = Program.RefreshLock.LockRead();
     return [.. Program.MainSDModels.ListModelsFor(session)
         .Where(m => m.ModelClass?.CompatClass?.ID == "pid")
         .OrderBy(m => m.Name)
@@ -1008,9 +1004,9 @@ public static List<string> PidUpscaleModels(Session session)
 }
 ```
 
-In `GetPidModel`, hold one read claim across list matching and `GetModel`.
+`PidUpscaleModels` participates in the Upscaler Method `GetValues` delegate, so it must remain lock-free beneath the two centralized maintained provider boundaries. External direct callers must coordinate through `Program.RefreshLock`. In `GetPidModel`, which is not a provider delegate, hold one read claim across list matching and `GetModel`.
 
-Replace the Pixel Decoder `GetValues` expression with a named helper that acquires a read claim and returns the same cleaned list.
+Keep the Pixel Decoder `GetValues` provider lock-free and rely on the outer `T2IAPI.ListT2IParams` and `T2IParamTypes.ValidateParam` boundaries. External code that invokes the provider delegate directly must coordinate through `Program.RefreshLock`; the provider must not acquire a nested read claim.
 
 - [ ] **Step 3: Protect synchronous WorkflowGenerator reads**
 

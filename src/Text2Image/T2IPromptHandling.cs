@@ -474,23 +474,27 @@ public class T2IPromptHandling
         PromptTagProcessors["embed"] = (data, context) =>
         {
             data = context.Parse(data);
-            context.Embeds ??= [.. Program.T2IModelSets["Embedding"].ListModelNamesFor(context.Input.SourceSession)];
             string want = data.ToLowerFast().Replace('\\', '/');
-            string matched = T2IParamTypes.GetBestModelInList(want, context.Embeds);
-            if (matched is null)
+            string matched;
+            using (ManyReadOneWriteLock.ReadClaim claim = Program.RefreshLock.LockRead())
             {
-                context.TrackWarning($"Embedding '{want}' does not exist and will be ignored.");
-                return "";
+                context.Embeds ??= [.. Program.T2IModelSets["Embedding"].ListModelNamesFor(context.Input.SourceSession)];
+                matched = T2IParamTypes.GetBestModelInList(want, context.Embeds);
+                if (matched is null)
+                {
+                    context.TrackWarning($"Embedding '{want}' does not exist and will be ignored.");
+                    return "";
+                }
+                T2IModel embedModel = Program.T2IModelSets["Embedding"].GetModel(matched);
+                if (embedModel is not null && Program.ServerSettings.Metadata.ImageMetadataIncludeModelHash)
+                {
+                    embedModel.GetOrGenerateTensorHashSha256(); // Ensure hash is preloaded
+                }
             }
             string shortMatch = matched.Replace(".safetensors", "");
             if (want.Length < shortMatch.Length)
             {
                 Logs.Warning($"Embed input '{data}' is not a valid embedding name, but appears to match '{shortMatch}', will use that instead.");
-            }
-            T2IModel embedModel = Program.T2IModelSets["Embedding"].GetModel(matched);
-            if (embedModel is not null && Program.ServerSettings.Metadata.ImageMetadataIncludeModelHash)
-            {
-                embedModel.GetOrGenerateTensorHashSha256(); // Ensure hash is preloaded
             }
             if (matched.Contains(' '))
             {
@@ -538,25 +542,29 @@ public class T2IPromptHandling
                     strength = double.Parse(after, System.Globalization.CultureInfo.InvariantCulture);
                 }
             }
-            context.Loras ??= [.. Program.T2IModelSets["LoRA"].ListModelNamesFor(context.Input.SourceSession)];
-            string matched = T2IParamTypes.GetBestModelInList(lora, context.Loras);
-            if (matched is null)
+            string matched;
+            using (ManyReadOneWriteLock.ReadClaim claim = Program.RefreshLock.LockRead())
             {
-                context.TrackWarning($"Lora '{lora}' does not exist and will be ignored (out of {context.Loras.Length} existing loras).");
-                return null;
-            }
-            if (matched.EndsWith(".safetensors"))
-            {
-                matched = matched.BeforeLast('.');
+                context.Loras ??= [.. Program.T2IModelSets["LoRA"].ListModelNamesFor(context.Input.SourceSession)];
+                matched = T2IParamTypes.GetBestModelInList(lora, context.Loras);
+                if (matched is null)
+                {
+                    context.TrackWarning($"Lora '{lora}' does not exist and will be ignored (out of {context.Loras.Length} existing loras).");
+                    return null;
+                }
+                if (matched.EndsWith(".safetensors"))
+                {
+                    matched = matched.BeforeLast('.');
+                }
+                T2IModel loraModel = Program.T2IModelSets["LoRA"].GetModel(matched);
+                if (loraModel is not null && Program.ServerSettings.Metadata.ImageMetadataIncludeModelHash)
+                {
+                    loraModel.GetOrGenerateTensorHashSha256(); // Ensure hash is preloaded
+                }
             }
             if (lora.Length < matched.Length)
             {
                 Logs.Warning($"LoRA input '{lora}' is not a valid LoRA model name, but appears to match '{matched}', will use that instead.");
-            }
-            T2IModel loraModel = Program.T2IModelSets["LoRA"].GetModel(matched);
-            if (loraModel is not null && Program.ServerSettings.Metadata.ImageMetadataIncludeModelHash)
-            {
-                loraModel.GetOrGenerateTensorHashSha256(); // Ensure hash is preloaded
             }
             List<string> loraList = context.Input.Get(T2IParamTypes.Loras) ?? [];
             List<string> weights = context.Input.Get(T2IParamTypes.LoraWeights) ?? [];
@@ -734,13 +742,16 @@ public class T2IPromptHandling
             add(context.Input.Get(T2IParamTypes.Model)?.Metadata?.TriggerPhrase);
             if (context.Input.TryGet(T2IParamTypes.Loras, out List<string> loras))
             {
-                context.Loras ??= [.. Program.T2IModelSets["LoRA"].ListModelNamesFor(context.Input.SourceSession)];
-                foreach (string lora in loras)
+                using (ManyReadOneWriteLock.ReadClaim claim = Program.RefreshLock.LockRead())
                 {
-                    string matched = T2IParamTypes.GetBestModelInList(lora, context.Loras);
-                    if (matched is not null)
+                    context.Loras ??= [.. Program.T2IModelSets["LoRA"].ListModelNamesFor(context.Input.SourceSession)];
+                    foreach (string lora in loras)
                     {
-                        add(Program.T2IModelSets["LoRA"].GetModel(matched)?.Metadata?.TriggerPhrase.Replace(';', ','));
+                        string matched = T2IParamTypes.GetBestModelInList(lora, context.Loras);
+                        if (matched is not null)
+                        {
+                            add(Program.T2IModelSets["LoRA"].GetModel(matched)?.Metadata?.TriggerPhrase.Replace(';', ','));
+                        }
                     }
                 }
             }

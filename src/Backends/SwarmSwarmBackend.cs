@@ -162,7 +162,7 @@ public class SwarmSwarmBackend : AbstractT2IBackend
         }
     }
 
-    public Task TriggerRefresh()
+    public Task TriggerRefresh(string[] modelTypes = null)
     {
         if (!IsAControlInstance)
         {
@@ -174,7 +174,7 @@ public class SwarmSwarmBackend : AbstractT2IBackend
             await HttpClient.PostJson($"{Address}/API/TriggerRefresh", new() { ["session_id"] = Session }, RequestAdapter());
             List<Task> tasks =
             [
-                ReviseRemoteDataList(true)
+                ReviseRemoteDataList(true, modelTypes)
             ];
             foreach (BackendHandler.T2IBackendData backend in ControlledNonrealBackends.Values)
             {
@@ -184,8 +184,14 @@ public class SwarmSwarmBackend : AbstractT2IBackend
         });
     }
 
-    public async Task ReviseRemoteDataList(bool fullLoad)
+    public async Task ReviseRemoteDataList(bool fullLoad, string[] modelTypes = null)
     {
+        string[] effectiveModelTypes = modelTypes;
+        if (IsAControlInstance && fullLoad && effectiveModelTypes is null)
+        {
+            using ManyReadOneWriteLock.ReadClaim claim = Program.RefreshLock.LockRead();
+            effectiveModelTypes = [.. Program.T2IModelSets.Keys];
+        }
         await RunWithSession(async () =>
         {
             JObject backendData = await HttpClient.PostJson($"{Address}/API/ListBackends", new() { ["session_id"] = Session, ["nonreal"] = true, ["full_data"] = true }, RequestAdapter());
@@ -198,7 +204,7 @@ public class SwarmSwarmBackend : AbstractT2IBackend
             {
                 List<Task> tasks = [];
                 RemoteModels ??= [];
-                foreach (string type in Program.T2IModelSets.Keys)
+                foreach (string type in effectiveModelTypes)
                 {
                     string runType = type;
                     tasks.Add(Task.Run(async () =>

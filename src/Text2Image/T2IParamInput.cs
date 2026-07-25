@@ -502,17 +502,20 @@ public class T2IParamInput
             {
                 addModelsFor(key, val);
             }
-            foreach ((string modelListKey, string subType) in ModelListExtraKeys)
+            using (ManyReadOneWriteLock.ReadClaim claim = Program.RefreshLock.LockRead())
             {
-                if (ExtraMeta.TryGetValue(modelListKey, out object val) || InternalSet.ValuesInput.TryGetValue(modelListKey, out val))
+                foreach ((string modelListKey, string subType) in ModelListExtraKeys)
                 {
-                    addModelsFor(modelListKey, val);
-                    if (val is List<string> strlist)
+                    if (ExtraMeta.TryGetValue(modelListKey, out object val) || InternalSet.ValuesInput.TryGetValue(modelListKey, out val))
                     {
-                        foreach (string str in strlist)
+                        addModelsFor(modelListKey, val);
+                        if (val is List<string> strlist)
                         {
-                            T2IModel model = Program.T2IModelSets[subType].GetModel(str);
-                            addModel(model, modelListKey);
+                            foreach (string str in strlist)
+                            {
+                                T2IModel model = Program.T2IModelSets[subType].GetModel(str);
+                                addModel(model, modelListKey);
+                            }
                         }
                     }
                 }

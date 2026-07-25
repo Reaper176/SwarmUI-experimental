@@ -1,4 +1,5 @@
 using FreneticUtilities.FreneticExtensions;
+using FreneticUtilities.FreneticToolkit;
 using Newtonsoft.Json.Linq;
 using SwarmUI.Accounts;
 using SwarmUI.Core;
@@ -126,6 +127,7 @@ public class T2IParamSet
         }
         T2IModel getModel(string name)
         {
+            using ManyReadOneWriteLock.ReadClaim claim = Program.RefreshLock.LockRead();
             T2IModelHandler handler = Program.T2IModelSets[param.Subtype ?? "Stable-Diffusion"];
             string best = T2IParamTypes.GetBestModelInList(name.Replace('\\', '/'), [.. handler.ListModelNamesFor(SourceSession)]);
             if (best is null)

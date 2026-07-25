@@ -35,17 +35,20 @@ public abstract class AutoWebUIAPIAbstractBackend : AbstractT2IBackend
             }
             string targetClean = remoteModel.ToLowerInvariant().Trim('/').Replace('\\', '/');
             string targetBackup = targetClean.BeforeLast('.').AfterLast('/');
-            foreach (T2IModel model in Program.MainSDModels.Models.Values)
+            using (ManyReadOneWriteLock.ReadClaim claim = Program.RefreshLock.LockRead())
             {
-                string cleaned = model.Name.ToLowerInvariant();
-                if (cleaned == targetClean)
+                foreach (T2IModel model in Program.MainSDModels.Models.Values)
                 {
-                    CurrentModelName = model.Name;
-                    break;
-                }
-                if (cleaned.BeforeLast('.').AfterLast('/') == targetBackup)
-                {
-                    CurrentModelName = model.Name;
+                    string cleaned = model.Name.ToLowerInvariant();
+                    if (cleaned == targetClean)
+                    {
+                        CurrentModelName = model.Name;
+                        break;
+                    }
+                    if (cleaned.BeforeLast('.').AfterLast('/') == targetBackup)
+                    {
+                        CurrentModelName = model.Name;
+                    }
                 }
             }
             List<string> samplers = [.. (await SendGet<JArray>("samplers")).Select(obj => (string)obj["name"])];

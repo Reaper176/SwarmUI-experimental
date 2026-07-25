@@ -1,5 +1,6 @@
 using System.IO;
 using FreneticUtilities.FreneticExtensions;
+using FreneticUtilities.FreneticToolkit;
 using SwarmUI.Core;
 using SwarmUI.Utils;
 
@@ -21,7 +22,11 @@ public static class CommonModels
         /// <summary>Trigger a download of this model.</summary>
         public async Task DownloadNow(Action<long, long, long> updateProgress = null)
         {
-            string folder = Program.T2IModelSets[FolderType].DownloadFolderPath;
+            string folder;
+            using (ManyReadOneWriteLock.ReadClaim claim = Program.RefreshLock.LockRead())
+            {
+                folder = Program.T2IModelSets[FolderType].DownloadFolderPath;
+            }
             string path = $"{folder}/{FileName}";
             if (File.Exists(path))
             {
@@ -50,9 +55,12 @@ public static class CommonModels
         {
             throw new InvalidOperationException("URL looks wrong.");
         }
-        if (!Program.T2IModelSets.ContainsKey(info.FolderType))
+        using (ManyReadOneWriteLock.ReadClaim claim = Program.RefreshLock.LockRead())
         {
-            throw new InvalidOperationException($"Folder type '{info.FolderType}' does not exist in set '{Program.T2IModelSets.Keys.JoinString("', '")}'.");
+            if (!Program.T2IModelSets.ContainsKey(info.FolderType))
+            {
+                throw new InvalidOperationException($"Folder type '{info.FolderType}' does not exist in set '{Program.T2IModelSets.Keys.JoinString("', '")}'.");
+            }
         }
         if (!Known.TryAdd(info.ID, info))
         {

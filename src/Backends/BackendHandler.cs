@@ -162,10 +162,11 @@ public class BackendHandler
         SimpleRemoteLLMBackendType = RegisterBackendType<SimpleRemoteLLMBackend>("simpleremotellm", "Remote LLM (OpenAI API)", "(EXPERIMENTAL) Support for any OpenAI API compatible LLM provider.", true, false);
         Program.ModelRefreshEvent += () =>
         {
+            string[] modelTypes = [.. Program.T2IModelSets.Keys];
             List<Task> waitFor = [];
             foreach (SwarmSwarmBackend backend in RunningBackendsOfType<SwarmSwarmBackend>())
             {
-                waitFor.Add(backend.TriggerRefresh());
+                waitFor.Add(backend.TriggerRefresh(modelTypes));
             }
             Task.WaitAll([.. waitFor]);
         };
@@ -777,6 +778,7 @@ public class BackendHandler
     /// <summary>Updates what model(s) are currently loaded.</summary>
     public void ReassignLoadedModelsList()
     {
+        using ManyReadOneWriteLock.ReadClaim claim = Program.RefreshLock.LockRead();
         foreach (T2IModel model in Program.MainSDModels.Models.Values)
         {
             model.AnyBackendsHaveLoaded = false;

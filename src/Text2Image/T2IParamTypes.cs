@@ -1057,6 +1057,7 @@ public class T2IParamTypes
     /// <summary>Converts a parameter value in a valid input for that parameter, or throws <see cref="SwarmReadableErrorException"/> if it can't.</summary>
     public static string ValidateParam(T2IParamType type, string val, Session session)
     {
+        using ManyReadOneWriteLock.ReadClaim claim = Program.RefreshLock.LockRead();
         string origVal = val;
         if (type is null)
         {
