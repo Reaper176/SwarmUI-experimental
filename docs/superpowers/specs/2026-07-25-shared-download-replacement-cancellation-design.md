@@ -1,6 +1,6 @@
 # Shared Download Replacement and Cancellation Design
 
-**Status:** Approved
+**Status:** Implemented; awaiting maintainer validation
 
 **Date:** 2026-07-25
 
@@ -131,6 +131,33 @@ Agents will not build, launch, or run tests. Static verification must:
 9. confirm caller temporary-file, move, cleanup, refresh, and fixed-path behavior remains unchanged;
 10. inspect the exact changed-file and commit range; and
 11. run `git diff --check`.
+
+## Implementation Record
+
+The production implementation is exactly the inclusive range `24157f35` through `051a5bb5` (`24157f35^..051a5bb5`):
+
+1. `24157f35 fix: truncate shared download replacements`
+2. `051a5bb5 fix: cancel shared download requests`
+
+The fixed approved-design boundary is `23c77542`. The intervening commits `93e1a50c`, `9558e289`, `75c93bda`, and `329b7cce` are plan or lifetime/ownership documentation corrections, not production changes. The exact production changed-source list is one file:
+
+- `src/Utils/Utilities.cs`
+
+Static caller inventory repeated seven direct calls: three Comfy archive downloads and the Visual C++ redistributable in `Installation`, `CommonModels.ModelInfo.DownloadNow`, `ModelsAPI.DoModelDownloadWS`, and `WorkflowGenerator.DownloadModel`. The three indirect `ModelInfo.DownloadNow` flows remain installation-selected common models plus the automatic-VAE and LTX audio-VAE branches in `WorkflowGeneratorModelSupport`. Ownership remains nuanced: model UI is the only maintained caller that supplies cancellation and owns its temporary target, cleanup, move, and refresh; `WorkflowGenerator.DownloadModel` independently owns a pre-deleted temporary target and cleanup/move; `ModelInfo.DownloadNow` refuses a pre-existing final destination, while fixed installation destinations do not universally establish a fresh-target precondition.
+
+The implemented successful-response order is exactly initial linked-token send, `OK` validation, linked-token response-stream acquisition, destination open with `FileMode.Create`, and then producer/writer/progress worker startup. Thus failed status or pre-stream failure occurs before destination mutation, while an accepted response truncates an existing longer target. The linked caller/global token now reaches initial and retry sends, initial and retry stream acquisition, network reads, file writes, and chunk/progress polling. `Program.GlobalProgramCancel` and the optional caller source remain linked inputs; the helper does not dispose the caller-owned source.
+
+The public signature and all callers are unchanged. The four-retry limit, `PartialContent` requirement, buffering, progress cadence and callback arguments, content-length and SHA-256 checks, detected-failure deletion, URLs, headers, logs, temporary-file ownership, move/cleanup/refresh behavior, and fixed installer paths are preserved. The implementation also deliberately preserves adjacent legacy behavior: an unknown response length still uses a 1024-byte buffer and can truncate the download to 1024 bytes while returning false success; retry requests still use the literal inclusive `Range(totalRead, length)` convention without `Content-Range` validation; terminal progress is still enqueued before length/hash validation; sibling workers are not explicitly canceled when another worker fails; and the SHA-256 instance remains undisposed.
+
+Static review used:
+
+- `rg -n "Utilities\.DownloadFile\(" src --glob '*.cs'` and the `DownloadNow` caller search, yielding seven direct calls and three indirect flows;
+- `git diff --name-only 24157f35^..051a5bb5`, yielding only `src/Utils/Utilities.cs`;
+- `git diff --check 24157f35^..051a5bb5`, yielding no whitespace errors;
+- fixed-range diff/log inspection, distinguishing the two production commits from the four documentation commits after `23c77542`; and
+- targeted `rg`/source inspection of send/status/stream/open ordering, linked-token phases, retries, progress, verification, cleanup, and caller behavior.
+
+Protected maintainer changes and the protected backup reported by repository status were excluded and not inspected or modified. No agent ran a build, test, launcher, download, network request, fault injection, cancellation exercise, or benchmark. Runtime behavior, performance, and platform-specific behavior remain unvalidated.
 
 ## Maintainer Validation
 
