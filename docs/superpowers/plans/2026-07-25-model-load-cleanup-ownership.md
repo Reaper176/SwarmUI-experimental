@@ -396,7 +396,7 @@ After specification review passes, dispatch a fresh quality reviewer. Require in
 
 - C# 12 correctness and repository explicit-type/full-brace conventions;
 - closure capture and `Interlocked.CompareExchange(ref lifecycle, ...)` consistency;
-- no possible double `GenClaim.Dispose`;
+- no possible second Rank 11 cleanup-owner `GenClaim.Dispose` call, while retaining the caveat that failed suppression may permit a later finalizer-invoked `Dispose`;
 - no cleanup-owner retry of a failed disposal or suppression;
 - all cleanup diagnostics routed only through nonthrowing `logCleanupFailure`;
 - cleanup continuation cannot fault from primitive, formatting, or logging failures;
@@ -596,7 +596,7 @@ Expected:
 - every primitive and captured claim receives at most one cleanup-owner attempt;
 - a failed claim disposal is diagnosed best-effort, is not retried by the cleanup owner, receives one separately caught suppression attempt, and cannot prevent later claims/steps;
 - successful suppression prevents the known finalizer-invoked `Dispose`, but retained partial claim/resource/session state is reported without a baseline claim;
-- suppression failure is diagnosed best-effort, is not retried, does not prevent later steps, and is recorded as leaving a later finalizer-invoked `Dispose` possible;
+- suppression failure is diagnosed best-effort, is not retried by the Rank 11 cleanup owner, does not prevent later steps, and is recorded as leaving a later finalizer-invoked `Dispose` possible;
 - pre-start cleanup never attempts reservation, backend classification, or refresh;
 - started cleanup preserves ordered attempts, and warning/debug failures cannot prevent or undo the separately attempted mismatch classification.
 
