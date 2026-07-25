@@ -210,10 +210,10 @@ Do not change the range values, retry count, or response-status check.
 
 Confirm:
 
-- the initial request is disposed after response acquisition;
+- the method-scoped initial request is disposed at method exit after worker completion or exceptional unwind;
 - the initial response and stream remain alive through all three tasks;
 - `loadData` may dispose the active response/stream and the outer `using` declarations tolerate repeated disposal;
-- every retry request is disposed after response acquisition;
+- each retry request's block scope disposes it when that retry block exits;
 - retry responses/streams remain owned by `workingResponse`/`workingStream`;
 - `writer` exists before `removeFile` can run;
 - `removeFile` still disposes the writer before deleting; and
