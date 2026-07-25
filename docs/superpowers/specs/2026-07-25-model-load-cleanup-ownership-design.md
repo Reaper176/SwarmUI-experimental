@@ -8,9 +8,9 @@
 
 ## Purpose
 
-Make the state published for a scheduled backend model load return to baseline exactly once when request cancellation prevents the scheduled delegate from starting or a later publication/scheduling setup step fails.
+Make the state published for a scheduled backend model load return to baseline exactly once when the scheduling caller's cancellation prevents the scheduled delegate from starting or a later publication/scheduling setup step fails.
 
-At the fixed boundary, `BackendHandler.LoadHighestPressureNow` sets the selected `ModelRequestPressure.IsLoading`, creates one `Session.GenClaim(modelLoads: 1)` for every participating session, and then schedules all remaining work through cancellation-gated `Task.Factory.StartNew`. The delegate owns reservation, load execution, failure classification, claim disposal, and loaded-model reassignment. If its cancellation token is already canceled, or becomes canceled before the delegate starts, the task can enter the canceled state without executing that owner. The pressure can remain marked as loading and the session claims and `LoadingModels` counters can remain published indefinitely.
+At the fixed boundary, `BackendHandler.LoadHighestPressureNow` sets the globally selected `ModelRequestPressure.IsLoading`, creates one `Session.GenClaim(modelLoads: 1)` for every session recorded on that selected pressure, and then schedules all remaining work through cancellation-gated `Task.Factory.StartNew`. The delegate owns reservation, load execution, failure classification, claim disposal, and loaded-model reassignment. If the scheduling caller's token is already canceled, or becomes canceled before the delegate starts, the task can enter the canceled state without executing that owner. The selected pressure can remain marked as loading and its session claims and `LoadingModels` counters can remain published indefinitely.
 
 The selected design retains the cancellation-gated scheduling policy and introduces one idempotent cleanup owner backed by an atomic lifecycle gate. The gate and captured-claims list exist before `IsLoading` or any claim is published. The started delegate, a cancellation-only synchronous-preferred continuation, and the publication/scheduling-setup failure path all coordinate through that owner. Only the path that atomically acquires the applicable lifecycle transition performs cleanup, and the cleanup actions depend on whether model-load work actually started.
 
@@ -40,6 +40,37 @@ The method currently:
 
 `Session.GenClaim.Dispose` removes the claim from `Session.Claims`, subtracts its counters, and disposes its local cancellation source. It is therefore the correct existing primitive for retracting each published model-load claim, but it must have one effective owner.
 
+## Existing Scheduling-Caller and Selected-Pressure Coupling
+
+`T2IBackendRequest.TryFind` calls:
+
+```csharp
+Handler.LoadHighestPressureNow(possible, available, () => ReleasePressure(true), Pressure, Cancel);
+```
+
+The `cancel` token and `releasePressure` callback therefore belong to the request whose `TryFind` invocation happened to call the method. This document calls that request the **scheduling caller** and calls `cancel` the **scheduling-caller token**.
+
+`LoadHighestPressureNow` does not necessarily load that caller's `pressure`. It independently orders all eligible entries in `ModelRequests` and assigns `highestPressure` from the global result. This document calls that entry the **selected pressure**. The scheduling caller can belong to the selected pressure, but it can also belong to a different model/pressure with different requests and sessions.
+
+The selected pressure owns:
+
+- `highestPressure.IsLoading`;
+- the model being loaded;
+- the session set from which model-load claims are created;
+- the user input passed from `highestPressure.Requests.FirstOrDefault()` to `LoadModel`;
+- `BackendFailReasons` and `BadBackends`; and
+- retry/refusal state for that selected model.
+
+The scheduling caller owns:
+
+- the `cancel` token supplied to `Task.Factory.StartNew` and `LoadModel(...).Wait(cancel)`;
+- the passed `releasePressure` callback; and
+- the caller-local `Pressure.IsLoading` check that controls its immediate `NotifyWillLoad` callback after `LoadHighestPressureNow` returns.
+
+This coupling is existing scheduling policy and is preserved. Rank 11 does not make the selected pressure provide its own token/callback, choose a representative selected request, or realign status notification. Cleanup always retracts the selected `highestPressure.IsLoading` and the successfully captured claims created from that selected pressure's sessions. Cleanup does not release, classify, or otherwise mutate a different pressure merely because its request supplied the scheduling token.
+
+The pre-scheduling all-loaders-failed branch retains its existing `releasePressure()` callback coupling: the callback releases the scheduling caller's request pressure even if global selection identified another `highestPressure`, while the readable failure text and failure sets concern the selected pressure/model. That behavior is outside the cleanup owner and is neither expanded nor corrected here.
+
 ## Selected Approach
 
 Introduce one cleanup owner local to the scheduled load. Its concrete implementation may be a private local function or a small private helper, provided it retains the boundary and semantics in this document. Construct its atomic lifecycle gate and empty captured-claims list before setting `highestPressure.IsLoading` or constructing any claim.
@@ -52,7 +83,7 @@ The owner uses one interlocked lifecycle gate that distinguishes unstarted publi
 
 The original `Task.Factory.StartNew(action, cancel)` call and delegate policy remain in place. The design does not replace it with unconditional scheduling, `Task.Run`, an async delegate, or a different scheduler.
 
-The cancellation continuation is deliberately non-cancelable. Reusing the already-canceled request token for cleanup would reproduce the defect by allowing cleanup itself to be skipped. `OnlyOnCanceled` prevents the continuation from running for normal, faulted, or successfully completed started work. `ExecuteSynchronously` requests synchronous execution when the selected scheduler permits; it is a synchronous-preferred hint, not a guarantee of inline execution. `TaskScheduler.Default` prevents an ambient/custom current scheduler from delaying or rejecting the cleanup continuation, while the original `StartNew(action, cancel)` deliberately retains its current scheduler selection.
+The cancellation continuation is deliberately non-cancelable. Reusing the already-canceled scheduling-caller token for cleanup would reproduce the defect by allowing cleanup itself to be skipped. `OnlyOnCanceled` prevents the continuation from running for normal, faulted, or successfully completed started work. `ExecuteSynchronously` requests synchronous execution when the selected scheduler permits; it is a synchronous-preferred hint, not a guarantee of inline execution. `TaskScheduler.Default` prevents an ambient/custom current scheduler from delaying or rejecting the cleanup continuation, while the original `StartNew(action, cancel)` deliberately retains its current scheduler selection.
 
 The outer catch performs pre-start cleanup only if it atomically wins before delegate entry. If the scheduled delegate already won the started transition—for example, if continuation attachment fails after `StartNew` returned and the delegate began—the catch leaves started cleanup to the delegate's `finally`. If pre-start cleanup wins after a task was returned but before its delegate enters, delegate entry observes the pre-start-cleaned lifecycle state and exits without reserving or loading. The original setup exception is rethrown in every case and is not reinterpreted as a backend load failure.
 
@@ -72,7 +103,7 @@ It must not:
 - clear `availableBackend.ReserveModelLoad`, because the delegate never set it;
 - add the backend to `BadBackends`;
 - add a load reason to `BackendFailReasons`;
-- invoke `releasePressure`, because each request still owns its pressure count;
+- invoke `releasePressure`, because cleanup does not own the scheduling caller's pressure count and the existing pre-scheduling all-loaders-failed callback remains separate;
 - call `ReassignLoadedModelsList`, because no model load or model selection was attempted; or
 - emit a model-load success, failure, or mismatch classification.
 
@@ -89,11 +120,11 @@ Once the delegate starts, its cleanup preserves the existing order and classific
 
 The existing exception path remains responsible for unwrapping aggregate exceptions, logging the readable failure, and adding its readable text to `BackendFailReasons`. The cleanup owner does not change which exception types are caught, the messages recorded, or the mismatch rule.
 
-The started policy remains authoritative after delegate entry, including a global-shutdown return while waiting for backend usages or cancellation observed by `LoadModel(...).Wait(cancel)`. Those paths began model-load work, including ownership of the reservation, so they retain the established reservation release, mismatch classification, claim disposal, and model-list refresh.
+The started policy remains authoritative after delegate entry, including a global-shutdown return while waiting for backend usages or cancellation of the scheduling-caller token observed by `LoadModel(...).Wait(cancel)`. Those paths began work for the selected pressure, including ownership of the reservation, so they retain the established reservation release, selected-pressure mismatch/failure classification, selected-pressure claim disposal, and model-list refresh.
 
-Request cancellation alone does not interrupt the existing busy-backend loop. That loop observes only `Program.GlobalProgramCancel`. If the request token is canceled while the backend remains busy, the reservation, `IsLoading`, and claims remain published as they do now. After usage frees, the ordinary-model branch calls `LoadModel` and its subsequent `Wait(cancel)` observes the request token; the `(none)` branch has no request-token wait and retains its existing behavior. This project adds no immediate cleanup, wake, or progress guarantee for request cancellation while the backend is still busy.
+Scheduling-caller cancellation alone does not interrupt the existing busy-backend loop. That loop observes only `Program.GlobalProgramCancel`. If the scheduling-caller token is canceled while the backend remains busy, the reservation, selected pressure's `IsLoading`, and selected-pressure session claims remain published as they do now. After usage frees, the ordinary-model branch calls `LoadModel` for the selected pressure and its subsequent `Wait(cancel)` observes the scheduling-caller token; the `(none)` branch has no scheduling-token wait and retains its existing behavior. This is true whether the scheduling caller belongs to the selected pressure or a different pressure. This project adds no immediate cleanup, wake, or progress guarantee for scheduling-caller cancellation while the backend is still busy.
 
-Global shutdown during `LoadModel` also does not independently cancel its `Wait(cancel)`: that wait is governed by the passed request cancellation token. If that token is canceled, the existing catch/finally path runs; otherwise started cleanup occurs only when the existing load/wait exits normally or with an exception. The underlying asynchronous `LoadModel` continuation remains outside this project.
+Global shutdown during `LoadModel` also does not independently cancel its `Wait(cancel)`: that wait is governed by the passed scheduling-caller token, which may belong to a request outside the selected pressure. If that token is canceled, the existing catch records its readable failure and the finalization policy classifies model mismatch on the selected pressure; otherwise started cleanup occurs only when the existing load/wait exits normally or with an exception. The underlying asynchronous `LoadModel` continuation remains outside this project.
 
 ## State and Transition Table
 
@@ -105,12 +136,15 @@ Global shutdown during `LoadModel` also does not independently cancel its `Wait(
 | `Task.Factory.StartNew` throws before returning a task | No | Outer setup catch | Atomically acquire pre-start cleanup; clear `IsLoading`; dispose captured claims; rethrow | No reservation clear, backend failure classification, pressure release, or model-list refresh |
 | Four-argument continuation attachment throws before delegate entry | No | Outer setup catch | Atomically acquire pre-start cleanup; clear `IsLoading`; dispose captured claims; rethrow; any later delegate entry observes cleanup ownership and exits | Original task is not treated as a backend attempt |
 | Continuation attachment throws after delegate entry wins | Yes | Outer setup catch and later delegate `finally` | Catch cannot acquire pre-start cleanup; rethrow setup exception; delegate retains full started cleanup ownership | No premature claim disposal or `IsLoading` reset while load work is active |
-| Returned task is canceled before delegate entry | No | Non-cancelable `OnlyOnCanceled \| ExecuteSynchronously` continuation on `TaskScheduler.Default` | Atomically acquire pre-start cleanup; clear `IsLoading`; dispose captured claims | `ExecuteSynchronously` is synchronous-preferred, not guaranteed inline; no load classification or refresh |
+| Scheduling caller belongs to selected pressure; its token cancels task before delegate entry | No | Non-cancelable `OnlyOnCanceled \| ExecuteSynchronously` continuation on `TaskScheduler.Default` | Atomically acquire pre-start cleanup; clear selected `IsLoading`; dispose selected-pressure captured claims | Scheduling caller retains its own request-pressure release; no load classification or refresh |
+| Scheduling caller belongs to a different pressure; its token cancels selected pressure's task before delegate entry | No | Same cancellation continuation | Atomically acquire pre-start cleanup for the selected pressure; clear selected `IsLoading`; dispose selected-pressure captured claims | Do not release/classify the scheduling caller's different pressure; caller-local status ownership remains unchanged |
 | A returned task's delegate is dispatched after pre-start cleanup won | No | Delegate entry | Atomic started transition fails; exit without reservation or model-load work | No second cleanup invocation mutates state |
-| Request token is canceled while the started delegate waits for backend usage | Yes | None at cancellation time | No immediate transition; existing busy wait continues until usage frees or global shutdown is observed | Busy loop observes only `Program.GlobalProgramCancel`; no new wake, cleanup, or progress guarantee |
+| Selected-pressure scheduling caller's token is canceled while delegate waits for backend usage | Yes | None at cancellation time | No immediate transition; existing busy wait continues until usage frees or global shutdown is observed | Busy loop observes only `Program.GlobalProgramCancel`; selected status/claims remain published |
+| Different-pressure scheduling caller's token is canceled while selected-pressure delegate waits for backend usage | Yes | None at cancellation time | Same: no immediate transition; selected load continues waiting | The unrelated caller's cancellation does not retract selected state until existing load flow later exits |
 | Global shutdown is observed while the started delegate waits for backend usage | Yes | Delegate `finally` after existing early return | Win started-cleanup transition; run full started cleanup in existing order, including model-list reassignment | Existing global-cancellation check and wait cadence remain unchanged |
-| Delegate starts and request cancellation interrupts `LoadModel(...).Wait(cancel)` | Yes | Delegate `finally` after existing catch | Win gate; preserve failure-reason handling and full started cleanup | Cancellation token semantics and exception classification remain unchanged |
-| Global shutdown occurs during `LoadModel` while request token is not canceled | Yes | Delegate `finally` only after existing load/wait exits | No immediate transition from global shutdown alone; then full started cleanup | `Wait(cancel)` is governed by request cancellation, not `Program.GlobalProgramCancel` |
+| Selected-pressure scheduling caller's token cancels `LoadModel(...).Wait(cancel)` | Yes | Delegate `finally` after existing catch | Preserve readable failure and mismatch classification on selected pressure, then full selected cleanup | Scheduling caller's request-pressure release remains separately owned |
+| Different-pressure scheduling caller's token cancels selected pressure's `LoadModel(...).Wait(cancel)` | Yes | Delegate `finally` after existing catch | Preserve existing coupling: record failure/mismatch on selected pressure, then clear selected state/claims | Do not classify or release the unrelated scheduling caller's pressure in cleanup; retry/refusal remains selected-pressure state |
+| Global shutdown occurs during `LoadModel` while scheduling-caller token is not canceled | Yes | Delegate `finally` only after existing load/wait exits | No immediate transition from global shutdown alone; then full selected started cleanup | `Wait(cancel)` is governed by scheduling-caller cancellation, not `Program.GlobalProgramCancel`, regardless of pressure identity |
 | Delegate loads `(none)` or the requested model successfully | Yes | Delegate `finally` | Win gate; full started cleanup; model-name match avoids bad-backend classification | Successful selection/load logging and later request progress remain unchanged |
 | Delegate catches a backend load failure or ends with model mismatch | Yes | Delegate `finally` | Win gate; preserve reason/mismatch classification and full started cleanup | Failure text, refusal reasoning, and retry eligibility remain unchanged |
 | Any losing cleanup invocation or repeated invocation | Either | Any of the three callers | Interlocked gate returns without mutation | No second claim disposal, counter decrement, reservation change, classification, or refresh |
@@ -133,6 +167,10 @@ The pre-start path does not call `ReassignLoadedModelsList`: no backend model st
 
 Request-pressure release remains request-owned. A sole canceled request can remove its pressure through `Complete`; a shared pressure can remain registered for other requests. In either case, retracting `IsLoading` lets remaining or later eligible work select a replacement load rather than observing a permanently active load.
 
+When the scheduling caller and selected pressure differ, those effects apply to different owners: caller completion releases only the caller's request pressure, while pre-start or started cleanup retracts only the globally selected pressure's `IsLoading` and captured session claims. Selected-pressure failure reasons, bad-backend exclusions, retry, and eventual refusal remain selected-pressure state even when cancellation came from the different scheduling caller's token. Cleanup never uses token identity as a reason to classify or release the token owner's pressure.
+
+Immediate status notification also remains caller-local. After `LoadHighestPressureNow` returns, `TryFind` checks the scheduling caller's `Pressure.IsLoading`, not the globally selected `highestPressure.IsLoading`. Rank 11 neither transfers `NotifyWillLoad` to the selected pressure nor promises the scheduling caller receives a load notification when its invocation scheduled another pressure.
+
 ## Preserved Behavior and Compatibility
 
 Implementation must preserve:
@@ -141,17 +179,17 @@ Implementation must preserve:
 - pressure filtering, all-request match preference, bad-backend exclusion, and backend selection order;
 - the 1.5-second pressure-age rule when multiple loaders are available;
 - the configured `last_used` and `first_free` model-load order behavior and invalid-setting error;
-- cancellation-gated `Task.Factory.StartNew(action, cancel)` and its current scheduler selection;
+- cancellation-gated `Task.Factory.StartNew(action, cancel)` with the scheduling caller's token and its current scheduler selection;
 - cleanup-continuation dispatch through the explicit four-argument overload on `TaskScheduler.Default`;
 - the existing 100-millisecond usage-wait polling and one-second scheduler/handler behavior;
-- the fact that the busy-usage loop observes global shutdown but not request cancellation;
+- the fact that the busy-usage loop observes global shutdown but not scheduling-caller cancellation;
 - global-shutdown return behavior while waiting for usages and the lack of a new global-shutdown interrupt for an active `Wait(cancel)`;
-- request-token behavior during `LoadModel(...).Wait(cancel)`;
+- scheduling-caller-token behavior during the selected pressure's `LoadModel(...).Wait(cancel)`, including when those owners differ;
 - the timing of `highestPressure.IsLoading` and session model-load claim publication before scheduling;
-- `NotifyWillLoad` and session status timing derived from that state;
+- caller-local `NotifyWillLoad`, selected-pressure session status, and their existing timing/ownership when the caller and selected pressure differ;
 - backend reservation ownership after delegate entry;
 - readable load-failure logging, `BackendFailReasons`, `BadBackends`, and eventual all-loaders-failed refusal reasons;
-- each request's ownership of `releasePressure`;
+- each request's ownership of pressure release, including the existing scheduling-caller callback coupling in the pre-scheduling all-loaders-failed branch;
 - successful model selection/loading and subsequent waiter progress;
 - public methods, fields, signatures, types, and external extension ABI; and
 - repository C# conventions, including explicit types, full braced blocks, and XML documentation for any new field if a field is required.
@@ -164,9 +202,10 @@ This project does not:
 
 - address the adjacent `LoadModelOnAll` shutdown/reservation issue;
 - clean stale `ModelRequestPressure.Requests` or `Sessions`;
+- realign the scheduling-caller token, `releasePressure` callback, or `NotifyWillLoad` with the globally selected pressure;
 - redesign cancellation responsiveness while waiting for backend usages;
 - alter the underlying asynchronous `AbstractT2IBackend.LoadModel` continuation or cancellation contract;
-- make request cancellation interrupt the busy-backend usage loop or make global shutdown independently interrupt `Wait(cancel)`;
+- make scheduling-caller cancellation interrupt the busy-backend usage loop or make global shutdown independently interrupt `Wait(cancel)`;
 - optimize or instrument the scheduler under P5;
 - change pressure scoring, backend preference, retries, autoscaling, or the one-second handler loop;
 - move request-pressure release into model-load cleanup;
@@ -177,9 +216,9 @@ This project does not:
 
 ## Implementation Stages
 
-1. In `LoadHighestPressureNow`, establish one atomic lifecycle/cleanup gate and an empty captured-claims list before publishing `IsLoading` or constructing claims.
+1. In `LoadHighestPressureNow`, establish one atomic lifecycle/cleanup gate and an empty captured-claims list for the globally selected `highestPressure` before publishing its `IsLoading` or constructing its session claims; do not derive cleanup ownership from the scheduling-caller token.
 2. Wrap `IsLoading` publication, immediate capture of each successfully returned claim, `Task.Factory.StartNew(action, cancel)`, and cleanup-continuation attachment in one outer try/catch. On failure, atomically select pre-start cleanup or defer to already-started ownership, then rethrow.
-3. Move the current delegate-finalization actions into the started policy while retaining their existing ordering, locking, messages, classification, and `ReassignLoadedModelsList` placement. Make delegate entry atomically decline work if pre-start cleanup already won.
+3. Move the current delegate-finalization actions into the started policy while retaining their existing ordering, locking, selected-pressure messages/classification, and `ReassignLoadedModelsList` placement. Make delegate entry atomically decline work if pre-start cleanup already won, and do not add `releasePressure` to cleanup.
 4. Attach the pre-start path with the four-argument `ContinueWith` overload using `CancellationToken.None`, `TaskContinuationOptions.OnlyOnCanceled | TaskContinuationOptions.ExecuteSynchronously`, and `TaskScheduler.Default`; retain the original `StartNew(action, cancel)` scheduler and token behavior.
 5. Perform the bounded static inventory and control-flow review before asking the maintainer to build or exercise runtime cancellation.
 
@@ -190,43 +229,50 @@ The production patch should change only `src/Backends/BackendHandler.cs`. Docume
 Agents will not build, launch, run tests, start the server, load a model, interrupt a request, or perform any other runtime validation. Static verification must:
 
 1. confirm the production diff changes only `src/Backends/BackendHandler.cs`;
-2. enumerate every assignment to `ModelRequestPressure.IsLoading`, `T2IBackendData.ReserveModelLoad`, `BadBackends`, `BackendFailReasons`, and every creation/disposal of the captured model-load claims;
-3. prove the lifecycle gate and captured-claims list exist before `IsLoading` or claim publication, and capture of each returned claim is attempted immediately before later work;
-4. trace partial publication when first/later claim construction or capture/setup fails, explicitly bounding recovery to successfully returned/captured claims and not claiming recovery from an internal constructor exception before return;
-5. trace scheduling through `StartNew` throw, continuation-attachment throw before delegate entry, continuation-attachment throw after delegate entry, pre-start task cancellation, and delegate dispatch after pre-start cleanup;
-6. prove the interlocked lifecycle transitions prevent backend work after pre-start cleanup and prevent pre-start cleanup from retracting state after delegate entry;
-7. prove every post-publication path reaches one cleanup caller and every losing/repeated invocation returns without mutation;
-8. prove the pre-start policy performs only `IsLoading` reset and captured-claim disposal;
-9. prove the started policy preserves reservation release, mismatch classification, `IsLoading` reset, claim disposal, and `ReassignLoadedModelsList` in the existing order;
-10. separately trace request cancellation while waiting for usages, global shutdown while waiting for usages, request cancellation at `LoadModel(...).Wait(cancel)`, and global shutdown during `LoadModel` with and without cancellation of the governing request token;
-11. prove the busy loop still observes only `Program.GlobalProgramCancel`, while the load wait still observes only `cancel`, with no new immediate cleanup or progress guarantee;
-12. prove exception unwrapping, logs, `BackendFailReasons`, `BadBackends`, and all-loaders-failed refusal text remain unchanged;
-13. prove `releasePressure` remains request-owned and is not called by either new cleanup policy;
-14. prove the original cancellation token and scheduler behavior remain on `Task.Factory.StartNew(action, cancel)` and `LoadModel(...).Wait(cancel)`;
-15. prove cleanup attachment uses the four-argument `ContinueWith` overload with `CancellationToken.None`, `OnlyOnCanceled | ExecuteSynchronously`, and `TaskScheduler.Default`, without claiming `ExecuteSynchronously` guarantees inline execution;
-16. prove pressure ordering/filtering, backend selection, reservation acquisition, wait cadence, status timing, successful loading, the scheduler loop, and public API/ABI are unchanged;
-17. confirm no change to `LoadModelOnAll`, `Session.GenClaim`, browser code, launchers, extensions, generated content, user data, or excluded adjacent findings;
-18. inspect the exact commit/file range; and
-19. run `git diff --check`.
+2. prove `TryFind` supplies its own `Cancel` and `ReleasePressure(true)` callback while `LoadHighestPressureNow` independently selects `highestPressure` from global `ModelRequests`;
+3. enumerate every assignment to selected-pressure `IsLoading`, loader `ReserveModelLoad`, selected-pressure `BadBackends`/`BackendFailReasons`, and every creation/disposal of selected-pressure captured claims;
+4. prove the lifecycle gate and captured-claims list exist before `IsLoading` or claim publication, and capture of each returned claim is attempted immediately before later work;
+5. trace partial publication when first/later claim construction or capture/setup fails, explicitly bounding recovery to successfully returned/captured claims and not claiming recovery from an internal constructor exception before return;
+6. trace scheduling through `StartNew` throw, continuation-attachment throw before delegate entry, continuation-attachment throw after delegate entry, pre-start task cancellation, and delegate dispatch after pre-start cleanup;
+7. prove the interlocked lifecycle transitions prevent backend work after pre-start cleanup and prevent pre-start cleanup from retracting state after delegate entry;
+8. prove every post-publication path reaches one cleanup caller and every losing/repeated invocation returns without mutation;
+9. prove pre-start cleanup resets only selected `highestPressure.IsLoading` and disposes only its captured session claims;
+10. prove started cleanup preserves reservation release, selected-pressure mismatch classification, selected `IsLoading` reset, selected claim disposal, and `ReassignLoadedModelsList` in the existing order;
+11. separately trace scheduling-caller token owner equal to and different from selected pressure for pre-start cancellation, busy-usage waiting, cancellation at `LoadModel(...).Wait(cancel)`, load success/failure, and retry/refusal ownership;
+12. separately trace global shutdown while waiting for usages and during `LoadModel` with and without cancellation of the scheduling-caller token;
+13. prove the busy loop still observes only `Program.GlobalProgramCancel`, while the load wait still observes only the scheduling-caller `cancel`, with no new immediate cleanup or progress guarantee;
+14. prove exception unwrapping, logs, selected-pressure `BackendFailReasons`/`BadBackends`, and selected-model all-loaders-failed refusal text remain unchanged;
+15. prove neither cleanup policy invokes `releasePressure` or classifies/releases a different scheduling-token owner's pressure;
+16. prove the pre-scheduling all-loaders-failed branch retains its existing scheduling-caller `releasePressure` callback even when `highestPressure` differs, without extending that coupling into cleanup;
+17. prove caller-local `NotifyWillLoad`, selected-pressure session status, failure reasons, retry, and refusal ownership remain unchanged when caller and selected pressure differ;
+18. prove the original scheduling-caller token and scheduler behavior remain on `Task.Factory.StartNew(action, cancel)` and `LoadModel(...).Wait(cancel)`;
+19. prove cleanup attachment uses the four-argument `ContinueWith` overload with `CancellationToken.None`, `OnlyOnCanceled | ExecuteSynchronously`, and `TaskScheduler.Default`, without claiming `ExecuteSynchronously` guarantees inline execution;
+20. prove pressure ordering/filtering, backend selection, reservation acquisition, wait cadence, successful loading, the scheduler loop, and public API/ABI are unchanged;
+21. confirm no change to `LoadModelOnAll`, `Session.GenClaim`, browser code, launchers, extensions, generated content, user data, or excluded adjacent findings;
+22. inspect the exact commit/file range; and
+23. run `git diff --check`.
 
 Static review can establish ownership, branch ordering, token placement, call-site scope, and signature preservation. It cannot prove the cancellation race, runtime counter values, backend behavior, thread timing, performance, or platform behavior.
 
 ## Maintainer Validation Matrix
 
-The maintainer will build and run the live software. For every case, record the affected session's `Claims` membership and `LoadingModels`, the selected pressure's `IsLoading` and request count, the loader's reservation/availability, backend failure reasons, visible status, and whether a later request progresses.
+The maintainer will build and run the live software. For every case, identify both the scheduling caller/token owner and the globally selected pressure. Record both pressure counts, the selected pressure's `IsLoading`, the selected sessions' `Claims` membership and `LoadingModels`, the loader's reservation/availability, both pressures' failure/retry/refusal state, caller-local status notification, and whether later requests for each pressure progress.
 
 1. **Partial publication/setup failure:** inject a failure after `IsLoading`, after one or more claims have successfully returned and been captured, at `StartNew`, and during continuation attachment before delegate entry. Confirm `IsLoading`, every captured claim, and corresponding `LoadingModels` return to baseline exactly once; no backend is classified or refreshed; and the original setup exception propagates. Do not treat an exception injected inside `GenClaim` construction before it returns as transactionally recoverable by this owner.
 2. **Continuation-attachment/delegate race:** inject attachment failure as the delegate enters. Confirm either pre-start cleanup wins and the later delegate performs no reservation/load work, or started ownership wins and the delegate performs full cleanup; never observe premature claim disposal, duplicate cleanup, or active work after pre-start ownership.
-3. **Pre-start cancellation, sole pressure:** cancel in the window after `IsLoading` and claims publish but before delegate entry. Confirm `IsLoading`, captured claims, and `LoadingModels` return to baseline exactly once; no backend is marked bad; no reservation is cleared as a load-owned action; and a later request can load the model.
-4. **Pre-start cancellation, shared pressure:** cancel one participating request while another still wants the same model. Confirm request pressure reflects request ownership, model-load claims retract exactly once, `IsLoading` clears, and the remaining request can schedule and complete a replacement load.
-5. **Request cancellation while waiting for usage:** hold the selected backend busy, let the delegate start, and cancel only the request token. Confirm there is no new immediate cleanup, wake, or progress behavior while usage remains busy. After usage frees, confirm the ordinary-model branch reaches its existing `LoadModel(...).Wait(cancel)` cancellation behavior and then performs full started cleanup. Separately confirm `(none)` retains its existing no-request-wait behavior.
-6. **Global shutdown while waiting for usage:** hold the selected backend busy, let the delegate start, and request global shutdown. Confirm the existing busy-loop check returns and full started cleanup releases the reservation, performs the existing mismatch classification, clears claims/counters once, and refreshes model flags.
-7. **Request cancellation during a slow `LoadModel`:** cancel the governing request token after the backend load begins. Confirm existing exception/failure-reason and mismatch behavior, full cleanup, no duplicate counter decrement, and eventual backend/request progress, without claiming the underlying asynchronous load was canceled.
-8. **Global shutdown during `LoadModel`:** first leave the request token uncanceled and confirm global shutdown alone does not newly interrupt `Wait(cancel)`; cleanup occurs when the existing load/wait exits. Then exercise shutdown with the governing request token canceled and confirm the existing request-token catch/finally behavior. In both cases, confirm one full started cleanup.
-9. **Successful load:** exercise both ordinary model loading and `(none)` selection. Confirm current status timing, reservation lifetime, model identity, loaded-model reassignment, claim/counter return, and waiting-request progress are unchanged.
-10. **Backend load failure:** force a readable backend failure and a model-name mismatch. Confirm each existing reason and bad-backend entry appears once, cleanup returns to baseline once, retry/refusal behavior is unchanged, and no pre-start classification is introduced.
-11. **Repeated cleanup pressure:** stress cancellation close to delegate dispatch and repeat the race. Confirm no negative `LoadingModels`, no duplicate claim removal/disposal symptom, no duplicate bad-backend classification or refresh, and no permanent `IsLoading`.
-12. **Compatibility flow:** run normal generation with sole and shared model pressure and observe status frames/`NotifyWillLoad`, pressure order, selected loader order, retries, final images, subsequent generations, and pre-start/started shutdown behavior.
+3. **Pre-start cancellation, token owner equals selected pressure:** exercise sole and shared selected pressure. Cancel the scheduling caller in the window after selected `IsLoading`/claims publish but before delegate entry. Confirm selected state and captured claims return to baseline exactly once, the caller retains separate request-pressure release, no backend is classified/refreshed, and sole/shared later requests progress.
+4. **Pre-start cancellation, token owner differs from selected pressure:** arrange caller pressure A to invoke scheduling while global pressure B is selected, then cancel A's token before delegate entry. Confirm cleanup clears only B's `IsLoading` and captured session claims; it neither releases nor classifies A's pressure; B can schedule a replacement load; and caller-local notification/status remains under the existing A-side check.
+5. **Busy wait, token owner equals selected pressure:** hold the loader busy, start the delegate, and cancel the selected-pressure caller token. Confirm there is no immediate cleanup, wake, or progress change while usage remains busy. After usage frees, confirm the ordinary-model branch reaches existing `LoadModel(...).Wait(cancel)` cancellation and full selected cleanup. Separately confirm `(none)` retains its no-scheduling-token-wait behavior.
+6. **Busy wait, token owner differs from selected pressure:** hold the loader busy while caller pressure A's token governs selected pressure B's task, then cancel A. Confirm B's reservation, `IsLoading`, claims, and visible loading state remain until usage frees or global shutdown; A's cancellation does not immediately release/classify B or cause cleanup to mutate A; after release, existing B load/failure/retry ownership is preserved.
+7. **Global shutdown while waiting for usage:** exercise both matching and different token/selected-pressure ownership. Confirm the existing busy-loop check—not either caller token—causes return and one full selected-pressure cleanup with the established reservation release, selected mismatch classification, counter cleanup, and model-list refresh.
+8. **Load cancellation, token owner equals selected pressure:** cancel the scheduling-caller token after the selected model's `LoadModel` begins. Confirm existing selected-pressure exception/failure-reason and mismatch behavior, full cleanup, no duplicate counter decrement, and eventual retry/request progress, without claiming the underlying asynchronous load was canceled.
+9. **Load cancellation, token owner differs from selected pressure:** arrange caller pressure A's token to govern selected pressure B's `LoadModel(...).Wait(cancel)`, then cancel A. Confirm the existing coupling records failure/mismatch and retry/refusal state on B, cleanup clears B's state/claims, and cleanup neither classifies nor releases A merely because A supplied the token.
+10. **Global shutdown during `LoadModel`:** for both matching and different token/selected-pressure ownership, leave the scheduling-caller token uncanceled and confirm global shutdown alone does not newly interrupt `Wait(cancel)`; cleanup occurs when the existing load/wait exits. Then cancel the scheduling-caller token during shutdown and confirm the same existing token-governed catch/finally behavior. Every case performs one selected-pressure cleanup.
+11. **Successful load:** exercise ordinary model loading and `(none)` with matching and different scheduling-token ownership. Confirm selected model/status, reservation lifetime, loaded-model reassignment, selected claim/counter return, caller-local `NotifyWillLoad` behavior, and later requests for both pressures are unchanged.
+12. **Backend load failure and retry/refusal ownership:** force a readable failure and model-name mismatch with matching and different scheduling-token ownership. Confirm each reason and bad-backend entry appears once only on the selected pressure, selected cleanup returns to baseline once, and retry/refusal remains selected-model behavior.
+13. **Existing `releasePressure` callback coupling:** arrange scheduling caller pressure A to invoke the all-loaders-failed branch while global pressure B is selected. Confirm the existing callback releases A's request pressure while the readable error/failure sets concern B, and confirm neither new cleanup policy adds another release or classification. This case records existing behavior; it does not approve a redesign.
+14. **Repeated cleanup pressure:** stress cancellation close to delegate dispatch for both matching and different token owners. Confirm no negative selected-session `LoadingModels`, duplicate claim removal/disposal symptom, duplicate bad-backend classification/refresh, unintended token-owner pressure mutation, or permanent selected `IsLoading`.
+15. **Compatibility flow:** run normal generation with sole/shared and competing-model pressure. Observe pressure order, globally selected loader/model, caller-local status frames/`NotifyWillLoad`, selected-session loading status, retries, refusal reasons, final images, subsequent generations, and pre-start/started shutdown behavior.
 
 Linux, Windows, and other-platform runtime results must be recorded separately. No runtime or performance result is implied by implementation or static review.
 
@@ -240,8 +286,11 @@ Rank 11 succeeds when:
 - continuation-attachment failure cannot allow both pre-start cleanup and active delegate work;
 - pre-start cleanup does not mutate state owned only by a started load;
 - started cleanup and failure reasoning retain their current order and semantics;
+- cleanup always retracts the globally selected pressure's `IsLoading` and successfully captured session claims, regardless of which request supplied `cancel`;
+- cleanup never releases or classifies a different scheduling-token owner's pressure, while the separate existing all-loaders-failed callback coupling remains unchanged;
 - sole and shared pressure requests can make later progress;
-- request cancellation while usage is busy and global shutdown during `LoadModel` retain their distinct existing token behavior;
+- matching and different scheduling-token/selected-pressure cases retain their current status, failure, retry, and refusal ownership;
+- scheduling-caller cancellation while usage is busy and global shutdown during `LoadModel` retain their distinct existing token behavior;
 - successful loading, status timing, selection, retry, reservation, and refusal behavior remain compatible;
 - the production patch is confined to `src/Backends/BackendHandler.cs`; and
 - static review and the maintainer matrix pass without an agent runtime claim.
@@ -250,4 +299,4 @@ Rank 11 succeeds when:
 
 Rollback is one bounded ownership change in `BackendHandler.LoadHighestPressureNow`: remove the pre-publication lifecycle gate/captured-claims owner, outer publication/setup catch, delegate-entry arbitration, and four-argument cancellation-only continuation; restore the original claim publication, `Task.Factory.StartNew(action, cancel)`, delegate-local cleanup block, and post-finally `ReassignLoadedModelsList`.
 
-No data migration, configuration rollback, public API restoration, browser change, or extension rebuild contract is involved. A partial rollback is invalid because retaining multiple cleanup callers without their shared gate can double-dispose claims or mutate state twice, while retaining the gate without complete exit-path coverage can restore the leak.
+No data migration, configuration rollback, public API restoration, browser change, extension rebuild contract, or scheduling-token/selected-pressure realignment is involved. The original scheduling caller still supplies `cancel` and `releasePressure` while global selection still owns model/state. A partial rollback is invalid because retaining multiple cleanup callers without their shared gate can double-dispose selected-pressure claims or mutate selected state twice, while retaining the gate without complete exit-path coverage can restore the leak.
