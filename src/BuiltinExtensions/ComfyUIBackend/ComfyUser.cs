@@ -276,7 +276,7 @@ public class ComfyUser
                     ComfyBackendCapabilitySnapshot capabilitySnapshot = localBackend.CapabilitySnapshot;
                     nodes = capabilitySnapshot.NodeTypes;
                 }
-                return nodes is null || classTypes.All(ct => nodes.Contains(ct));
+                return nodes is not null && classTypes.All(ct => nodes.Contains(ct));
             })];
             if (validClients.Length == 0)
             {

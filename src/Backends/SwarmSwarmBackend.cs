@@ -53,6 +53,9 @@ public class SwarmSwarmBackend : AbstractT2IBackend
 
     public NetworkBackendUtils.IdleMonitor Idler = new();
 
+    /// <summary>Serializes complete remote data revisions for this backend instance.</summary>
+    private readonly SemaphoreSlim RemoteDataRevisionGate = new(1, 1);
+
     /// <summary>A set of all supported features the remote Swarm instance has.</summary>
     public ConcurrentDictionary<string, string> RemoteFeatureCombo = new();
 
@@ -214,126 +217,134 @@ public class SwarmSwarmBackend : AbstractT2IBackend
         }
         await RunWithSession(async () =>
         {
-            JObject backendData = await HttpClient.PostJson($"{Address}/API/ListBackends", new() { ["session_id"] = Session, ["nonreal"] = true, ["full_data"] = true }, RequestAdapter());
-            AutoThrowException(backendData);
-            if (fullLoad)
+            await RemoteDataRevisionGate.WaitAsync(Program.GlobalProgramCancel);
+            try
             {
-                Logs.Verbose($"{HandlerTypeData.Name} {BackendData.ID} Got backend data list");
-            }
-            if (IsAControlInstance && fullLoad)
-            {
-                List<Task> tasks = [];
-                RemoteModels ??= [];
-                foreach (string type in effectiveModelTypes)
+                JObject backendData = await HttpClient.PostJson($"{Address}/API/ListBackends", new() { ["session_id"] = Session, ["nonreal"] = true, ["full_data"] = true }, RequestAdapter());
+                AutoThrowException(backendData);
+                if (fullLoad)
                 {
-                    string runType = type;
-                    tasks.Add(Task.Run(async () =>
+                    Logs.Verbose($"{HandlerTypeData.Name} {BackendData.ID} Got backend data list");
+                }
+                if (IsAControlInstance && fullLoad)
+                {
+                    List<Task> tasks = [];
+                    RemoteModels ??= [];
+                    foreach (string type in effectiveModelTypes)
                     {
-                        try
+                        string runType = type;
+                        tasks.Add(Task.Run(async () =>
                         {
-                            JObject modelsData = await HttpClient.PostJson($"{Address}/API/ListModels", new() { ["session_id"] = Session, ["path"] = "", ["depth"] = 999, ["subtype"] = runType, ["allowRemote"] = Settings.AllowForwarding, ["dataImages"] = true }, RequestAdapter());
-                            JToken[] remoteModels = [.. modelsData["files"]];
-                            if (fullLoad)
+                            try
                             {
-                                Logs.Verbose($"{HandlerTypeData.Name} {BackendData.ID} Got {runType} model list, {remoteModels.Length} models");
+                                JObject modelsData = await HttpClient.PostJson($"{Address}/API/ListModels", new() { ["session_id"] = Session, ["path"] = "", ["depth"] = 999, ["subtype"] = runType, ["allowRemote"] = Settings.AllowForwarding, ["dataImages"] = true }, RequestAdapter());
+                                JToken[] remoteModels = [.. modelsData["files"]];
+                                if (fullLoad)
+                                {
+                                    Logs.Verbose($"{HandlerTypeData.Name} {BackendData.ID} Got {runType} model list, {remoteModels.Length} models");
+                                }
+                                Dictionary<string, JObject> remoteModelsParsed = [];
+                                foreach (JToken x in remoteModels)
+                                {
+                                    JObject data = x.DeepClone() as JObject;
+                                    data["local"] = false;
+                                    remoteModelsParsed[data["name"].ToString()] = data;
+                                }
+                                RemoteModels[runType] = remoteModelsParsed;
+                                Models[runType] = [.. remoteModelsParsed.Keys];
                             }
-                            Dictionary<string, JObject> remoteModelsParsed = [];
-                            foreach (JToken x in remoteModels)
+                            catch (Exception ex)
                             {
-                                JObject data = x.DeepClone() as JObject;
-                                data["local"] = false;
-                                remoteModelsParsed[data["name"].ToString()] = data;
+                                Logs.Error($"Failed to get {runType} models from remote Swarm at {Address}: {ex.ReadableString()}");
                             }
-                            RemoteModels[runType] = remoteModelsParsed;
-                            Models[runType] = [.. remoteModelsParsed.Keys];
-                        }
-                        catch (Exception ex)
+                        }));
+                    }
+                    await Task.WhenAll(tasks);
+                }
+                HashSet<string> features = [], types = [];
+                bool isLoading = false;
+                HashSet<int> ids = IsAControlInstance ? new(ControlledNonrealBackends.Keys) : null;
+                if (!IsAControlInstance)
+                {
+                    if (backendData.TryGetValue($"{LinkedRemoteBackendID}", out JToken data))
+                    {
+                        backendData = new JObject()
                         {
-                            Logs.Error($"Failed to get {runType} models from remote Swarm at {Address}: {ex.ReadableString()}");
-                        }
-                    }));
-                }
-                await Task.WhenAll(tasks);
-            }
-            HashSet<string> features = [], types = [];
-            bool isLoading = false;
-            HashSet<int> ids = IsAControlInstance ? new(ControlledNonrealBackends.Keys) : null;
-            if (!IsAControlInstance)
-            {
-                if (backendData.TryGetValue($"{LinkedRemoteBackendID}", out JToken data))
-                {
-                    backendData = new JObject()
+                            [$"{LinkedRemoteBackendID}"] = data
+                        };
+                    }
+                    else
                     {
-                        [$"{LinkedRemoteBackendID}"] = data
-                    };
+                        return;
+                    }
                 }
-                else
+                foreach (JToken backend in backendData.Values())
                 {
-                    return;
-                }
-            }
-            foreach (JToken backend in backendData.Values())
-            {
-                string status = backend["status"].ToString();
-                int id = backend["id"].Value<int>();
-                if (status == "running")
-                {
-                    features.UnionWith(backend["features"].ToArray().Select(f => f.ToString()));
-                    string type = backend["type"].ToString();
-                    string title = backend["title"].ToString();
-                    types.Add(type);
-                    if (IsAControlInstance && !ids.Remove(id) && (Settings.AllowForwarding || type != "swarmswarmbackend"))
+                    string status = backend["status"].ToString();
+                    int id = backend["id"].Value<int>();
+                    if (status == "running")
                     {
-                        Logs.Verbose($"{HandlerTypeData.Name} {BackendData.ID} adding remote backend {id} ({type}) '{title}'");
-                        // TODO: support remote non-T2I Backends
-                        Handler.AddNewNonrealBackend(HandlerTypeData, BackendData, SettingsRaw, (newData) =>
+                        features.UnionWith(backend["features"].ToArray().Select(f => f.ToString()));
+                        string type = backend["type"].ToString();
+                        string title = backend["title"].ToString();
+                        types.Add(type);
+                        if (IsAControlInstance && !ids.Remove(id) && (Settings.AllowForwarding || type != "swarmswarmbackend"))
                         {
-                            SwarmSwarmBackend newSwarm = newData.AbstractBackend as SwarmSwarmBackend;
-                            newSwarm.LinkedRemoteBackendID = id;
-                            newSwarm.Models = Models;
-                            newSwarm.LinkedRemoteBackendType = type;
-                            newSwarm.Title = $"[Remote from {BackendData.ID}: {Title}] {title}";
-                            newSwarm.CanLoadModels = backend["can_load_models"].Value<bool>();
-                            newSwarm.Parent = this;
-                            OnSwarmBackendAdded?.Invoke(newSwarm);
-                            ControlledNonrealBackends.TryAdd(id, newData as BackendHandler.T2IBackendData);
-                        });
+                            Logs.Verbose($"{HandlerTypeData.Name} {BackendData.ID} adding remote backend {id} ({type}) '{title}'");
+                            // TODO: support remote non-T2I Backends
+                            Handler.AddNewNonrealBackend(HandlerTypeData, BackendData, SettingsRaw, (newData) =>
+                            {
+                                SwarmSwarmBackend newSwarm = newData.AbstractBackend as SwarmSwarmBackend;
+                                newSwarm.LinkedRemoteBackendID = id;
+                                newSwarm.Models = Models;
+                                newSwarm.LinkedRemoteBackendType = type;
+                                newSwarm.Title = $"[Remote from {BackendData.ID}: {Title}] {title}";
+                                newSwarm.CanLoadModels = backend["can_load_models"].Value<bool>();
+                                newSwarm.Parent = this;
+                                OnSwarmBackendAdded?.Invoke(newSwarm);
+                                ControlledNonrealBackends.TryAdd(id, newData as BackendHandler.T2IBackendData);
+                            });
+                        }
+                        if (ControlledNonrealBackends.TryGetValue(id, out BackendHandler.T2IBackendData data))
+                        {
+                            data.Backend.MaxUsages = backend["max_usages"].Value<int>();
+                            data.Backend.CurrentModelName = (string)backend["current_model"];
+                        }
                     }
-                    if (ControlledNonrealBackends.TryGetValue(id, out BackendHandler.T2IBackendData data))
+                    else if (status == "loading")
                     {
-                        data.Backend.MaxUsages = backend["max_usages"].Value<int>();
-                        data.Backend.CurrentModelName = (string)backend["current_model"];
+                        isLoading = true;
                     }
                 }
-                else if (status == "loading")
+                if (IsAControlInstance)
                 {
-                    isLoading = true;
-                }
-            }
-            if (IsAControlInstance)
-            {
-                foreach (int id in ids)
-                {
-                    Logs.Verbose($"{HandlerTypeData.Name} {BackendData.ID} removing remote backend {id}.");
-                    if (ControlledNonrealBackends.Remove(id, out BackendHandler.T2IBackendData data))
+                    foreach (int id in ids)
                     {
-                        await Handler.DeleteById(data.ID);
+                        Logs.Verbose($"{HandlerTypeData.Name} {BackendData.ID} removing remote backend {id}.");
+                        if (ControlledNonrealBackends.Remove(id, out BackendHandler.T2IBackendData data))
+                        {
+                            await Handler.DeleteById(data.ID);
+                        }
                     }
                 }
+                FrozenSet<string> featureCandidate = features.ToFrozenSet();
+                RemoteFeatureSnapshot = featureCandidate;
+                foreach (string feature in featureCandidate)
+                {
+                    RemoteFeatureCombo.TryAdd(feature, feature);
+                }
+                foreach (string feature in RemoteFeatureCombo.Keys.Where(feature => !featureCandidate.Contains(feature)))
+                {
+                    RemoteFeatureCombo.TryRemove(feature, out _);
+                }
+                AnyLoading = isLoading;
+                RemoteBackendTypes = types;
+                ReviseRemotesEvent?.Invoke(this);
             }
-            FrozenSet<string> featureCandidate = features.ToFrozenSet();
-            RemoteFeatureSnapshot = featureCandidate;
-            foreach (string feature in featureCandidate)
+            finally
             {
-                RemoteFeatureCombo.TryAdd(feature, feature);
+                RemoteDataRevisionGate.Release();
             }
-            foreach (string feature in RemoteFeatureCombo.Keys.Where(feature => !featureCandidate.Contains(feature)))
-            {
-                RemoteFeatureCombo.TryRemove(feature, out _);
-            }
-            AnyLoading = isLoading;
-            RemoteBackendTypes = types;
-            ReviseRemotesEvent?.Invoke(this);
         });
     }
 
