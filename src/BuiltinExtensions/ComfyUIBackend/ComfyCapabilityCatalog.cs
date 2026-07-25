@@ -40,13 +40,61 @@ public static class ComfyCapabilityCatalog
         };
     }
 
-    /// <summary>Updates feature support based on a detected ComfyUI node name.</summary>
-    public static void ApplyDetectedNodeFeature(string nodeName, Dictionary<string, string> nodeToFeatureMap, HashSet<string> featuresSupported, HashSet<string> featuresDiscardIfNotFound)
+    /// <summary>Interprets detected ComfyUI node types as a self-contained set of supported features.</summary>
+    /// <param name="nodeTypes">The ComfyUI node types exposed by the backend.</param>
+    /// <param name="baselineFeatures">The feature IDs presumed to be supported before node detection.</param>
+    /// <param name="discardIfNotFound">The presumed feature IDs to remove unless a mapped node confirms them.</param>
+    /// <param name="nodeToFeatureMap">The mapping of ComfyUI node types to feature IDs.</param>
+    /// <param name="suppressedFeatures">The feature IDs to remove from the interpreted result.</param>
+    /// <param name="modelFolderFormat">The path separator format used by the backend's model folders.</param>
+    /// <returns>A new mutable set containing the interpreted feature IDs.</returns>
+    public static HashSet<string> Interpret(
+        IReadOnlySet<string> nodeTypes,
+        IEnumerable<string> baselineFeatures,
+        IReadOnlySet<string> discardIfNotFound,
+        IReadOnlyDictionary<string, string> nodeToFeatureMap,
+        IReadOnlySet<string> suppressedFeatures,
+        string modelFolderFormat)
     {
-        if (nodeToFeatureMap.TryGetValue(nodeName, out string featureId))
+        HashSet<string> features = [.. baselineFeatures];
+        HashSet<string> unresolvedDiscardFeatures = [.. discardIfNotFound];
+        foreach (string nodeType in nodeTypes)
         {
-            featuresSupported.Add(featureId);
-            featuresDiscardIfNotFound.Remove(featureId);
+            if (nodeToFeatureMap.TryGetValue(nodeType, out string featureId))
+            {
+                features.Add(featureId);
+                unresolvedDiscardFeatures.Remove(featureId);
+            }
         }
+
+        features.ExceptWith(unresolvedDiscardFeatures);
+
+        string hookFeature = "hook_lora_scheduling";
+        string interpolatedHookFeature = "hook_lora_interpolated_scheduling";
+        string[] requiredHookNodes = ["CreateHookLora", "CreateHookKeyframe", "SetHookKeyframes", "SetClipHooks"];
+        bool hookSchedulingSupported = requiredHookNodes.All(nodeTypes.Contains);
+        if (hookSchedulingSupported)
+        {
+            features.Add(hookFeature);
+            if (nodeTypes.Contains("CreateHookKeyframesInterpolated"))
+            {
+                features.Add(interpolatedHookFeature);
+            }
+            else
+            {
+                features.Remove(interpolatedHookFeature);
+            }
+        }
+        else
+        {
+            features.Remove(hookFeature);
+            features.Remove(interpolatedHookFeature);
+        }
+
+        features.ExceptWith(suppressedFeatures);
+        features.Remove("folderbackslash");
+        features.Remove("folderslash");
+        features.Add(modelFolderFormat == "\\" ? "folderbackslash" : "folderslash");
+        return features;
     }
 }
