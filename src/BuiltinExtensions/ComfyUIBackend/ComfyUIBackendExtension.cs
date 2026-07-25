@@ -366,7 +366,62 @@ public class ComfyUIBackendExtension : Extension
     /// <summary>Accumulated node evidence published through the legacy object-info facade.</summary>
     private static FrozenSet<string> LegacyObjectInfoNodeTypes = Array.Empty<string>().ToFrozenSet();
 
-    /// <summary>Candidate copies of shared object-info values that can be fully parsed before publication.</summary>
+    /// <summary>Backend-local shared values parsed without reading or mutating published aggregate state.</summary>
+    private sealed class SharedValueDelta
+    {
+        /// <summary>Discovered upscale model values.</summary>
+        public List<string> UpscalerModels = [];
+
+        /// <summary>Discovered latent upscale model values.</summary>
+        public List<string> LatentUpscalerModels = [];
+
+        /// <summary>Whether SwarmKSampler sampler values were discovered.</summary>
+        public bool HasSwarmKSamplerNames;
+
+        /// <summary>Discovered unformatted SwarmKSampler sampler names.</summary>
+        public List<string> SwarmKSamplerNames = [];
+
+        /// <summary>Discovered SwarmKSampler scheduler values.</summary>
+        public List<string> SwarmKSamplerSchedulers = [];
+
+        /// <summary>Discovered standard KSampler sampler values.</summary>
+        public List<string> KSamplerSamplers = [];
+
+        /// <summary>Discovered standard KSampler scheduler values.</summary>
+        public List<string> KSamplerSchedulers = [];
+
+        /// <summary>Discovered IP-Adapter unified or legacy model values.</summary>
+        public List<string> IPAdapterModels = [];
+
+        /// <summary>Discovered IP-Adapter file model values.</summary>
+        public List<string> IPAdapterFileModels = [];
+
+        /// <summary>Discovered IP-Adapter weight type values.</summary>
+        public List<string> IPAdapterWeightTypes = [];
+
+        /// <summary>Discovered IP-Adapter FaceID model values.</summary>
+        public List<string> IPAdapterFaceModels = [];
+
+        /// <summary>Discovered GLIGEN model values.</summary>
+        public List<string> GligenModels = [];
+
+        /// <summary>Discovered style model values.</summary>
+        public List<string> StyleModels = [];
+
+        /// <summary>Discovered YOLO model values.</summary>
+        public List<string> YoloModels = [];
+
+        /// <summary>Discovered ControlNet union type values.</summary>
+        public List<string> ControlnetUnionTypes = [];
+
+        /// <summary>Discovered CLIP device values.</summary>
+        public List<string> SetClipDevices = [];
+
+        /// <summary>Discovered ControlNet preprocessor definitions.</summary>
+        public Dictionary<string, JToken> ControlNetPreprocessors = [];
+    }
+
+    /// <summary>Complete replacement lists and additive preprocessor entries prepared from the latest published state.</summary>
     private sealed class SharedValueCandidate
     {
         /// <summary>Candidate upscale model values.</summary>
@@ -399,7 +454,7 @@ public class ComfyUIBackendExtension : Extension
         /// <summary>Candidate CLIP device values.</summary>
         public List<string> SetClipDevices;
 
-        /// <summary>Candidate ControlNet preprocessor definitions.</summary>
+        /// <summary>Candidate additive ControlNet preprocessor definitions.</summary>
         public Dictionary<string, JToken> ControlNetPreprocessors;
     }
 
@@ -423,10 +478,98 @@ public class ComfyUIBackendExtension : Extension
         return false;
     }
 
-    /// <summary>Builds a complete candidate for shared values discovered in raw ComfyUI object info.</summary>
+    /// <summary>Builds a backend-local delta for shared values discovered in raw ComfyUI object info.</summary>
     /// <param name="rawObjectInfo">The raw ComfyUI object-info response to parse.</param>
-    /// <returns>A complete shared-value candidate that has not yet changed published state.</returns>
-    private static SharedValueCandidate BuildSharedValueCandidate(JObject rawObjectInfo)
+    /// <returns>A backend-local shared-value delta that has not read or changed published state.</returns>
+    private static SharedValueDelta BuildSharedValueDelta(JObject rawObjectInfo)
+    {
+        SharedValueDelta delta = new();
+        if (TryGetRequiredInputs(rawObjectInfo, "UpscaleModelLoader", "model_name", out JToken upscaleModels))
+        {
+            delta.UpscalerModels = [.. upscaleModels.Select(u => $"model-{u}///Model: {u}")];
+        }
+        if (TryGetRequiredInputs(rawObjectInfo, "LatentUpscaleModelLoader", "model_name", out JToken latentUpscaleModels))
+        {
+            delta.LatentUpscalerModels = [.. latentUpscaleModels.Select(u => $"latentmodel-{u}///Latent Model: {u}")];
+        }
+        if (TryGetRequiredInputs(rawObjectInfo, ComfyNodeNames.KSampler, ComfyNodeInputNames.KSampler.SamplerName, out JToken swarmksamplerNames))
+        {
+            delta.HasSwarmKSamplerNames = true;
+            delta.SwarmKSamplerNames = [.. swarmksamplerNames.Select(u => $"{u}")];
+        }
+        if (TryGetRequiredInputs(rawObjectInfo, ComfyNodeNames.KSampler, ComfyNodeInputNames.KSampler.Scheduler, out JToken swarmksamplerSchedulers))
+        {
+            delta.SwarmKSamplerSchedulers = [.. swarmksamplerSchedulers.Select(u => $"{u}///{u} (New)")];
+        }
+        if (TryGetRequiredInputs(rawObjectInfo, "KSampler", "sampler_name", out JToken ksamplerSamplers))
+        {
+            delta.KSamplerSamplers = [.. ksamplerSamplers.Select(u => $"{u}///{u} (New in KS)")];
+        }
+        if (TryGetRequiredInputs(rawObjectInfo, "KSampler", "scheduler", out JToken ksamplerSchedulers))
+        {
+            delta.KSamplerSchedulers = [.. ksamplerSchedulers.Select(u => $"{u}///{u} (New in KS)")];
+        }
+        if (TryGetRequiredInputs(rawObjectInfo, "IPAdapterUnifiedLoader", "preset", out JToken ipadapterCubiqUnified))
+        {
+            delta.IPAdapterModels = [.. ipadapterCubiqUnified.Select(m => $"{m}")];
+        }
+        else if (rawObjectInfo.TryGetValue("IPAdapter", out JToken ipadapter) && (ipadapter["input"]["required"] as JObject).TryGetValue("model_name", out JToken ipAdapterModelName))
+        {
+            delta.IPAdapterModels = [.. ipAdapterModelName[0].Select(m => $"{m}")];
+        }
+        if (TryGetRequiredInputs(rawObjectInfo, "IPAdapterModelLoader", "ipadapter_file", out JToken ipadapterCubiq))
+        {
+            HashSet<string> native = ["ip-adapter-faceid-portrait-v11_sd15.bin", "ip-adapter-faceid-portrait_sdxl.bin", "ip-adapter-faceid-portrait_sdxl_unnorm.bin", "ip-adapter-faceid-plusv2_sd15.bin", "ip-adapter-faceid-plusv2_sdxl.bin", "ip-adapter-faceid-plus_sd15.bin", "ip-adapter-faceid_sd15.bin", "ip-adapter-faceid_sdxl.bin", "full_face_sd15.safetensors", "ip-adapter-plus-face_sd15.safetensors", "ip-adapter-plus-face_sdxl_vit-h.safetensors", "ip-adapter-plus_sd15.safetensors", "ip-adapter-plus_sdxl_vit-h.safetensors", "ip-adapter_sd15_vit-G.safetensors", "ip-adapter_sdxl.safetensors", "ip-adapter_sd15.safetensors", "ip-adapter_sdxl_vit-h.safetensors", "sd15_light_v11.bin"];
+            string[] models = [.. ipadapterCubiq.Select(m => $"{m}").Where(m => !native.Contains(m))];
+            delta.IPAdapterFileModels = [.. models.Select(m => $"file:{m}///Model File: {m}")];
+        }
+        if (rawObjectInfo.TryGetValue("IPAdapter", out JToken ipadapter2) && (ipadapter2["input"]["required"] as JObject).TryGetValue("weight_type", out JToken ipAdapterWeightType))
+        {
+            delta.IPAdapterWeightTypes = [.. ipAdapterWeightType[0].Select(m => $"{m}///{m} (New)")];
+        }
+        if (TryGetRequiredInputs(rawObjectInfo, "IPAdapterUnifiedLoaderFaceID", "preset", out JToken ipadapterCubiqUnifiedFace))
+        {
+            delta.IPAdapterFaceModels = [.. ipadapterCubiqUnifiedFace.Select(m => $"{m}")];
+        }
+        if (TryGetRequiredInputs(rawObjectInfo, "GLIGENLoader", "gligen_name", out JToken gligenLoader))
+        {
+            delta.GligenModels = [.. gligenLoader.Select(m => $"{m}")];
+        }
+        if (TryGetRequiredInputs(rawObjectInfo, "StyleModelLoader", "style_model_name", out JToken styleModelLoader))
+        {
+            delta.StyleModels = [.. styleModelLoader.Select(m => $"{m}")];
+        }
+        if (TryGetRequiredInputs(rawObjectInfo, ComfyNodeNames.YoloDetection, ComfyNodeInputNames.YoloDetection.ModelName, out JToken yoloDetection))
+        {
+            delta.YoloModels = [.. yoloDetection.Select(m => $"{m}")];
+        }
+        if (TryGetRequiredInputs(rawObjectInfo, "SetUnionControlNetType", "type", out JToken unionCtrlNet))
+        {
+            delta.ControlnetUnionTypes = [.. unionCtrlNet.Select(m => $"{m}///{m} (New)")];
+        }
+        if (TryGetRequiredInputs(rawObjectInfo, "OverrideCLIPDevice", "device", out JToken overrideClipDevice))
+        {
+            delta.SetClipDevices = [.. overrideClipDevice.Select(m => $"{m}")];
+        }
+        foreach ((string key, JToken data) in rawObjectInfo)
+        {
+            if (data["category"].ToString() == "image/preprocessors")
+            {
+                delta.ControlNetPreprocessors[key] = data;
+            }
+            else if (key.EndsWith("Preprocessor") && key != "MeshGraphormer+ImpactDetector-DepthMapPreprocessor")
+            {
+                delta.ControlNetPreprocessors[key] = data;
+            }
+        }
+        return delta;
+    }
+
+    /// <summary>Merges a backend-local delta into copies of the latest published shared values.</summary>
+    /// <remarks>The caller must own <see cref="ValueAssignmentLocker"/>.</remarks>
+    /// <param name="delta">The backend-local values to merge.</param>
+    /// <returns>A complete list replacement candidate and additive preprocessor entries.</returns>
+    private static SharedValueCandidate MergeSharedValueDelta(SharedValueDelta delta)
     {
         SharedValueCandidate candidate = new()
         {
@@ -440,90 +583,31 @@ public class ComfyUIBackendExtension : Extension
             StyleModels = [.. StyleModels],
             ControlnetUnionTypes = [.. ControlnetUnionTypes],
             SetClipDevices = [.. SetClipDevices],
-            ControlNetPreprocessors = new(ControlNetPreprocessors)
+            ControlNetPreprocessors = new(delta.ControlNetPreprocessors)
         };
-        if (TryGetRequiredInputs(rawObjectInfo, "UpscaleModelLoader", "model_name", out JToken upscaleModels))
+        T2IParamTypes.ConcatDropdownValsClean(ref candidate.UpscalerModels, delta.UpscalerModels);
+        T2IParamTypes.ConcatDropdownValsClean(ref candidate.UpscalerModels, delta.LatentUpscalerModels);
+        if (delta.HasSwarmKSamplerNames)
         {
-            T2IParamTypes.ConcatDropdownValsClean(ref candidate.UpscalerModels, upscaleModels.Select(u => $"model-{u}///Model: {u}"));
-        }
-        if (TryGetRequiredInputs(rawObjectInfo, "LatentUpscaleModelLoader", "model_name", out JToken latentUpscaleModels))
-        {
-            T2IParamTypes.ConcatDropdownValsClean(ref candidate.UpscalerModels, latentUpscaleModels.Select(u => $"latentmodel-{u}///Latent Model: {u}"));
-        }
-        if (TryGetRequiredInputs(rawObjectInfo, ComfyNodeNames.KSampler, ComfyNodeInputNames.KSampler.SamplerName, out JToken swarmksamplerNames))
-        {
-            string[] dropped = [.. candidate.Samplers.Select(s => s.Before("///")).Except([.. swarmksamplerNames.Select(u => $"{u}")])];
+            string[] dropped = [.. candidate.Samplers.Select(s => s.Before("///")).Except(delta.SwarmKSamplerNames)];
             if (dropped.Any())
             {
                 Logs.Warning($"Samplers are listed, but not included in SwarmKSampler internal list: {dropped.JoinString(", ")}");
             }
-            T2IParamTypes.ConcatDropdownValsClean(ref candidate.Samplers, swarmksamplerNames.Select(u => $"{u}///{u} (New)"));
+            T2IParamTypes.ConcatDropdownValsClean(ref candidate.Samplers, delta.SwarmKSamplerNames.Select(u => $"{u}///{u} (New)"));
         }
-        if (TryGetRequiredInputs(rawObjectInfo, ComfyNodeNames.KSampler, ComfyNodeInputNames.KSampler.Scheduler, out JToken swarmksamplerSchedulers))
-        {
-            T2IParamTypes.ConcatDropdownValsClean(ref candidate.Schedulers, swarmksamplerSchedulers.Select(u => $"{u}///{u} (New)"));
-        }
-        if (TryGetRequiredInputs(rawObjectInfo, "KSampler", "sampler_name", out JToken ksamplerSamplers))
-        {
-            T2IParamTypes.ConcatDropdownValsClean(ref candidate.Samplers, ksamplerSamplers.Select(u => $"{u}///{u} (New in KS)"));
-        }
-        if (TryGetRequiredInputs(rawObjectInfo, "KSampler", "scheduler", out JToken ksamplerSchedulers))
-        {
-            T2IParamTypes.ConcatDropdownValsClean(ref candidate.Schedulers, ksamplerSchedulers.Select(u => $"{u}///{u} (New in KS)"));
-        }
-        if (TryGetRequiredInputs(rawObjectInfo, "IPAdapterUnifiedLoader", "preset", out JToken ipadapterCubiqUnified))
-        {
-            T2IParamTypes.ConcatDropdownValsClean(ref candidate.IPAdapterModels, ipadapterCubiqUnified.Select(m => $"{m}"));
-        }
-        else if (rawObjectInfo.TryGetValue("IPAdapter", out JToken ipadapter) && (ipadapter["input"]["required"] as JObject).TryGetValue("model_name", out JToken ipAdapterModelName))
-        {
-            T2IParamTypes.ConcatDropdownValsClean(ref candidate.IPAdapterModels, ipAdapterModelName[0].Select(m => $"{m}"));
-        }
-        if (TryGetRequiredInputs(rawObjectInfo, "IPAdapterModelLoader", "ipadapter_file", out JToken ipadapterCubiq))
-        {
-            HashSet<string> native = ["ip-adapter-faceid-portrait-v11_sd15.bin", "ip-adapter-faceid-portrait_sdxl.bin", "ip-adapter-faceid-portrait_sdxl_unnorm.bin", "ip-adapter-faceid-plusv2_sd15.bin", "ip-adapter-faceid-plusv2_sdxl.bin", "ip-adapter-faceid-plus_sd15.bin", "ip-adapter-faceid_sd15.bin", "ip-adapter-faceid_sdxl.bin", "full_face_sd15.safetensors", "ip-adapter-plus-face_sd15.safetensors", "ip-adapter-plus-face_sdxl_vit-h.safetensors", "ip-adapter-plus_sd15.safetensors", "ip-adapter-plus_sdxl_vit-h.safetensors", "ip-adapter_sd15_vit-G.safetensors", "ip-adapter_sdxl.safetensors", "ip-adapter_sd15.safetensors", "ip-adapter_sdxl_vit-h.safetensors", "sd15_light_v11.bin"];
-            string[] models = [.. ipadapterCubiq.Select(m => $"{m}").Where(m => !native.Contains(m))];
-            T2IParamTypes.ConcatDropdownValsClean(ref candidate.IPAdapterModels, models.Select(m => $"file:{m}///Model File: {m}"));
-        }
-        if (rawObjectInfo.TryGetValue("IPAdapter", out JToken ipadapter2) && (ipadapter2["input"]["required"] as JObject).TryGetValue("weight_type", out JToken ipAdapterWeightType))
-        {
-            T2IParamTypes.ConcatDropdownValsClean(ref candidate.IPAdapterWeightTypes, ipAdapterWeightType[0].Select(m => $"{m}///{m} (New)"));
-        }
-        if (TryGetRequiredInputs(rawObjectInfo, "IPAdapterUnifiedLoaderFaceID", "preset", out JToken ipadapterCubiqUnifiedFace))
-        {
-            T2IParamTypes.ConcatDropdownValsClean(ref candidate.IPAdapterModels, ipadapterCubiqUnifiedFace.Select(m => $"{m}"));
-        }
-        if (TryGetRequiredInputs(rawObjectInfo, "GLIGENLoader", "gligen_name", out JToken gligenLoader))
-        {
-            T2IParamTypes.ConcatDropdownValsClean(ref candidate.GligenModels, gligenLoader.Select(m => $"{m}"));
-        }
-        if (TryGetRequiredInputs(rawObjectInfo, "StyleModelLoader", "style_model_name", out JToken styleModelLoader))
-        {
-            T2IParamTypes.ConcatDropdownValsClean(ref candidate.StyleModels, styleModelLoader.Select(m => $"{m}"));
-        }
-        if (TryGetRequiredInputs(rawObjectInfo, ComfyNodeNames.YoloDetection, ComfyNodeInputNames.YoloDetection.ModelName, out JToken yoloDetection))
-        {
-            T2IParamTypes.ConcatDropdownValsClean(ref candidate.YoloModels, yoloDetection.Select(m => $"{m}"));
-        }
-        if (TryGetRequiredInputs(rawObjectInfo, "SetUnionControlNetType", "type", out JToken unionCtrlNet))
-        {
-            T2IParamTypes.ConcatDropdownValsClean(ref candidate.ControlnetUnionTypes, unionCtrlNet.Select(m => $"{m}///{m} (New)"));
-        }
-        if (TryGetRequiredInputs(rawObjectInfo, "OverrideCLIPDevice", "device", out JToken overrideClipDevice))
-        {
-            T2IParamTypes.ConcatDropdownValsClean(ref candidate.SetClipDevices, overrideClipDevice.Select(m => $"{m}"));
-        }
-        foreach ((string key, JToken data) in rawObjectInfo)
-        {
-            if (data["category"].ToString() == "image/preprocessors")
-            {
-                candidate.ControlNetPreprocessors[key] = data;
-            }
-            else if (key.EndsWith("Preprocessor") && key != "MeshGraphormer+ImpactDetector-DepthMapPreprocessor")
-            {
-                candidate.ControlNetPreprocessors[key] = data;
-            }
-        }
+        T2IParamTypes.ConcatDropdownValsClean(ref candidate.Schedulers, delta.SwarmKSamplerSchedulers);
+        T2IParamTypes.ConcatDropdownValsClean(ref candidate.Samplers, delta.KSamplerSamplers);
+        T2IParamTypes.ConcatDropdownValsClean(ref candidate.Schedulers, delta.KSamplerSchedulers);
+        T2IParamTypes.ConcatDropdownValsClean(ref candidate.IPAdapterModels, delta.IPAdapterModels);
+        T2IParamTypes.ConcatDropdownValsClean(ref candidate.IPAdapterModels, delta.IPAdapterFileModels);
+        T2IParamTypes.ConcatDropdownValsClean(ref candidate.IPAdapterWeightTypes, delta.IPAdapterWeightTypes);
+        T2IParamTypes.ConcatDropdownValsClean(ref candidate.IPAdapterModels, delta.IPAdapterFaceModels);
+        T2IParamTypes.ConcatDropdownValsClean(ref candidate.GligenModels, delta.GligenModels);
+        T2IParamTypes.ConcatDropdownValsClean(ref candidate.StyleModels, delta.StyleModels);
+        T2IParamTypes.ConcatDropdownValsClean(ref candidate.YoloModels, delta.YoloModels);
+        T2IParamTypes.ConcatDropdownValsClean(ref candidate.ControlnetUnionTypes, delta.ControlnetUnionTypes);
+        T2IParamTypes.ConcatDropdownValsClean(ref candidate.SetClipDevices, delta.SetClipDevices);
         return candidate;
     }
 
@@ -541,7 +625,6 @@ public class ComfyUIBackendExtension : Extension
         StyleModels = candidate.StyleModels;
         ControlnetUnionTypes = candidate.ControlnetUnionTypes;
         SetClipDevices = candidate.SetClipDevices;
-        ControlNetPreprocessors.Clear();
         foreach ((string key, JToken data) in candidate.ControlNetPreprocessors)
         {
             ControlNetPreprocessors[key] = data;
@@ -569,13 +652,14 @@ public class ComfyUIBackendExtension : Extension
     /// <param name="rawObjectInfo">The raw ComfyUI object-info response to parse.</param>
     public static void AssignValuesFromRaw(JObject rawObjectInfo)
     {
-        SharedValueCandidate sharedCandidate = BuildSharedValueCandidate(rawObjectInfo);
+        SharedValueDelta sharedDelta = BuildSharedValueDelta(rawObjectInfo);
         FrozenSet<string> rawNodeTypes = rawObjectInfo.Properties().Select(property => property.Name).ToFrozenSet();
         lock (ValueAssignmentLocker)
         {
             HashSet<string> accumulatedNodeTypes = [.. LegacyObjectInfoNodeTypes];
             accumulatedNodeTypes.UnionWith(rawNodeTypes);
             FrozenSet<string> frozenAccumulatedNodeTypes = accumulatedNodeTypes.ToFrozenSet();
+            SharedValueCandidate sharedCandidate = MergeSharedValueDelta(sharedDelta);
             ComfyCapabilityRegistry.RegistryCandidate capabilityCandidate = ComfyCapabilityRegistry.PreparePublish(LegacyObjectInfoOwner, frozenAccumulatedNodeTypes, "/");
             PublishSharedValues(sharedCandidate);
             ComfyCapabilityRegistry.Commit(capabilityCandidate);
@@ -594,10 +678,11 @@ public class ComfyUIBackendExtension : Extension
     /// <returns>The final immutable capability snapshot published for the owner.</returns>
     public static ComfyBackendCapabilitySnapshot AssignValuesFromRaw(object owner, JObject rawObjectInfo, IReadOnlySet<string> nodeTypes, string modelFolderFormat)
     {
-        SharedValueCandidate sharedCandidate = BuildSharedValueCandidate(rawObjectInfo);
+        SharedValueDelta sharedDelta = BuildSharedValueDelta(rawObjectInfo);
         FrozenSet<string> frozenNodeTypes = nodeTypes.ToFrozenSet();
         lock (ValueAssignmentLocker)
         {
+            SharedValueCandidate sharedCandidate = MergeSharedValueDelta(sharedDelta);
             ComfyCapabilityRegistry.RegistryCandidate capabilityCandidate = ComfyCapabilityRegistry.PreparePublish(owner, frozenNodeTypes, modelFolderFormat);
             PublishSharedValues(sharedCandidate);
             ComfyCapabilityRegistry.Commit(capabilityCandidate);
