@@ -1,6 +1,6 @@
 # Runtime Model Catalog Refresh Boundary Design
 
-**Status:** Implemented; awaiting maintainer validation
+**Status:** Implemented and maintainer-validated
 
 **Date:** 2026-07-24
 
@@ -343,68 +343,22 @@ The whole-project static conformance review ran these commands and recorded thes
 
 Static review also confirmed unchanged public ABI surfaces, destination and metadata behavior, destination-aware workflow-cache validation, and explicit read/I/O/write/verification phase separation.
 
-No agent ran a build, launcher, automated test, GPU operation, live concurrency exercise, or performance benchmark. No runtime benefit is claimed. The complete baseline, normal transition, concurrent-reader, download/refresh deadlock, failure/repetition, restart, event, and compatibility matrix below remains pending maintainer validation.
+No agent ran a build, launcher, automated test, GPU operation, live concurrency exercise, or performance benchmark. No performance benefit is claimed. The maintainer validation record below is limited to the cases and platform scope Reaper176 confirmed.
 
 ## Maintainer Validation
 
-The maintainer will validate the implementation in the live application.
+On 2026-07-24, maintainer Reaper176 confirmed the following live matrix on the current Linux environment:
 
-### Baseline
+1. Normal build and launch, parameter listing, model browsing, and generation.
+2. Idle model-root editing and restoration.
+3. Overlapping path edits with parameter listing, browsing, conversion, metadata operations, Comfy workflow creation, remote serialization, and user-triggered refresh.
+4. Generic and known-model downloads, LoRA extraction, TensorRT completion, and missing VAE/Clip download helpers.
+5. Enabled Comfy self-start path reload.
+6. Unavailable or unreadable path warning behavior.
+7. Repeated edits and refreshes, shutdown, restart, and persisted/runtime agreement.
+8. Unchanged payloads, category keys, visibility rules, download destinations, metadata behavior, built-in behavior, and applicable external-extension behavior.
 
-- Build and launch normally.
-- List parameters and every model category.
-- Browse models and complete a representative generation.
-- Confirm existing category names, visibility filtering, payloads, and model paths.
-
-### Normal path transition
-
-- Change model roots while the server is idle.
-- Confirm the settings request completes synchronously.
-- Confirm all seven categories describe the new roots.
-- Restore the original roots and confirm the original catalog returns.
-- Confirm enabled Comfy self-start backends receive the existing path-change reload.
-
-### Concurrent readers
-
-Overlap a model-root edit with:
-
-- parameter listing;
-- model browsing and special model viewing;
-- generation request conversion;
-- model metadata read/edit operations;
-- Comfy workflow construction;
-- remote-backend model serialization; and
-- a user-triggered full refresh.
-
-Each operation must either complete against the prior catalog or resume against the complete replacement catalog. No operation may report a missing built-in category, throw because the outer dictionary is empty/partial, or continue using a shut-down handler resolved outside a claim.
-
-### Download and refresh deadlock checks
-
-Exercise:
-
-- generic model download;
-- known-model auto-download;
-- LoRA extraction;
-- TensorRT completion and refresh; and
-- any workflow path that downloads a missing VAE or Clip model.
-
-Confirm progress remains live, refresh completes, verification sees the new model, and a concurrent path edit does not deadlock.
-
-### Failure and repetition
-
-- Use an unavailable or unreadable model location that reaches maintained validation/refresh behavior.
-- Confirm warning behavior is bounded and the outer dictionary remains structurally complete.
-- Repeat path edits and full refreshes.
-- Shut down after an edit or refresh.
-- Restart and confirm final persisted paths and model lists agree.
-
-### Compatibility
-
-- Confirm unchanged API request and response schemas.
-- Confirm unchanged category keys and model visibility rules.
-- Confirm unchanged download destinations and metadata behavior.
-- Confirm built-in extension model lists and Comfy workflows still resolve.
-- Exercise any installed external extension known to enumerate `T2IModelSets` under the public coordination contract.
+This confirmation is Linux-only. Windows runtime behavior was not confirmed. No agent performed the live checks, no performance benchmark was run, and no performance improvement is claimed.
 
 ## Success Criteria
 
