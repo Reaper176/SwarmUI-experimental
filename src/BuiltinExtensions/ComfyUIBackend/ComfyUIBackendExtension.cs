@@ -527,30 +527,20 @@ public class ComfyUIBackendExtension : Extension
         return candidate;
     }
 
-    /// <summary>Publishes a fully built shared-value candidate while preserving public collection identities.</summary>
+    /// <summary>Publishes a fully built shared-value candidate.</summary>
     /// <param name="candidate">The candidate values to publish.</param>
     private static void PublishSharedValues(SharedValueCandidate candidate)
     {
-        UpscalerModels.Clear();
-        UpscalerModels.AddRange(candidate.UpscalerModels);
-        Samplers.Clear();
-        Samplers.AddRange(candidate.Samplers);
-        Schedulers.Clear();
-        Schedulers.AddRange(candidate.Schedulers);
-        IPAdapterModels.Clear();
-        IPAdapterModels.AddRange(candidate.IPAdapterModels);
-        IPAdapterWeightTypes.Clear();
-        IPAdapterWeightTypes.AddRange(candidate.IPAdapterWeightTypes);
-        GligenModels.Clear();
-        GligenModels.AddRange(candidate.GligenModels);
-        YoloModels.Clear();
-        YoloModels.AddRange(candidate.YoloModels);
-        StyleModels.Clear();
-        StyleModels.AddRange(candidate.StyleModels);
-        ControlnetUnionTypes.Clear();
-        ControlnetUnionTypes.AddRange(candidate.ControlnetUnionTypes);
-        SetClipDevices.Clear();
-        SetClipDevices.AddRange(candidate.SetClipDevices);
+        UpscalerModels = candidate.UpscalerModels;
+        Samplers = candidate.Samplers;
+        Schedulers = candidate.Schedulers;
+        IPAdapterModels = candidate.IPAdapterModels;
+        IPAdapterWeightTypes = candidate.IPAdapterWeightTypes;
+        GligenModels = candidate.GligenModels;
+        YoloModels = candidate.YoloModels;
+        StyleModels = candidate.StyleModels;
+        ControlnetUnionTypes = candidate.ControlnetUnionTypes;
+        SetClipDevices = candidate.SetClipDevices;
         ControlNetPreprocessors.Clear();
         foreach ((string key, JToken data) in candidate.ControlNetPreprocessors)
         {
