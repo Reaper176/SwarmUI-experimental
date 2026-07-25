@@ -1,5 +1,6 @@
 using System;
 using FreneticUtilities.FreneticExtensions;
+using FreneticUtilities.FreneticToolkit;
 using Newtonsoft.Json.Linq;
 using SwarmUI.Core;
 using SwarmUI.Media;
@@ -91,10 +92,12 @@ public class WorkflowGeneratorSteps
                 }
                 if (!string.IsNullOrWhiteSpace(vaeName) && vaeName.ToLowerFast() != "none")
                 {
-                    string match = T2IParamTypes.GetBestModelInList(vaeName, Program.T2IModelSets["VAE"].ListModelNamesFor(g.UserInput.SourceSession));
+                    using ManyReadOneWriteLock.ReadClaim claim = Program.RefreshLock.LockRead();
+                    T2IModelHandler vaeHandler = Program.T2IModelSets["VAE"];
+                    string match = T2IParamTypes.GetBestModelInList(vaeName, vaeHandler.ListModelNamesFor(g.UserInput.SourceSession));
                     if (match is not null)
                     {
-                        T2IModel vaeModel = Program.T2IModelSets["VAE"].Models[match];
+                        T2IModel vaeModel = vaeHandler.Models[match];
                         g.LoadingVAE = g.CreateVAELoader(vaeModel.ToString(g.ModelFolderFormat), g.HasNode("11") ? null : "11");
                     }
                 }

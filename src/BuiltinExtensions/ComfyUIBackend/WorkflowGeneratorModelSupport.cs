@@ -8,6 +8,7 @@ using SwarmUI.Text2Image;
 using SwarmUI.Utils;
 using Newtonsoft.Json.Linq;
 using FreneticUtilities.FreneticExtensions;
+using FreneticUtilities.FreneticToolkit;
 
 namespace SwarmUI.Builtin_ComfyUIBackend;
 
@@ -500,26 +501,38 @@ public partial class WorkflowGenerator
             {
                 vaeFile = null;
             }
-            if (string.IsNullOrWhiteSpace(vaeFile) && knownFile is not null && Program.T2IModelSets["VAE"].Models.ContainsKey(knownFile.FileName))
-            {
-                vaeFile = knownFile.FileName;
-            }
+            bool downloadRequired = false;
             if (string.IsNullOrWhiteSpace(vaeFile))
             {
-                vaeModel = compatClass is null ? null : Program.T2IModelSets["VAE"].Models.Values.FirstOrDefault(m => m.ModelClass?.CompatClass?.ID == compatClass);
-                if (vaeModel is not null)
+                using (ManyReadOneWriteLock.ReadClaim claim = Program.RefreshLock.LockRead())
                 {
-                    Logs.Debug($"Auto-selected first available VAE of compat class '{compatClass}', VAE '{vaeModel.Name}' will be applied");
-                    vaeFile = vaeModel.Name;
+                    T2IModelHandler vaeHandler = Program.T2IModelSets["VAE"];
+                    if (knownFile is not null && vaeHandler.Models.ContainsKey(knownFile.FileName))
+                    {
+                        vaeFile = knownFile.FileName;
+                    }
+                    if (string.IsNullOrWhiteSpace(vaeFile))
+                    {
+                        vaeModel = compatClass is null ? null : vaeHandler.Models.Values.FirstOrDefault(m => m.ModelClass?.CompatClass?.ID == compatClass);
+                        if (vaeModel is not null)
+                        {
+                            Logs.Debug($"Auto-selected first available VAE of compat class '{compatClass}', VAE '{vaeModel.Name}' will be applied");
+                            vaeFile = vaeModel.Name;
+                        }
+                    }
+                    if (string.IsNullOrWhiteSpace(vaeFile))
+                    {
+                        if (knownFile is null)
+                        {
+                            throw new SwarmUserErrorException("No default VAE for this model found, please download its VAE and set it as default in User Settings");
+                        }
+                        vaeFile = knownFile.FileName;
+                        downloadRequired = true;
+                    }
                 }
             }
-            if (string.IsNullOrWhiteSpace(vaeFile))
+            if (downloadRequired)
             {
-                if (knownFile is null)
-                {
-                    throw new SwarmUserErrorException("No default VAE for this model found, please download its VAE and set it as default in User Settings");
-                }
-                vaeFile = knownFile.FileName;
                 knownFile.DownloadNow().Wait();
                 Program.RefreshAllModelSets();
             }
@@ -539,7 +552,12 @@ public partial class WorkflowGenerator
         {
             CommonModels.ModelInfo knownFile = CommonModels.Known[knownName];
             string vaeFile = knownFile.FileName;
-            if (!Program.T2IModelSets["VAE"].Models.ContainsKey(vaeFile))
+            bool downloadRequired;
+            using (ManyReadOneWriteLock.ReadClaim claim = Program.RefreshLock.LockRead())
+            {
+                downloadRequired = !Program.T2IModelSets["VAE"].Models.ContainsKey(vaeFile);
+            }
+            if (downloadRequired)
             {
                 knownFile.DownloadNow().Wait();
                 Program.RefreshAllModelSets();
@@ -561,12 +579,17 @@ public partial class WorkflowGenerator
             {
                 return name;
             }
-            if (Program.T2IModelSets["Clip"].Models.ContainsKey(name))
+            string filePath;
+            using (ManyReadOneWriteLock.ReadClaim claim = Program.RefreshLock.LockRead())
             {
-                ClipModelsValid.TryAdd(name, name);
-                return name;
+                T2IModelHandler clipHandler = Program.T2IModelSets["Clip"];
+                if (clipHandler.Models.ContainsKey(name))
+                {
+                    ClipModelsValid.TryAdd(name, name);
+                    return name;
+                }
+                filePath = $"{clipHandler.DownloadFolderPath}/{name}";
             }
-            string filePath = $"{Program.T2IModelSets["Clip"].DownloadFolderPath}/{name}";
             g.DownloadModel(name, filePath, url, hash);
             ClipModelsValid.TryAdd(name, name);
             return name;
@@ -657,9 +680,12 @@ public partial class WorkflowGenerator
             {
                 return model.Name;
             }
-            if (Program.T2IModelSets["Clip"].Models.ContainsKey("clip_l_sdxl_base.safetensors"))
+            using (ManyReadOneWriteLock.ReadClaim claim = Program.RefreshLock.LockRead())
             {
-                return "clip_l_sdxl_base.safetensors";
+                if (Program.T2IModelSets["Clip"].Models.ContainsKey("clip_l_sdxl_base.safetensors"))
+                {
+                    return "clip_l_sdxl_base.safetensors";
+                }
             }
             return RequireClipModel("clip_l.safetensors", "https://huggingface.co/stabilityai/stable-diffusion-xl-base-1.0/resolve/main/text_encoder/model.fp16.safetensors", "660c6f5b1abae9dc498ac2d21e1347d2abdb0cf6c0c0c8576cd796491d9a6cdd", T2IParamTypes.ClipLModel);
         }
@@ -670,9 +696,12 @@ public partial class WorkflowGenerator
             {
                 return model.Name;
             }
-            if (Program.T2IModelSets["Clip"].Models.ContainsKey("clip_g_sdxl_base.safetensors"))
+            using (ManyReadOneWriteLock.ReadClaim claim = Program.RefreshLock.LockRead())
             {
-                return "clip_g_sdxl_base.safetensors";
+                if (Program.T2IModelSets["Clip"].Models.ContainsKey("clip_g_sdxl_base.safetensors"))
+                {
+                    return "clip_g_sdxl_base.safetensors";
+                }
             }
             return RequireClipModel("clip_g.safetensors", "https://huggingface.co/stabilityai/stable-diffusion-xl-base-1.0/resolve/main/text_encoder_2/model.fp16.safetensors", "ec310df2af79c318e24d20511b601a591ca8cd4f1fce1d8dff822a356bcdb1f4", T2IParamTypes.ClipGModel);
         }
@@ -812,7 +841,13 @@ public partial class WorkflowGenerator
         }
         IsDifferentialDiffusion = false;
         LoadingModelType = type;
-        if (!noCascadeFix && model.ModelClass?.ID == "stable-cascade-v1-stage-b" && model.Name.Contains("stage_b") && Program.MainSDModels.Models.TryGetValue(model.Name.Replace("stage_b", "stage_c"), out T2IModel altCascadeModel))
+        T2IModel altCascadeModel = null;
+        if (!noCascadeFix && model.ModelClass?.ID == "stable-cascade-v1-stage-b" && model.Name.Contains("stage_b"))
+        {
+            using ManyReadOneWriteLock.ReadClaim claim = Program.RefreshLock.LockRead();
+            Program.MainSDModels.Models.TryGetValue(model.Name.Replace("stage_b", "stage_c"), out altCascadeModel);
+        }
+        if (altCascadeModel is not null)
         {
             model = altCascadeModel;
         }
@@ -836,7 +871,11 @@ public partial class WorkflowGenerator
             }, id, false);
             LoadingModel = [trtloader, 0];
             // TODO: This is a hack
-            T2IModel[] sameArch = [.. Program.MainSDModels.Models.Values.Where(m => m.ModelClass?.ID == baseArch)];
+            T2IModel[] sameArch;
+            using (ManyReadOneWriteLock.ReadClaim claim = Program.RefreshLock.LockRead())
+            {
+                sameArch = [.. Program.MainSDModels.Models.Values.Where(m => m.ModelClass?.ID == baseArch)];
+            }
             if (sameArch.Length == 0)
             {
                 throw new SwarmUserErrorException($"No models found with architecture {baseArch}, cannot load CLIP/VAE for this Arch");

@@ -540,11 +540,18 @@ public class ComfyUIBackendExtension : Extension
         Schedulers = ["normal///Normal", "karras///Karras", "exponential///Exponential", "simple///Simple", "ddim_uniform///DDIM Uniform", "sgm_uniform///SGM Uniform", "turbo///Turbo (for turbo models, max 10 steps)", "align_your_steps///Align Your Steps (Model-specific behavior)", "beta///Beta", "linear_quadratic///Linear Quadratic (Mochi)", "ltxv///LTX-Video", "ltxv-image///LTXV-Image", "kl_optimal///KL Optimal (Nvidia AYS)", "flux2///Flux.2", "ideogram4///Ideogram 4 Default", "ideogram4turbo///Ideogram4 Turbo"];
 
     /// <summary>Lists PiD decoder models.</summary>
-    public static List<string> PidUpscaleModels(Session session) => [.. Program.MainSDModels.ListModelsFor(session).Where(m => m.ModelClass?.CompatClass?.ID == "pid").OrderBy(m => m.Name).Select(m => $"pidmodel-{m.Name}///PiD Model: {m.Name}")];
+    public static List<string> PidUpscaleModels(Session session)
+    {
+        return [.. Program.MainSDModels.ListModelsFor(session)
+            .Where(m => m.ModelClass?.CompatClass?.ID == "pid")
+            .OrderBy(m => m.Name)
+            .Select(m => $"pidmodel-{m.Name}///PiD Model: {m.Name}")];
+    }
 
     /// <summary>Resolves a PiD model from a model name.</summary>
     public static T2IModel GetPidModel(string name, Session session)
     {
+        using ManyReadOneWriteLock.ReadClaim claim = Program.RefreshLock.LockRead();
         string matched = T2IParamTypes.GetBestModelInList(name, Program.MainSDModels.ListModelNamesFor(session));
         if (matched is not null && matched.EndsWith(".safetensors"))
         {

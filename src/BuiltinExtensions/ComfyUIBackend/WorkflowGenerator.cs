@@ -506,6 +506,7 @@ public partial class WorkflowGenerator
         {
             return clip;
         }
+        using ManyReadOneWriteLock.ReadClaim claim = Program.RefreshLock.LockRead();
         T2IModelHandler loraHandler = Program.T2IModelSets["LoRA"];
         JArray last = null;
         for (int i = 0; i < loras.Count; i++)
@@ -596,6 +597,7 @@ public partial class WorkflowGenerator
         {
             return (model, clip);
         }
+        using ManyReadOneWriteLock.ReadClaim claim = Program.RefreshLock.LockRead();
         T2IModelHandler loraHandler = Program.T2IModelSets["LoRA"];
         for (int i = 0; i < loras.Count; i++)
         {
@@ -1251,7 +1253,13 @@ public partial class WorkflowGenerator
         }
         bool willCascadeFix = false;
         WGNodeData cascadeModel = null;
-        if (!rawSampler && IsCascade() && FinalLoadedModel.Name.Contains("stage_c") && Program.MainSDModels.Models.TryGetValue(FinalLoadedModel.Name.Replace("stage_c", "stage_b"), out T2IModel bModel))
+        T2IModel bModel = null;
+        if (!rawSampler && IsCascade() && FinalLoadedModel.Name.Contains("stage_c"))
+        {
+            using ManyReadOneWriteLock.ReadClaim claim = Program.RefreshLock.LockRead();
+            Program.MainSDModels.Models.TryGetValue(FinalLoadedModel.Name.Replace("stage_c", "stage_b"), out bModel);
+        }
+        if (bModel is not null)
         {
             (_, cascadeModel, _, CurrentVae) = CreateModelLoader(bModel, LoadingModelType, null, true, sectionId: sectionId);
             willCascadeFix = true;
@@ -2287,6 +2295,7 @@ public partial class WorkflowGenerator
                     string svdVae = g.UserInput.SourceSession?.User?.Settings?.VAEs?.DefaultSVDVAE;
                     if (string.IsNullOrWhiteSpace(svdVae))
                     {
+                        using ManyReadOneWriteLock.ReadClaim claim = Program.RefreshLock.LockRead();
                         svdVae = Program.T2IModelSets["VAE"].Models.Keys.FirstOrDefault(m => m.ToLowerFast().Contains("sdxl"));
                     }
                     if (string.IsNullOrWhiteSpace(svdVae))
