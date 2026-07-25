@@ -157,7 +157,7 @@ Static review used:
 - fixed-range diff/log inspection, distinguishing the two production commits from the four documentation commits after `23c77542`; and
 - targeted `rg`/source inspection of send/status/stream/open ordering, linked-token phases, retries, progress, verification, cleanup, and caller behavior.
 
-Protected maintainer changes and the protected backup reported by repository status were excluded and not inspected or modified. No agent ran a build, test, launcher, download, network request, fault injection, cancellation exercise, or benchmark. Runtime behavior, performance, and platform-specific behavior remain unvalidated.
+Protected maintainer changes and the protected backup reported by repository status were excluded and not inspected or modified. No agent ran a build, test, launcher, download, network request, fault injection, cancellation exercise, or benchmark, so this static implementation-record stage makes no agent runtime claim. Performance and Windows runtime behavior remain unvalidated.
 
 ## Maintainer Validation
 
