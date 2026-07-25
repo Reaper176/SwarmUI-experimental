@@ -36,13 +36,13 @@ public partial class WorkflowGenerator
     /// <summary>Supported Features of the comfy backend.</summary>
     public HashSet<string> Features = [];
 
-    /// <summary>Helper tracker for CLIP Models that are loaded (to skip a datadrive read from being reused every time).</summary>
+    /// <summary>CLIP model names mapped to the destination paths at which they were validated or downloaded.</summary>
     public static ConcurrentDictionary<string, string> ClipModelsValid = [];
 
-    /// <summary>Helper tracker for Vision Models that are loaded (to skip a datadrive read from being reused every time).</summary>
+    /// <summary>Vision model names mapped to the destination paths at which they were downloaded.</summary>
     public static ConcurrentDictionary<string, string> VisionModelsValid = [];
 
-    /// <summary>Helper tracker for IP Adapter Models that are loaded (to skip a datadrive read from being reused every time).</summary>
+    /// <summary>IP-Adapter model cache keys mapped to the destination paths at which they were downloaded.</summary>
     public static ConcurrentDictionary<string, string> IPAdapterModelsValid = [];
 
     /// <summary>Register a new step to the workflow generator.</summary>
@@ -1682,13 +1682,13 @@ public partial class WorkflowGenerator
         {
             return visModel.Name;
         }
-        if (VisionModelsValid.ContainsKey(name))
+        string filePath = Utilities.CombinePathWithAbsolute(Program.ServerSettings.Paths.ActualModelRoot, Program.ServerSettings.Paths.SDClipVisionFolder.Split(';')[0], name);
+        if (VisionModelsValid.TryGetValue(name, out string cachedPath) && cachedPath == filePath)
         {
             return name;
         }
-        string filePath = Utilities.CombinePathWithAbsolute(Program.ServerSettings.Paths.ActualModelRoot, Program.ServerSettings.Paths.SDClipVisionFolder.Split(';')[0], name);
         DownloadModel(name, filePath, url, hash);
-        VisionModelsValid.TryAdd(name, name);
+        VisionModelsValid[name] = filePath;
         return name;
     }
 

@@ -1071,20 +1071,28 @@ In `RequireClipModel`, read existing presence and copy `DownloadFolderPath` unde
 
 ```csharp
 string filePath;
+bool modelPresent;
 using (ManyReadOneWriteLock.ReadClaim claim = Program.RefreshLock.LockRead())
 {
     T2IModelHandler clipHandler = Program.T2IModelSets["Clip"];
-    if (clipHandler.Models.ContainsKey(name))
-    {
-        ClipModelsValid.TryAdd(name, name);
-        return name;
-    }
     filePath = $"{clipHandler.DownloadFolderPath}/{name}";
+    modelPresent = clipHandler.Models.ContainsKey(name);
+}
+if (ClipModelsValid.TryGetValue(name, out string cachedPath) && cachedPath == filePath)
+{
+    return name;
+}
+if (modelPresent)
+{
+    ClipModelsValid[name] = filePath;
+    return name;
 }
 g.DownloadModel(name, filePath, url, hash);
+ClipModelsValid[name] = filePath;
 ```
 
 Protect the Clip-L and Clip-G fallback existence checks with focused read claims. Do not hold claims across `g.DownloadModel`.
+Keep the Clip, Clip Vision, IP-Adapter, and IP-Adapter LoRA validity caches destination-aware: calculate the current complete destination before checking the cache, compare the stored path to that destination, and replace the stored path after presence validation or download. A name-only cache entry or `TryAdd` can retain a displaced path generation and must not be used.
 
 - [ ] **Step 6: Verify workflow lock phases**
 

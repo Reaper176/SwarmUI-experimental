@@ -786,23 +786,24 @@ public class WorkflowGeneratorSteps
                         bool isXl = g.CurrentCompatClass() == "stable-diffusion-xl-v1";
                         void requireIPAdapterModel(string name, string url, string hash)
                         {
-                            if (IPAdapterModelsValid.ContainsKey(name))
+                            string filePath = Utilities.CombinePathWithAbsolute(Program.ServerSettings.Paths.ActualModelRoot, $"ipadapter/{name}");
+                            if (IPAdapterModelsValid.TryGetValue(name, out string cachedPath) && cachedPath == filePath)
                             {
                                 return;
                             }
-                            string filePath = Utilities.CombinePathWithAbsolute(Program.ServerSettings.Paths.ActualModelRoot, $"ipadapter/{name}");
                             g.DownloadModel(name, filePath, url, hash);
-                            IPAdapterModelsValid.TryAdd(name, name);
+                            IPAdapterModelsValid[name] = filePath;
                         }
                         void requireLora(string name, string url, string hash)
                         {
-                            if (IPAdapterModelsValid.ContainsKey($"LORA-{name}"))
+                            string cacheKey = $"LORA-{name}";
+                            string filePath = Utilities.CombinePathWithAbsolute(Program.ServerSettings.Paths.ActualModelRoot, Program.ServerSettings.Paths.SDLoraFolder.Split(';')[0], $"ipadapter/{name}");
+                            if (IPAdapterModelsValid.TryGetValue(cacheKey, out string cachedPath) && cachedPath == filePath)
                             {
                                 return;
                             }
-                            string filePath = Utilities.CombinePathWithAbsolute(Program.ServerSettings.Paths.ActualModelRoot, Program.ServerSettings.Paths.SDLoraFolder.Split(';')[0], $"ipadapter/{name}");
                             g.DownloadModel(name, filePath, url, hash);
-                            IPAdapterModelsValid.TryAdd($"LORA-{name}", name);
+                            IPAdapterModelsValid[cacheKey] = filePath;
                         }
                         // IPAdapter model links @ https://github.com/cubiq/ComfyUI_IPAdapter_plus?tab=readme-ov-file#installation
                         // required model for any given type @ https://github.com/cubiq/ComfyUI_IPAdapter_plus/blob/main/utils.py#L29

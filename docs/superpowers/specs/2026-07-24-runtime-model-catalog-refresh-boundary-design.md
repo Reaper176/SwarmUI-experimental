@@ -226,6 +226,8 @@ They use explicit phases:
 
 No read claim may be live when the same flow requests the write claim. Workflow helpers that auto-download known VAE or Clip files must follow the same phase separation.
 
+Workflow download-validity caches are destination-aware: each cache entry stores the complete resolved destination path and is a hit only when that path equals the current destination. A late download from a displaced path generation may overwrite an entry with its old destination, but it cannot make that entry a false hit for the current path.
+
 ## Lock Ownership and Ordering
 
 The lock order is:

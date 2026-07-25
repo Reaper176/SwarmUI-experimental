@@ -575,23 +575,25 @@ public partial class WorkflowGenerator
             {
                 return model.Name;
             }
-            if (ClipModelsValid.ContainsKey(name))
-            {
-                return name;
-            }
             string filePath;
+            bool modelPresent;
             using (ManyReadOneWriteLock.ReadClaim claim = Program.RefreshLock.LockRead())
             {
                 T2IModelHandler clipHandler = Program.T2IModelSets["Clip"];
-                if (clipHandler.Models.ContainsKey(name))
-                {
-                    ClipModelsValid.TryAdd(name, name);
-                    return name;
-                }
                 filePath = $"{clipHandler.DownloadFolderPath}/{name}";
+                modelPresent = clipHandler.Models.ContainsKey(name);
+            }
+            if (ClipModelsValid.TryGetValue(name, out string cachedPath) && cachedPath == filePath)
+            {
+                return name;
+            }
+            if (modelPresent)
+            {
+                ClipModelsValid[name] = filePath;
+                return name;
             }
             g.DownloadModel(name, filePath, url, hash);
-            ClipModelsValid.TryAdd(name, name);
+            ClipModelsValid[name] = filePath;
             return name;
         }
 
