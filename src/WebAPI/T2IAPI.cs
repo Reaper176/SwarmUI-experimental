@@ -14,6 +14,7 @@ using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Net.WebSockets;
+using System.Runtime.ExceptionServices;
 using System.Runtime.InteropServices;
 using Image = SwarmUI.Utils.Image;
 using ISImage = SixLabors.ImageSharp.Image;
@@ -95,6 +96,8 @@ public static class T2IAPI
     {
         using CancellationTokenSource cancelTok = new();
         bool retain = false, ended = false, producerFailed = false;
+        bool helperTaskFailed = false;
+        ExceptionDispatchInfo helperTaskException = null;
         using CancellationTokenSource linked = CancellationTokenSource.CreateLinkedTokenSource(Program.GlobalProgramCancel, cancelTok.Token);
         SharedGenT2IData data = new();
         ConcurrentDictionary<Task<bool>, Task<bool>> tasks = [];
@@ -111,17 +114,18 @@ public static class T2IAPI
             try
             {
                 int batchOffset = images * guessBatchSize(rawInput);
-                while (!cancelTok.IsCancellationRequested && !Volatile.Read(ref producerFailed))
+                while (!cancelTok.IsCancellationRequested && !Volatile.Read(ref producerFailed) && !Volatile.Read(ref helperTaskFailed))
                 {
                     byte[] rec = await socket.ReceiveData(Program.ServerSettings.Network.MaxReceiveBytes, linked.Token);
                     Volatile.Write(ref retain, true);
-                    if (socket.State != WebSocketState.Open || cancelTok.IsCancellationRequested || Volatile.Read(ref ended) || Volatile.Read(ref producerFailed))
+                    if (socket.State != WebSocketState.Open || cancelTok.IsCancellationRequested || Volatile.Read(ref ended)
+                        || Volatile.Read(ref producerFailed) || Volatile.Read(ref helperTaskFailed))
                     {
                         return;
                     }
                     JObject newInput = SubmittedInputJson.ParseObject(StringConversionHelper.UTF8Encoding.GetString(rec));
                     int newImages = newInput.Value<int>("images");
-                    if (Volatile.Read(ref producerFailed))
+                    if (Volatile.Read(ref producerFailed) || Volatile.Read(ref helperTaskFailed))
                     {
                         return;
                     }
@@ -152,7 +156,16 @@ public static class T2IAPI
             {
                 if (!task.IsCompletedSuccessfully)
                 {
-                    await task;
+                    try
+                    {
+                        await task;
+                    }
+                    catch (Exception ex)
+                    {
+                        helperTaskException ??= ExceptionDispatchInfo.Capture(ex);
+                        Volatile.Write(ref helperTaskFailed, true);
+                        cancelTok.Cancel();
+                    }
                 }
                 else if (!task.Result)
                 {
@@ -161,7 +174,7 @@ public static class T2IAPI
                 }
                 tasks.TryRemove(task, out _);
             }
-            if (!Volatile.Read(ref producerFailed) && tasks.IsEmpty())
+            if (!Volatile.Read(ref producerFailed) && !Volatile.Read(ref helperTaskFailed) && tasks.IsEmpty())
             {
                 await socket.SendJson(new JObject() { ["socket_intention"] = "close" }, API.WebsocketTimeout);
                 await Task.Delay(TimeSpan.FromSeconds(2)); // Give 2 seconds to allow a new gen request before actually closing
@@ -170,6 +183,10 @@ public static class T2IAPI
                     Volatile.Write(ref ended, true);
                 }
             }
+        }
+        if (helperTaskException is not null)
+        {
+            helperTaskException.Throw();
         }
         if (!Volatile.Read(ref producerFailed))
         {
