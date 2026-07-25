@@ -761,7 +761,7 @@ public static class Utilities
                 request.Headers.Add(key, value);
             }
         }
-        using HttpResponseMessage response = await UtilWebClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, Program.GlobalProgramCancel);
+        using HttpResponseMessage response = await UtilWebClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, combinedCancel.Token);
         if (response.StatusCode != HttpStatusCode.OK)
         {
             throw new SwarmReadableErrorException($"Failed to download {altUrl}: got response code {(int)response.StatusCode} {response.StatusCode}");
@@ -769,7 +769,7 @@ public static class Utilities
         long length = response.Content.Headers.ContentLength ?? 0;
         ConcurrentQueue<byte[]> chunks = new();
         ConcurrentQueue<(long, long, long, bool)> progUpdates = new();
-        using Stream dlStream = await response.Content.ReadAsStreamAsync();
+        using Stream dlStream = await response.Content.ReadAsStreamAsync(combinedCancel.Token);
         using FileStream writer = new(filepath, FileMode.Create, FileAccess.Write, FileShare.None);
         Task loadData = Task.Run(async () =>
         {
@@ -849,12 +849,12 @@ public static class Utilities
                                 }
                             }
                             retryRequest.Headers.Range = new(totalRead, length);
-                            workingResponse = await UtilWebClient.SendAsync(retryRequest, HttpCompletionOption.ResponseHeadersRead, Program.GlobalProgramCancel);
+                            workingResponse = await UtilWebClient.SendAsync(retryRequest, HttpCompletionOption.ResponseHeadersRead, combinedCancel.Token);
                             if (workingResponse.StatusCode != HttpStatusCode.PartialContent)
                             {
                                 throw new SwarmReadableErrorException($"Failed to download {altUrl} (expecting Partial range continue): got response code {(int)workingResponse.StatusCode} {workingResponse.StatusCode}");
                             }
-                            workingStream = await workingResponse.Content.ReadAsStreamAsync();
+                            workingStream = await workingResponse.Content.ReadAsStreamAsync(combinedCancel.Token);
                             continue;
                         }
                         throw;
