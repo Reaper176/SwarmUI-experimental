@@ -91,7 +91,7 @@ After the initial response is accepted and the destination is opened:
 - detected incomplete, length-invalid, hash-invalid, or write-failed replacements are deleted; and
 - successful completion leaves exact bytes with no stale tail.
 
-Request, response, response-stream, file-stream, hashing, and linked-token lifetimes remain explicitly bounded. Caller-owned `CancellationTokenSource` instances are never disposed by the helper.
+Request, response, response-stream, file-stream, and linked-token lifetimes remain explicitly bounded. The SHA-256 instance retains its legacy undisposed lifetime, and this change makes no new hashing-lifetime guarantee. Caller-owned `CancellationTokenSource` instances are never disposed by the helper.
 
 ## Compatibility Requirements
 

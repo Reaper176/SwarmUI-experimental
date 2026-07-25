@@ -211,7 +211,7 @@ Do not change the range values, retry count, or response-status check.
 Confirm:
 
 - the method-scoped initial request is disposed at method exit after worker completion or exceptional unwind;
-- the initial response and stream remain alive through all three tasks;
+- the initial response and stream remain available to `loadData` until its `finally` disposes them; `saveChunks` and `sendUpdates` do not consume them, and the outer `using` declarations later repeat safe disposal;
 - `loadData` may dispose the active response/stream and the outer `using` declarations tolerate repeated disposal;
 - each retry request's block scope disposes it when that retry block exits;
 - retry responses/streams remain owned by `workingResponse`/`workingStream`;
