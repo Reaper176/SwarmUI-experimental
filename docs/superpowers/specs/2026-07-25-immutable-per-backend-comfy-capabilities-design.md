@@ -205,7 +205,7 @@ A remote status refresh and a remote object-info refresh are separate candidates
 11. Store the registry entry and republish the same-object global aggregate.
 12. Release the global lock, then release the backend refresh gate.
 
-No global capability lock spans HTTP, WebSocket, child-process, backend, model, or GPU work.
+Maintained core code performs no direct HTTP, WebSocket, child-process, backend, model, or GPU work while holding the global capability lock. The established public extension parser callbacks still run under `ValueAssignmentLocker`; extension-defined callback internals are outside maintained-core control and are not covered by this static guarantee.
 
 ### Linked remote backend
 
@@ -251,7 +251,7 @@ The lock order is:
 1. a per-backend or per-remote asynchronous discovery gate, when a refresh is in progress;
 2. `ValueAssignmentLocker` for short interpretation/publication work.
 
-No code acquires a backend lifecycle, scheduler, model refresh, request, WebSocket, process, or GPU claim while holding `ValueAssignmentLocker`.
+Maintained core code directly acquires no backend lifecycle, scheduler, model refresh, request, WebSocket, process, or GPU claim while holding `ValueAssignmentLocker`. Public extension parser callbacks remain lock-owned for compatibility, so arbitrary extension-defined callback behavior is outside the ordering guarantee established by maintained-source inspection.
 
 Snapshot readers do not acquire the per-backend discovery gate. They read the last fully published immutable reference.
 
@@ -307,7 +307,7 @@ Static verification must:
 12. prove first-load interpretation failure cannot publish a guessed snapshot;
 13. prove stale refresh completion cannot overwrite newer publication;
 14. prove reload/idle retain and deletion unregisters the correct owner;
-15. prove the global lock does not span independent I/O or backend work;
+15. prove maintained core directly performs no independent I/O or backend work under the global lock, while recording the public parser-callback exclusion;
 16. verify feature IDs, node mappings, folder flags, API schemas, parameter visibility, and remote forwarding remain unchanged;
 17. inspect the final changed-file and commit ranges so protected maintainer work is excluded; and
 18. run `git diff --check` over the implementation range.
@@ -359,7 +359,7 @@ Static review reran the Task 1 and Task 7 inventories; the lifecycle search; the
 - no `ComfyNodeTypes` consumer casts the linked frozen value to `HashSet<string>`;
 - only the three established declaration initializers assign `FeaturesSupported`, `FeaturesDiscardIfNotFound`, or `NodeToFeatureMap`;
 - the catalog has no process-wide feature-set reference, and its established node-to-feature mapping block is unchanged;
-- the 52 direct gate/lock/I/O trace matches show per-owner gates may enclose their own fetches, while `ValueAssignmentLocker` encloses only candidate merge, compatibility reconciliation, publication, and parser dispatch—no network, WebSocket, process, backend shutdown, model, or GPU work;
+- the 52 direct gate/lock/I/O trace matches show per-owner gates may enclose their own fetches, while maintained core performs no direct network, WebSocket, process, backend-shutdown, model, or GPU work under `ValueAssignmentLocker`; public parser dispatch remains under that lock, and arbitrary extension callback internals are outside the maintained-core static guarantee;
 - local and remote failed fetch/parse paths reach no publication, owner checks reject deleted backends, serialized refreshes prevent overlapping stale completion, and first local discovery failure returns through normal initialization error handling rather than publishing guessed evidence; and
 - deletion notifies isolated subscribers after `AllBackends.TryRemove`, while edit and reload retain the registered backend object.
 
