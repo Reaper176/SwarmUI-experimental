@@ -102,6 +102,7 @@ public class ComfyUIBackendExtension : Extension
             FeaturesSupported.UnionWith(["inpaintnodes"]);
             FeaturesDiscardIfNotFound.UnionWith(["inpaintnodes"]);
         }
+        ComfyCapabilityRegistry.Initialize();
         T2IParamTypes.ConcatDropdownValsClean(ref UpscalerModels, InternalListModelsFor("upscale_models", true).Select(u => $"model-{u}///Model: {u}"));
         T2IParamTypes.ConcatDropdownValsClean(ref UpscalerModels, InternalListModelsFor("latent_upscale_models", true).Select(u => $"latentmodel-{u}///Latent Model: {u}"));
         T2IParamTypes.ConcatDropdownValsClean(ref YoloModels, InternalListModelsFor("yolov8", false));
@@ -352,6 +353,7 @@ public class ComfyUIBackendExtension : Extension
         });
     }
 
+    /// <summary>Coordinates publication of shared values discovered from ComfyUI backends.</summary>
     public static LockObject ValueAssignmentLocker = new();
 
     /// <summary>Add handlers here to do additional parsing of RawObjectInfo data.</summary>
