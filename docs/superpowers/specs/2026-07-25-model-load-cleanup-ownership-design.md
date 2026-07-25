@@ -313,6 +313,24 @@ The production change preserves the cancellation-gated `Task.Factory.StartNew` p
 
 Task specification and code-quality review both passed. Source-only static review confirmed the exact one-file production range, lifecycle/continuation inputs, cleanup ordering, caller/selected-pressure coupling, unchanged public signatures, unchanged `Session.cs`, and clean fixed-range whitespace. In accordance with repository policy, agents performed no build, test, launch, model load, cancellation injection, runtime validation, platform validation, or performance measurement. Linux, Windows, other-platform, concurrency, backend, counter, and performance results remain pending maintainer validation.
 
+The implementation record used these source-only commands:
+
+```bash
+git log --oneline 42467376..25859d6e
+git diff --name-only 42467376..25859d6e
+git diff --stat 42467376..25859d6e
+git diff --check 42467376..25859d6e
+rg -n "Published|Started|PreStartCleanupOwned|StartedCleanupOwned|logCleanupFailure|attemptCleanup|GC\.SuppressFinalize|IsLoading =|ReserveModelLoad =|BackendFailReasons|BadBackends|sess\.Claim|claim\.Dispose|StartNew|ContinueWith|Wait\(cancel\)|GlobalProgramCancel" src/Backends/BackendHandler.cs
+git diff --name-only 42467376..25859d6e -- src/Accounts/Session.cs
+git diff --name-only 42467376..25859d6e -- src/wwwroot src/Pages
+git diff 42467376..25859d6e -- src/Backends/BackendHandler.cs | rg -n '^[+-].*(public|protected|internal)\b' || true
+git show --check --stat --oneline 25859d6e
+git show --format=fuller --no-ext-diff 25859d6e -- src/Backends/BackendHandler.cs
+git status --short
+```
+
+The range log returned only `25859d6e`; the name/stat checks returned only `src/Backends/BackendHandler.cs` with 148 insertions and 40 deletions; and the range whitespace check was silent. The lifecycle inventory located the four states, both nonthrowing helpers, captured-claim disposal and post-failure suppression, both cleanup transitions, publication, delegate-entry arbitration, the cancellation continuation, reservation/classification/reset/refresh operations, and the preserved global-shutdown and scheduling-caller load-wait token sites. The scoped `Session.cs`, browser/Razor, and changed public/protected/internal declaration searches were silent. The committed-source show displayed the reviewed one-file patch, `git show --check` reported no whitespace error, and status showed only the pre-existing protected working-tree files and excluded backup. These observations are static source evidence only and add no runtime result.
+
 ## Maintainer Validation Matrix
 
 The maintainer will build and run the live software. For every case, identify both the scheduling caller/token owner and the globally selected pressure. Record both pressure counts, selected `IsLoading`, selected session claims/counters, loader reservation, selected failure/retry inputs, caller refusal/`Failure` delivery, emitted cleanup-failure diagnostics or intentionally injected diagnostic failures, and later progress. Baseline-restoration expectations in ordinary cases assume cleanup primitives do not themselves throw; dedicated cleanup- and diagnostic-failure cases verify the bounded best-effort behavior.
