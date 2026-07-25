@@ -820,6 +820,7 @@ public static class T2IAPI
         """)]
     public static async Task<JObject> ListT2IParams(Session session)
     {
+        using ManyReadOneWriteLock.ReadClaim claim = Program.RefreshLock.LockRead();
         JObject modelData = [];
         foreach (T2IModelHandler handler in Program.T2IModelSets.Values)
         {

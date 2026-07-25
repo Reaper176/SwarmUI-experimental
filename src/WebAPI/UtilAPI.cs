@@ -1,4 +1,5 @@
 using FreneticUtilities.FreneticExtensions;
+using FreneticUtilities.FreneticToolkit;
 using Microsoft.AspNetCore.Http;
 using Newtonsoft.Json.Linq;
 using SwarmUI.Accounts;
@@ -253,11 +254,16 @@ public static class UtilAPI
         [API.APIParameter("What type of model to convert, eg `Stable-Diffusion`, `LoRA`, etc.")] string type,
         [API.APIParameter("If true, convert to fp16 while processing. If false, use original model's weight type.")] bool fp16)
     {
-        if (!Program.T2IModelSets.TryGetValue(type, out T2IModelHandler models))
+        string[] folderPaths;
+        using (ManyReadOneWriteLock.ReadClaim claim = Program.RefreshLock.LockRead())
         {
-            return new JObject() { ["error"] = $"Invalid type '{type}'." };
+            if (!Program.T2IModelSets.TryGetValue(type, out T2IModelHandler models))
+            {
+                return new JObject() { ["error"] = $"Invalid type '{type}'." };
+            }
+            folderPaths = [.. models.FolderPaths];
         }
-        foreach (string path in models.FolderPaths)
+        foreach (string path in folderPaths)
         {
             Process p = PythonLaunchHelper.LaunchGeneric("launchtools/pickle-to-safetensors.py", true, [path, fp16 ? "true" : "false"]);
             await p.WaitForExitAsync(Program.GlobalProgramCancel);
@@ -289,9 +295,12 @@ public static class UtilAPI
                     break;
                 }
             }
-            foreach (T2IModelHandler handler in Program.T2IModelSets.Values)
+            using (ManyReadOneWriteLock.ReadClaim claim = Program.RefreshLock.LockRead())
             {
-                handler.MassRemoveMetadata();
+                foreach (T2IModelHandler handler in Program.T2IModelSets.Values)
+                {
+                    handler.MassRemoveMetadata();
+                }
             }
         }
         finally

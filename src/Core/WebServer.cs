@@ -1,4 +1,5 @@
 using FreneticUtilities.FreneticExtensions;
+using FreneticUtilities.FreneticToolkit;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Html;
@@ -751,24 +752,31 @@ public class WebServer
                     return;
                 }
             }
-            if (Program.T2IModelSets.TryGetValue(subtype, out T2IModelHandler handler))
+            string previewImage = null;
+            using (ManyReadOneWriteLock.ReadClaim claim = Program.RefreshLock.LockRead())
             {
-                if (handler.Models.TryGetValue(name + ".safetensors", out T2IModel model) || handler.Models.TryGetValue(name, out model))
+                if (Program.T2IModelSets.TryGetValue(subtype, out T2IModelHandler handler))
                 {
-                    if (model.Metadata?.PreviewImage?.StartsWithFast("data:") ?? false)
+                    if (handler.Models.TryGetValue(name + ".safetensors", out T2IModel model) || handler.Models.TryGetValue(name, out model))
                     {
-                        await yieldResult(model.Metadata.PreviewImage);
-                        return;
+                        if (model.Metadata?.PreviewImage?.StartsWithFast("data:") ?? false)
+                        {
+                            previewImage = model.Metadata.PreviewImage;
+                        }
+                    }
+                    else if (ModelsAPI.InternalExtraModels(subtype).TryGetValue(name + ".safetensors", out JObject remoteModel) || ModelsAPI.InternalExtraModels(subtype).TryGetValue(name, out remoteModel))
+                    {
+                        if (remoteModel.TryGetValue("preview_image", out JToken previewImg) && previewImg.ToString().StartsWithFast("data:"))
+                        {
+                            previewImage = previewImg.ToString();
+                        }
                     }
                 }
-                else if (ModelsAPI.InternalExtraModels(subtype).TryGetValue(name + ".safetensors", out JObject remoteModel) || ModelsAPI.InternalExtraModels(subtype).TryGetValue(name, out remoteModel))
-                {
-                    if (remoteModel.TryGetValue("preview_image", out JToken previewImg) && previewImg.ToString().StartsWithFast("data:"))
-                    {
-                        await yieldResult(previewImg.ToString());
-                        return;
-                    }
-                }
+            }
+            if (previewImage is not null)
+            {
+                await yieldResult(previewImage);
+                return;
             }
             Logs.Verbose($"Not showing user '{user.UserID}' sub-type '{subtype}' model image '{name}': not found");
         }

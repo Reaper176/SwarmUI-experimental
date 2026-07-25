@@ -563,50 +563,47 @@ Use `modelPath` for the existing existence and OS process-launch behavior.
 
 - [ ] **Step 2: Split download lookup from long-running I/O**
 
-In `DoModelDownloadWS`, resolve and copy only the destination folder under a read claim:
+In `DoModelDownloadWS`, resolve and copy only the destination folder under a read claim. Track handler presence separately so a valid handler with a null download path is not reported as an invalid type:
 
 ```csharp
-string folder = null;
+string folder;
+bool found;
 using (ManyReadOneWriteLock.ReadClaim claim = Program.RefreshLock.LockRead())
 {
-    if (Program.T2IModelSets.TryGetValue(type, out T2IModelHandler handler))
-    {
-        folder = handler.DownloadFolderPath;
-    }
+    found = Program.T2IModelSets.TryGetValue(type, out T2IModelHandler handler);
+    folder = found ? handler.DownloadFolderPath : null;
 }
-if (folder is null)
+if (!found)
 {
     await ws.SendJson(new JObject() { ["error"] = "Invalid type." }, API.WebsocketTimeout);
     return null;
 }
 ```
 
-Do not retain `handler`. Keep URL processing, metadata writing, download progress, and WebSocket sends outside the claim. Refresh later through `Program.RefreshModelSet(type)`.
+Do not retain `handler`. Keep URL processing, metadata writing, download progress, and WebSocket sends outside the claim. Refresh later through `Program.RefreshModelSet(type)` with no read claim live. If `DownloaderAlwaysResave` applies, reacquire a read claim after refresh, resolve the currently published handler by `type`, resolve the downloaded model, and call `model.ResaveModel()` before releasing the claim. Do not use the stale pre-download handler.
 
-- [ ] **Step 3: Split hash lookup from file hashing**
+- [ ] **Step 3: Protect hash lookup and handler-dependent hashing**
 
-In `GetModelHash`, select the `T2IModel` under a read claim, release it, then run the existing hash calculation:
+In `GetModelHash`, select the `T2IModel` under a read claim and retain the claim through the existing hash calculation because hashing re-enters `model.Handler` and handler-owned metadata state:
 
 ```csharp
-T2IModel match = null;
-using (ManyReadOneWriteLock.ReadClaim claim = Program.RefreshLock.LockRead())
+using ManyReadOneWriteLock.ReadClaim claim = Program.RefreshLock.LockRead();
+if (!Program.T2IModelSets.TryGetValue(subtype, out T2IModelHandler handler))
 {
-    if (!Program.T2IModelSets.TryGetValue(subtype, out T2IModelHandler handler))
+    return new JObject() { ["error"] = "Invalid sub-type." };
+}
+T2IModel match = null;
+if (session.User.IsAllowedModel(modelName))
+{
+    if (handler.Models.TryGetValue(modelName + ".safetensors", out T2IModel model)
+        || handler.Models.TryGetValue(modelName, out model))
     {
-        return new JObject() { ["error"] = "Invalid sub-type." };
-    }
-    if (session.User.IsAllowedModel(modelName))
-    {
-        if (handler.Models.TryGetValue(modelName + ".safetensors", out T2IModel model)
-            || handler.Models.TryGetValue(modelName, out model))
-        {
-            match = model;
-        }
+        match = model;
     }
 }
 ```
 
-Keep the not-found response and `match.GetOrGenerateTensorHashSha256()` result unchanged.
+Keep the not-found response and `match.GetOrGenerateTensorHashSha256()` result unchanged, with the latter still inside the claim.
 
 - [ ] **Step 4: Protect complete parameter-list serialization**
 

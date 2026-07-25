@@ -114,6 +114,7 @@ public static class ModelsAPI
         [API.APIParameter("Full filepath name of the model being requested.")] string modelName,
         [API.APIParameter("What model sub-type to use, can be eg `LoRA` or `Wildcards` or etc.")] string subtype = "Stable-Diffusion")
     {
+        using ManyReadOneWriteLock.ReadClaim claim = Program.RefreshLock.LockRead();
         if (!Program.T2IModelSets.TryGetValue(subtype, out T2IModelHandler handler) && subtype != "Wildcards")
         {
             return new JObject() { ["error"] = "Invalid sub-type." };
@@ -126,7 +127,6 @@ public static class ModelsAPI
         modelName = modelName.TrimStart('/');
         if (session.User.IsAllowedModel(modelName))
         {
-            using ManyReadOneWriteLock.ReadClaim claim = Program.RefreshLock.LockRead();
             if (subtype == "Wildcards")
             {
                 WildcardsHelper.Wildcard card = WildcardsHelper.GetWildcard(modelName);
@@ -189,6 +189,7 @@ public static class ModelsAPI
         {
             return new JObject() { ["error"] = $"Invalid sort mode '{sortBy}'." };
         }
+        using ManyReadOneWriteLock.ReadClaim claim = Program.RefreshLock.LockRead();
         if (!Program.T2IModelSets.TryGetValue(subtype, out T2IModelHandler handler) && subtype != "Wildcards")
         {
             return new JObject() { ["error"] = "Invalid sub-type." };
@@ -227,7 +228,6 @@ public static class ModelsAPI
             return slashes < depth && dedup.Add(name);
         }
         int sanityCap = Program.ServerSettings.Performance.ModelListSanityCap;
-        using ManyReadOneWriteLock.ReadClaim claim = Program.RefreshLock.LockRead();
         if (subtype == "Wildcards")
         {
             foreach (string file in WildcardsHelper.ListFiles)
@@ -761,13 +761,19 @@ public static class ModelsAPI
             await ws.SendJson(refusal, API.WebsocketTimeout);
             return null;
         }
-        if (!Program.T2IModelSets.TryGetValue(type, out T2IModelHandler handler))
+        string folder;
+        bool found;
+        using (ManyReadOneWriteLock.ReadClaim claim = Program.RefreshLock.LockRead())
+        {
+            found = Program.T2IModelSets.TryGetValue(type, out T2IModelHandler handler);
+            folder = found ? handler.DownloadFolderPath : null;
+        }
+        if (!found)
         {
             await ws.SendJson(new JObject() { ["error"] = "Invalid type." }, API.WebsocketTimeout);
             return null;
         }
         string extension = "safetensors";
-        string folder = handler.DownloadFolderPath;
         if (url.EndsWith(".gguf"))
         {
             extension = "gguf";
@@ -866,7 +872,9 @@ public static class ModelsAPI
             Program.RefreshModelSet(type);
             if (Program.ServerSettings.Paths.DownloaderAlwaysResave && extension == "safetensors")
             {
-                if (handler.Models.TryGetValue($"{name}.safetensors", out T2IModel model))
+                using ManyReadOneWriteLock.ReadClaim claim = Program.RefreshLock.LockRead();
+                if (Program.T2IModelSets.TryGetValue(type, out T2IModelHandler handler)
+                    && handler.Models.TryGetValue($"{name}.safetensors", out T2IModel model))
                 {
                     model.ResaveModel();
                 }
@@ -902,6 +910,7 @@ public static class ModelsAPI
         [API.APIParameter("Full filepath name of the model being requested.")] string modelName,
         [API.APIParameter("What model sub-type to use, can be eg `LoRA` or `Stable-Diffusion` or etc.")] string subtype = "Stable-Diffusion")
     {
+        using ManyReadOneWriteLock.ReadClaim claim = Program.RefreshLock.LockRead();
         if (!Program.T2IModelSets.TryGetValue(subtype, out T2IModelHandler handler))
         {
             return new JObject() { ["error"] = "Invalid sub-type." };
@@ -996,17 +1005,18 @@ public static class ModelsAPI
         [API.APIParameter("Full filepath name of the model being requested.")] string modelName,
         [API.APIParameter("What model sub-type to use, can be eg `LoRA` or `Stable-Diffusion` or etc.")] string subtype = "Stable-Diffusion")
     {
-        if (!Program.T2IModelSets.TryGetValue(subtype, out T2IModelHandler handler))
-        {
-            return new JObject() { ["error"] = "Invalid sub-type." };
-        }
-        if (TryGetRefusalForModel(session, modelName, out JObject refusal))
-        {
-            return refusal;
-        }
-        T2IModel match = null;
+        string modelPath;
         using (ManyReadOneWriteLock.ReadClaim claim = Program.RefreshLock.LockRead())
         {
+            if (!Program.T2IModelSets.TryGetValue(subtype, out T2IModelHandler handler))
+            {
+                return new JObject() { ["error"] = "Invalid sub-type." };
+            }
+            if (TryGetRefusalForModel(session, modelName, out JObject refusal))
+            {
+                return refusal;
+            }
+            T2IModel match = null;
             if (handler.Models.TryGetValue(modelName, out T2IModel model))
             {
                 match = model;
@@ -1015,22 +1025,23 @@ public static class ModelsAPI
             {
                 match = model;
             }
+            modelPath = match?.RawFilePath;
         }
-        if (match is null || string.IsNullOrWhiteSpace(match.RawFilePath) || !File.Exists(match.RawFilePath))
+        if (string.IsNullOrWhiteSpace(modelPath) || !File.Exists(modelPath))
         {
             return new JObject() { ["error"] = "Model not found." };
         }
         if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
         {
-            Process.Start("explorer.exe", $"/select,\"{Path.GetFullPath(match.RawFilePath)}\"");
+            Process.Start("explorer.exe", $"/select,\"{Path.GetFullPath(modelPath)}\"");
         }
         else if (RuntimeInformation.IsOSPlatform(OSPlatform.Linux))
         {
-            Process.Start("xdg-open", $"\"{Path.GetDirectoryName(Path.GetFullPath(match.RawFilePath))}\"");
+            Process.Start("xdg-open", $"\"{Path.GetDirectoryName(Path.GetFullPath(modelPath))}\"");
         }
         else if (RuntimeInformation.IsOSPlatform(OSPlatform.OSX))
         {
-            Process.Start("open", $"-R \"{Path.GetFullPath(match.RawFilePath)}\"");
+            Process.Start("open", $"-R \"{Path.GetFullPath(modelPath)}\"");
         }
         else
         {
@@ -1062,11 +1073,11 @@ public static class ModelsAPI
         [API.APIParameter("Full filepath name of the model being deleted.")] string modelName,
         [API.APIParameter("What model sub-type to use, can be eg `LoRA` or `Stable-Diffusion` or etc.")] string subtype = "Stable-Diffusion")
     {
+        using ManyReadOneWriteLock.ReadClaim claim = Program.RefreshLock.LockRead();
         if (!Program.T2IModelSets.TryGetValue(subtype, out T2IModelHandler handler))
         {
             return new JObject() { ["error"] = "Invalid sub-type." };
         }
-        using ManyReadOneWriteLock.ReadClaim claim = Program.RefreshLock.LockRead();
         T2IModel match = null;
         if (session.User.IsAllowedModel(modelName))
         {
@@ -1116,11 +1127,11 @@ public static class ModelsAPI
         [API.APIParameter("New full filepath name for the model.")] string newName,
         [API.APIParameter("What model sub-type to use, can be eg `LoRA` or `Stable-Diffusion` or etc.")] string subtype = "Stable-Diffusion")
     {
+        using ManyReadOneWriteLock.ReadClaim claim = Program.RefreshLock.LockRead();
         if (!Program.T2IModelSets.TryGetValue(subtype, out T2IModelHandler handler))
         {
             return new JObject() { ["error"] = "Invalid sub-type." };
         }
-        using ManyReadOneWriteLock.ReadClaim claim = Program.RefreshLock.LockRead();
         T2IModel match = null;
         if (session.User.IsAllowedModel(oldName))
         {

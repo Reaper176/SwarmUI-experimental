@@ -1,5 +1,13 @@
 @model GeneratePageModel
 
+@{
+    string[] modelTypes;
+    using (FreneticUtilities.FreneticToolkit.ManyReadOneWriteLock.ReadClaim claim = Program.RefreshLock.LockRead())
+    {
+        modelTypes = [.. Program.T2IModelSets.Keys];
+    }
+}
+
 <ul class="nav nav-tabs" role="tablist" id="utilitiestablist">
     <li class="nav-item" role="presentation">
         <a class="nav-link active translate" data-bs-toggle="tab" href="#Utilities-Info-Tab" aria-selected="true" role="tab">Info</a>
@@ -47,7 +55,7 @@
                         </div>
                         <br>Model Sub-type: <select id="util_modelmetadatascanner_subtype" class="auto-dropdown">
                             <option value="all" class="translate" selected>all</option>
-                            @foreach (string key in Program.T2IModelSets.Keys)
+                            @foreach (string key in modelTypes)
                             {
                                 <option value="@key" class="translate">@key</option>
                             }

@@ -182,6 +182,7 @@ Every maintained runtime access through either `T2IModelSets` or `MainSDModels` 
 - a copied value or model result that no longer requires the handler after the claim is released.
 
 Read claims begin before outer-dictionary lookup or enumeration. A handler must not be resolved before acquiring the claim and then used after an intervening replacement.
+A copied `T2IModel` is not independent if subsequent work calls methods that re-enter its `Handler` or handler-owned metadata state, notably tensor hashing and model resaving; those operations remain inside the read claim.
 
 Claims cover the shortest complete synchronous catalog operation. They may include:
 
