@@ -628,11 +628,11 @@ public class BackendHandler
             data.AbstractBackend.IsEnabled = section.GetBool("enabled", true).Value;
             data.AbstractBackend.Title = section.GetString("title", "");
             data.AbstractBackend.Handler = this;
-            DoInitBackend(data);
             lock (CentralLock)
             {
                 AllBackends.TryAdd(data.ID, data);
             }
+            DoInitBackend(data);
         }
         IsLoading = false;
     }

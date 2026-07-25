@@ -437,7 +437,7 @@ public class SwarmSwarmBackend : AbstractT2IBackend
                     {
                         while (AnyLoading)
                         {
-                            Logs.Debug($"{HandlerTypeData.Name} {BackendData.ID} waiting for remote backends to load, have featureset {RemoteFeatureCombo.Keys.JoinString(", ")}");
+                            Logs.Debug($"{HandlerTypeData.Name} {BackendData.ID} waiting for remote backends to load, have featureset {GetRemoteFeatureSnapshot().JoinString(", ")}");
                             if (Program.GlobalProgramCancel.IsCancellationRequested
                                 || Status != BackendStatus.LOADING)
                             {
