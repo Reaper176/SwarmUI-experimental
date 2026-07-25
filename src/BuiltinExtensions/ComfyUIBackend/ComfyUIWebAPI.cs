@@ -326,8 +326,12 @@ public static class ComfyUIWebAPI
             await ws.SendJson(refusal, API.WebsocketTimeout);
             return null;
         }
-        model = T2IParamTypes.GetBestModelInList(model, Program.MainSDModels.Models.Keys);
-        T2IModel modelData = Program.MainSDModels.Models.GetValueOrDefault(model);
+        T2IModel modelData;
+        using (ManyReadOneWriteLock.ReadClaim claim = Program.RefreshLock.LockRead())
+        {
+            model = T2IParamTypes.GetBestModelInList(model, Program.MainSDModels.Models.Keys);
+            modelData = Program.MainSDModels.Models.GetValueOrDefault(model);
+        }
         if (modelData is null)
         {
             await ws.SendJson(new JObject() { ["error"] = "Unknown input model name." }, API.WebsocketTimeout);
@@ -485,11 +489,20 @@ public static class ComfyUIWebAPI
             await ws.SendJson(new JObject() { ["error"] = "Rank must be between 1 and 320." }, API.WebsocketTimeout);
             return null;
         }
-        baseModel = T2IParamTypes.GetBestModelInList(baseModel, Program.MainSDModels.Models.Keys);
-        otherModel = T2IParamTypes.GetBestModelInList(otherModel, Program.MainSDModels.Models.Keys);
-        T2IModel baseModelData = Program.MainSDModels.Models.GetValueOrDefault(baseModel);
-        T2IModel otherModelData = Program.MainSDModels.Models.GetValueOrDefault(otherModel);
-        if (baseModelData is null || otherModelData is null)
+        T2IModel baseModelData;
+        T2IModel otherModelData;
+        string loraOutputFolder;
+        bool inputModelsExist;
+        using (ManyReadOneWriteLock.ReadClaim claim = Program.RefreshLock.LockRead())
+        {
+            baseModel = T2IParamTypes.GetBestModelInList(baseModel, Program.MainSDModels.Models.Keys);
+            otherModel = T2IParamTypes.GetBestModelInList(otherModel, Program.MainSDModels.Models.Keys);
+            baseModelData = Program.MainSDModels.Models.GetValueOrDefault(baseModel);
+            otherModelData = Program.MainSDModels.Models.GetValueOrDefault(otherModel);
+            inputModelsExist = baseModelData is not null && otherModelData is not null;
+            loraOutputFolder = inputModelsExist ? Program.T2IModelSets["LoRA"].DownloadFolderPath : null;
+        }
+        if (!inputModelsExist)
         {
             await ws.SendJson(new JObject() { ["error"] = "Unknown input model name." }, API.WebsocketTimeout);
             return null;
@@ -567,7 +580,7 @@ public static class ComfyUIWebAPI
                 [ComfyNodeInputNames.ExtractLora.OtherModel] = new JArray() { "5", 0 },
                 ["other_model_clip"] = doClip ? new JArray() { "5", 1 } : null,
                 [ComfyNodeInputNames.ExtractLora.Rank] = rank,
-                [ComfyNodeInputNames.ExtractLora.SaveRawPath] = Program.T2IModelSets["LoRA"].DownloadFolderPath + "/",
+                [ComfyNodeInputNames.ExtractLora.SaveRawPath] = loraOutputFolder + "/",
                 [ComfyNodeInputNames.ExtractLora.SaveFilename] = outName.Replace('\\', '/').Replace("/", format ?? $"{Path.DirectorySeparatorChar}"),
                 ["save_clip"] = doClip,
                 [ComfyNodeInputNames.ExtractLora.Metadata] = metadata.ToString()
@@ -590,9 +603,14 @@ public static class ComfyUIWebAPI
                 }
             });
         }, session, null, ws);
-        T2IModelHandler loras = Program.T2IModelSets["LoRA"];
         Program.RefreshModelSet("LoRA");
-        if (loras.Models.ContainsKey($"{outName}.safetensors"))
+        bool outputExists;
+        using (ManyReadOneWriteLock.ReadClaim claim = Program.RefreshLock.LockRead())
+        {
+            outputExists = Program.T2IModelSets.TryGetValue("LoRA", out T2IModelHandler loras)
+                && loras.Models.ContainsKey($"{outName}.safetensors");
+        }
+        if (outputExists)
         {
             Logs.Info($"Completed successful LoRA extraction for user '{session.User.UserID}' saved as '{outName}'.");
             await ws.SendJson(new JObject() { ["success"] = true }, API.WebsocketTimeout);
