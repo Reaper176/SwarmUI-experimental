@@ -331,14 +331,12 @@ public static class ModelsAPI
         [API.APIParameter("The full filepath of the model to load.")] string model,
         [API.APIParameter("The ID of a backend to load the model on, or null to load on all.")] string backendId = null)
     {
-        using ManyReadOneWriteLock.ReadClaim claim = Program.RefreshLock.LockRead();
         return (await API.RunWebsocketHandlerCallDirect(SelectModelInternal, session, (model, backendId)))[0];
     }
 
     [API.APIDescription("Forcibly loads a model immediately on some or all backends, with live status updates over websocket.", "\"success\": true")]
     public static async Task<JObject> SelectModelWS(WebSocket socket, Session session, string model)
     {
-        using ManyReadOneWriteLock.ReadClaim claim = Program.RefreshLock.LockRead();
         await API.RunWebsocketHandlerCallWS(SelectModelInternal, session, (model, (string)null), socket);
         await socket.SendJson(BasicAPIFeatures.GetCurrentStatusRaw(session), API.WebsocketTimeout);
         return null;
@@ -372,7 +370,14 @@ public static class ModelsAPI
             output(refusal);
             return;
         }
-        if (!Program.MainSDModels.Models.TryGetValue(model + ".safetensors", out T2IModel actualModel) && !Program.MainSDModels.Models.TryGetValue(model, out actualModel))
+        T2IModel actualModel;
+        bool found;
+        using (ManyReadOneWriteLock.ReadClaim claim = Program.RefreshLock.LockRead())
+        {
+            found = Program.MainSDModels.Models.TryGetValue(model + ".safetensors", out actualModel)
+                || Program.MainSDModels.Models.TryGetValue(model, out actualModel);
+        }
+        if (!found)
         {
             Logs.Verbose("SelectModel refused due to unrecognized model");
             output(new JObject() { ["error"] = "Model not found." });

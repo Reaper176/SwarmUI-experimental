@@ -183,6 +183,7 @@ Every maintained runtime access through either `T2IModelSets` or `MainSDModels` 
 
 Read claims begin before outer-dictionary lookup or enumeration. A handler must not be resolved before acquiring the claim and then used after an intervening replacement.
 A copied `T2IModel` is not independent if subsequent work calls methods that re-enter its `Handler` or handler-owned metadata state, notably tensor hashing and model resaving; those operations remain inside the read claim.
+The maintained explicit backend model-load flow is a safe copied-model exception: after selection under a read claim, backend loaders consume the model's copied name, path, and already-loaded metadata without calling its handler, tensor hashing, or resave operations, so WebSocket dispatch and backend/GPU work proceed after the claim is released.
 When handler-dependent work is intentionally deferred to a background callback, the synchronous path transfers exclusive ownership of its existing read claim to that callback before scheduling. Because `ReadClaim` is a mutable struct, the claim is boxed once as `IDisposable`: synchronous early-return paths dispose it in `finally`, successful transfer nulls the synchronous owner, and the callback or scheduling-exception path atomically clears and disposes the transferred owner exactly once. The callback must not acquire a nested read claim because a queued writer may already be draining prior readers.
 
 Claims cover the shortest complete synchronous catalog operation. They may include:
@@ -194,6 +195,8 @@ Claims cover the shortest complete synchronous catalog operation. They may inclu
 - forming parameter-list model data;
 - producing remote category serialization; or
 - validating a known-model destination.
+
+Catalog read claims are not reentrant. A queued writer can hold the reader gate while it drains existing read permits, so a reader that attempts to acquire another read claim can deadlock against that writer. Maintained call chains must establish one outer read boundary and invoke catalog-dependent helpers without reacquiring. In particular, `T2IAPI.ListT2IParams` owns the read claim around parameter value-provider serialization, while `T2IParamTypes.ValidateParam` owns the read claim around the other maintained value-provider and model-validation path. Catalog-backed `GetValues` delegates remain lock-free and must run within one of those boundaries; external direct delegate callers must coordinate through `Program.RefreshLock`.
 
 Claims should not remain held during work that no longer reads the handler generation, including:
 
@@ -228,7 +231,8 @@ The lock order is:
 2. `T2IAPI.RefreshSemaphore` may be acquired before `RefreshLock` for the existing user-triggered refresh flow;
 3. a catalog claim may be held while entering a handler's modification or metadata lock through existing handler operations;
 4. code must not hold a handler-local modification or metadata lock while newly acquiring the catalog write claim; and
-5. code must never upgrade directly from a catalog read claim to a catalog write claim.
+5. code must never upgrade directly from a catalog read claim to a catalog write claim; and
+6. code must never acquire a nested catalog read claim, including from a catalog-backed helper or value-provider delegate.
 
 The path-change operation is synchronous, matching the existing `ChangeServerSettings` side-effect contract.
 

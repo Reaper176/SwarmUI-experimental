@@ -607,6 +607,8 @@ if (session.User.IsAllowedModel(modelName))
 
 Keep the not-found response and `match.GetOrGenerateTensorHashSha256()` result unchanged, with the latter still inside the claim.
 
+For `SelectModel` and `SelectModelWS`, remove the route-level read claims that currently span WebSocket dispatch and backend model loading. In `SelectModelInternal`, acquire one scoped read claim only around the two `Program.MainSDModels.Models.TryGetValue` attempts and copy the selected `T2IModel`. Release the claim before emitting output, acquiring `Session.GenClaim`, or awaiting backend/GPU work. The maintained backend model-load implementations consume the copied model's name, path, and already-loaded metadata without calling its handler, tensor-hash generation, or resave operations, so this is a safe copied-model result. This phase split also prevents `BackendHandler.ReassignLoadedModelsList` from acquiring a nested read claim when it runs after backend loading.
+
 - [ ] **Step 4: Protect complete parameter-list serialization**
 
 At the start of `T2IAPI.ListT2IParams`, add:
