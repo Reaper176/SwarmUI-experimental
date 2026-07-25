@@ -13,19 +13,19 @@ Correct the two confirmed lifecycle defects in `Utilities.DownloadFile` without 
 
 The change remains bounded to the shared download owner. It preserves the public method signature, caller behavior, retry policy, progress reporting, verification, destinations, refresh behavior, and global-shutdown cancellation.
 
-## Current Boundary and Evidence
+## Original Boundary and Evidence
 
-`Utilities.DownloadFile` currently:
+Before the production implementation, `Utilities.DownloadFile`:
 
-- creates a token linked from `Program.GlobalProgramCancel` and the optional caller `CancellationTokenSource`;
-- opens the destination with `File.OpenWrite`, which starts at offset zero but does not truncate an existing longer file;
-- sends the initial request and range-retry requests with only `Program.GlobalProgramCancel`;
-- uses the linked token for later reads, writes, and polling;
-- buffers downloaded chunks between a network producer and file writer;
-- reports progress through a third task;
-- verifies response length and optional SHA-256;
-- deletes the destination on detected midstream, length, hash, or writer failure; and
-- preserves up to four partial-content range retries.
+- created a token linked from `Program.GlobalProgramCancel` and the optional caller `CancellationTokenSource`;
+- opened the destination with `File.OpenWrite`, which started at offset zero but did not truncate an existing longer file;
+- sent the initial request and range-retry requests with only `Program.GlobalProgramCancel`;
+- used the linked token for later reads, writes, and polling;
+- buffered downloaded chunks between a network producer and file writer;
+- reported progress through a third task;
+- verified response length and optional SHA-256;
+- deleted the destination on a known-length mismatch, hash mismatch, or writer failure, while an unknown-length producer failure or cancellation could leave a partial destination because the length check was skipped; and
+- preserved up to four partial-content range retries.
 
 The maintained caller inventory contains seven direct calls:
 
@@ -88,10 +88,10 @@ After the initial response is accepted and the destination is opened:
 - `FileMode.Create` replaces and truncates the destination;
 - linked cancellation reaches range sends, stream acquisition, reads, writes, and polling;
 - the existing terminal-chunk and task-failure paths continue to surface cancellation or the established readable failure;
-- detected incomplete, length-invalid, hash-invalid, or write-failed replacements are deleted; and
+- known-length mismatch, hash mismatch, and writer failure retain their established deletion paths, while an unknown-length producer failure or cancellation may leave a partial replacement because the length check is skipped; and
 - successful completion leaves exact bytes with no stale tail.
 
-Request, response, response-stream, file-stream, and linked-token lifetimes remain explicitly bounded. The SHA-256 instance retains its legacy undisposed lifetime, and this change makes no new hashing-lifetime guarantee. Caller-owned `CancellationTokenSource` instances are never disposed by the helper.
+Request, response, response-stream, file-stream, and linked-token lifetimes remain explicitly bounded. The linked `CancellationTokenSource` is disposed; caller-owned sources are not disposed by the helper; and the helper-created default source from `cancel ??= new()` retains its legacy undisposed lifetime. The SHA-256 instance also retains its legacy undisposed lifetime, and this change makes no new hashing-lifetime guarantee.
 
 ## Compatibility Requirements
 
@@ -106,7 +106,7 @@ The implementation must preserve:
 - progress callback arguments and cadence;
 - content-length and SHA-256 verification;
 - established readable error categories and contextual logging;
-- deletion of detected incomplete or invalid downloads;
+- deletion on known-length mismatch, hash mismatch, and writer failure, while preserving the legacy possibility that an unknown-length producer failure or cancellation leaves a partial destination because the length check is skipped;
 - installation paths and progress behavior;
 - `ModelInfo.DownloadNow` destination refusal and indirect flows;
 - model UI temporary target, WebSocket cancellation, move, and refresh behavior;
@@ -124,11 +124,11 @@ Agents will not build, launch, or run tests. Static verification must:
 2. prove the destination is opened only after a successful initial response;
 3. prove the successful-response destination open uses truncating create semantics;
 4. trace the linked token through initial and retry sends, stream acquisition, reads, writes, and polling;
-5. prove caller-owned cancellation sources are not disposed;
+5. prove the linked cancellation source is disposed, caller-owned sources are not disposed, and the helper-created default source retains its legacy undisposed lifetime;
 6. trace pre-header cancellation without destination mutation;
-7. trace midstream cancellation and detected failure cleanup;
+7. trace midstream cancellation and the cleanup split between known-length/hash/writer failures and unknown-length producer failure or cancellation;
 8. confirm retry count, range behavior, status requirements, progress, length/hash checks, URLs, headers, and logging remain unchanged;
-9. confirm caller temporary-file, move, cleanup, refresh, and fixed-path behavior remains unchanged;
+9. confirm model UI target selection/pre-deletion and success move/refresh, workflow-generator catch cleanup, helper deletion split, and fixed-path behavior remain unchanged;
 10. inspect the exact changed-file and commit range; and
 11. run `git diff --check`.
 
@@ -143,11 +143,11 @@ The fixed approved-design boundary is `23c77542`. The intervening commits `93e1a
 
 - `src/Utils/Utilities.cs`
 
-Static caller inventory repeated seven direct calls: three Comfy archive downloads and the Visual C++ redistributable in `Installation`, `CommonModels.ModelInfo.DownloadNow`, `ModelsAPI.DoModelDownloadWS`, and `WorkflowGenerator.DownloadModel`. The three indirect `ModelInfo.DownloadNow` flows remain installation-selected common models plus the automatic-VAE and LTX audio-VAE branches in `WorkflowGeneratorModelSupport`. Ownership remains nuanced: model UI is the only maintained caller that supplies cancellation and owns its temporary target, cleanup, move, and refresh; `WorkflowGenerator.DownloadModel` independently owns a pre-deleted temporary target and cleanup/move; `ModelInfo.DownloadNow` refuses a pre-existing final destination, while fixed installation destinations do not universally establish a fresh-target precondition.
+Static caller inventory repeated seven direct calls: three Comfy archive downloads and the Visual C++ redistributable in `Installation`, `CommonModels.ModelInfo.DownloadNow`, `ModelsAPI.DoModelDownloadWS`, and `WorkflowGenerator.DownloadModel`. The three indirect `ModelInfo.DownloadNow` flows remain installation-selected common models plus the automatic-VAE and LTX audio-VAE branches in `WorkflowGeneratorModelSupport`. Ownership remains nuanced: model UI is the sole maintained caller that supplies a cancellation source, selects and pre-deletes its temporary target, and owns the success move and refresh; `Utilities.DownloadFile` owns deletion on known-length mismatch, hash mismatch, and writer failure, with the recorded unknown-length gap. `WorkflowGenerator.DownloadModel` separately owns its temporary target and catch cleanup. `ModelInfo.DownloadNow` refuses a pre-existing final destination, while fixed installation destinations do not universally establish a fresh-target precondition.
 
-The implemented successful-response order is exactly initial linked-token send, `OK` validation, linked-token response-stream acquisition, destination open with `FileMode.Create`, and then producer/writer/progress worker startup. Thus failed status or pre-stream failure occurs before destination mutation, while an accepted response truncates an existing longer target. The linked caller/global token now reaches initial and retry sends, initial and retry stream acquisition, network reads, file writes, and chunk/progress polling. `Program.GlobalProgramCancel` and the optional caller source remain linked inputs; the helper does not dispose the caller-owned source.
+The implemented successful-response order is exactly initial linked-token send, `OK` validation, linked-token response-stream acquisition, destination open with `FileMode.Create`, and then producer/writer/progress worker startup. Thus failed status or pre-stream failure occurs before destination mutation, while an accepted response truncates an existing longer target. The linked caller/global token now reaches initial and retry sends, initial and retry stream acquisition, network reads, file writes, and chunk/progress polling. `Program.GlobalProgramCancel` and the optional caller source remain linked inputs. The linked source is disposed, a caller-owned source is not disposed by the helper, and a helper-created default source from `cancel ??= new()` remains legacy-undisposed.
 
-The public signature and all callers are unchanged. The four-retry limit, `PartialContent` requirement, buffering, progress cadence and callback arguments, content-length and SHA-256 checks, detected-failure deletion, URLs, headers, logs, temporary-file ownership, move/cleanup/refresh behavior, and fixed installer paths are preserved. The implementation also deliberately preserves adjacent legacy behavior: an unknown response length still uses a 1024-byte buffer and can truncate the download to 1024 bytes while returning false success; retry requests still use the literal inclusive `Range(totalRead, length)` convention without `Content-Range` validation; terminal progress is still enqueued before length/hash validation; sibling workers are not explicitly canceled when another worker fails; and the SHA-256 instance remains undisposed.
+The public signature and all callers are unchanged. The four-retry limit, `PartialContent` requirement, buffering, progress cadence and callback arguments, content-length and SHA-256 checks, URLs, headers, logs, temporary-file ownership, move/cleanup/refresh behavior, and fixed installer paths are preserved. Known-length mismatch, hash mismatch, and writer failure retain deletion; an unknown-length producer failure or cancellation may leave a partial destination because the length check is skipped. The implementation also deliberately preserves adjacent legacy behavior: an unknown response length still uses a 1024-byte buffer and can truncate the download to 1024 bytes while returning false success; retry requests still use the literal inclusive `Range(totalRead, length)` convention without `Content-Range` validation; terminal progress is still enqueued before length/hash validation; sibling workers are not explicitly canceled when another worker fails; the helper-created default cancellation source remains undisposed; and the SHA-256 instance remains undisposed.
 
 Static review used:
 
@@ -165,15 +165,15 @@ Maintainer Reaper176 will validate:
 
 1. a pre-existing destination longer than a successful response is replaced with exactly the response bytes;
 2. caller cancellation before response headers returns promptly without changing a pre-existing destination;
-3. caller cancellation during streaming deletes the incomplete replacement;
+3. caller cancellation during known-length streaming deletes the incomplete replacement through the length-mismatch path, while unknown-length cancellation may leave a partial replacement;
 4. global shutdown cancellation still interrupts acquisition and streaming;
 5. successful range continuation produces exact bytes;
-6. failed or non-partial range continuation preserves established failure cleanup;
+6. failed or non-partial range continuation preserves its established known-length failure cleanup;
 7. content-length mismatch deletes the target and reports failure;
 8. SHA-256 mismatch deletes the target and reports failure;
 9. fixed-path installer downloads and progress remain functional;
 10. installation-selected common-model downloads remain functional;
-11. model UI success, progress, cancellation, temporary cleanup, move, and refresh remain functional;
+11. model UI success, progress, cancellation, target selection/pre-deletion, success move/refresh, and the helper's recorded cleanup split remain functional;
 12. `WorkflowGenerator.DownloadModel` success and cleanup remain functional;
 13. both `WorkflowGeneratorModelSupport` common-model paths download and refresh correctly; and
 14. ordinary successful downloads and progress callbacks remain unchanged.
