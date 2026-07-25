@@ -7,6 +7,7 @@ using SwarmUI.Media;
 using SwarmUI.Text2Image;
 using SwarmUI.Utils;
 using SwarmUI.WebAPI;
+using System.Collections.Frozen;
 using System.IO;
 using System.Net.Http;
 using System.Net.Http.Headers;
@@ -55,11 +56,20 @@ public class SwarmSwarmBackend : AbstractT2IBackend
     /// <summary>A set of all supported features the remote Swarm instance has.</summary>
     public ConcurrentDictionary<string, string> RemoteFeatureCombo = new();
 
+    /// <summary>Immutable feature IDs from the last complete remote status response.</summary>
+    private volatile FrozenSet<string> RemoteFeatureSnapshot = Array.Empty<string>().ToFrozenSet();
+
     /// <summary>A set of all backend-types the remote Swarm instance has.</summary>
     public volatile HashSet<string> RemoteBackendTypes = [];
 
+    /// <summary>Returns the immutable feature snapshot from the last complete remote status response.</summary>
+    public FrozenSet<string> GetRemoteFeatureSnapshot()
+    {
+        return RemoteFeatureSnapshot;
+    }
+
     /// <inheritdoc/>
-    public override IEnumerable<string> SupportedFeatures => RemoteFeatureCombo.Keys;
+    public override IEnumerable<string> SupportedFeatures => GetRemoteFeatureSnapshot();
 
     /// <summary>Current API session ID.</summary>
     public string Session;
@@ -311,13 +321,15 @@ public class SwarmSwarmBackend : AbstractT2IBackend
                     }
                 }
             }
-            foreach (string str in features.Where(f => !RemoteFeatureCombo.ContainsKey(f)))
+            FrozenSet<string> featureCandidate = features.ToFrozenSet();
+            RemoteFeatureSnapshot = featureCandidate;
+            foreach (string feature in featureCandidate)
             {
-                RemoteFeatureCombo.TryAdd(str, str);
+                RemoteFeatureCombo.TryAdd(feature, feature);
             }
-            foreach (string str in RemoteFeatureCombo.Keys.Where(f => !features.Contains(f)))
+            foreach (string feature in RemoteFeatureCombo.Keys.Where(feature => !featureCandidate.Contains(feature)))
             {
-                RemoteFeatureCombo.TryRemove(str, out _);
+                RemoteFeatureCombo.TryRemove(feature, out _);
             }
             AnyLoading = isLoading;
             RemoteBackendTypes = types;

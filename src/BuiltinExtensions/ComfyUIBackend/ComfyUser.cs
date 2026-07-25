@@ -268,7 +268,7 @@ public class ComfyUser
                 IReadOnlySet<string> nodes;
                 if (c.Backend is SwarmSwarmBackend swarmBack)
                 {
-                    nodes = (HashSet<string>)swarmBack.ExtensionData.GetValueOrDefault("ComfyNodeTypes", new HashSet<string>());
+                    nodes = swarmBack.ExtensionData.GetValueOrDefault("ComfyNodeTypes", null) as IReadOnlySet<string>;
                 }
                 else
                 {
@@ -276,7 +276,7 @@ public class ComfyUser
                     ComfyBackendCapabilitySnapshot capabilitySnapshot = localBackend.CapabilitySnapshot;
                     nodes = capabilitySnapshot.NodeTypes;
                 }
-                return classTypes.All(ct => nodes.Contains(ct));
+                return nodes is null || classTypes.All(ct => nodes.Contains(ct));
             })];
             if (validClients.Length == 0)
             {

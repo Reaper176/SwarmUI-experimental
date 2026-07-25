@@ -30,6 +30,9 @@ public class BackendHandler
     /// <summary>Signal when any backends are available, or other reason to check backends (eg new requests came in).</summary>
     public AsyncAutoResetEvent CheckBackendsSignal = new(false);
 
+    /// <summary>Subscribers notified after a backend has been removed from <see cref="AllBackends"/>.</summary>
+    public Action<BackendData> BackendRemovedEvent;
+
     /// <summary>Central locker to prevent issues with backend validating.</summary>
     public LockObject CentralLock = new();
 
@@ -484,6 +487,21 @@ public class BackendHandler
         if (data.AbstractBackend.IsReal)
         {
             MarkBackendsEdited();
+        }
+        Action<BackendData> backendRemovedEvent = BackendRemovedEvent;
+        if (backendRemovedEvent is not null)
+        {
+            foreach (Action<BackendData> subscriber in backendRemovedEvent.GetInvocationList().Cast<Action<BackendData>>())
+            {
+                try
+                {
+                    subscriber(data);
+                }
+                catch (Exception ex)
+                {
+                    Logs.Error($"Backend removal subscriber failed: {ex.ReadableString()}");
+                }
+            }
         }
         await ShutdownBackendCleanly(data);
         ReassignLoadedModelsList();

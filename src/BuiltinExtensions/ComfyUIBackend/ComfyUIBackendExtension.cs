@@ -43,6 +43,9 @@ public class ComfyUIBackendExtension : Extension
     /// <summary>Extensible map of ComfyUI Node IDs to supported feature IDs.</summary>
     public static Dictionary<string, string> NodeToFeatureMap = ComfyCapabilityCatalog.CreateNodeToFeatureMap();
 
+    /// <summary>Per-linked-backend gates that prevent stale object-info publication.</summary>
+    private static readonly ConcurrentDictionary<SwarmSwarmBackend, SemaphoreSlim> RemoteCapabilityGates = new();
+
     /// <inheritdoc/>
     public override void OnPreInit()
     {
@@ -110,18 +113,7 @@ public class ComfyUIBackendExtension : Extension
         T2IParamTypes.ConcatDropdownValsClean(ref GligenModels, InternalListModelsFor("gligen", false));
         T2IParamTypes.ConcatDropdownValsClean(ref StyleModels, InternalListModelsFor("style_models", true));
         SwarmSwarmBackend.OnSwarmBackendAdded += OnSwarmBackendAdded;
-        SwarmSwarmBackend.ReviseRemotesEvent += (backend) =>
-        {
-            if (backend.IsAControlInstance || !backend.LinkedRemoteBackendType.StartsWith("comfyui_"))
-            {
-                return;
-            }
-            Utilities.RunCheckedTask(async () =>
-            {
-                JObject types = await backend.SendAPIJSON("ComfyGetNodeTypesForBackend", new JObject() { ["backend"] = backend.LinkedRemoteBackendID });
-                backend.ExtensionData["ComfyNodeTypes"] = new HashSet<string>(types["node_types"].Values<string>());
-            });
-        };
+        SwarmSwarmBackend.ReviseRemotesEvent += OnSwarmBackendRevised;
     }
 
     /// <summary>Helper to quickly read a list of model files in a model subfolder, for prepopulating model lists during startup.</summary>
@@ -149,6 +141,7 @@ public class ComfyUIBackendExtension : Extension
     /// <inheritdoc/>
     public override void OnShutdown()
     {
+        Program.Backends.BackendRemovedEvent -= OnBackendRemoved;
         T2IParamTypes.FakeTypeProviders.Remove(DynamicParamGenerator);
     }
 
@@ -339,19 +332,66 @@ public class ComfyUIBackendExtension : Extension
     public static void OnSwarmBackendAdded(SwarmSwarmBackend backend)
     {
         // TODO: Multi-layered forwarding? (Swarm connects to Swarm connects to Comfy)
-        if (!backend.LinkedRemoteBackendType.StartsWith("comfyui_"))
+        if (backend.LinkedRemoteBackendType?.StartsWith("comfyui_") != true)
         {
             return;
         }
-        Utilities.RunCheckedTask(async () =>
+        Utilities.RunCheckedTask(() => RefreshRemoteCapabilities(backend));
+    }
+
+    /// <summary>Refreshes linked Comfy capability evidence after its remote status is revised.</summary>
+    private static void OnSwarmBackendRevised(SwarmSwarmBackend backend)
+    {
+        if (backend.IsAControlInstance || backend.LinkedRemoteBackendType?.StartsWith("comfyui_") != true)
         {
-            HttpRequestMessage getReq = new(HttpMethod.Get, $"{backend.Address}/ComfyBackendDirect/object_info");
-            backend.RequestAdapter()?.Invoke(getReq);
-            getReq.Headers.Add("X-Swarm-Backend-ID", $"{backend.LinkedRemoteBackendID}");
-            HttpResponseMessage resp = await SwarmSwarmBackend.HttpClient.SendAsync(getReq, Program.GlobalProgramCancel);
-            JObject rawObjectInfo = (await resp.Content.ReadAsStringAsync()).ParseToJson();
-            AssignValuesFromRaw(rawObjectInfo);
-        });
+            return;
+        }
+        Utilities.RunCheckedTask(() => RefreshRemoteCapabilities(backend));
+    }
+
+    /// <summary>Fetches and publishes one linked Comfy backend's last-good object-info snapshot.</summary>
+    private static async Task RefreshRemoteCapabilities(SwarmSwarmBackend backend)
+    {
+        SemaphoreSlim gate = RemoteCapabilityGates.GetOrAdd(backend, _ => new(1, 1));
+        await gate.WaitAsync(Program.GlobalProgramCancel);
+        try
+        {
+            using HttpRequestMessage request = new(HttpMethod.Get, $"{backend.Address}/ComfyBackendDirect/object_info");
+            backend.RequestAdapter()?.Invoke(request);
+            request.Headers.Add("X-Swarm-Backend-ID", $"{backend.LinkedRemoteBackendID}");
+            using HttpResponseMessage response = await SwarmSwarmBackend.HttpClient.SendAsync(request, Program.GlobalProgramCancel);
+            response.EnsureSuccessStatusCode();
+            JObject rawObjectInfo = (await response.Content.ReadAsStringAsync()).ParseToJson();
+            HashSet<string> nodeTypes = [.. rawObjectInfo.Properties().Select(property => property.Name)];
+            ComfyBackendCapabilitySnapshot snapshot = AssignValuesFromRaw(backend, rawObjectInfo, nodeTypes, "/", () =>
+            {
+                return Program.Backends.AllBackends.TryGetValue(backend.BackendData.ID, out BackendHandler.BackendData registered)
+                    && ReferenceEquals(registered.AbstractBackend, backend);
+            });
+            if (snapshot is not null)
+            {
+                backend.ExtensionData["ComfyNodeTypes"] = snapshot.NodeTypes;
+            }
+        }
+        finally
+        {
+            gate.Release();
+        }
+    }
+
+    /// <summary>Removes capability state for a backend that has left the handler registry.</summary>
+    private static void OnBackendRemoved(BackendHandler.BackendData data)
+    {
+        object owner = data.AbstractBackend;
+        if (owner is ComfyUIAPIAbstractBackend
+            || owner is SwarmSwarmBackend remote && remote.LinkedRemoteBackendType?.StartsWith("comfyui_") == true)
+        {
+            ComfyCapabilityRegistry.Remove(owner);
+        }
+        if (owner is SwarmSwarmBackend swarm)
+        {
+            RemoteCapabilityGates.TryRemove(swarm, out _);
+        }
     }
 
     /// <summary>Coordinates publication of shared values discovered from ComfyUI backends.</summary>
@@ -678,10 +718,20 @@ public class ComfyUIBackendExtension : Extension
     /// <returns>The final immutable capability snapshot published for the owner.</returns>
     public static ComfyBackendCapabilitySnapshot AssignValuesFromRaw(object owner, JObject rawObjectInfo, IReadOnlySet<string> nodeTypes, string modelFolderFormat)
     {
+        return AssignValuesFromRaw(owner, rawObjectInfo, nodeTypes, modelFolderFormat, null);
+    }
+
+    /// <summary>Publishes owner-aware object info only if its owner remains registered when publication begins.</summary>
+    private static ComfyBackendCapabilitySnapshot AssignValuesFromRaw(object owner, JObject rawObjectInfo, IReadOnlySet<string> nodeTypes, string modelFolderFormat, Func<bool> canPublish)
+    {
         SharedValueDelta sharedDelta = BuildSharedValueDelta(rawObjectInfo);
         FrozenSet<string> frozenNodeTypes = nodeTypes.ToFrozenSet();
         lock (ValueAssignmentLocker)
         {
+            if (canPublish is not null && !canPublish())
+            {
+                return null;
+            }
             SharedValueCandidate sharedCandidate = MergeSharedValueDelta(sharedDelta);
             ComfyCapabilityRegistry.RegistryCandidate capabilityCandidate = ComfyCapabilityRegistry.PreparePublish(owner, frozenNodeTypes, modelFolderFormat);
             PublishSharedValues(sharedCandidate);
@@ -791,6 +841,7 @@ public class ComfyUIBackendExtension : Extension
     public override void OnInit()
     {
         RegisterBackendTypes();
+        Program.Backends.BackendRemovedEvent += OnBackendRemoved;
         Sam3PointCoordsPositive = T2IParamTypes.Register<string>(new("SAM3 Positive Points", "Internal: JSON list of positive point coordinates for SAM3 point masking.",
             "[]", IgnoreIf: "[]", FeatureFlag: "sam3", VisibleNormally: false, ExtraHidden: true, DoNotSave: true, DoNotPreview: true, AlwaysRetain: true, Toggleable: true
             ));
@@ -1021,7 +1072,7 @@ public class ComfyUIBackendExtension : Extension
         }
         if (!BackendHandlersRegistered)
         {
-            SwarmSwarmBackend.ValidityChecks[BackendApiType.ID] = (backend, input) => ComfyUIAPIAbstractBackend.TryIsValid(input, backend.ExtensionData.GetValueOrDefault("ComfyNodeTypes", null) as HashSet<string>);
+            SwarmSwarmBackend.ValidityChecks[BackendApiType.ID] = (backend, input) => ComfyUIAPIAbstractBackend.TryIsValid(input, backend.ExtensionData.GetValueOrDefault("ComfyNodeTypes", null) as IReadOnlySet<string>);
             SwarmSwarmBackend.ValidityChecks[BackendSelfStartType.ID] = SwarmSwarmBackend.ValidityChecks[BackendApiType.ID];
             ComfyUIWebAPI.Register();
             AdminAPI.CheckForBackendUpdates.Add(CheckForUpdates);
