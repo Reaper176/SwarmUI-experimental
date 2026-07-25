@@ -114,7 +114,7 @@ This approach is rejected because it expands the change while weakening the cata
 The implementation separates public lock-owning operations from private lock-free core helpers:
 
 - a core builder constructs and configures all seven handlers in a temporary dictionary;
-- a core publisher retires the displaced handlers and repopulates the existing public dictionary while a write claim excludes readers;
+- a core publisher detaches the displaced handlers, retires their shared metadata cache once, and repopulates the existing public dictionary while a write claim excludes readers;
 - a core refresher scans every published handler with the existing per-handler exception isolation;
 - public compatibility entry points acquire the required write claim before invoking their core behavior; and
 - one runtime path-change operation composes candidate construction, publication, refresh, and notification without recursively acquiring the write lock.
@@ -127,12 +127,13 @@ After `ChangeServerSettings` has durably saved and published the settings candid
 
 1. acquire `Program.RefreshLock` for writing;
 2. construct all seven replacement handlers and configure their paths in a temporary dictionary;
-3. if candidate construction fails, shut down every constructed candidate and retain the complete prior public catalog;
-4. after the write claim has excluded protected readers, shut down the displaced handlers;
-5. clear and repopulate the existing public dictionary with the complete seven-category candidate;
-6. refresh every published handler, preserving per-handler logging and continuation;
-7. invoke `ModelPathsChangedEvent` only after complete catalog publication; and
-8. release the write claim after the composed runtime transition finishes.
+3. if candidate construction fails, detach every constructed candidate without touching the shared metadata cache and retain the complete prior public catalog and cache;
+4. reserve enough capacity in the existing public dictionary before retiring the prior generation;
+5. after the write claim has excluded protected readers, detach every displaced handler and then remove and dispose the shared metadata-cache entries once;
+6. clear and repopulate that same dictionary with the complete seven-category candidate;
+7. refresh every published handler, preserving per-handler logging and continuation;
+8. invoke `ModelPathsChangedEvent` only after complete catalog publication; and
+9. release the write claim after the composed runtime transition finishes.
 
 The established keys remain:
 
@@ -150,15 +151,15 @@ The public dictionary object is not replaced. Its identity, mutability, key spel
 
 Candidate handlers are constructed before the current catalog is retired. This prevents an ordinary path/configuration exception from destroying the last usable catalog.
 
-`T2IModelHandler` construction subscribes each candidate to `ModelRefreshEvent`. A failed candidate must therefore be shut down so its subscription is removed. Candidate cleanup is best-effort and must not replace the original failure in logs or the settings warning.
+`T2IModelHandler` construction subscribes each candidate to `ModelRefreshEvent`. A failed candidate must therefore be detached so its subscription is removed, but it must not run full shutdown because the metadata cache is static and belongs to the still-published generation. Candidate detachment is best-effort and must not replace the original failure in logs or the settings warning.
 
-Candidates are not refreshed while the prior generation is live. The existing static metadata-cache behavior requires the displaced handlers to shut down and clear their shared cache before replacement handlers scan and acquire fresh cache entries.
+Candidates are not refreshed while the prior generation is live. After every displaced handler is detached, publication removes every shared cache entry with `TryRemove` and calls the entry's exception-isolating disposal operation. Removal occurs before disposal so one database disposal problem cannot retain stale entries or skip later entries. Replacement handlers scan only after this one shared-cache retirement.
 
-Publication mutates the existing dictionary only while the write claim excludes maintained readers. All seven configured categories are inserted before the first replacement refresh begins. A scan failure may leave one complete category with an empty or partial inner model map according to existing `T2IModelHandler.Refresh` behavior, but it cannot expose an incomplete outer category map.
+Publication mutates the existing dictionary only while the write claim excludes maintained readers. It reserves capacity before retiring the prior generation, then inserts all seven configured categories before the first replacement refresh begins. If an unexpected ownership-transfer failure occurs, every replacement handler not present in the public dictionary is detached best-effort; retired handlers are not presented as restorable. A scan failure may leave one complete category with an empty or partial inner model map according to existing `T2IModelHandler.Refresh` behavior, but it cannot expose an incomplete outer category map.
 
 ## Public Compatibility Entry Points
 
-`BuildModelLists` and `RefreshAllModelSets` remain public compatibility entry points. Their externally callable forms become write-side owners. Private core helpers allow the centralized runtime path operation and startup sequence to reuse their behavior without nested write claims.
+`BuildModelLists` and `RefreshAllModelSets` remain public compatibility entry points, while `RefreshModelSet` and `RebuildModelListsForPathChange` provide focused maintained write paths. Each public operation acquires the catalog write claim, so callers must not already hold a catalog read or write claim. Private core helpers allow the centralized runtime path operation and startup sequence to reuse their behavior without nested write claims.
 
 The implementation must preserve the distinction between:
 
@@ -238,7 +239,7 @@ The path-change operation is synchronous, matching the existing `ChangeServerSet
 If candidate creation or path configuration throws:
 
 - keep the prior public catalog unchanged and usable;
-- shut down every candidate handler that was constructed;
+- detach every candidate handler that was constructed without disposing the prior generation's shared metadata cache;
 - retain the already persisted server settings;
 - log the runtime failure; and
 - return the existing success-with-warning result from `ChangeServerSettings`.
@@ -262,7 +263,7 @@ The replacement catalog remains authoritative if `ModelPathsChangedEvent` or a s
 
 ### Shutdown
 
-Normal shutdown retains final handler-disposal ownership. Runtime replacement shuts down only the displaced generation while its write claim excludes protected readers.
+The public parameterless `T2IModelHandler.Shutdown()` remains compatible and idempotent: it detaches that handler and performs shared cache cleanup. Runtime replacement instead detaches all displaced handlers while its write claim excludes protected readers, then performs the shared cache cleanup exactly once.
 
 ## Compatibility Requirements
 
@@ -272,7 +273,7 @@ The implementation preserves:
 - `Program.MainSDModels`;
 - all seven category names;
 - `T2IModelHandler` and `T2IModel` object behavior;
-- public `BuildModelLists`, `RefreshAllModelSets`, and `RefreshLock` access;
+- public `BuildModelLists`, `RefreshAllModelSets`, `RefreshModelSet`, `RebuildModelListsForPathChange`, and `RefreshLock` access;
 - `ModelRefreshEvent` and `ModelPathsChangedEvent` delegate surfaces and relative purpose;
 - synchronous `ChangeServerSettings` completion;
 - the settings route name, permission, inputs, success payload, and warning payload;
@@ -297,13 +298,14 @@ Static verification must:
 5. prove no maintained runtime reader can observe dictionary clear or partial repopulation;
 6. prove the public dictionary is never reassigned;
 7. verify all seven established category keys and their path composition remain unchanged;
-8. prove old-handler shutdown occurs only after protected prior-generation readers finish;
-9. prove candidate failure removes candidate event subscriptions and retains the prior catalog;
-10. inspect every download/refresh path for a read-to-write upgrade;
-11. confirm settings, refresh semaphore, catalog, handler, and event lock ordering;
-12. verify no request/response, settings, model, event, or extension contract changed;
-13. inspect the final changed-file set and staged commits so maintainer work is excluded; and
-14. run `git diff --check` over the implementation range.
+8. prove old-handler detachment and shared-cache retirement occur only after protected prior-generation readers finish;
+9. prove candidate failure removes candidate event subscriptions while retaining the prior catalog and shared metadata cache;
+10. prove shared metadata-cache retirement removes entries before best-effort per-entry disposal and publication detaches unpublished candidates after an unexpected transfer failure;
+11. inspect every download/refresh path for a read-to-write upgrade;
+12. confirm settings, refresh semaphore, catalog, handler, and event lock ordering;
+13. verify no request/response, settings, model, event, or extension contract changed;
+14. inspect the final changed-file set and staged commits so maintainer work is excluded; and
+15. run `git diff --check` over the implementation range.
 
 No build, launcher, automated test, GPU operation, or performance benchmark is run by the agent.
 

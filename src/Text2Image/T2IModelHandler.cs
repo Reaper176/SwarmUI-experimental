@@ -160,21 +160,39 @@ public class T2IModelHandler
         Program.ModelRefreshEvent += Refresh;
     }
 
-    public void Shutdown()
+    /// <summary>Marks this handler shut down and removes its model-refresh subscription without disposing the shared metadata cache.</summary>
+    internal bool DetachFromModelRefresh()
     {
         if (IsShutdown)
         {
-            return;
+            return false;
         }
         IsShutdown = true;
         Program.ModelRefreshEvent -= Refresh;
+        return true;
+    }
+
+    /// <summary>Removes and disposes every shared model metadata cache entry.</summary>
+    internal static void DisposeSharedMetadataCache()
+    {
+        foreach (string folder in ModelMetadataCachePerFolder.Keys)
+        {
+            if (ModelMetadataCachePerFolder.TryRemove(folder, out ModelDatabase database))
+            {
+                database.Dispose();
+            }
+        }
+    }
+
+    public void Shutdown()
+    {
+        if (!DetachFromModelRefresh())
+        {
+            return;
+        }
         lock (MetadataLock)
         {
-            foreach (ModelDatabase db in ModelMetadataCachePerFolder.Values)
-            {
-                db.Database.Dispose();
-            }
-            ModelMetadataCachePerFolder.Clear();
+            DisposeSharedMetadataCache();
         }
     }
 

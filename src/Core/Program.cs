@@ -547,39 +547,59 @@ public class Program
         }
         catch
         {
-            foreach (T2IModelHandler handler in result.Values)
-            {
-                try
-                {
-                    handler.Shutdown();
-                }
-                catch (Exception ex)
-                {
-                    Logs.Error($"Failed to clean up an unpublished {handler.ModelType} model handler: {ex.ReadableString()}");
-                }
-            }
+            DetachUnpublishedModelLists(result);
             throw;
+        }
+    }
+
+    /// <summary>Best-effort detaches replacement handlers that are not currently published.</summary>
+    private static void DetachUnpublishedModelLists(Dictionary<string, T2IModelHandler> replacement)
+    {
+        foreach ((string type, T2IModelHandler handler) in replacement)
+        {
+            if (T2IModelSets.TryGetValue(type, out T2IModelHandler published) && ReferenceEquals(published, handler))
+            {
+                continue;
+            }
+            try
+            {
+                handler.DetachFromModelRefresh();
+            }
+            catch (Exception ex)
+            {
+                Logs.Error($"Failed to detach an unpublished {handler.ModelType} model handler: {ex.ReadableString()}");
+            }
         }
     }
 
     /// <summary>Publishes a complete replacement catalog while the caller owns <see cref="RefreshLock"/> for writing.</summary>
     private static void PublishModelLists(Dictionary<string, T2IModelHandler> replacement)
     {
-        foreach (T2IModelHandler handler in T2IModelSets.Values)
+        try
         {
-            try
+            T2IModelSets.EnsureCapacity(replacement.Count);
+            foreach (T2IModelHandler handler in T2IModelSets.Values)
             {
-                handler.Shutdown();
+                try
+                {
+                    handler.DetachFromModelRefresh();
+                }
+                catch (Exception ex)
+                {
+                    Logs.Error($"Failed to detach a displaced {handler.ModelType} model handler: {ex.ReadableString()}");
+                }
             }
-            catch (Exception ex)
+            T2IModelHandler.DisposeSharedMetadataCache();
+            T2IModelSets.Clear();
+            foreach ((string type, T2IModelHandler handler) in replacement)
             {
-                Logs.Error($"Failed to fully shut down a displaced {handler.ModelType} model handler: {ex.ReadableString()}");
+                T2IModelSets[type] = handler;
             }
         }
-        T2IModelSets.Clear();
-        foreach ((string type, T2IModelHandler handler) in replacement)
+        catch
         {
-            T2IModelSets[type] = handler;
+            DetachUnpublishedModelLists(replacement);
+            throw;
         }
     }
 
@@ -590,7 +610,7 @@ public class Program
         PublishModelLists(replacement);
     }
 
-    /// <summary>Builds the main model list from settings. Called at init or on settings change.</summary>
+    /// <summary>Builds the main model list from settings under a newly acquired <see cref="RefreshLock"/> write claim. Callers must not already hold a read or write claim.</summary>
     public static void BuildModelLists()
     {
         using ManyReadOneWriteLock.WriteClaim claim = RefreshLock.LockWrite();
@@ -623,14 +643,14 @@ public class Program
         }
     }
 
-    /// <summary>Refreshes all model sets from file source.</summary>
+    /// <summary>Refreshes all model sets from file source under a newly acquired <see cref="RefreshLock"/> write claim. Callers must not already hold a read or write claim.</summary>
     public static void RefreshAllModelSets()
     {
         using ManyReadOneWriteLock.WriteClaim claim = RefreshLock.LockWrite();
         RefreshAllModelSetsCore();
     }
 
-    /// <summary>Refreshes one published model set from file source.</summary>
+    /// <summary>Refreshes one published model set under a newly acquired <see cref="RefreshLock"/> write claim. Callers must not already hold a read or write claim.</summary>
     public static bool RefreshModelSet(string modelType)
     {
         using ManyReadOneWriteLock.WriteClaim claim = RefreshLock.LockWrite();
@@ -642,7 +662,7 @@ public class Program
         return true;
     }
 
-    /// <summary>Rebuilds, refreshes, and publishes path-change notification under one catalog write boundary.</summary>
+    /// <summary>Rebuilds, refreshes, and publishes path-change notification under a newly acquired <see cref="RefreshLock"/> write claim. Callers and event callbacks must not already hold or reacquire a read or write claim.</summary>
     public static void RebuildModelListsForPathChange()
     {
         using ManyReadOneWriteLock.WriteClaim claim = RefreshLock.LockWrite();

@@ -124,8 +124,53 @@ No commit is needed for this inspection-only task.
 
 **Files:**
 - Modify: `src/Core/Program.cs`
+- Modify: `src/Text2Image/T2IModelHandler.cs`
 
-- [ ] **Step 1: Split candidate creation from public publication**
+- [ ] **Step 1: Separate handler detachment from shared metadata-cache retirement**
+
+In `T2IModelHandler`, preserve the public parameterless `Shutdown()` signature while separating event detachment from shared cache cleanup:
+
+```csharp
+/// <summary>Marks this handler shut down and removes its model-refresh subscription without disposing the shared metadata cache.</summary>
+internal bool DetachFromModelRefresh()
+{
+    if (IsShutdown)
+    {
+        return false;
+    }
+    IsShutdown = true;
+    Program.ModelRefreshEvent -= Refresh;
+    return true;
+}
+
+/// <summary>Removes and disposes every shared model metadata cache entry.</summary>
+internal static void DisposeSharedMetadataCache()
+{
+    foreach (string folder in ModelMetadataCachePerFolder.Keys)
+    {
+        if (ModelMetadataCachePerFolder.TryRemove(folder, out ModelDatabase database))
+        {
+            database.Dispose();
+        }
+    }
+}
+
+public void Shutdown()
+{
+    if (!DetachFromModelRefresh())
+    {
+        return;
+    }
+    lock (MetadataLock)
+    {
+        DisposeSharedMetadataCache();
+    }
+}
+```
+
+The static cleanup removes each entry before calling the existing exception-isolating `ModelDatabase.Dispose()`, so one database disposal failure cannot retain that entry or skip later entries. Candidate cleanup must call only `DetachFromModelRefresh`; publication performs shared cleanup once after all displaced handlers detach.
+
+- [ ] **Step 2: Split candidate creation from public publication**
 
 Replace the mutating body of `BuildModelLists` with private candidate and publication helpers. Keep the existing directory and path rules byte-for-byte:
 
@@ -214,39 +259,59 @@ private static Dictionary<string, T2IModelHandler> CreateModelLists()
     }
     catch
     {
-        foreach (T2IModelHandler handler in result.Values)
-        {
-            try
-            {
-                handler.Shutdown();
-            }
-            catch (Exception ex)
-            {
-                Logs.Error($"Failed to clean up an unpublished {handler.ModelType} model handler: {ex.ReadableString()}");
-            }
-        }
+        DetachUnpublishedModelLists(result);
         throw;
+    }
+}
+
+/// <summary>Best-effort detaches replacement handlers that are not currently published.</summary>
+private static void DetachUnpublishedModelLists(Dictionary<string, T2IModelHandler> replacement)
+{
+    foreach ((string type, T2IModelHandler handler) in replacement)
+    {
+        if (T2IModelSets.TryGetValue(type, out T2IModelHandler published) && ReferenceEquals(published, handler))
+        {
+            continue;
+        }
+        try
+        {
+            handler.DetachFromModelRefresh();
+        }
+        catch (Exception ex)
+        {
+            Logs.Error($"Failed to detach an unpublished {handler.ModelType} model handler: {ex.ReadableString()}");
+        }
     }
 }
 
 /// <summary>Publishes a complete replacement catalog while the caller owns <see cref="RefreshLock"/> for writing.</summary>
 private static void PublishModelLists(Dictionary<string, T2IModelHandler> replacement)
 {
-    foreach (T2IModelHandler handler in T2IModelSets.Values)
+    try
     {
-        try
+        T2IModelSets.EnsureCapacity(replacement.Count);
+        foreach (T2IModelHandler handler in T2IModelSets.Values)
         {
-            handler.Shutdown();
+            try
+            {
+                handler.DetachFromModelRefresh();
+            }
+            catch (Exception ex)
+            {
+                Logs.Error($"Failed to detach a displaced {handler.ModelType} model handler: {ex.ReadableString()}");
+            }
         }
-        catch (Exception ex)
+        T2IModelHandler.DisposeSharedMetadataCache();
+        T2IModelSets.Clear();
+        foreach ((string type, T2IModelHandler handler) in replacement)
         {
-            Logs.Error($"Failed to fully shut down a displaced {handler.ModelType} model handler: {ex.ReadableString()}");
+            T2IModelSets[type] = handler;
         }
     }
-    T2IModelSets.Clear();
-    foreach ((string type, T2IModelHandler handler) in replacement)
+    catch
     {
-        T2IModelSets[type] = handler;
+        DetachUnpublishedModelLists(replacement);
+        throw;
     }
 }
 
@@ -257,7 +322,7 @@ private static void BuildModelListsCore()
     PublishModelLists(replacement);
 }
 
-/// <summary>Builds the main model list from settings. Called at init or on settings change.</summary>
+/// <summary>Builds the main model list from settings under a newly acquired <see cref="RefreshLock"/> write claim. Callers must not already hold a read or write claim.</summary>
 public static void BuildModelLists()
 {
     using ManyReadOneWriteLock.WriteClaim claim = RefreshLock.LockWrite();
@@ -267,7 +332,7 @@ public static void BuildModelLists()
 
 Keep C# style compliant: explicit types, braced blocks, and XML docs on every new field if any are introduced.
 
-- [ ] **Step 2: Split full refresh into public and core operations**
+- [ ] **Step 3: Split full refresh into public and core operations**
 
 Replace the current `RefreshAllModelSets` body with:
 
@@ -289,14 +354,14 @@ private static void RefreshAllModelSetsCore()
     }
 }
 
-/// <summary>Refreshes all model sets from file source.</summary>
+/// <summary>Refreshes all model sets from file source under a newly acquired <see cref="RefreshLock"/> write claim. Callers must not already hold a read or write claim.</summary>
 public static void RefreshAllModelSets()
 {
     using ManyReadOneWriteLock.WriteClaim claim = RefreshLock.LockWrite();
     RefreshAllModelSetsCore();
 }
 
-/// <summary>Refreshes one published model set from file source.</summary>
+/// <summary>Refreshes one published model set under a newly acquired <see cref="RefreshLock"/> write claim. Callers must not already hold a read or write claim.</summary>
 public static bool RefreshModelSet(string modelType)
 {
     using ManyReadOneWriteLock.WriteClaim claim = RefreshLock.LockWrite();
@@ -309,12 +374,12 @@ public static bool RefreshModelSet(string modelType)
 }
 ```
 
-- [ ] **Step 3: Add the single runtime path-change operation**
+- [ ] **Step 4: Add the single runtime path-change operation**
 
 Add beside the refresh methods:
 
 ```csharp
-/// <summary>Rebuilds, refreshes, and publishes path-change notification under one catalog write boundary.</summary>
+/// <summary>Rebuilds, refreshes, and publishes path-change notification under a newly acquired <see cref="RefreshLock"/> write claim. Callers and event callbacks must not already hold or reacquire a read or write claim.</summary>
 public static void RebuildModelListsForPathChange()
 {
     using ManyReadOneWriteLock.WriteClaim claim = RefreshLock.LockWrite();
@@ -324,28 +389,32 @@ public static void RebuildModelListsForPathChange()
 }
 ```
 
-Update the XML docs on `T2IModelSets`, `MainSDModels`, and `RefreshLock` to say that maintained runtime lookup/enumeration participates in `RefreshLock`, and that event callbacks already executing under the write boundary must not reacquire it.
+Update the XML docs on `T2IModelSets`, `MainSDModels`, and `RefreshLock` to say that external and maintained runtime lookup/enumeration participates in `RefreshLock`, and that event callbacks already executing under the write boundary must not reacquire it. The public `BuildModelLists`, `RefreshAllModelSets`, `RefreshModelSet`, and `RebuildModelListsForPathChange` docs must state that each acquires the write claim and callers must not already hold a read or write claim.
 
-- [ ] **Step 4: Statically verify owner shape**
+- [ ] **Step 5: Statically verify owner shape**
 
 Run:
 
 ```bash
-rg -n 'CreateModelLists|PublishModelLists|BuildModelListsCore|RefreshAllModelSetsCore|RefreshModelSet|RebuildModelListsForPathChange' src/Core/Program.cs
+rg -n 'CreateModelLists|DetachUnpublishedModelLists|PublishModelLists|BuildModelListsCore|RefreshAllModelSetsCore|RefreshModelSet|RebuildModelListsForPathChange' src/Core/Program.cs
+rg -n 'DetachFromModelRefresh|DisposeSharedMetadataCache|public void Shutdown\\(\\)' src/Text2Image/T2IModelHandler.cs
 rg -n 'T2IModelSets\s*=' src/Core/Program.cs
-git diff --check -- src/Core/Program.cs
+git diff --check -- src/Core/Program.cs src/Text2Image/T2IModelHandler.cs
 ```
 
 Expected:
 
 - one public dictionary initialization and no reassignment;
-- private core helpers plus three public write-owning operations;
+- private core helpers plus four public write-owning operations;
+- candidate failure detaches subscriptions without disposing the prior shared cache;
+- publication reserves capacity, detaches displaced handlers, cleans the shared cache once, and detaches any unpublished replacement after an unexpected transfer failure;
+- the public parameterless `T2IModelHandler.Shutdown()` remains present and idempotent;
 - no whitespace errors.
 
-- [ ] **Step 5: Commit the catalog owner**
+- [ ] **Step 6: Commit the catalog owner**
 
 ```bash
-git add -- src/Core/Program.cs
+git add -- src/Core/Program.cs src/Text2Image/T2IModelHandler.cs
 git diff --cached --check
 git commit -m "refactor: own runtime model catalog publication"
 ```
