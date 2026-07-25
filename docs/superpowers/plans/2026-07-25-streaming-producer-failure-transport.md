@@ -40,6 +40,8 @@
   - Tracks `Task<bool>` for initial/reuse producers, stops reuse after the first producer fault, drains active work, propagates helper/socket faults, and suppresses failure-path close intention/final status.
 - Modify after integrated static review: `docs/superpowers/specs/2026-07-25-streaming-producer-failure-transport-design.md`
   - Records the exact production commits/files and static evidence as implemented awaiting maintainer validation, then records only explicitly confirmed maintainer results.
+- Modify after integrated static review: `docs/superpowers/audits/2026-07-21-maintainability-architecture-refresh.md`
+  - Keeps Core F5, rank 10, current dispositions, and the recommended-next-project status synchronized without advancing rank 11 before validation.
 
 No browser file, route registration, producer signature, direct-call helper, new transport abstraction, or test file is part of this plan.
 
@@ -563,21 +565,22 @@ Expected staged file: only `src/WebAPI/T2IAPI.cs`.
 - Inspect: `src/WebAPI/T2IAPI.cs`
 - Inspect: `src/Core/ExtensionsManager.cs:128-140,208-218`
 - Modify: `docs/superpowers/specs/2026-07-25-streaming-producer-failure-transport-design.md`
+- Modify: `docs/superpowers/audits/2026-07-21-maintainability-architecture-refresh.md`
 
 - [ ] **Step 1: Inspect the complete fixed-boundary range**
 
 Run:
 
 ```bash
-git log --oneline --reverse 47d32f4e..HEAD
-git diff --name-only 47d32f4e..HEAD
-git diff --name-only 47d32f4e..HEAD -- src
-git diff --check 47d32f4e..HEAD
+git log --oneline --reverse 7e3090cb..HEAD
+git diff --name-only 7e3090cb..HEAD
+git diff --name-only 7e3090cb..HEAD -- src
+git diff --check 7e3090cb..HEAD
 ```
 
 Expected:
 
-- the full range contains this plan plus the three planned production commits;
+- the full range begins after the separate compiler-fix commit `7e3090cb` and contains this plan, any plan-only correction, and the three planned production commits;
 - the production subset changes exactly:
   - `src/WebAPI/API.cs`
   - `src/WebAPI/ModelsAPI.cs`
@@ -585,6 +588,8 @@ Expected:
   - `src/BuiltinExtensions/ImageBatchTool/ImageBatchToolExtension.cs`
   - `src/WebAPI/T2IAPI.cs`; and
 - no whitespace errors are reported.
+
+Record the three source-changing commit hashes from this range as the exact Rank 10 production range. Do not include `7e3090cb`, the design, the plan, or any plan-correction commit in that production range.
 
 - [ ] **Step 2: Repeat the exact helper inventory**
 
@@ -645,7 +650,7 @@ rg -n 'RegisterAPICall\\(.*(GenerateText2ImageWS|SelectModelWS|DoLoraExtractionW
   src \
   --glob '*.cs'
 rg -n -C 6 'coreIdentity|ModuleVersionId|targetName' src/Core/ExtensionsManager.cs
-git diff --name-only 47d32f4e..HEAD -- src/wwwroot
+git diff --name-only 7e3090cb..HEAD -- src/wwwroot
 ```
 
 Expected:
@@ -687,34 +692,44 @@ Before `## Maintainer Validation`, add `## Implementation Record` containing:
 
 Do not mark any runtime, platform, or performance behavior validated.
 
+In `docs/superpowers/audits/2026-07-21-maintainability-architecture-refresh.md`, update the current-transport summaries near lines 55 and 247, the complete `Core F5` finding near line 352, the risk-register streaming row near line 594, roadmap rank 10 near line 757, the `Recommended Next Project` copy near line 899, and `Current finding dispositions` near line 963. Mark Core F5/rank 10 consistently as `Implemented; awaiting maintainer validation`; record the same exact three-commit production range, five source files, one-definition/six-call inventory, preserved contracts, source/precompiled-binary compatibility boundary, and static-only evidence. Keep ranks 1, 2, and 8 pending, retain all already validated ranks, and keep rank 10 as the recommended next project until its maintainer matrix passes. Do not advance rank 11 during static closure.
+
 - [ ] **Step 7: Review and commit the implementation record**
 
 Run:
 
 ```bash
-rg -n 'TBD|TODO|FIXME|PLACEHOLDER|Implemented|maintainer validation|agent|binary|ModuleVersionId' \
-  docs/superpowers/specs/2026-07-25-streaming-producer-failure-transport-design.md
-git diff --check -- docs/superpowers/specs/2026-07-25-streaming-producer-failure-transport-design.md
-git diff -- docs/superpowers/specs/2026-07-25-streaming-producer-failure-transport-design.md
+rg -n 'TBD|TODO|FIXME|PLACEHOLDER|Implemented|maintainer validation|agent|binary|ModuleVersionId|rank 10|Rank 10|Core F5|Recommended Next Project' \
+  docs/superpowers/specs/2026-07-25-streaming-producer-failure-transport-design.md \
+  docs/superpowers/audits/2026-07-21-maintainability-architecture-refresh.md
+git diff --check -- \
+  docs/superpowers/specs/2026-07-25-streaming-producer-failure-transport-design.md \
+  docs/superpowers/audits/2026-07-21-maintainability-architecture-refresh.md
+git diff -- \
+  docs/superpowers/specs/2026-07-25-streaming-producer-failure-transport-design.md \
+  docs/superpowers/audits/2026-07-21-maintainability-architecture-refresh.md
 ```
 
-Expected: no placeholders, no runtime claim, and one design-document change.
+Expected: no placeholders, no runtime claim, and consistent design/audit status changes.
 
 Commit:
 
 ```bash
-git add docs/superpowers/specs/2026-07-25-streaming-producer-failure-transport-design.md
+git add \
+  docs/superpowers/specs/2026-07-25-streaming-producer-failure-transport-design.md \
+  docs/superpowers/audits/2026-07-21-maintainability-architecture-refresh.md
 git diff --cached --check
 git diff --cached --name-only
 git commit -m "docs: record streaming producer failure transport"
 ```
 
-Expected staged file: only the design document.
+Expected staged files: exactly the design and architecture-audit documents.
 
 ### Task 5: Maintainer Fault Injection, Successful-Flow Validation, and Closure
 
 **Files:**
 - Modify only after explicit maintainer confirmation: `docs/superpowers/specs/2026-07-25-streaming-producer-failure-transport-design.md`
+- Modify only after explicit maintainer confirmation: `docs/superpowers/audits/2026-07-21-maintainability-architecture-refresh.md`
 
 - [ ] **Step 1: Present the exact injected-fault matrix**
 
@@ -776,18 +791,22 @@ After the maintainer explicitly reports the matrix:
 - make no performance or unvalidated-platform claim; and
 - retain the explicit statement that agents did not perform runtime validation.
 
+Update the same audit locations enumerated in Task 4 at the same time: mark Core F5/rank 10 implemented and maintainer-validated, preserve ranks 1, 2, and 8 as pending, and replace the recommended-next-project section with the existing rank 11 roadmap entry near line 763 only after the complete Rank 10 matrix passes. Copy that rank 11 entry without altering its boundary, payoff, prerequisites, stages/non-goals, verification, success, or rollback text.
+
 - [ ] **Step 5: Commit validation closure**
 
 If and only if the maintainer explicitly confirms the required matrix:
 
 ```bash
-git add docs/superpowers/specs/2026-07-25-streaming-producer-failure-transport-design.md
+git add \
+  docs/superpowers/specs/2026-07-25-streaming-producer-failure-transport-design.md \
+  docs/superpowers/audits/2026-07-21-maintainability-architecture-refresh.md
 git diff --cached --check
 git diff --cached --name-only
 git commit -m "docs: validate streaming producer failure transport"
 ```
 
-Expected staged file: only the design document.
+Expected staged files: exactly the design and architecture-audit documents.
 
 - [ ] **Step 6: Report final scope without pushing**
 
@@ -796,7 +815,7 @@ Run:
 ```bash
 git status --short --branch --untracked-files=no
 git log --oneline -10
-git diff --check 47d32f4e..HEAD
+git diff --check 7e3090cb..HEAD
 ```
 
 Report:
