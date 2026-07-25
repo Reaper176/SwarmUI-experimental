@@ -556,82 +556,108 @@ public static class ModelsAPI
         {
             return new JObject() { ["error"] = "No supported metadata fields selected." };
         }
-        using ManyReadOneWriteLock.ReadClaim claim = Program.RefreshLock.LockRead();
-        if (!Program.T2IModelSets.TryGetValue("LoRA", out T2IModelHandler handler))
+        IDisposable claimOwner = Program.RefreshLock.LockRead();
+        try
         {
-            return new JObject() { ["error"] = "LoRA model handler not found." };
+            if (!Program.T2IModelSets.TryGetValue("LoRA", out T2IModelHandler handler))
+            {
+                return new JObject() { ["error"] = "LoRA model handler not found." };
+            }
+            int edited = 0;
+            JArray errors = [];
+            List<T2IModel> modelsToResave = [];
+            foreach (JToken modelToken in models)
+            {
+                string model = modelToken?.ToString();
+                if (string.IsNullOrWhiteSpace(model))
+                {
+                    errors.Add(new JObject() { ["model"] = model ?? "", ["error"] = "Model name is empty." });
+                    continue;
+                }
+                if (TryGetRefusalForModel(session, model, out JObject refusal))
+                {
+                    errors.Add(new JObject() { ["model"] = model, ["error"] = refusal["error"]?.ToString() ?? "Model edit refused." });
+                    continue;
+                }
+                if (!handler.Models.TryGetValue(model, out T2IModel actualModel))
+                {
+                    errors.Add(new JObject() { ["model"] = model, ["error"] = "Model not found." });
+                    continue;
+                }
+                lock (handler.ModificationLock)
+                {
+                    if (architectureClass is not null)
+                    {
+                        actualModel.ModelClass = architectureClass;
+                    }
+                    actualModel.Metadata ??= new();
+                    if (fields.TryGetValue("usage_hint", out JToken usageHint))
+                    {
+                        actualModel.Metadata.UsageHint = usageHint?.ToString();
+                    }
+                    if (fields.TryGetValue("trigger_phrase", out JToken triggerPhrase))
+                    {
+                        actualModel.Metadata.TriggerPhrase = triggerPhrase?.ToString();
+                    }
+                    if (fields.TryGetValue("lora_default_weight", out JToken loraDefaultWeight))
+                    {
+                        actualModel.Metadata.LoraDefaultWeight = loraDefaultWeight?.ToString();
+                    }
+                    if (fields.TryGetValue("lora_default_confinement", out JToken loraDefaultConfinement))
+                    {
+                        actualModel.Metadata.LoraDefaultConfinement = loraDefaultConfinement?.ToString();
+                    }
+                    if (hasTagsMode)
+                    {
+                        actualModel.Metadata.Tags = ApplyBulkModelTags(actualModel.Metadata.Tags, tagsMode, fields["tags"]?.ToString());
+                    }
+                }
+                handler.ResetMetadataFrom(actualModel);
+                modelsToResave.Add(actualModel);
+                edited++;
+            }
+            if (edited > 0)
+            {
+                Interlocked.Increment(ref ModelEditID);
+                IDisposable deferredClaimOwner = claimOwner;
+                claimOwner = null;
+                try
+                {
+                    _ = Utilities.RunCheckedTask(() =>
+                    {
+                        try
+                        {
+                            foreach (T2IModel model in modelsToResave)
+                            {
+                                model.ResaveModel();
+                            }
+                        }
+                        finally
+                        {
+                            IDisposable owner = Interlocked.Exchange(ref deferredClaimOwner, null);
+                            owner?.Dispose();
+                        }
+                    }, "bulk model resave");
+                }
+                catch
+                {
+                    IDisposable owner = Interlocked.Exchange(ref deferredClaimOwner, null);
+                    owner?.Dispose();
+                    throw;
+                }
+            }
+            return new JObject()
+            {
+                ["success"] = true,
+                ["edited"] = edited,
+                ["failed"] = errors.Count,
+                ["errors"] = errors
+            };
         }
-        int edited = 0;
-        JArray errors = [];
-        List<T2IModel> modelsToResave = [];
-        foreach (JToken modelToken in models)
+        finally
         {
-            string model = modelToken?.ToString();
-            if (string.IsNullOrWhiteSpace(model))
-            {
-                errors.Add(new JObject() { ["model"] = model ?? "", ["error"] = "Model name is empty." });
-                continue;
-            }
-            if (TryGetRefusalForModel(session, model, out JObject refusal))
-            {
-                errors.Add(new JObject() { ["model"] = model, ["error"] = refusal["error"]?.ToString() ?? "Model edit refused." });
-                continue;
-            }
-            if (!handler.Models.TryGetValue(model, out T2IModel actualModel))
-            {
-                errors.Add(new JObject() { ["model"] = model, ["error"] = "Model not found." });
-                continue;
-            }
-            lock (handler.ModificationLock)
-            {
-                if (architectureClass is not null)
-                {
-                    actualModel.ModelClass = architectureClass;
-                }
-                actualModel.Metadata ??= new();
-                if (fields.TryGetValue("usage_hint", out JToken usageHint))
-                {
-                    actualModel.Metadata.UsageHint = usageHint?.ToString();
-                }
-                if (fields.TryGetValue("trigger_phrase", out JToken triggerPhrase))
-                {
-                    actualModel.Metadata.TriggerPhrase = triggerPhrase?.ToString();
-                }
-                if (fields.TryGetValue("lora_default_weight", out JToken loraDefaultWeight))
-                {
-                    actualModel.Metadata.LoraDefaultWeight = loraDefaultWeight?.ToString();
-                }
-                if (fields.TryGetValue("lora_default_confinement", out JToken loraDefaultConfinement))
-                {
-                    actualModel.Metadata.LoraDefaultConfinement = loraDefaultConfinement?.ToString();
-                }
-                if (hasTagsMode)
-                {
-                    actualModel.Metadata.Tags = ApplyBulkModelTags(actualModel.Metadata.Tags, tagsMode, fields["tags"]?.ToString());
-                }
-            }
-            handler.ResetMetadataFrom(actualModel);
-            modelsToResave.Add(actualModel);
-            edited++;
+            claimOwner?.Dispose();
         }
-        if (edited > 0)
-        {
-            Interlocked.Increment(ref ModelEditID);
-            _ = Utilities.RunCheckedTask(() =>
-            {
-                foreach (T2IModel model in modelsToResave)
-                {
-                    model.ResaveModel();
-                }
-            }, "bulk model resave");
-        }
-        return new JObject()
-        {
-            ["success"] = true,
-            ["edited"] = edited,
-            ["failed"] = errors.Count,
-            ["errors"] = errors
-        };
     }
 
     [API.APIDescription("Modifies the metadata of a model. Returns before the file update is necessarily saved.", "\"success\": true")]
@@ -656,68 +682,97 @@ public static class ModelsAPI
         [API.APIParameter("New model `lora_default_confinement` metadata value.")] string lora_default_confinement = "",
         [API.APIParameter("The model's sub-type, eg `Stable-Diffusion`, `LoRA`, etc.")] string subtype = "Stable-Diffusion")
     {
-        using ManyReadOneWriteLock.ReadClaim claim = Program.RefreshLock.LockRead();
-        if (!Program.T2IModelSets.TryGetValue(subtype, out T2IModelHandler handler))
+        IDisposable claimOwner = Program.RefreshLock.LockRead();
+        try
         {
-            return new JObject() { ["error"] = "Invalid sub-type." };
-        }
-        if (TryGetRefusalForModel(session, model, out JObject refusal))
-        {
-            return refusal;
-        }
-        if (!handler.Models.TryGetValue(model, out T2IModel actualModel))
-        {
-            return new JObject() { ["error"] = "Model not found." };
-        }
-        lock (handler.ModificationLock)
-        {
-            actualModel.Title = string.IsNullOrWhiteSpace(title) ? null : title;
-            actualModel.Description = description;
-            if (!string.IsNullOrWhiteSpace(type))
+            if (!Program.T2IModelSets.TryGetValue(subtype, out T2IModelHandler handler))
             {
-                actualModel.ModelClass = T2IModelClassSorter.ModelClasses.GetValueOrDefault(type.ToLowerFast());
+                return new JObject() { ["error"] = "Invalid sub-type." };
             }
-            if (standard_width > 0)
+            if (TryGetRefusalForModel(session, model, out JObject refusal))
             {
-                actualModel.StandardWidth = standard_width;
+                return refusal;
             }
-            if (standard_height > 0)
+            if (!handler.Models.TryGetValue(model, out T2IModel actualModel))
             {
-                actualModel.StandardHeight = standard_height;
+                return new JObject() { ["error"] = "Model not found." };
             }
-            actualModel.Metadata ??= new();
-            if (!string.IsNullOrWhiteSpace(preview_image))
+            lock (handler.ModificationLock)
             {
-                if (preview_image == "clear")
+                actualModel.Title = string.IsNullOrWhiteSpace(title) ? null : title;
+                actualModel.Description = description;
+                if (!string.IsNullOrWhiteSpace(type))
                 {
-                    actualModel.PreviewImage = "imgs/model_placeholder.jpg";
-                    actualModel.Metadata.PreviewImage = null;
+                    actualModel.ModelClass = T2IModelClassSorter.ModelClasses.GetValueOrDefault(type.ToLowerFast());
                 }
-                else
+                if (standard_width > 0)
                 {
-                    ImageFile img = ImageFile.FromDataString(preview_image).ToMetadataJpg(preview_image_metadata);
-                    if (img is not null)
+                    actualModel.StandardWidth = standard_width;
+                }
+                if (standard_height > 0)
+                {
+                    actualModel.StandardHeight = standard_height;
+                }
+                actualModel.Metadata ??= new();
+                if (!string.IsNullOrWhiteSpace(preview_image))
+                {
+                    if (preview_image == "clear")
                     {
-                        actualModel.PreviewImage = img.AsDataString();
-                        actualModel.Metadata.PreviewImage = actualModel.PreviewImage;
+                        actualModel.PreviewImage = "imgs/model_placeholder.jpg";
+                        actualModel.Metadata.PreviewImage = null;
+                    }
+                    else
+                    {
+                        ImageFile img = ImageFile.FromDataString(preview_image).ToMetadataJpg(preview_image_metadata);
+                        if (img is not null)
+                        {
+                            actualModel.PreviewImage = img.AsDataString();
+                            actualModel.Metadata.PreviewImage = actualModel.PreviewImage;
+                        }
                     }
                 }
+                actualModel.Metadata.Author = author;
+                actualModel.Metadata.UsageHint = usage_hint;
+                actualModel.Metadata.Date = date;
+                actualModel.Metadata.License = license;
+                actualModel.Metadata.TriggerPhrase = trigger_phrase;
+                actualModel.Metadata.Tags = string.IsNullOrWhiteSpace(tags) ? null : tags.Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries);
+                actualModel.Metadata.IsNegativeEmbedding = is_negative_embedding;
+                actualModel.Metadata.LoraDefaultWeight = lora_default_weight;
+                actualModel.Metadata.LoraDefaultConfinement = lora_default_confinement;
+                actualModel.Metadata.PredictionType = string.IsNullOrWhiteSpace(prediction_type) ? null : prediction_type;
             }
-            actualModel.Metadata.Author = author;
-            actualModel.Metadata.UsageHint = usage_hint;
-            actualModel.Metadata.Date = date;
-            actualModel.Metadata.License = license;
-            actualModel.Metadata.TriggerPhrase = trigger_phrase;
-            actualModel.Metadata.Tags = string.IsNullOrWhiteSpace(tags) ? null : tags.Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries);
-            actualModel.Metadata.IsNegativeEmbedding = is_negative_embedding;
-            actualModel.Metadata.LoraDefaultWeight = lora_default_weight;
-            actualModel.Metadata.LoraDefaultConfinement = lora_default_confinement;
-            actualModel.Metadata.PredictionType = string.IsNullOrWhiteSpace(prediction_type) ? null : prediction_type;
+            handler.ResetMetadataFrom(actualModel);
+            IDisposable deferredClaimOwner = claimOwner;
+            claimOwner = null;
+            try
+            {
+                _ = Utilities.RunCheckedTask(() =>
+                {
+                    try
+                    {
+                        actualModel.ResaveModel();
+                    }
+                    finally
+                    {
+                        IDisposable owner = Interlocked.Exchange(ref deferredClaimOwner, null);
+                        owner?.Dispose();
+                    }
+                }, "model resave");
+            }
+            catch
+            {
+                IDisposable owner = Interlocked.Exchange(ref deferredClaimOwner, null);
+                owner?.Dispose();
+                throw;
+            }
+            Interlocked.Increment(ref ModelEditID);
+            return new JObject() { ["success"] = true };
         }
-        handler.ResetMetadataFrom(actualModel);
-        _ = Utilities.RunCheckedTask(() => actualModel.ResaveModel(), "model resave");
-        Interlocked.Increment(ref ModelEditID);
-        return new JObject() { ["success"] = true };
+        finally
+        {
+            claimOwner?.Dispose();
+        }
     }
 
     [API.APIDescription("Gets the raw headers of a model as raw JSON.", "\"headers\": { \"diffusion_model.some.key\": { \"dtype\": \"BF16\", ... }, ... }")]

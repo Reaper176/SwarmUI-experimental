@@ -183,6 +183,7 @@ Every maintained runtime access through either `T2IModelSets` or `MainSDModels` 
 
 Read claims begin before outer-dictionary lookup or enumeration. A handler must not be resolved before acquiring the claim and then used after an intervening replacement.
 A copied `T2IModel` is not independent if subsequent work calls methods that re-enter its `Handler` or handler-owned metadata state, notably tensor hashing and model resaving; those operations remain inside the read claim.
+When handler-dependent work is intentionally deferred to a background callback, the synchronous path transfers exclusive ownership of its existing read claim to that callback before scheduling. Because `ReadClaim` is a mutable struct, the claim is boxed once as `IDisposable`: synchronous early-return paths dispose it in `finally`, successful transfer nulls the synchronous owner, and the callback or scheduling-exception path atomically clears and disposes the transferred owner exactly once. The callback must not acquire a nested read claim because a queued writer may already be draining prior readers.
 
 Claims cover the shortest complete synchronous catalog operation. They may include:
 

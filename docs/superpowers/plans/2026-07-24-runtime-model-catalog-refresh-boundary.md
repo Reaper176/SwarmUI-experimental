@@ -527,13 +527,15 @@ git commit -m "refactor: route model catalog writes through owner"
 
 - [ ] **Step 1: Move Models API claims before handler resolution**
 
-For `DescribeModel`, `ListModels`, `BulkEditModelMetadata`, `EditModelMetadata`, `GetModelHeaders`, `OpenModelFolder`, `DeleteModel`, and `RenameModel`, ensure the method acquires:
+For `DescribeModel`, `ListModels`, `GetModelHeaders`, `OpenModelFolder`, `DeleteModel`, and `RenameModel`, ensure the method acquires:
 
 ```csharp
 using ManyReadOneWriteLock.ReadClaim claim = Program.RefreshLock.LockRead();
 ```
 
 before the first `Program.T2IModelSets.TryGetValue(...)`. Remove later duplicate claims in the same synchronous handler-use scope.
+
+`BulkEditModelMetadata` and `EditModelMetadata` must likewise acquire the read claim before their first outer lookup, but they preserve deferred file-save behavior, so their existing claim must outlive the synchronous method when a resave is scheduled. Box the original claim once as `IDisposable`, protect every synchronous early return with `try`/`finally`, then transfer the same interface reference exclusively to the callback by nulling the synchronous owner before calling `RunCheckedTask`. The callback atomically clears and disposes the transferred owner in `finally` after every `ResaveModel` call. If scheduling throws, atomically clear and dispose the transferred owner in `catch`, then rethrow. Do not acquire a nested or second read claim in the callback: a catalog writer may already be waiting for the original reader to drain.
 
 For `OpenModelFolder`, copy the selected path under the claim and release it before `Process.Start`:
 
