@@ -1057,7 +1057,6 @@ public class T2IParamTypes
     /// <summary>Converts a parameter value in a valid input for that parameter, or throws <see cref="SwarmReadableErrorException"/> if it can't.</summary>
     public static string ValidateParam(T2IParamType type, string val, Session session)
     {
-        using ManyReadOneWriteLock.ReadClaim claim = Program.RefreshLock.LockRead();
         string origVal = val;
         if (type is null)
         {
@@ -1102,7 +1101,11 @@ public class T2IParamTypes
             case T2IParamDataType.DROPDOWN:
                 if (type.GetValues is not null && type.ValidateValues)
                 {
-                    string[] rawVals = [.. type.GetValues(session).Select(v => v.Before("///"))];
+                    string[] rawVals;
+                    using (ManyReadOneWriteLock.ReadClaim claim = Program.RefreshLock.LockRead())
+                    {
+                        rawVals = [.. type.GetValues(session).Select(v => v.Before("///"))];
+                    }
                     val = GetBestInList(val, rawVals);
                     if (val is null)
                     {
@@ -1120,7 +1123,11 @@ public class T2IParamTypes
                     }
                     if (type.GetValues is not null && type.ValidateValues)
                     {
-                        string[] possible = [.. type.GetValues(session).Select(v => v.Before("///"))];
+                        string[] possible;
+                        using (ManyReadOneWriteLock.ReadClaim claim = Program.RefreshLock.LockRead())
+                        {
+                            possible = [.. type.GetValues(session).Select(v => v.Before("///"))];
+                        }
                         for (int i = 0; i < vals.Length; i++)
                         {
                             string search = vals[i];
@@ -1191,16 +1198,19 @@ public class T2IParamTypes
                     return rawSplit.JoinString(splitter);
                 }
             case T2IParamDataType.MODEL:
-                if (!Program.T2IModelSets.TryGetValue(type.Subtype ?? "Stable-Diffusion", out T2IModelHandler handler))
+                using (ManyReadOneWriteLock.ReadClaim claim = Program.RefreshLock.LockRead())
                 {
-                    throw new SwarmUserErrorException($"Invalid model sub-type for param {type.Name}: '{type.Subtype}' - are you sure that type name is correct? (Developer error)");
+                    if (!Program.T2IModelSets.TryGetValue(type.Subtype ?? "Stable-Diffusion", out T2IModelHandler handler))
+                    {
+                        throw new SwarmUserErrorException($"Invalid model sub-type for param {type.Name}: '{type.Subtype}' - are you sure that type name is correct? (Developer error)");
+                    }
+                    val = GetBestModelInList(val, [.. handler.ListModelNamesFor(session)]);
+                    if (val is null)
+                    {
+                        throw new SwarmUserErrorException($"Invalid model value for param {type.Name} - '{origVal}' - are you sure that model name is correct?");
+                    }
+                    return val;
                 }
-                val = GetBestModelInList(val, [.. handler.ListModelNamesFor(session)]);
-                if (val is null)
-                {
-                    throw new SwarmUserErrorException($"Invalid model value for param {type.Name} - '{origVal}' - are you sure that model name is correct?");
-                }
-                return val;
         }
         throw new SwarmUserErrorException($"Unknown parameter type's data type? {type.Type}");
     }

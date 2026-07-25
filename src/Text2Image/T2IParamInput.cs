@@ -477,11 +477,19 @@ public class T2IParamInput
                     Logs.Debug($"Model param '{param}' is null, will not list in sui_models metadata");
                     return;
                 }
+                string hash = model.Metadata?.Hash;
+                if (hash is null
+                    && model.Handler is not null
+                    && Program.T2IModelSets.TryGetValue(model.Handler.ModelType, out T2IModelHandler currentHandler)
+                    && ReferenceEquals(currentHandler, model.Handler))
+                {
+                    hash = model.GetOrGenerateTensorHashSha256();
+                }
                 models.Add(new JObject()
                 {
                     ["name"] = model.Name,
                     ["param"] = param,
-                    ["hash"] = model.GetOrGenerateTensorHashSha256()
+                    ["hash"] = hash
                 });
             }
             void addModelsFor(string key, object val)
@@ -498,12 +506,12 @@ public class T2IParamInput
                     }
                 }
             }
-            foreach ((string key, object val) in InternalSet.ValuesInput)
-            {
-                addModelsFor(key, val);
-            }
             using (ManyReadOneWriteLock.ReadClaim claim = Program.RefreshLock.LockRead())
             {
+                foreach ((string key, object val) in InternalSet.ValuesInput)
+                {
+                    addModelsFor(key, val);
+                }
                 foreach ((string modelListKey, string subType) in ModelListExtraKeys)
                 {
                     if (ExtraMeta.TryGetValue(modelListKey, out object val) || InternalSet.ValuesInput.TryGetValue(modelListKey, out val))

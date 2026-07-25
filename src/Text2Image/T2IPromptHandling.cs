@@ -478,7 +478,7 @@ public class T2IPromptHandling
             string matched;
             using (ManyReadOneWriteLock.ReadClaim claim = Program.RefreshLock.LockRead())
             {
-                context.Embeds ??= [.. Program.T2IModelSets["Embedding"].ListModelNamesFor(context.Input.SourceSession)];
+                context.Embeds = [.. Program.T2IModelSets["Embedding"].ListModelNamesFor(context.Input.SourceSession)];
                 matched = T2IParamTypes.GetBestModelInList(want, context.Embeds);
                 if (matched is null)
                 {
@@ -543,9 +543,10 @@ public class T2IPromptHandling
                 }
             }
             string matched;
+            string trigger;
             using (ManyReadOneWriteLock.ReadClaim claim = Program.RefreshLock.LockRead())
             {
-                context.Loras ??= [.. Program.T2IModelSets["LoRA"].ListModelNamesFor(context.Input.SourceSession)];
+                context.Loras = [.. Program.T2IModelSets["LoRA"].ListModelNamesFor(context.Input.SourceSession)];
                 matched = T2IParamTypes.GetBestModelInList(lora, context.Loras);
                 if (matched is null)
                 {
@@ -561,6 +562,7 @@ public class T2IPromptHandling
                 {
                     loraModel.GetOrGenerateTensorHashSha256(); // Ensure hash is preloaded
                 }
+                trigger = loraModel?.Metadata?.TriggerPhrase;
             }
             if (lora.Length < matched.Length)
             {
@@ -603,7 +605,6 @@ public class T2IPromptHandling
                 schedules.Add(string.IsNullOrWhiteSpace(rawSchedule) ? "none" : rawSchedule);
                 context.Input.Set(T2IParamTypes.LoraSchedules, schedules);
             }
-            string trigger = loraModel?.Metadata?.TriggerPhrase;
             if (!string.IsNullOrWhiteSpace(trigger))
             {
                 context.TriggerPhraseExtra += $"{trigger}, ";
@@ -744,7 +745,7 @@ public class T2IPromptHandling
             {
                 using (ManyReadOneWriteLock.ReadClaim claim = Program.RefreshLock.LockRead())
                 {
-                    context.Loras ??= [.. Program.T2IModelSets["LoRA"].ListModelNamesFor(context.Input.SourceSession)];
+                    context.Loras = [.. Program.T2IModelSets["LoRA"].ListModelNamesFor(context.Input.SourceSession)];
                     foreach (string lora in loras)
                     {
                         string matched = T2IParamTypes.GetBestModelInList(lora, context.Loras);

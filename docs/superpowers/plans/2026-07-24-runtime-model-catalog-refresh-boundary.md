@@ -877,13 +877,13 @@ using ManyReadOneWriteLock.ReadClaim claim = Program.RefreshLock.LockRead();
 T2IModelHandler handler = Program.T2IModelSets[param.Subtype ?? "Stable-Diffusion"];
 ```
 
-In `T2IParamTypes.ValidateParam`, acquire one read claim at the start of the method and retain it through value-provider execution, validation, and model resolution. This is the other maintained central boundary for catalog-backed `GetValues` delegates, alongside `T2IAPI.ListT2IParams`. Do not add a second claim specifically in the model branch.
+In `T2IParamTypes.ValidateParam`, use branch-scoped read claims: copy `GetValues` results under one claim in the text/dropdown and list branches, then release it before ordinary validation; in the model branch, retain one claim through handler lookup and name matching. These are the other maintained central boundaries for catalog-backed `GetValues` delegates and model validation, alongside `T2IAPI.ListT2IParams`. Media file reads and unrelated validation remain outside the claims.
 
-In `T2IParamInput` metadata generation, acquire a read claim around the `ModelListExtraKeys` loop that resolves string names back to models and calls `addModel` for those resolved objects. Hash generation can re-enter the model's handler and must finish before that handler can be displaced. Keep unrelated processing outside the claim.
+In `T2IParamInput` metadata generation, acquire one read claim around both the `InternalSet.ValuesInput` and `ModelListExtraKeys` loops so every `addModel` call is covered. A typed `T2IModel` can outlive its catalog generation: use its already-copied metadata hash when present, and call `GetOrGenerateTensorHashSha256` only when the model's handler is reference-identical to the currently published handler for that type. Preserve the model entry with a null hash when a stale model has no copied hash rather than re-entering its retired handler. String entries resolved through `ModelListExtraKeys` use the current handler and may hash under the same claim.
 
 - [ ] **Step 4: Protect model-backed parameter providers**
 
-`T2IAPI.ListT2IParams` provides one outer read boundary for `T2IParamType.ToNet` value-provider execution. `T2IParamTypes.ValidateParam` provides the other maintained boundary around direct `GetValues` execution and model validation. Keep every catalog-backed provider delegate lock-free so it can execute beneath either boundary without nested acquisition. For example, retain the existing provider shape:
+`T2IAPI.ListT2IParams` provides one outer read boundary for `T2IParamType.ToNet` value-provider execution. Branch-scoped claims in `T2IParamTypes.ValidateParam` provide the other maintained boundaries around direct `GetValues` execution and model validation. Keep every catalog-backed provider delegate lock-free so it can execute beneath either boundary without nested acquisition. For example, retain the existing provider shape:
 
 ```csharp
 static List<string> listRefinerModels(Session session)
@@ -913,11 +913,11 @@ Keep prompt parsing and unrelated processing outside the claims. A typical block
 ```csharp
 using (ManyReadOneWriteLock.ReadClaim claim = Program.RefreshLock.LockRead())
 {
-    context.Loras ??= [.. Program.T2IModelSets["LoRA"].ListModelNamesFor(context.Input.SourceSession)];
+    context.Loras = [.. Program.T2IModelSets["LoRA"].ListModelNamesFor(context.Input.SourceSession)];
 }
 ```
 
-When matching and resolving must use one generation, keep both operations in the same claim.
+Rebuild the relevant `context.Embeds` or `context.Loras` name snapshot unconditionally inside every focused claim. These arrays span prompt-processing blocks and cannot safely retain names from a prior generation. When matching and resolving must use one generation, keep both operations in the same claim and copy any later-needed metadata string before releasing it.
 
 - [ ] **Step 6: Verify conversion coverage**
 
