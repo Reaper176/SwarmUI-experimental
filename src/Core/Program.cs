@@ -43,10 +43,10 @@ public class Program
     /// <summary>Central store of web sessions.</summary>
     public static SessionHandler Sessions;
 
-    /// <summary>Central store of Text2Image models.</summary>
+    /// <summary>Central store of Text2Image models. External and maintained runtime lookup or enumeration must participate in <see cref="RefreshLock"/>.</summary>
     public static Dictionary<string, T2IModelHandler> T2IModelSets = [];
 
-    /// <summary>Main Stable-Diffusion model tracker.</summary>
+    /// <summary>Main Stable-Diffusion model tracker. External and maintained runtime lookup must participate in <see cref="RefreshLock"/>.</summary>
     public static T2IModelHandler MainSDModels => T2IModelSets["Stable-Diffusion"];
 
     /// <summary>The manager for SwarmUI extensions.</summary>
@@ -463,89 +463,138 @@ public class Program
         Shutdown();
     }
 
-    /// <summary>Build the main model list from settings. Called at init or on settings change.</summary>
-    public static void BuildModelLists()
+    /// <summary>Constructs a complete replacement model-handler catalog from current settings.</summary>
+    private static Dictionary<string, T2IModelHandler> CreateModelLists()
     {
-        foreach (string key in T2IModelSets.Keys.ToList())
+        Dictionary<string, T2IModelHandler> result = [];
+        try
         {
-            T2IModelSets[key].Shutdown();
+            void EnsureModelDirectory(string path)
+            {
+                try
+                {
+                    if (!Utilities.EnsureDirectory(path))
+                    {
+                        Logs.Warning($"Model directory path '{path}' already exists as a non-directory file or broken symlink.");
+                    }
+                }
+                catch (IOException ex)
+                {
+                    Logs.Error($"Failed to create directories for models. You may need to check your ModelRoot or SDModelFolder settings. {ex.Message}");
+                }
+            }
+            string actualModelRoot = ServerSettings.Paths.ActualModelRoot;
+            foreach (string path in ServerSettings.Paths.SDModelFolder.Split(';'))
+            {
+                EnsureModelDirectory(Utilities.CombinePathWithAbsolute(actualModelRoot, path));
+            }
+            EnsureModelDirectory($"{actualModelRoot}/upscale_models");
+            EnsureModelDirectory($"{actualModelRoot}/clip");
+            string[] roots = [.. ServerSettings.Paths.ModelRoot.Split(';').Where(p => !string.IsNullOrWhiteSpace(p))];
+            if (roots.Length == 0)
+            {
+                Logs.Error("No ModelRoot paths defined! You must set at least one model root path. Presuming default value. Please correct your settings.");
+                roots = ["Models"];
+            }
+            int downloadRootId = Math.Abs(ServerSettings.Paths.DownloadToRootID) % roots.Length;
+            void BuildPathList(string folder, T2IModelHandler handler)
+            {
+                Dictionary<string, string> paths = [];
+                int rootCount = 0;
+                foreach (string modelRoot in roots)
+                {
+                    int sfCount = 0;
+                    string[] subfolders = [.. folder.Split(';').Where(p => !string.IsNullOrWhiteSpace(p))];
+                    if (subfolders.Length == 0)
+                    {
+                        Logs.Error($"Model set {handler.ModelType} has no subfolders defined! You cannot set a path to empty.");
+                        return;
+                    }
+                    if (rootCount == downloadRootId)
+                    {
+                        handler.DownloadFolderPath = Utilities.CombinePathWithAbsolute(Environment.CurrentDirectory, modelRoot.Trim(), subfolders[0].Trim());
+                    }
+                    foreach (string subfolder in subfolders)
+                    {
+                        string patched = Utilities.CombinePathWithAbsolute(Environment.CurrentDirectory, modelRoot.Trim(), subfolder.Trim());
+                        if ((sfCount > 0 || rootCount > 0) && rootCount != downloadRootId && !Directory.Exists(patched))
+                        {
+                            continue;
+                        }
+                        paths[patched] = patched;
+                        sfCount++;
+                    }
+                    rootCount++;
+                }
+                handler.FolderPaths = [.. paths.Keys];
+            }
+            void AddModelSet(string type, string folders)
+            {
+                T2IModelHandler handler = new() { ModelType = type };
+                result[type] = handler;
+                BuildPathList(folders, handler);
+            }
+            EnsureModelDirectory(actualModelRoot + "/tensorrt");
+            EnsureModelDirectory(actualModelRoot + "/diffusion_models");
+            AddModelSet("Stable-Diffusion", ServerSettings.Paths.SDModelFolder + ";tensorrt;diffusion_models;unet");
+            AddModelSet("VAE", ServerSettings.Paths.SDVAEFolder);
+            AddModelSet("LoRA", ServerSettings.Paths.SDLoraFolder);
+            AddModelSet("Embedding", ServerSettings.Paths.SDEmbeddingFolder);
+            AddModelSet("ControlNet", ServerSettings.Paths.SDControlNetsFolder);
+            AddModelSet("Clip", ServerSettings.Paths.SDClipFolder);
+            AddModelSet("ClipVision", ServerSettings.Paths.SDClipVisionFolder);
+            return result;
         }
-        T2IModelSets.Clear();
-        void EnsureModelDirectory(string path)
+        catch
+        {
+            foreach (T2IModelHandler handler in result.Values)
+            {
+                try
+                {
+                    handler.Shutdown();
+                }
+                catch (Exception ex)
+                {
+                    Logs.Error($"Failed to clean up an unpublished {handler.ModelType} model handler: {ex.ReadableString()}");
+                }
+            }
+            throw;
+        }
+    }
+
+    /// <summary>Publishes a complete replacement catalog while the caller owns <see cref="RefreshLock"/> for writing.</summary>
+    private static void PublishModelLists(Dictionary<string, T2IModelHandler> replacement)
+    {
+        foreach (T2IModelHandler handler in T2IModelSets.Values)
         {
             try
             {
-                if (!Utilities.EnsureDirectory(path))
-                {
-                    Logs.Warning($"Model directory path '{path}' already exists as a non-directory file or broken symlink.");
-                }
+                handler.Shutdown();
             }
-            catch (IOException ex)
+            catch (Exception ex)
             {
-                Logs.Error($"Failed to create directories for models. You may need to check your ModelRoot or SDModelFolder settings. {ex.Message}");
+                Logs.Error($"Failed to fully shut down a displaced {handler.ModelType} model handler: {ex.ReadableString()}");
             }
         }
-        string actualModelRoot = ServerSettings.Paths.ActualModelRoot;
-        foreach (string path in ServerSettings.Paths.SDModelFolder.Split(';'))
+        T2IModelSets.Clear();
+        foreach ((string type, T2IModelHandler handler) in replacement)
         {
-            EnsureModelDirectory(Utilities.CombinePathWithAbsolute(actualModelRoot, path));
+            T2IModelSets[type] = handler;
         }
-        EnsureModelDirectory($"{actualModelRoot}/upscale_models");
-        EnsureModelDirectory($"{actualModelRoot}/clip");
-        string[] roots = [.. ServerSettings.Paths.ModelRoot.Split(';').Where(p => !string.IsNullOrWhiteSpace(p))];
-        if (roots.Length == 0)
-        {
-            Logs.Error("No ModelRoot paths defined! You must set at least one model root path. Presuming default value. Please correct your settings.");
-            roots = ["Models"];
-        }
-        int downloadRootId = Math.Abs(ServerSettings.Paths.DownloadToRootID) % roots.Length;
-        void buildPathList(string folder, T2IModelHandler handler)
-        {
-            Dictionary<string, string> result = [];
-            int rootCount = 0;
-            foreach (string modelRoot in roots)
-            {
-                int sfCount = 0;
-                string[] subfolders = [.. folder.Split(';').Where(p => !string.IsNullOrWhiteSpace(p))];
-                if (subfolders.Length == 0)
-                {
-                    Logs.Error($"Model set {handler.ModelType} has no subfolders defined! You cannot set a path to empty.");
-                    return;
-                }
-                if (rootCount == downloadRootId)
-                {
-                    handler.DownloadFolderPath = Utilities.CombinePathWithAbsolute(Environment.CurrentDirectory, modelRoot.Trim(), subfolders[0].Trim());
-                }
-                foreach (string subfolder in subfolders)
-                {
-                    string patched = Utilities.CombinePathWithAbsolute(Environment.CurrentDirectory, modelRoot.Trim(), subfolder.Trim());
-                    if ((sfCount > 0 || rootCount > 0) && rootCount != downloadRootId && !Directory.Exists(patched))
-                    {
-                        continue;
-                    }
-                    result[patched] = patched;
-                    sfCount++;
-                }
-                rootCount++;
-            }
-            handler.FolderPaths = [.. result.Keys];
-        }
-        EnsureModelDirectory(actualModelRoot + "/tensorrt");
-        EnsureModelDirectory(actualModelRoot + "/diffusion_models");
-        T2IModelSets["Stable-Diffusion"] = new() { ModelType = "Stable-Diffusion" };
-        buildPathList(ServerSettings.Paths.SDModelFolder + ";tensorrt;diffusion_models;unet", T2IModelSets["Stable-Diffusion"]);
-        T2IModelSets["VAE"] = new() { ModelType = "VAE" };
-        buildPathList(ServerSettings.Paths.SDVAEFolder, T2IModelSets["VAE"]);
-        T2IModelSets["LoRA"] = new() { ModelType = "LoRA" };
-        buildPathList(ServerSettings.Paths.SDLoraFolder, T2IModelSets["LoRA"]);
-        T2IModelSets["Embedding"] = new() { ModelType = "Embedding" };
-        buildPathList(ServerSettings.Paths.SDEmbeddingFolder, T2IModelSets["Embedding"]);
-        T2IModelSets["ControlNet"] = new() { ModelType = "ControlNet" };
-        buildPathList(ServerSettings.Paths.SDControlNetsFolder, T2IModelSets["ControlNet"]);
-        T2IModelSets["Clip"] = new() { ModelType = "Clip" };
-        buildPathList(ServerSettings.Paths.SDClipFolder, T2IModelSets["Clip"]);
-        T2IModelSets["ClipVision"] = new() { ModelType = "ClipVision" };
-        buildPathList(ServerSettings.Paths.SDClipVisionFolder, T2IModelSets["ClipVision"]);
+    }
+
+    /// <summary>Builds and publishes model handlers while the caller owns <see cref="RefreshLock"/> for writing.</summary>
+    private static void BuildModelListsCore()
+    {
+        Dictionary<string, T2IModelHandler> replacement = CreateModelLists();
+        PublishModelLists(replacement);
+    }
+
+    /// <summary>Builds the main model list from settings. Called at init or on settings change.</summary>
+    public static void BuildModelLists()
+    {
+        using ManyReadOneWriteLock.WriteClaim claim = RefreshLock.LockWrite();
+        BuildModelListsCore();
     }
 
     /// <summary>Rebuild <see cref="DataDir"/>.</summary>
@@ -554,11 +603,11 @@ public class Program
         DataDir = Utilities.CombinePathWithAbsolute(Environment.CurrentDirectory, GetCommandLineFlag("data_dir", ServerSettings.Paths.DataPath));
     }
 
-    /// <summary>Overlapping lock to prevent model set reads during a model list refresh.</summary>
+    /// <summary>Coordinates external and maintained runtime model-catalog lookup, enumeration, rebuild, and refresh. Event callbacks already executing under its write boundary must not reacquire it.</summary>
     public static ManyReadOneWriteLock RefreshLock = new(64);
 
-    /// <summary>Refreshes all model sets from file source.</summary>
-    public static void RefreshAllModelSets()
+    /// <summary>Refreshes all model sets while the caller owns <see cref="RefreshLock"/> for writing.</summary>
+    private static void RefreshAllModelSetsCore()
     {
         RebuildDataDir();
         foreach (T2IModelHandler handler in T2IModelSets.Values)
@@ -572,6 +621,34 @@ public class Program
                 Logs.Error($"Failed to load models for {handler.ModelType}: {ex.Message}");
             }
         }
+    }
+
+    /// <summary>Refreshes all model sets from file source.</summary>
+    public static void RefreshAllModelSets()
+    {
+        using ManyReadOneWriteLock.WriteClaim claim = RefreshLock.LockWrite();
+        RefreshAllModelSetsCore();
+    }
+
+    /// <summary>Refreshes one published model set from file source.</summary>
+    public static bool RefreshModelSet(string modelType)
+    {
+        using ManyReadOneWriteLock.WriteClaim claim = RefreshLock.LockWrite();
+        if (!T2IModelSets.TryGetValue(modelType, out T2IModelHandler handler))
+        {
+            return false;
+        }
+        handler.Refresh();
+        return true;
+    }
+
+    /// <summary>Rebuilds, refreshes, and publishes path-change notification under one catalog write boundary.</summary>
+    public static void RebuildModelListsForPathChange()
+    {
+        using ManyReadOneWriteLock.WriteClaim claim = RefreshLock.LockWrite();
+        BuildModelListsCore();
+        RefreshAllModelSetsCore();
+        ModelPathsChangedEvent?.Invoke();
     }
 
     private volatile static bool HasShutdown = false;
