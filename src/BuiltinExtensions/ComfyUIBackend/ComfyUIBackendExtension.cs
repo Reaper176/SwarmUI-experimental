@@ -899,7 +899,7 @@ public class ComfyUIBackendExtension : Extension
         ComfyAdvancedGroup = new("ComfyUI Advanced", Toggles: false, IsAdvanced: true, Open: false);
         CustomWorkflowParam = T2IParamTypes.Register<string>(new("ComfyUI Custom Workflow", "What custom workflow to use in ComfyUI (built in the Comfy Workflow Editor tab).\nGenerally, do not use this directly.",
             "", Toggleable: true, FeatureFlag: "comfyui", Group: T2IParamTypes.GroupSwarmInternal, IsAdvanced: true, ValidateValues: false, ChangeWeight: 8, Permission: PermStoredCustomWorkflows,
-            GetValues: (_) => ComfyWorkflowStore.GetWorkflowNames(),
+            GetValues: (_) => [.. ComfyWorkflowStore.GetWorkflowNames()],
             Clean: (_, val) => ComfyWorkflowStore.TryGetWorkflowParameterPrompt(val, out string prompt) ? $"PARSED%{val}%{prompt}" : val,
             MetadataFormat: v => v.StartsWith("PARSED%") ? v.After("%").Before("%") : v
             ));

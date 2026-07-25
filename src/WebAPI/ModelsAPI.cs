@@ -378,7 +378,7 @@ public static class ModelsAPI
         }
         T2IModel actualModel;
         bool found;
-        using (ManyReadOneWriteLock.ReadClaim claim = Program.RefreshLock.LockRead())
+        using (ManyReadOneWriteLock.ReadClaim catalogClaim = Program.RefreshLock.LockRead())
         {
             found = Program.MainSDModels.Models.TryGetValue(model + ".safetensors", out actualModel)
                 || Program.MainSDModels.Models.TryGetValue(model, out actualModel);
