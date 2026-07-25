@@ -1,6 +1,6 @@
 # Shared Download Replacement and Cancellation Design
 
-**Status:** Implemented; awaiting maintainer validation
+**Status:** Implemented and maintainer-validated
 
 **Date:** 2026-07-25
 
@@ -161,24 +161,24 @@ Protected maintainer changes and the protected backup reported by repository sta
 
 ## Maintainer Validation
 
-Maintainer Reaper176 will validate:
+On 2026-07-25, maintainer Reaper176 confirmed on Linux that all 14 approved cases passed:
 
-1. a pre-existing destination longer than a successful response is replaced with exactly the response bytes;
-2. caller cancellation before response headers returns promptly without changing a pre-existing destination;
-3. caller cancellation during known-length streaming deletes the incomplete replacement through the established length-mismatch or writer-task failure cleanup paths, while unknown-length cancellation may leave a partial replacement;
-4. global shutdown cancellation still interrupts acquisition and streaming;
-5. successful range continuation produces exact bytes;
-6. failed or non-partial range continuation preserves its established known-length failure cleanup;
-7. content-length mismatch deletes the target and reports failure;
-8. SHA-256 mismatch deletes the target and reports failure;
-9. fixed-path installer downloads and progress remain functional;
-10. installation-selected common-model downloads remain functional;
-11. model UI success, progress, cancellation, target selection/pre-deletion, success move/refresh, and the helper's recorded cleanup split remain functional;
-12. `WorkflowGenerator.DownloadModel` success and cleanup remain functional;
-13. both `WorkflowGeneratorModelSupport` common-model paths download and refresh correctly; and
-14. ordinary successful downloads and progress callbacks remain unchanged.
+1. a pre-existing destination longer than a successful response was replaced with exactly the response bytes;
+2. caller cancellation before response headers returned promptly without changing a pre-existing destination;
+3. caller cancellation during known-length streaming deleted the incomplete replacement through the established length-mismatch or writer-task failure cleanup paths, while unknown-length cancellation retained its documented possibility of leaving a partial replacement;
+4. global shutdown cancellation still interrupted acquisition and streaming;
+5. successful range continuation produced exact bytes;
+6. failed or non-partial range continuation preserved its established known-length failure cleanup;
+7. content-length mismatch deleted the target and reported failure;
+8. SHA-256 mismatch deleted the target and reported failure;
+9. fixed-path installer downloads and progress remained functional;
+10. installation-selected common-model downloads remained functional;
+11. model UI success, progress, cancellation, target selection/pre-deletion, success move/refresh, and the helper's recorded cleanup split remained functional;
+12. `WorkflowGenerator.DownloadModel` success and cleanup remained functional;
+13. both `WorkflowGeneratorModelSupport` common-model paths downloaded and refreshed correctly; and
+14. ordinary successful downloads and progress callbacks remained unchanged.
 
-No performance improvement or unvalidated platform behavior will be claimed.
+The adjacent unknown-length 1024-byte truncation/false-success behavior remains uncorrected and is not claimed fixed; the unknown-length partial-replacement cleanup gap also remains documented. Windows runtime behavior and performance remain unvalidated. No agent runtime claim is made.
 
 ## Rollback
 
