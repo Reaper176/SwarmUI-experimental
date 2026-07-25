@@ -1,6 +1,6 @@
 # Runtime Model Catalog Refresh Boundary Design
 
-**Status:** Approved for implementation
+**Status:** Implemented; awaiting maintainer validation
 
 **Date:** 2026-07-24
 
@@ -321,6 +321,18 @@ Static verification must:
 15. run `git diff --check` over the implementation range.
 
 No build, launcher, automated test, GPU operation, or performance benchmark is run by the agent.
+
+## Implementation Record
+
+The integrated implementation range is `8c7585d9..4a2adf02`, ending at production commit `4a2adf02`. The production/source commits are `8c7084af`, `e485f504`, `080a1667`, `eb7cd91f`, `c7ccbb41`, `b921130b`, `d99730a1`, `d5559d5f`, `de28ddf7`, `4982d69b`, `0852d085`, and `4a2adf02`; `8c7585d9`, `7253ad8e`, `6115f775`, `56daa7c1`, and `048b8e6d` record the design, plan, corrected inventory, and cache-validation contracts. The range changes 25 files: 23 maintained source files plus this design and its implementation plan. The source files are `src/Backends/BackendHandler.cs`, `src/Backends/SwarmSwarmBackend.cs`, `src/BuiltinExtensions/AutoWebUIBackend/AutoWebUIAPIAbstractBackend.cs`, `src/BuiltinExtensions/ComfyUIBackend/ComfyUIAPIAbstractBackend.cs`, `src/BuiltinExtensions/ComfyUIBackend/ComfyUIBackendExtension.cs`, `src/BuiltinExtensions/ComfyUIBackend/ComfyUIWebAPI.cs`, `src/BuiltinExtensions/ComfyUIBackend/WorkflowGenerator.cs`, `src/BuiltinExtensions/ComfyUIBackend/WorkflowGeneratorModelSupport.cs`, `src/BuiltinExtensions/ComfyUIBackend/WorkflowGeneratorSteps.cs`, `src/Core/Installation.cs`, `src/Core/Program.cs`, `src/Core/WebServer.cs`, `src/Pages/_Generate/UtilitiesTab.cshtml`, `src/Text2Image/CommonModels.cs`, `src/Text2Image/T2IModelHandler.cs`, `src/Text2Image/T2IParamInput.cs`, `src/Text2Image/T2IParamSet.cs`, `src/Text2Image/T2IParamTypes.cs`, `src/Text2Image/T2IPromptHandling.cs`, `src/WebAPI/AdminAPI.cs`, `src/WebAPI/ModelsAPI.cs`, `src/WebAPI/T2IAPI.cs`, and `src/WebAPI/UtilAPI.cs`.
+
+The final direct/derived catalog inventory contains 71 matching source lines across 20 maintained consumer files. The classification is two startup-only lines, two write-side lines, 57 lexically claimed lines, and ten centralized-provider lines whose callers establish the catalog boundary. The implementation contains 48 `RefreshLock` read claims and five `RefreshLock` write claims. Static call-chain inspection confirms that the centralized providers run only beneath a maintained outer read boundary, and that deferred handler-dependent work transfers an already-acquired claim rather than reacquiring behind a queued writer.
+
+`Program` now owns the public write operations `BuildModelLists`, `RefreshAllModelSets`, `RefreshModelSet`, and `RebuildModelListsForPathChange`. Candidate construction, failed-candidate detachment, publication, build composition, and full refresh are implemented by the private `CreateModelLists`, `DetachUnpublishedModelLists`, `PublishModelLists`, `BuildModelListsCore`, and `RefreshAllModelSetsCore` helpers; the focused public refresh owns its claim directly. `AdminAPI.ChangeServerSettings` invokes one write-owning `RebuildModelListsForPathChange` transition after the settings transaction. The public `T2IModelSets` dictionary remains the same object and retains exactly `Stable-Diffusion`, `VAE`, `LoRA`, `Embedding`, `ControlNet`, `Clip`, and `ClipVision`.
+
+The whole-project static conformance review repeated the direct/derived consumer inventory, writer/event inventory, lock-upgrade and long-claim-span search, public field-assignment search, seven-key search, changed-file inspection, and implementation-range whitespace check. It found the 71-line classification above; all maintained runtime reads are claimed or execute through a centralized provider under an outer claim; public catalog mutation and refresh enter through the four write-owning operations; no maintained download/refresh flow upgrades a read claim; network, download, child-process, WebSocket, and backend/GPU work are outside catalog claims once required values are copied; the destination-aware workflow caches reject stale-path hits; the public dictionary is initialized once and not reassigned; all seven keys and path expressions are preserved; and `git diff --check 8c7585d9..4a2adf02` reports no whitespace errors. Static review also confirmed unchanged public ABI surfaces, destination and metadata behavior, settings response/warning behavior, and explicit read/I/O/write/verification phase separation.
+
+No agent ran a build, launcher, automated test, GPU operation, live concurrency exercise, or performance benchmark. No runtime benefit is claimed. The complete baseline, normal transition, concurrent-reader, download/refresh deadlock, failure/repetition, restart, event, and compatibility matrix below remains pending maintainer validation.
 
 ## Maintainer Validation
 
