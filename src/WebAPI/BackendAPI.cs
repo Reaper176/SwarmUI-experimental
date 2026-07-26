@@ -825,7 +825,7 @@ public class BackendAPI
     {
         if (system_ram)
         {
-            Session.RecentlyBlockedFilenames.Clear();
+            Session.ClearOutputFilenameReservations();
         }
         List<Task<bool>> tasks = [];
         foreach (AbstractBackend target in Program.Backends.RunningBackendsOfType<AbstractBackend>())

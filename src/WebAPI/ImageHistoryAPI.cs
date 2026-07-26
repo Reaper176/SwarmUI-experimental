@@ -1208,21 +1208,28 @@ public static class ImageHistoryAPI
             return new JObject() { ["error"] = "That file does not exist, cannot delete." };
         }
         string standardizedPath = Path.GetFullPath(path);
-        Session.RecentlyBlockedFilenames[standardizedPath] = standardizedPath;
         Action<string> deleteFile = Program.ServerSettings.Paths.RecycleDeletedImages ? Utilities.SendFileToRecycle : File.Delete;
-        deleteFile(path);
-        string fileBase = path.BeforeLast('.');
-        foreach (string str in T2IAPI.DeletableFileExtensions)
+        Session.OutputFilenameReservation reservation = Session.ReserveDeletedOutputFilename(standardizedPath);
+        try
         {
-            string altFile = $"{fileBase}{str}";
-            if (File.Exists(altFile))
+            deleteFile(path);
+            string fileBase = path.BeforeLast('.');
+            foreach (string str in T2IAPI.DeletableFileExtensions)
             {
-                deleteFile(altFile);
+                string altFile = $"{fileBase}{str}";
+                if (File.Exists(altFile))
+                {
+                    deleteFile(altFile);
+                }
             }
+            OutputMetadataTracker.RemoveMetadataFor(path);
+            RemoveHistoryIndexForPath(root, path);
+            return new JObject() { ["success"] = true };
         }
-        OutputMetadataTracker.RemoveMetadataFor(path);
-        RemoveHistoryIndexForPath(root, path);
-        return new JObject() { ["success"] = true };
+        finally
+        {
+            Session.ReleaseOutputFilenameReservationAfterDelay(reservation);
+        }
     }
 
     [API.APIDescription("Copy or move selected images to another output subfolder.", "\"success\": true")]
