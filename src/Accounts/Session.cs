@@ -255,7 +255,7 @@ public class Session : IEquatable<Session>
                 }
             }
             bool hadPriorGeneration = MaintainedOutputFilenameReservations.TryGetValue(fullPath, out long priorGeneration);
-            long generation = ++OutputFilenameReservationGeneration;
+            long generation = Interlocked.Increment(ref OutputFilenameReservationGeneration);
             OutputFilenameReservation reservation = new(fullPath, generation);
             MaintainedOutputFilenameReservations[fullPath] = generation;
             try
@@ -285,7 +285,7 @@ public class Session : IEquatable<Session>
         lock (OutputFilenameReservationLock)
         {
             bool hadPriorGeneration = MaintainedOutputFilenameReservations.TryGetValue(fullPath, out long priorGeneration);
-            long generation = ++OutputFilenameReservationGeneration;
+            long generation = Interlocked.Increment(ref OutputFilenameReservationGeneration);
             OutputFilenameReservation reservation = new(fullPath, generation);
             MaintainedOutputFilenameReservations[fullPath] = generation;
             try
@@ -340,11 +340,11 @@ public class Session : IEquatable<Session>
     {
         try
         {
-            Utilities.RunCheckedTask(async () =>
+            _ = Utilities.RunCheckedTask(async () =>
             {
                 await Task.Delay(InactiveOutputFilenameReservationLifetime);
                 ReleaseOutputFilenameReservation(handle);
-            });
+            }, "output filename reservation expiry");
         }
         catch (Exception ex)
         {
