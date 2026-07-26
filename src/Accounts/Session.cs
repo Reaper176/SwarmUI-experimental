@@ -419,38 +419,68 @@ public class Session : IEquatable<Session>
             try
             {
                 Directory.CreateDirectory(folderRoute);
-                HashSet<string> existingFiles = [.. Directory.EnumerateFiles(folderRoute).Union(RecentlyBlockedFilenames.Keys.Where(f => f.StartsWith(folderRoute))).Select(f => f.BeforeLast('.'))];
+                HashSet<string> existingFiles = [.. Directory.EnumerateFiles(folderRoute).Select(f => f.BeforeLast('.'))];
+                OutputFilenameReservation reservation = default;
                 int num = 0;
-                while (existingFiles.Contains(fullPathNoExt))
+                while (existingFiles.Contains(fullPathNoExt) || !TryReserveOutputFilename(fullPath, out reservation))
                 {
                     num++;
                     imagePath = rawImagePath.Contains("[number]") ? rawImagePath.Replace("[number]", $"{num}") : $"{rawImagePath}-{num}";
                     fullPathNoExt = Path.GetFullPath(UserImageHistoryHelper.GetRealPathFor(User, $"{User.OutputDirectory}/{imagePath}"));
                     fullPath = $"{fullPathNoExt}.{extension}";
                 }
-                RecentlyBlockedFilenames[fullPath] = fullPath;
-                StillSavingFiles[fullPath] = image.ActualFileTask is null ? Task.FromResult(image.File.RawData) : Task.Run(async () => (await image.ActualFileTask).RawData);
-                Utilities.RunCheckedTask(async () =>
+                Task<byte[]> pendingTask = null;
+                try
                 {
-                    MediaFile actualFile = image.ActualFileTask is null ? image.File : await image.ActualFileTask;
-                    File.WriteAllBytes(fullPath, actualFile.RawData);
-                    if ((User.Settings.FileFormat.SaveTextFileMetadata || extension == "webp" || !OutputMetadataTracker.ExtensionsWithMetadata.Contains(extension)) && !string.IsNullOrWhiteSpace(metadata))
+                    pendingTask = image.ActualFileTask is null ? Task.FromResult(image.File.RawData) : Task.Run(async () => (await image.ActualFileTask).RawData);
+                    StillSavingFiles[fullPath] = pendingTask;
+                    _ = Utilities.RunCheckedTask(async () =>
                     {
-                        if (extension == "webp" && actualFile is ImageFile imageFile && imageFile.ToIS.Frames.Count == 1)
+                        bool saveSucceeded = false;
+                        try
                         {
-                            // no .json write for still-image webps
+                            MediaFile actualFile = image.ActualFileTask is null ? image.File : await image.ActualFileTask;
+                            File.WriteAllBytes(fullPath, actualFile.RawData);
+                            if ((User.Settings.FileFormat.SaveTextFileMetadata || extension == "webp" || !OutputMetadataTracker.ExtensionsWithMetadata.Contains(extension)) && !string.IsNullOrWhiteSpace(metadata))
+                            {
+                                if (extension == "webp" && actualFile is ImageFile imageFile && imageFile.ToIS.Frames.Count == 1)
+                                {
+                                    // no .json write for still-image webps
+                                }
+                                else
+                                {
+                                    File.WriteAllBytes(fullPathNoExt + ".swarm.json", metadata.EncodeUTF8());
+                                }
+                            }
+                            OutputMetadataTracker.GetOrCreatePreviewFor(fullPath.Replace('\\', '/'));
+                            OutputMetadataTracker.UpsertHistoryIndexForFile(fullPath.Replace('\\', '/'), root, User.Settings.StarNoFolders);
+                            Logs.Debug($"Saved an output file as '{fullPath}'");
+                            await Task.Delay(TimeSpan.FromSeconds(10)); // (Give time for WebServer to read data from cache rather than having to reload from file for first read)
+                            saveSucceeded = true;
                         }
-                        else
+                        finally
                         {
-                            File.WriteAllBytes(fullPathNoExt + ".swarm.json", metadata.EncodeUTF8());
+                            RemoveStillSavingFile(fullPath, pendingTask);
+                            if (saveSucceeded)
+                            {
+                                ReleaseOutputFilenameReservation(reservation);
+                            }
+                            else
+                            {
+                                ReleaseOutputFilenameReservationAfterDelay(reservation);
+                            }
                         }
+                    }, "output file save");
+                }
+                catch
+                {
+                    if (pendingTask is not null)
+                    {
+                        RemoveStillSavingFile(fullPath, pendingTask);
                     }
-                    OutputMetadataTracker.GetOrCreatePreviewFor(fullPath.Replace('\\', '/'));
-                    OutputMetadataTracker.UpsertHistoryIndexForFile(fullPath.Replace('\\', '/'), root, User.Settings.StarNoFolders);
-                    Logs.Debug($"Saved an output file as '{fullPath}'");
-                    await Task.Delay(TimeSpan.FromSeconds(10)); // (Give time for WebServer to read data from cache rather than having to reload from file for first read)
-                    StillSavingFiles.TryRemove(fullPath, out _);
-                });
+                    ReleaseOutputFilenameReservationAfterDelay(reservation);
+                    throw;
+                }
             }
             catch (Exception ex)
             {
