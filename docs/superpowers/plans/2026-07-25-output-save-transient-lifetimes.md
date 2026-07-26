@@ -729,28 +729,40 @@ Expected staged scope: exactly the two API source files.
 - Review: `src/WebAPI/BackendAPI.cs`
 - Review: `docs/superpowers/specs/2026-07-25-output-save-transient-lifetimes-design.md`
 
-- [ ] **Step 1: Pin the stable Rank 12 range**
+- [ ] **Step 1: Pin the integrated range and production source projection**
 
-Use the approved pre-production design commit as the stable base. Do not recompute the base from the latest plan commit: later design, plan, source, and focused correction commits must all remain visible in the final Rank 12 range.
+Use the approved pre-production design commit as the stable base. The complete integrated range ends at `HEAD` and records interleaved design, plan, source, correction, and audit history; it is not a production-only range. The production source projection ends at the latest commit touching one of the three production source paths and filters every log/diff command to those same paths.
 
 ```bash
 rank12_range_base="$(git rev-parse e5fcebf7)"
-rank12_range_head="$(git rev-parse HEAD)"
+rank12_integrated_head="$(git rev-parse HEAD)"
+rank12_source_head="$(git log -1 --format=%H -- src/Accounts/Session.cs src/WebAPI/ImageHistoryAPI.cs src/WebAPI/BackendAPI.cs)"
 git log --oneline --decorate -8
-git log --oneline "$rank12_range_base..$rank12_range_head"
-git diff --name-only "$rank12_range_base..$rank12_range_head" -- \
+
+# Complete integrated docs-plus-source history; not production-only.
+git log --oneline "$rank12_range_base..$rank12_integrated_head"
+git diff --check "$rank12_range_base..$rank12_integrated_head"
+
+# Path-filtered production commit list and source projection.
+git log --oneline "$rank12_range_base..$rank12_source_head" -- \
   src/Accounts/Session.cs src/WebAPI/ImageHistoryAPI.cs src/WebAPI/BackendAPI.cs
-git diff --stat "$rank12_range_base..$rank12_range_head"
-git diff --check "$rank12_range_base..$rank12_range_head"
+git diff --name-only "$rank12_range_base..$rank12_source_head" -- \
+  src/Accounts/Session.cs src/WebAPI/ImageHistoryAPI.cs src/WebAPI/BackendAPI.cs
+git diff --stat "$rank12_range_base..$rank12_source_head" -- \
+  src/Accounts/Session.cs src/WebAPI/ImageHistoryAPI.cs src/WebAPI/BackendAPI.cs
+git diff --check "$rank12_range_base..$rank12_source_head" -- \
+  src/Accounts/Session.cs src/WebAPI/ImageHistoryAPI.cs src/WebAPI/BackendAPI.cs
 ```
 
-Expected production source scope within the complete range: exactly:
+Expected path-filtered production source projection: exactly:
 
 ```text
 src/Accounts/Session.cs
 src/WebAPI/ImageHistoryAPI.cs
 src/WebAPI/BackendAPI.cs
 ```
+
+The production commit list contains the five initial source commits from `24a7df6b` through `6d230e4c` plus every later focused correction that touches the three source paths. Documentation-only commits are visible only in the complete integrated log and do not enter the production commit list, source stat, or source check.
 
 - [ ] **Step 2: Run the design conformance inventory**
 
@@ -769,10 +781,10 @@ Compare every result to the approved design's ownership, timing, and unchanged-r
 
 ```bash
 rank12_range_base="$(git rev-parse e5fcebf7)"
-rank12_range_head="$(git rev-parse HEAD)"
-git diff "$rank12_range_base..$rank12_range_head" -- src/Accounts/Session.cs | rg -n '^[+-].*(public|protected)\\b'
-git diff "$rank12_range_base..$rank12_range_head" -- src/Core/WebServer.cs src/Text2Image/T2IParamTypes.cs src/WebAPI/T2IAPI.cs src/BuiltinExtensions/GridGenerator/GridGeneratorExtension.cs
-git diff --name-only "$rank12_range_base..$rank12_range_head" -- src/wwwroot src/Pages docs/APIRoutes src/Extensions
+rank12_source_head="$(git log -1 --format=%H -- src/Accounts/Session.cs src/WebAPI/ImageHistoryAPI.cs src/WebAPI/BackendAPI.cs)"
+git diff "$rank12_range_base..$rank12_source_head" -- src/Accounts/Session.cs | rg -n '^[+-].*(public|protected)\\b'
+git diff "$rank12_range_base..$rank12_source_head" -- src/Core/WebServer.cs src/Text2Image/T2IParamTypes.cs src/WebAPI/T2IAPI.cs src/BuiltinExtensions/GridGenerator/GridGeneratorExtension.cs
+git diff --name-only "$rank12_range_base..$rank12_source_head" -- src/wwwroot src/Pages docs/APIRoutes src/Extensions
 ```
 
 Expected:
@@ -799,7 +811,7 @@ The reviewer must verify:
 - extension ABI/source boundary;
 - collision behavior and direct-extension caveat;
 - unchanged URLs, readers, metadata order, delete behavior, and error contract;
-- exact three-file production scope; and
+- exact three-path production source projection; and
 - no agent runtime claims.
 
 Correct findings in a new focused source commit, then repeat this review until it passes.
@@ -865,7 +877,7 @@ Stage only files that actually require correction. If one of the three source fi
 
 - [ ] **Step 5: Repeat both fresh reviews**
 
-Repeat Task 4's specification and code-quality reviews over the complete stable range. The correction is accepted only when both reviews find no remaining contradiction among overlapping owners, aggregate public-key lifetime, active-state clearing, deletion failure retention, successful deletion expiry, failed-save expiry, and the direct-extension exact-key caveat.
+Repeat Task 4's specification and code-quality reviews over both the complete integrated range and the path-filtered production source projection. The correction is accepted only when both reviews find no remaining contradiction among overlapping owners, aggregate public-key lifetime, active-state clearing, deletion failure retention, successful deletion expiry, failed-save expiry, and the direct-extension exact-key caveat.
 
 ## Task 5: Record Static Implementation Closure
 
@@ -878,8 +890,9 @@ Repeat Task 4's specification and code-quality reviews over the complete stable 
 
 Append:
 
-- exact production base/head and every production commit;
-- exact three-file source scope and diff stat;
+- exact integrated base/head and the complete interleaved docs-plus-source commit history;
+- exact production base/source head and the path-filtered commit list containing the five initial source commits plus every focused source correction;
+- exact three-path production source projection, diff stat, and diff check, excluding documentation-only commits;
 - final nested owner coordinator, save, deletion-outcome, aggregate public-key, and active-preserving RAM-clear behavior;
 - the integrated-review findings and focused correction commit;
 - specification and quality review outcomes;
@@ -896,7 +909,8 @@ In the audit:
 
 - mark Backend F19 and Backend F20/rank 12 consistently as implemented, awaiting maintainer validation;
 - preserve the original problem evidence and bounded caveats;
-- record exact source range, scope, timing, ownership, compatibility, and static reviews;
+- record the complete integrated range separately from the path-filtered production source projection;
+- record exact projected source scope, timing, ownership, compatibility, and static reviews;
 - keep ranks 1, 2, and 8 awaiting their own validation;
 - retain every already validated rank;
 - keep rank 12 as the recommended next project until its maintainer matrix passes;
@@ -932,7 +946,7 @@ Expected staged scope: exactly the two documentation files.
 
 Require both reviewers to verify:
 
-- exact production facts;
+- exact integrated-history facts and exact path-filtered production facts without conflating the two;
 - accurate static/runtime distinction;
 - nested owner-set and aggregate public-key behavior;
 - all compatibility and failure caveats;
@@ -1003,13 +1017,25 @@ Dispatch fresh validation-record specification and quality reviewers. Then run:
 
 ```bash
 rank12_range_base="$(git rev-parse e5fcebf7)"
-rank12_range_head="$(git rev-parse HEAD)"
+rank12_integrated_head="$(git rev-parse HEAD)"
+rank12_source_head="$(git log -1 --format=%H -- src/Accounts/Session.cs src/WebAPI/ImageHistoryAPI.cs src/WebAPI/BackendAPI.cs)"
 rank12_validation_commit="$(git log -1 --format=%H -- docs/superpowers/specs/2026-07-25-output-save-transient-lifetimes-design.md)"
-git log --oneline "$rank12_range_base..$rank12_range_head"
-git diff --check "$rank12_range_base..$rank12_range_head"
-git show --check --oneline "$rank12_validation_commit"
-git diff --name-only "$rank12_range_base..$rank12_range_head" -- \
+
+# Complete integrated docs-plus-source history; not production-only.
+git log --oneline "$rank12_range_base..$rank12_integrated_head"
+git diff --check "$rank12_range_base..$rank12_integrated_head"
+
+# Path-filtered production commit list and source projection.
+git log --oneline "$rank12_range_base..$rank12_source_head" -- \
   src/Accounts/Session.cs src/WebAPI/ImageHistoryAPI.cs src/WebAPI/BackendAPI.cs
+git diff --name-only "$rank12_range_base..$rank12_source_head" -- \
+  src/Accounts/Session.cs src/WebAPI/ImageHistoryAPI.cs src/WebAPI/BackendAPI.cs
+git diff --stat "$rank12_range_base..$rank12_source_head" -- \
+  src/Accounts/Session.cs src/WebAPI/ImageHistoryAPI.cs src/WebAPI/BackendAPI.cs
+git diff --check "$rank12_range_base..$rank12_source_head" -- \
+  src/Accounts/Session.cs src/WebAPI/ImageHistoryAPI.cs src/WebAPI/BackendAPI.cs
+
+git show --check --oneline "$rank12_validation_commit"
 git diff --cached --name-only
 git status --short --branch
 ```
@@ -1017,7 +1043,9 @@ git status --short --branch
 Completion requires:
 
 - both fresh reviews pass;
-- exact source and documentation scopes are correct;
+- the complete integrated history and path-filtered production projection are recorded separately;
+- the production commit list includes all initial and correction source commits but no documentation-only commits;
+- exact projected source and documentation scopes are correct;
 - index is empty;
 - unrelated working-tree changes remain untouched;
 - platform/performance caveats remain accurate; and
