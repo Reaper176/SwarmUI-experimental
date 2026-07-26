@@ -232,7 +232,7 @@ public class Session : IEquatable<Session>
     {
         try
         {
-            string message = $"Failed to {action} output filename reservation: {ex.ReadableString()}";
+            string message = $"Internal error while {action}: {ex.ReadableString()}";
             Logs.Error(message);
         }
         catch
@@ -325,7 +325,7 @@ public class Session : IEquatable<Session>
         }
         catch (Exception ex)
         {
-            LogOutputCleanupFailure("remove", ex);
+            LogOutputCleanupFailure($"removing output filename reservation for '{handle.Path}'", ex);
         }
     }
 
@@ -348,7 +348,7 @@ public class Session : IEquatable<Session>
         }
         catch (Exception ex)
         {
-            LogOutputCleanupFailure("schedule delayed removal of", ex);
+            LogOutputCleanupFailure($"scheduling output filename reservation expiry for '{handle.Path}'", ex);
             ReleaseOutputFilenameReservation(handle);
         }
     }
@@ -362,7 +362,7 @@ public class Session : IEquatable<Session>
         }
         catch (Exception ex)
         {
-            LogOutputCleanupFailure("remove pending save for", ex);
+            LogOutputCleanupFailure($"removing pending output save for '{fullPath}'", ex);
         }
     }
 
@@ -373,13 +373,13 @@ public class Session : IEquatable<Session>
         {
             lock (OutputFilenameReservationLock)
             {
-                MaintainedOutputFilenameReservations.Clear();
                 RecentlyBlockedFilenames.Clear();
+                MaintainedOutputFilenameReservations.Clear();
             }
         }
         catch (Exception ex)
         {
-            LogOutputCleanupFailure("clear", ex);
+            LogOutputCleanupFailure("clearing output filename reservations", ex);
         }
     }
 
