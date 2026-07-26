@@ -4,7 +4,7 @@
 
 **Goal:** Give pending output bytes and maintained filename reservations ownership-safe lifetimes without changing public extension fields, save/read/delete behavior, or output naming, while retaining partial or failed deletions until an explicit safety override.
 
-**Architecture:** `Session` retains the two public concurrent dictionaries and owns a private nested owner map: path to generation to active/inactive state. Overlapping save and deletion generations coexist, each cleanup changes only its exact owner, and the public key represents the aggregate owner set. Active owners never expire and survive system-RAM clear; failed saves and successful deletions become ten-second inactive owners, while partial or failed deletions become inactive non-expiring owners.
+**Architecture:** `Session` retains the two public concurrent dictionaries and owns a private nested owner map: path to generation to active/inactive state. Exact-path deletion acquisition is refused while any maintained owner is active; inactive owners may coexist with a new active deletion retry, each cleanup changes only its exact owner, and the public key represents the aggregate owner set. Active owners never expire and survive system-RAM clear; failed saves and successful deletions become ten-second inactive owners, while partial or failed deletions become inactive non-expiring owners.
 
 **Tech Stack:** C# 12, .NET 8, `ConcurrentDictionary`, `LockObject`, `Task`, FreneticUtilities, SwarmUI static API routes.
 
@@ -26,7 +26,7 @@ public static ConcurrentDictionary<string, Task<byte[]>> StillSavingFiles;
 ```
 
 - Commit `e5fcebf7` is the stable pre-production design baseline. The current `docs/superpowers/specs/2026-07-25-output-save-transient-lifetimes-design.md` supersedes its lifecycle details with the integrated-review correction.
-- The multi-owner correction was approved on 2026-07-26. The five initial source commits through `6d230e4c` do not implement it; source correction remains pending.
+- The multi-owner and deletion-serialization corrections were approved on 2026-07-26. The five initial source commits through `6d230e4c` do not implement them; source correction remains pending.
 
 ## File Map
 
@@ -35,7 +35,7 @@ public static ConcurrentDictionary<string, Task<byte[]>> StillSavingFiles;
   - own atomic pending-task cleanup;
   - integrate reservation acquisition and terminal cleanup into `SaveImage`.
 - Modify `src/WebAPI/ImageHistoryAPI.cs`
-  - distinguish successful deletion expiry from partial/failed deletion retention.
+  - return a retryable error when active ownership refuses deletion, then distinguish successful deletion expiry from partial/failed deletion retention.
 - Modify `src/WebAPI/BackendAPI.cs`
   - clear legacy and inactive reservations while preserving active reservations.
 - Modify `docs/superpowers/specs/2026-07-25-output-save-transient-lifetimes-design.md`
@@ -166,22 +166,33 @@ Add:
 
 This final acquisition check is under the coordinator lock. It preserves the existing extensionless collision namespace and catches a reservation published after the earlier directory/public snapshot. Publication rollback removes only the generation just added; it cannot disturb pre-existing exact-path owners.
 
-- [ ] **Step 5: Add deletion reservation acquisition**
+- [ ] **Step 5: Add active-owner-gated deletion reservation acquisition**
 
 Add:
 
 ```csharp
-    /// <summary>Adds a maintained reservation owner for a path being deleted.</summary>
-    internal static OutputFilenameReservation ReserveDeletedOutputFilename(string fullPath)
+    /// <summary>Attempts to add a deletion reservation owner when the exact path has no active maintained owner.</summary>
+    internal static bool TryReserveDeletedOutputFilename(string fullPath, out OutputFilenameReservation handle)
     {
         lock (OutputFilenameReservationLock)
         {
-            long generation = Interlocked.Increment(ref OutputFilenameReservationGeneration);
-            if (!MaintainedOutputFilenameReservations.TryGetValue(fullPath, out Dictionary<long, OutputFilenameReservationState> owners))
+            if (MaintainedOutputFilenameReservations.TryGetValue(fullPath, out Dictionary<long, OutputFilenameReservationState> owners))
+            {
+                foreach (OutputFilenameReservationState owner in owners.Values)
+                {
+                    if (owner.IsActive)
+                    {
+                        handle = default;
+                        return false;
+                    }
+                }
+            }
+            else
             {
                 owners = [];
                 MaintainedOutputFilenameReservations[fullPath] = owners;
             }
+            long generation = Interlocked.Increment(ref OutputFilenameReservationGeneration);
             owners.Add(generation, new OutputFilenameReservationState(true));
             try
             {
@@ -196,12 +207,13 @@ Add:
                 }
                 throw;
             }
-            return new OutputFilenameReservation(fullPath, generation);
+            handle = new OutputFilenameReservation(fullPath, generation);
+            return true;
         }
     }
 ```
 
-Deletion adds its generation to the exact-path owner set. An active save owner and deletion owner may coexist, and cleanup from either operation cannot remove the other.
+The active-owner check and generation publication share the coordinator lock. A save or deletion active on the exact path causes a false/default-handle refusal. Inactive owners do not refuse a retry; the accepted deletion generation joins their owner set. Public publication rollback removes only the just-added generation and removes the outer path only when empty.
 
 - [ ] **Step 6: Add generation-checked release**
 
@@ -373,7 +385,7 @@ The public dictionary is never cleared and repopulated, so maintained acquisitio
 Run:
 
 ```bash
-rg -n "OutputFilenameReservation|OutputFilenameReservationState|OutputFilenameReservationGeneration|MaintainedOutputFilenameReservations|InactiveOutputFilenameReservationLifetime|TryReserveOutputFilename|ReserveDeletedOutputFilename|TryTransitionOutputFilenameReservationToInactive|ReleaseOutputFilenameReservation|RetainOutputFilenameReservationUntilClear|RemoveStillSavingFile|ClearOutputFilenameReservations" src/Accounts/Session.cs
+rg -n "OutputFilenameReservation|OutputFilenameReservationState|OutputFilenameReservationGeneration|MaintainedOutputFilenameReservations|InactiveOutputFilenameReservationLifetime|TryReserveOutputFilename|TryReserveDeletedOutputFilename|TryTransitionOutputFilenameReservationToInactive|ReleaseOutputFilenameReservation|RetainOutputFilenameReservationUntilClear|RemoveStillSavingFile|ClearOutputFilenameReservations" src/Accounts/Session.cs
 git diff --check -- src/Accounts/Session.cs
 git diff -- src/Accounts/Session.cs | rg -n '^[+-].*public static ConcurrentDictionary'
 ```
@@ -382,6 +394,8 @@ Expected:
 
 - every new field has XML documentation;
 - every owner lookup uses the handle generation as the inner key;
+- deletion acquisition returns false/default handle when any exact-path owner is active;
+- deletion retry can add an active generation when all exact-path owners are inactive;
 - acquisition rollback removes only the just-added generation and removes the outer path only if empty;
 - exact-generation removal retains the outer path and public key while a sibling exists;
 - maintained acquisition and coordinated clear share the same lock;
@@ -594,7 +608,7 @@ Expected staged scope: only `src/Accounts/Session.cs`.
 - Modify: `src/WebAPI/ImageHistoryAPI.cs:1190-1227`
 - Modify: `src/WebAPI/BackendAPI.cs:823-831`
 
-- [ ] **Step 1: Change permanent deletion publication to an owned handle**
+- [ ] **Step 1: Gate deletion with nonblocking owned acquisition**
 
 In `DeleteImage`, change:
 
@@ -607,12 +621,15 @@ with:
 
 ```csharp
         Action<string> deleteFile = Program.ServerSettings.Paths.RecycleDeletedImages ? Utilities.SendFileToRecycle : File.Delete;
-        Session.OutputFilenameReservation reservation = Session.ReserveDeletedOutputFilename(standardizedPath);
+        if (!Session.TryReserveDeletedOutputFilename(standardizedPath, out Session.OutputFilenameReservation reservation))
+        {
+            return new JObject() { ["error"] = "That file is currently being saved or deleted. Please retry shortly." };
+        }
 ```
 
 - [ ] **Step 2: Enclose existing deletion work in outcome-aware `try/finally`**
 
-The configured delete action must be selected before reservation acquisition. Initialize `deletionSucceeded` to false, and set it true only after primary deletion, sidecar deletion, metadata removal, index removal, and success-response construction:
+Path standardization and configured delete-action selection remain before reservation acquisition. Refusal returns immediately, before `deletionSucceeded` and before any primary, sidecar, metadata, or index work. After accepted acquisition, initialize `deletionSucceeded` to false and set it true only after primary deletion, sidecar deletion, metadata removal, index removal, and success-response construction:
 
 ```csharp
         bool deletionSucceeded = false;
@@ -647,7 +664,7 @@ The configured delete action must be selected before reservation acquisition. In
         }
 ```
 
-Do not add a catch or change existing exception propagation, error objects, recycle selection, sidecar list, metadata, or index operations. A successful deletion transitions inactive and expires after ten seconds. For primary `name.png`, `SaveImage` writes `name.swarm.json` from `fullPathNoExt`, and `DeleteImage` attempts the same companion via `fileBase + ".swarm.json"`. If that delete throws after the primary was removed, a partial or failed deletion transitions inactive without expiry. An orphan `name.swarm.json` reduces to `name.swarm` under the disk scan's `BeforeLast('.')`, not original stem `name`, so retention prevents same-stem reuse. The original exception remains unchanged.
+Do not add a catch or change accepted-path exception propagation, success response, recycle selection, sidecar list, metadata, or index operations. The refusal uses the existing JObject error shape and adds only the retry message; callers that delete during active ownership must retry, with no wait, queue, status-code redesign, or partial delete. A successful deletion transitions inactive and expires after ten seconds. For primary `name.png`, `SaveImage` writes `name.swarm.json` from `fullPathNoExt`, and `DeleteImage` attempts the same companion via `fileBase + ".swarm.json"`. If that delete throws after the primary was removed, a partial or failed deletion transitions inactive without expiry. An orphan `name.swarm.json` reduces to `name.swarm` under the disk scan's `BeforeLast('.')`, not original stem `name`, so retention prevents same-stem reuse. The original exception remains unchanged.
 
 - [ ] **Step 3: Coordinate system-RAM clearing**
 
@@ -670,7 +687,7 @@ Do not change `system_ram: false`, backend selection, backend memory calls, resu
 Run:
 
 ```bash
-rg -n "StillSavingFiles|RecentlyBlockedFilenames|ReserveDeletedOutputFilename|RetainOutputFilenameReservationUntilClear|ClearOutputFilenameReservations" src \
+rg -n "StillSavingFiles|RecentlyBlockedFilenames|TryReserveDeletedOutputFilename|RetainOutputFilenameReservationUntilClear|ClearOutputFilenameReservations" src \
   --glob '*.cs' \
   --glob '!src/bin/**' \
   --glob '!src/obj/**' \
@@ -689,16 +706,18 @@ Expected:
 Statically trace:
 
 1. missing-file deletion returns before reserving;
-2. every post-reservation deletion success or throw enters `finally`;
-3. `deletionSucceeded` becomes true only after all deletion work and response construction;
-4. successful deletion becomes inactive and expires after ten seconds;
-5. partial or failed deletion becomes inactive, does not expire, and preserves the original exception;
-6. overlapping save and deletion generations coexist in the same inner owner set;
-7. save/delete cleanup removes or transitions only its exact generation and leaves every sibling plus the public key intact;
-8. RAM clear removes inactive owners but preserves active siblings and their public key continuously under one lock;
-9. RAM clear removes the outer path/public key only when the owner set is empty, then removes legacy public-only keys;
-10. RAM clear does not touch `StillSavingFiles`, reassign the public instance, or reset the counter; and
-11. pre-clear delayed cleanup cannot remove any surviving or later generation.
+2. active exact-path save or deletion ownership returns the retryable error before any mutation;
+3. refusal creates no deletion generation and waits on no task or lock;
+4. inactive exact-path owners allow an active deletion retry generation;
+5. every accepted post-reservation deletion success or throw enters `finally`;
+6. `deletionSucceeded` becomes true only after all accepted deletion work and response construction;
+7. successful deletion becomes inactive and expires after ten seconds;
+8. partial or failed deletion becomes inactive, does not expire, and preserves the original exception;
+9. deletion cleanup removes or transitions only its exact generation and leaves inactive siblings plus the public key intact;
+10. RAM clear removes inactive owners but preserves an active retry owner and its public key continuously under one lock;
+11. RAM clear removes the outer path/public key only when the owner set is empty, then removes legacy public-only keys;
+12. RAM clear does not touch `StillSavingFiles`, reassign the public instance, or reset the counter; and
+13. pre-clear delayed cleanup cannot remove any surviving or later generation.
 
 - [ ] **Step 6: Run permitted static checks**
 
@@ -767,7 +786,7 @@ The production commit list contains the five initial source commits from `24a7df
 - [ ] **Step 2: Run the design conformance inventory**
 
 ```bash
-rg -n "StillSavingFiles|RecentlyBlockedFilenames|OutputFilenameReservation|OutputFilenameReservationState|TryReserveOutputFilename|ReserveDeletedOutputFilename|ReleaseOutputFilenameReservation|RetainOutputFilenameReservationUntilClear|RemoveStillSavingFile|ClearOutputFilenameReservations|Task.Delay|RunCheckedTask" \
+rg -n "StillSavingFiles|RecentlyBlockedFilenames|OutputFilenameReservation|OutputFilenameReservationState|TryReserveOutputFilename|TryReserveDeletedOutputFilename|ReleaseOutputFilenameReservation|RetainOutputFilenameReservationUntilClear|RemoveStillSavingFile|ClearOutputFilenameReservations|Task.Delay|RunCheckedTask" \
   src/Accounts/Session.cs \
   src/WebAPI/ImageHistoryAPI.cs \
   src/WebAPI/BackendAPI.cs \
@@ -803,14 +822,16 @@ The reviewer must verify:
 - setup and asynchronous exception coverage;
 - exact task-value removal;
 - nested path/generation ownership across save/delete/expiry/retention/RAM clear;
-- coexistence of active save G1 and deletion G2 on the same path;
+- refusal of deletion while any exact-path owner is active;
+- retryable JObject error before deletion work, without waiting;
+- coexistence of inactive owners with one active deletion retry;
 - synchronous inactive transition before delayed scheduling;
 - successful-deletion expiry versus partial/failed-deletion retention;
 - exact-owner removal with aggregate public-key retention;
-- continuous preservation of active siblings and aggregate public keys during RAM clear;
+- continuous preservation of active owners and aggregate public keys during RAM clear;
 - extension ABI/source boundary;
 - collision behavior and direct-extension caveat;
-- unchanged URLs, readers, metadata order, delete behavior, and error contract;
+- unchanged URLs, readers, metadata order, accepted-delete behavior, and JObject response shape plus the documented refusal condition;
 - exact three-path production source projection; and
 - no agent runtime claims.
 
@@ -823,6 +844,8 @@ The reviewer must inspect:
 - clarity and minimality;
 - field documentation and repository C# style;
 - lock ordering and absence of blocking work under the coordinator lock;
+- exact-path active-owner scan and generation publication in one lock boundary;
+- no filesystem, metadata, index, wait, or nested lock work on refusal;
 - generation monotonicity;
 - nested public/private map consistency and just-added-owner rollback;
 - nonthrowing cleanup diagnostics;
@@ -846,23 +869,24 @@ Correct findings in a focused source commit, rerun specification review if behav
 
 This task records an approved correction to be implemented and reviewed; it is not evidence that source code is already corrected.
 
-- [ ] **Step 1: Confirm the three integrated-review findings against source**
+- [ ] **Step 1: Confirm the four integrated-review findings against source and plan**
 
 Use numbered source and the transient-state inventory to demonstrate whether:
 
 1. a system-RAM clear can remove an active maintained save or deletion reservation and permit same-path reuse; and
 2. deletion of primary `name.png` followed by a throw while deleting maintained companion `name.swarm.json` can leave that companion on disk without the directory scan blocking original stem `name`; and
-3. adding deletion G2 for a path owned by active save G1 discards G1, allowing G2 cleanup or RAM clear to expose the path while G1 still runs.
+3. the initial source adds deletion G2 for a path owned by active save G1 by discarding G1, allowing G2 cleanup or RAM clear to expose the path while G1 still runs; and
+4. merely retaining both active owners would still permit deletion of the primary while the active save can later write its companion.
 
-Do not edit until all three findings are traced through the actual source state.
+Do not edit until all four findings are traced through the actual source and planned state.
 
 - [ ] **Step 2: Correct lifecycle state and RAM clear if required**
 
-Require the Task 1 nested owner map and helpers exactly: acquisition adds generations without discarding siblings; active save/deletion owners never expire; delayed release transitions only its exact owner before scheduling; failed-deletion retention changes only its exact owner to inactive without expiry; exact removal drops the public/outer path only when the final owner is gone; and clear removes inactive owners/legacy keys while preserving every active sibling continuously under the coordinator lock.
+Require the Task 1 nested owner map and helpers exactly: `TryReserveDeletedOutputFilename` refuses false/default while any exact-path owner is active; accepted acquisition adds a generation without discarding inactive siblings; active owners never expire; delayed release transitions only its exact owner before scheduling; failed-deletion retention changes only its exact owner to inactive without expiry; exact removal drops the public/outer path only when the final owner is gone; and clear removes inactive owners/legacy keys while preserving every active owner continuously under the coordinator lock.
 
 - [ ] **Step 3: Correct deletion outcome handling if required**
 
-Require the Task 3 `deletionSucceeded` branch exactly. Success is assigned only after primary, sidecar, metadata/index, and response construction complete; `finally` selects delayed release on success and `RetainOutputFilenameReservationUntilClear` on failure without changing the original exception.
+Require the Task 3 refusal and `deletionSucceeded` branches exactly. Refusal returns the retryable JObject before any deletion work. After acceptance, success is assigned only after primary, sidecar, metadata/index, and response construction complete; `finally` selects delayed release on success and `RetainOutputFilenameReservationUntilClear` on failure without changing the original exception.
 
 - [ ] **Step 4: Commit only the focused source correction**
 
@@ -870,14 +894,14 @@ Require the Task 3 `deletionSucceeded` branch exactly. Success is assigned only 
 git add src/Accounts/Session.cs src/WebAPI/ImageHistoryAPI.cs src/WebAPI/BackendAPI.cs
 git diff --cached --name-only
 git diff --cached --check
-git commit -m "fix: support overlapping output reservation owners"
+git commit -m "fix: serialize output deletion acquisition"
 ```
 
 Stage only files that actually require correction. If one of the three source files is unchanged, do not stage it. This correction commit remains inside the stable `e5fcebf7..HEAD` Rank 12 range.
 
 - [ ] **Step 5: Repeat both fresh reviews**
 
-Repeat Task 4's specification and code-quality reviews over both the complete integrated range and the path-filtered production source projection. The correction is accepted only when both reviews find no remaining contradiction among overlapping owners, aggregate public-key lifetime, active-state clearing, deletion failure retention, successful deletion expiry, failed-save expiry, and the direct-extension exact-key caveat.
+Repeat Task 4's specification and code-quality reviews over both the complete integrated range and the path-filtered production source projection. The correction is accepted only when both reviews find no remaining contradiction among active-owner deletion refusal, inactive-owner retry coexistence, aggregate public-key lifetime, active-state clearing, deletion failure retention, successful deletion expiry, failed-save expiry, and the direct-extension exact-key caveat.
 
 ## Task 5: Record Static Implementation Closure
 
@@ -893,11 +917,11 @@ Append:
 - exact integrated base/head and the complete interleaved docs-plus-source commit history;
 - exact production base/source head and the path-filtered commit list containing the five initial source commits plus every focused source correction;
 - exact three-path production source projection, diff stat, and diff check, excluding documentation-only commits;
-- final nested owner coordinator, save, deletion-outcome, aggregate public-key, and active-preserving RAM-clear behavior;
+- final nested owner coordinator, active-owner deletion refusal, save, accepted-deletion outcome, aggregate public-key, and active-preserving RAM-clear behavior;
 - the integrated-review findings and focused correction commit;
 - specification and quality review outcomes;
 - permitted static commands and their results;
-- unchanged public fields/readers/contracts;
+- unchanged public fields/readers and the documented DeleteImage refusal-response tradeoff;
 - direct-extension same-key race caveat;
 - successful-delete and failed-save ten-second expiry plus the failed-deletion retain-until-clear exception;
 - no agent build/test/runtime/performance claim; and
@@ -975,7 +999,7 @@ Use the approved design's “Maintainer Validation Matrix” without shortening 
 - exact error/logging and partial-file behavior;
 - rapid/concurrent saves;
 - delete/save/expiry/pending-task ownership races;
-- active save G1 plus successful/failed deletion G2 overlap, independent cleanup, and final-owner public-key release;
+- active save/deletion refusal, no-mutation retryable response, inactive-owner retry coexistence, and final-owner public-key release;
 - successful-deletion ten-second reuse;
 - partial and failed deletion retain-until-clear behavior, including orphaned multi-suffix companions such as `name.swarm.json`;
 - users/folders;

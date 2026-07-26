@@ -4,7 +4,7 @@
 
 **Date:** 2026-07-25
 
-**Multi-owner correction approved:** 2026-07-26
+**Multi-owner and deletion-serialization corrections approved:** 2026-07-26
 
 **Roadmap scope:** Backend F19 and Backend F20, rank 12
 
@@ -17,7 +17,7 @@
 
 In the original baseline, the pending-byte entry was removed only after the entire background operation and a ten-second delay. A conversion, file, sidecar, preview, history-index, or logging failure skipped that removal. Filename reservations had no normal completion or expiry path, so maintained saves and deletions could retain transient state for the process lifetime. The five source commits from `24a7df6b` through `6d230e4c` implement the initial cleanup design; the integrated-review correction specified here remains pending.
 
-Rank 12 gives these structures explicit, owner-aware lifetimes. It preserves active-save collision protection, the successful ten-second read-through window, existing output and error contracts, current path and metadata behavior, and the public dictionary fields used by extensions. A private coordinator records every owner generation and its lifecycle independently. Cleanup from one owner cannot erase a sibling owner, and the aggregate public key remains present until the final owner for that path ends or an administrative clear removes its inactive state.
+Rank 12 gives these structures explicit, owner-aware lifetimes. It preserves active-save collision protection, the successful ten-second read-through window, current path and metadata behavior, and the public dictionary fields used by extensions. A private coordinator records every owner generation and its lifecycle independently. Cleanup from one owner cannot erase a sibling owner, and the aggregate public key remains present until the final owner for that path ends or an administrative clear removes its inactive state. Exact-path deletion acquisition is refused while any maintained owner is active, serializing filesystem mutation without waiting or lock-order deadlock.
 
 The integrated-review correction distinguishes successful deletion from partial or failed deletion. A successful deletion retains its inactive reservation for ten seconds. A partial or failed deletion retains an inactive, non-expiring reservation until an explicit system-RAM clear or process restart, because the primary file may be gone while a multi-suffix companion remains invisible to `SaveImage`'s extensionless collision scan.
 
@@ -26,16 +26,17 @@ The integrated-review correction distinguishes successful deletion from partial 
 1. Remove each maintained pending-byte entry after the successful ten-second read-through window.
 2. Remove a maintained pending-byte entry immediately when its save pipeline fails.
 3. Keep every maintained save reservation active for the entire background operation, including the successful read-through delay.
-4. Keep a deletion reservation active for its entire primary, sidecar, metadata/index, and response-construction operation.
+4. Keep an accepted deletion reservation active for its entire primary, sidecar, metadata/index, and response-construction operation.
 5. Give successful deletions and failed saves a ten-second inactive reservation window.
 6. Retain partial or failed deletion reservations until explicit system-RAM clear or restart.
 7. Remove expiring inactive reservations even when the server is otherwise idle.
 8. Prevent cleanup from one operation from removing a different pending task or sibling reservation.
-9. Track overlapping save and deletion owners for the same path without allowing either owner to erase the other.
-10. Preserve active maintained reservations across system-RAM clear while clearing legacy public and inactive maintained owners.
-11. Preserve filename collision behavior for active saves, rapid batches, deletions, multiple formats, and `[number]`/suffix paths.
-12. Preserve public field ABI, source compatibility, dictionary identity, path keys, reader behavior, URLs, error responses, and fire-and-forget save reporting.
-13. Keep the change bounded to output transient-state ownership.
+9. Refuse exact-path deletion while a maintained save or deletion owner is active, before any filesystem or metadata mutation.
+10. Allow an inactive owner and a new active deletion retry to coexist without allowing either owner to erase the other.
+11. Preserve active maintained reservations across system-RAM clear while clearing legacy public and inactive maintained owners.
+12. Preserve filename collision behavior for active saves, rapid batches, deletions, multiple formats, and `[number]`/suffix paths.
+13. Preserve public field ABI, source compatibility, dictionary identity, path keys, reader behavior, URLs, existing error shapes, and fire-and-forget save reporting.
+14. Keep the change bounded to output transient-state ownership.
 
 ## Non-Goals
 
@@ -73,7 +74,7 @@ Both readers remain unchanged. Rank 12 corrects lifetime at the publishing owner
 
 ### Filename-reservation producers and consumers
 
-`Session.SaveImage` publishes each chosen persisted path to `RecentlyBlockedFilenames`. `ImageHistoryAPI.DeleteImage` publishes the standardized deleted path. Later saves combine on-disk files with public reservation keys and compare extensionless names while holding the user's `UserLock`.
+`Session.SaveImage` publishes each chosen persisted path to `RecentlyBlockedFilenames`. `ImageHistoryAPI.DeleteImage` publishes the standardized deleted path only after active-owner-gated acquisition succeeds. Later saves combine on-disk files with public reservation keys and compare extensionless names while holding the user's `UserLock`.
 
 `BackendAPI.FreeBackendMemory(system_ram: true)` is the only maintained administrative clear. It is changed to clear legacy public and inactive maintained reservations while preserving active maintained reservations and their public keys.
 
@@ -90,7 +91,9 @@ They are not converted to properties, wrapped in alternate collection types, or 
 
 Maintained lifecycle handling applies only to reservations created through the private coordinator. A direct extension write remains a legacy public entry. Maintained operations are protected from one another, but concurrent external mutation of the exact same key has no new ownership guarantee because the public value still contains only the path string.
 
-No existing method signature, output URL, API response, reader contract, or save-error delivery mechanism changes.
+No existing public method signature, output URL, reader contract, or save-error delivery mechanism changes. The initial internal deletion-reservation method becomes the bool/out `TryReserveDeletedOutputFilename` helper. `DeleteImage` retains its JObject error shape and adds one refusal condition: when the exact path has an active maintained save or deletion owner, it returns an error asking the caller to retry and performs no deletion work.
+
+This is a deliberate compatibility tradeoff: a caller that previously attempted deletion during an active maintained save or deletion now receives a retryable error instead of concurrent mutation. There is no wait, queue, status-code redesign, or partial delete on refusal.
 
 ## Reservation Coordinator
 
@@ -117,7 +120,7 @@ All new fields follow the repository XML-documentation rule. The implementation 
 | Inactive retained generation | Deletion partially completed or failed | None | Remove this owner; keep public key if siblings remain |
 | Legacy public only | Direct public write with no private state | None maintained by coordinator | Remove |
 
-An active and inactive generation may coexist under the same path. The public key remains because the owner set is nonempty. It is removed only after the final owner is removed.
+An inactive generation and one active deletion retry may coexist under the same path. Two active maintained owners never coexist on the same exact path: save acquisition rejects the aggregate public block, and deletion acquisition checks all exact-path private owners for activity. The public key remains while the owner set is nonempty and is removed only after the final owner is removed.
 
 Restart naturally discards all process-local states.
 
@@ -129,9 +132,11 @@ If another maintained or legacy public reservation appeared after the earlier co
 
 ### Delete reservation acquisition
 
-`ImageHistoryAPI.DeleteImage` adds a new active generation to the standardized full path before invoking the configured delete/recycle action. If a save generation already owns that exact path, both owners coexist. Neither save nor deletion cleanup can remove the sibling generation or the aggregate public key while the sibling remains.
+`ImageHistoryAPI.DeleteImage` calls `TryReserveDeletedOutputFilename` after path standardization and delete-action selection. Under the coordinator lock, acquisition inspects the exact path's owner set. If any owner is active, it returns false with a default handle. `DeleteImage` then returns the existing JObject error style explaining that the file is currently being saved or deleted and should be retried. It performs no primary, companion, metadata, or history-index deletion work.
 
-The existing file-existence check, configured action, sidecar loop, metadata removal, history-index removal, success response, and exception propagation remain unchanged.
+If the path has no active owner, acquisition adds a new active deletion generation. Existing inactive owners may remain alongside it. Public publication and failure rollback retain aggregate semantics: rollback removes only the just-added generation and removes the outer path only when the owner set becomes empty.
+
+After successful acquisition, the existing configured action, sidecar loop, metadata removal, history-index removal, success response, and exception propagation remain unchanged.
 
 ## Pending-Byte Lifecycle
 
@@ -223,11 +228,12 @@ System-RAM clear deliberately releases inactive retained deletion owners. If an 
 
 | Interleaving | Required result |
 | --- | --- |
-| Active save G1 overlaps deletion G2 on the same path | Both generations coexist under one aggregate public key |
-| G2 succeeds and its delayed expiry fires while G1 is active | Only G2 is removed; G1 and the public key remain |
-| G2 fails while G1 is active | G2 becomes retained inactive; G1 remains active; the public key represents both |
-| RAM clear sees active G1 plus inactive G2 | It removes G2, preserves G1, and continuously retains the public key |
-| G1 completes while failed deletion G2 is retained | Only G1 is removed; G2 and the public key remain until clear or restart |
+| Deletion is requested while save G1 is active on the exact path | Acquisition refuses; no deletion generation or filesystem/metadata mutation occurs |
+| A second deletion is requested while deletion G1 is active | Acquisition refuses without waiting; G1 and its public key remain |
+| Save G1 could write a late companion after the refusal | No deletion work occurred, so the primary/companion sequence is not split by a concurrent delete |
+| Failed deletion G1 is inactive and deletion retry G2 is requested | G2 is accepted as active alongside inactive G1 |
+| RAM clear sees inactive G1 plus active retry G2 | It removes G1, preserves G2, and continuously retains the public key |
+| G2 ends while retained inactive G1 remains | Only G2 is removed; G1 and the public key remain until clear or restart |
 | The final owner for a path ends or is cleared | Only then are the outer owner set and public key removed |
 | Old delayed expiry fires after another generation is added | Expiry removes only its exact generation and cannot remove the sibling |
 | RAM clear overlaps an active save | Active private state and public key remain continuously visible |
@@ -249,9 +255,9 @@ Expected production scope:
   - add per-path owner sets with per-generation active/inactive state;
   - make pending cleanup task-owned;
   - make save reservations generation-owned;
-  - expose delayed-release, retain-until-clear, and coordinated-clear operations.
+  - expose try-acquire deletion, delayed-release, retain-until-clear, and coordinated-clear operations.
 - `src/WebAPI/ImageHistoryAPI.cs`
-  - distinguish fully successful deletion from partial/failure cleanup.
+  - return a retryable error on refused acquisition and otherwise distinguish fully successful deletion from partial/failure cleanup.
 - `src/WebAPI/BackendAPI.cs`
   - clear only inactive maintained and legacy public reservations.
 
@@ -275,24 +281,27 @@ Repository policy forbids agents from building, launching, or testing SwarmUI. A
 4. prove each asynchronous path reaches pending-task `finally`;
 5. prove pending cleanup compares the exact captured task;
 6. prove every save/delete/expiry/retention cleanup addresses only the exact inner generation;
-7. prove save and deletion acquisition add active generations without discarding siblings;
-8. prove publication rollback removes only the just-added generation and removes the outer path only when empty;
-9. prove delayed release changes only its owner to inactive synchronously before scheduling;
-10. prove scheduling failure performs immediate exact-generation removal;
-11. prove exact-generation removal preserves the public key and outer path while any sibling remains;
-12. prove deletion success is assigned only after all deletion work and response construction;
-13. prove deletion failure becomes inactive and non-expiring without changing its exception;
-14. prove successful cache retention is still ten seconds;
-15. prove failed pending cleanup has no additional ten-second wait;
-16. prove active saves and deletions have no time-based expiry;
-17. prove RAM clear removes inactive owners independently and preserves active siblings plus their public key without a maintained-acquisition gap;
-18. prove RAM clear removes empty outer sets and legacy public entries without resetting the counter or touching `StillSavingFiles`;
-19. prove failed saves still expire and failed deletions do not;
-20. prove collision selection preserves extensionless `[number]`/suffix behavior;
-21. prove public field names, types, static form, instances, and reader paths are unchanged;
-22. prove save work order, URLs, error responses, checked-task logging, deletion behavior, and no-save bypasses are unchanged;
-23. prove the direct external same-key caveat remains explicit; and
-24. prove no frontend, settings, launcher, extension, generated, upstream, user-data, or protected working-tree file entered the production diff.
+7. prove save acquisition and accepted deletion acquisition add active generations without discarding inactive siblings;
+8. prove deletion acquisition refuses when any exact-path maintained owner is active;
+9. prove refusal returns a default handle and JObject error before all primary/companion/metadata/index deletion work;
+10. prove inactive exact-path owners do not prevent a deletion retry;
+11. prove publication rollback removes only the just-added generation and removes the outer path only when empty;
+12. prove delayed release changes only its owner to inactive synchronously before scheduling;
+13. prove scheduling failure performs immediate exact-generation removal;
+14. prove exact-generation removal preserves the public key and outer path while any sibling remains;
+15. prove deletion success is assigned only after all accepted deletion work and response construction;
+16. prove deletion failure becomes inactive and non-expiring without changing its exception;
+17. prove successful cache retention is still ten seconds;
+18. prove failed pending cleanup has no additional ten-second wait;
+19. prove active saves and deletions have no time-based expiry;
+20. prove RAM clear removes inactive owners independently and preserves active owners plus their public key without a maintained-acquisition gap;
+21. prove RAM clear removes empty outer sets and legacy public entries without resetting the counter or touching `StillSavingFiles`;
+22. prove failed saves still expire and failed deletions do not;
+23. prove collision selection preserves extensionless `[number]`/suffix behavior;
+24. prove public field names, types, static form, instances, and reader paths are unchanged;
+25. prove save work order, URLs, existing response shapes, checked-task logging, accepted deletion behavior, and no-save bypasses are unchanged;
+26. prove the direct external same-key caveat remains explicit; and
+27. prove no frontend, settings, launcher, extension, generated, upstream, user-data, or protected working-tree file entered the production diff.
 
 Permitted verification is limited to source inventory, numbered source review, exact-range diff inspection, static lint where configured, and `git diff --check`.
 
@@ -325,19 +334,19 @@ The maintainer performs all builds and live validation.
 15. Primary delete/recycle failure retains an inactive reservation until RAM clear or restart.
 16. Deletion failure while removing `name.swarm.json` after primary `name.png` removal retains an inactive reservation and prevents reuse of stem `name` while the multi-suffix companion remains.
 17. Metadata or history-index deletion failure retains an inactive reservation.
-18. Deletion exceptions and error responses remain unchanged.
+18. Existing deletion exceptions and JObject response shapes remain unchanged; active-owner refusal adds the retryable error condition.
 
 ### Ownership and races
 
 19. Rapid same-template saves receive distinct collision-free names.
 20. Concurrent same-name saves cannot share a maintained reservation.
-21. With active save G1 and successful deletion G2 on the same path, G2 expiry cannot expose the path while G1 remains active.
-22. With active save G1 and failed deletion G2 on the same path, G2 remains retained inactive alongside G1.
-23. RAM clear removes inactive G2 while preserving active G1 and the aggregate public key.
-24. G1 completion removes only G1 and leaves failed-deletion G2 plus the public key retained.
-25. The aggregate public key is removed only after the final owner ends or is administratively cleared.
-26. Delete during or immediately after save adds a sibling owner, and cleanup from either operation does not erase the other.
-27. A stale failed-save or successful-delete expiry removes only its generation and cannot remove a sibling save/delete owner.
+21. Deletion requested while an exact-path save is active returns the retryable JObject error and performs no deletion work.
+22. A second deletion requested while an exact-path deletion is active is refused without waiting or deadlock.
+23. Refusal during an active save prevents a concurrent primary delete from racing a later companion write.
+24. A deletion retry is accepted when all existing exact-path owners are inactive and adds a new active generation alongside them.
+25. RAM clear removes an inactive prior deletion owner while preserving an active retry owner and the aggregate public key.
+26. Completion or expiry of the active retry removes only its generation and leaves any retained inactive sibling.
+27. The aggregate public key is removed only after the final owner ends or is administratively cleared.
 28. A stale pending cleanup cannot remove a different pending task.
 29. Multiple users and folders do not remove one another's reservations.
 
@@ -359,8 +368,8 @@ Validation records the operating system and filesystem, distinguishes observed b
 The production change is one coordinated ownership unit across `Session`, deletion, and RAM clear:
 
 1. restore direct save reservation publication and pending removal;
-2. restore direct deletion reservation publication;
+2. restore unconditional direct deletion reservation publication and remove the active-owner refusal response;
 3. restore direct whole-public-map RAM clearing; and
 4. remove private per-path owner sets, generation lifecycle state, and their helpers.
 
-Partial rollback is unsafe. Collapsing per-path owner sets to flat path-to-state storage would let overlapping save/deletion cleanup erase sibling protection. Restoring whole-map clear while active-state acquisition remains would reopen same-path save/write races, and restoring unconditional delete expiry while multi-suffix companion cleanup remains non-transactional would reopen stale-companion inheritance. The unchanged public fields and readers make a full rollback mechanically bounded.
+Partial rollback is unsafe. Collapsing per-path owner sets to flat path-to-state storage would let deletion-retry cleanup erase inactive sibling protection. Removing active-owner refusal would reopen the primary-delete/late-companion race. Restoring whole-map clear while active-state acquisition remains would reopen same-path save/write races, and restoring unconditional delete expiry while multi-suffix companion cleanup remains non-transactional would reopen stale-companion inheritance. The unchanged public fields and readers make a full rollback mechanically bounded.
