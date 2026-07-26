@@ -13,11 +13,11 @@
 - `StillSavingFiles[fullPath]` lets immediate output readers use pending or recently completed bytes; and
 - `RecentlyBlockedFilenames[fullPath]` prevents a concurrent save from selecting the same output name.
 
-The pending-byte entry is currently removed only after the entire background operation and a ten-second delay. A conversion, file, sidecar, preview, history-index, or logging failure skips that removal. Filename reservations have no normal completion or expiry path. Maintained saves and deletions can therefore retain transient state for the process lifetime.
+In the original baseline, the pending-byte entry was removed only after the entire background operation and a ten-second delay. A conversion, file, sidecar, preview, history-index, or logging failure skipped that removal. Filename reservations had no normal completion or expiry path, so maintained saves and deletions could retain transient state for the process lifetime. The five source commits from `24a7df6b` through `6d230e4c` implement the initial cleanup design; the integrated-review correction specified here remains pending.
 
 Rank 12 gives these structures explicit, owner-aware lifetimes. It preserves active-save collision protection, the successful ten-second read-through window, existing output and error contracts, current path and metadata behavior, and the public dictionary fields used by extensions. A private coordinator records both generation and lifecycle state so stale cleanup cannot erase a newer owner and an administrative RAM clear cannot expose a path still used by an active save or deletion.
 
-The integrated-review correction distinguishes successful deletion from partial or failed deletion. A successful deletion retains its inactive reservation for ten seconds. A partial or failed deletion retains an inactive, non-expiring reservation until an explicit system-RAM clear or process restart, because the primary file may be gone while a double-extension sidecar remains invisible to `SaveImage`'s extensionless collision scan.
+The integrated-review correction distinguishes successful deletion from partial or failed deletion. A successful deletion retains its inactive reservation for ten seconds. A partial or failed deletion retains an inactive, non-expiring reservation until an explicit system-RAM clear or process restart, because the primary file may be gone while a multi-suffix companion remains invisible to `SaveImage`'s extensionless collision scan.
 
 ## Goals
 
@@ -173,7 +173,7 @@ The deleted stem can be selected again after that window if no disk file, public
 
 If any post-acquisition deletion step or success-response construction throws, `deletionSucceeded` remains false. `finally` calls the generation-checked `RetainOutputFilenameReservationUntilClear` helper. It transitions the matching active generation to inactive without scheduling expiry, then lets the original exception propagate unchanged.
 
-This boundedness exception is necessary because the primary media may already have been deleted while a later double-extension sidecar such as `name.png.swarm.json` remains. `SaveImage` strips only the final extension during disk collision discovery, yielding `name.png`; it can therefore miss the original extensionless stem `name` and inherit stale sidecar state if the reservation expires automatically.
+This boundedness exception is necessary for the maintained sidecar path. Given primary media `name.png`, `SaveImage` writes `name.swarm.json` from `fullPathNoExt + ".swarm.json"`. `DeleteImage` constructs and attempts that same path from `fileBase + ".swarm.json"`. If that delete throws after `name.png` was removed, `deletionSucceeded` remains false and retention applies. If the orphaned multi-suffix companion `name.swarm.json` later remains, `Directory.EnumerateFiles(...).Select(path => path.BeforeLast('.'))` yields `name.swarm`, not the original stem `name`, so the disk scan alone does not block reuse.
 
 The retained state lasts only until explicit `system_ram: true` clear or process restart. Administrative clear is the deliberate safety override.
 
@@ -311,7 +311,7 @@ The maintainer performs all builds and live validation.
 
 14. A fully successful deletion remains blocked for ten seconds and then becomes reusable when nothing else blocks it.
 15. Primary delete/recycle failure retains an inactive reservation until RAM clear or restart.
-16. Sidecar deletion failure after primary removal retains an inactive reservation and prevents stale sidecar stem inheritance.
+16. Deletion failure while removing `name.swarm.json` after primary `name.png` removal retains an inactive reservation and prevents reuse of stem `name` while the multi-suffix companion remains.
 17. Metadata or history-index deletion failure retains an inactive reservation.
 18. Deletion exceptions and error responses remain unchanged.
 
@@ -346,4 +346,4 @@ The production change is one coordinated ownership unit across `Session`, deleti
 3. restore direct whole-public-map RAM clearing; and
 4. remove private generation/lifecycle state and its helpers.
 
-Partial rollback is unsafe. Restoring whole-map clear while active-state acquisition remains would reopen same-path save/write races, and restoring unconditional delete expiry while sidecar cleanup remains non-transactional would reopen stale-sidecar inheritance. The unchanged public fields and readers make a full rollback mechanically bounded.
+Partial rollback is unsafe. Restoring whole-map clear while active-state acquisition remains would reopen same-path save/write races, and restoring unconditional delete expiry while multi-suffix companion cleanup remains non-transactional would reopen stale-companion inheritance. The unchanged public fields and readers make a full rollback mechanically bounded.

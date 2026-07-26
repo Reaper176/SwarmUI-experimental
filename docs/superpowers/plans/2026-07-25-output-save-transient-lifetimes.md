@@ -635,7 +635,7 @@ The configured delete action must be selected before reservation acquisition. In
         }
 ```
 
-Do not add a catch or change existing exception propagation, error objects, recycle selection, sidecar list, metadata, or index operations. A successful deletion transitions inactive and expires after ten seconds. A partial or failed deletion transitions inactive without expiry so a removed primary cannot expose a stale double-extension sidecar to same-stem reuse. The original exception remains unchanged.
+Do not add a catch or change existing exception propagation, error objects, recycle selection, sidecar list, metadata, or index operations. A successful deletion transitions inactive and expires after ten seconds. For primary `name.png`, `SaveImage` writes `name.swarm.json` from `fullPathNoExt`, and `DeleteImage` attempts the same companion via `fileBase + ".swarm.json"`. If that delete throws after the primary was removed, a partial or failed deletion transitions inactive without expiry. An orphan `name.swarm.json` reduces to `name.swarm` under the disk scan's `BeforeLast('.')`, not original stem `name`, so retention prevents same-stem reuse. The original exception remains unchanged.
 
 - [ ] **Step 3: Coordinate system-RAM clearing**
 
@@ -824,7 +824,7 @@ This task records an approved correction to be implemented and reviewed; it is n
 Use numbered source and the transient-state inventory to demonstrate whether:
 
 1. a system-RAM clear can remove an active maintained save or deletion reservation and permit same-path reuse; and
-2. a deletion that removes primary media but fails on a double-extension sidecar can later expose that stem to `SaveImage`.
+2. deletion of primary `name.png` followed by a throw while deleting maintained companion `name.swarm.json` can leave that companion on disk without the directory scan blocking original stem `name`.
 
 Do not edit until both findings are traced through the actual source state.
 
@@ -945,7 +945,7 @@ Use the approved design's “Maintainer Validation Matrix” without shortening 
 - rapid/concurrent saves;
 - delete/save/expiry/pending-task ownership races;
 - successful-deletion ten-second reuse;
-- partial and failed deletion retain-until-clear behavior, including stale double-extension sidecars;
+- partial and failed deletion retain-until-clear behavior, including orphaned multi-suffix companions such as `name.swarm.json`;
 - users/folders;
 - RAM clear true/false, active-save preservation, active-deletion preservation, and pre/post-clear ownership;
 - extension field compatibility; and
