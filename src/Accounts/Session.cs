@@ -212,6 +212,177 @@ public class Session : IEquatable<Session>
     /// <summary>File data that will be saved soon, or has very recently saved.</summary>
     public static ConcurrentDictionary<string, Task<byte[]>> StillSavingFiles = [];
 
+    /// <summary>Ownership handle for a reserved output filename.</summary>
+    internal readonly record struct OutputFilenameReservation(string Path, long Generation);
+
+    /// <summary>Synchronizes ownership changes to output filename reservations.</summary>
+    private static readonly LockObject OutputFilenameReservationLock = new();
+
+    /// <summary>Maps reserved output filenames to the generation that currently owns them.</summary>
+    private static readonly Dictionary<string, long> MaintainedOutputFilenameReservations = [];
+
+    /// <summary>Monotonically increasing generation used to distinguish successive owners of the same output filename.</summary>
+    private static long OutputFilenameReservationGeneration = 0;
+
+    /// <summary>How long an inactive output filename reservation remains maintained.</summary>
+    private static readonly TimeSpan InactiveOutputFilenameReservationLifetime = TimeSpan.FromSeconds(10);
+
+    /// <summary>Logs an output cleanup failure without allowing diagnostics to disrupt cleanup.</summary>
+    private static void LogOutputCleanupFailure(string action, Exception ex)
+    {
+        try
+        {
+            string message = $"Failed to {action} output filename reservation: {ex.ReadableString()}";
+            Logs.Error(message);
+        }
+        catch
+        {
+        }
+    }
+
+    /// <summary>Attempts to reserve an output filename and returns an ownership handle if successful.</summary>
+    private static bool TryReserveOutputFilename(string fullPath, out OutputFilenameReservation handle)
+    {
+        lock (OutputFilenameReservationLock)
+        {
+            string extensionlessPath = fullPath.BeforeLast('.');
+            foreach (string reservedPath in RecentlyBlockedFilenames.Keys)
+            {
+                if (reservedPath.BeforeLast('.') == extensionlessPath)
+                {
+                    handle = default;
+                    return false;
+                }
+            }
+            bool hadPriorGeneration = MaintainedOutputFilenameReservations.TryGetValue(fullPath, out long priorGeneration);
+            long generation = ++OutputFilenameReservationGeneration;
+            OutputFilenameReservation reservation = new(fullPath, generation);
+            MaintainedOutputFilenameReservations[fullPath] = generation;
+            try
+            {
+                RecentlyBlockedFilenames[fullPath] = fullPath;
+            }
+            catch
+            {
+                if (hadPriorGeneration)
+                {
+                    MaintainedOutputFilenameReservations[fullPath] = priorGeneration;
+                }
+                else
+                {
+                    MaintainedOutputFilenameReservations.Remove(fullPath);
+                }
+                throw;
+            }
+            handle = reservation;
+            return true;
+        }
+    }
+
+    /// <summary>Reserves a deleted output filename, replacing ownership of that exact path.</summary>
+    internal static OutputFilenameReservation ReserveDeletedOutputFilename(string fullPath)
+    {
+        lock (OutputFilenameReservationLock)
+        {
+            bool hadPriorGeneration = MaintainedOutputFilenameReservations.TryGetValue(fullPath, out long priorGeneration);
+            long generation = ++OutputFilenameReservationGeneration;
+            OutputFilenameReservation reservation = new(fullPath, generation);
+            MaintainedOutputFilenameReservations[fullPath] = generation;
+            try
+            {
+                RecentlyBlockedFilenames[fullPath] = fullPath;
+            }
+            catch
+            {
+                if (hadPriorGeneration)
+                {
+                    MaintainedOutputFilenameReservations[fullPath] = priorGeneration;
+                }
+                else
+                {
+                    MaintainedOutputFilenameReservations.Remove(fullPath);
+                }
+                throw;
+            }
+            return reservation;
+        }
+    }
+
+    /// <summary>Removes an output filename reservation only if the supplied handle still owns it.</summary>
+    private static void RemoveOutputFilenameReservation(OutputFilenameReservation handle)
+    {
+        try
+        {
+            lock (OutputFilenameReservationLock)
+            {
+                if (!MaintainedOutputFilenameReservations.TryGetValue(handle.Path, out long generation) || generation != handle.Generation)
+                {
+                    return;
+                }
+                MaintainedOutputFilenameReservations.Remove(handle.Path);
+                RecentlyBlockedFilenames.TryRemove(handle.Path, out _);
+            }
+        }
+        catch (Exception ex)
+        {
+            LogOutputCleanupFailure("remove", ex);
+        }
+    }
+
+    /// <summary>Releases an output filename reservation owned by the supplied handle.</summary>
+    private static void ReleaseOutputFilenameReservation(OutputFilenameReservation handle)
+    {
+        RemoveOutputFilenameReservation(handle);
+    }
+
+    /// <summary>Releases an output filename reservation after the inactive reservation lifetime.</summary>
+    internal static void ReleaseOutputFilenameReservationAfterDelay(OutputFilenameReservation handle)
+    {
+        try
+        {
+            Utilities.RunCheckedTask(async () =>
+            {
+                await Task.Delay(InactiveOutputFilenameReservationLifetime);
+                ReleaseOutputFilenameReservation(handle);
+            });
+        }
+        catch (Exception ex)
+        {
+            LogOutputCleanupFailure("schedule delayed removal of", ex);
+            ReleaseOutputFilenameReservation(handle);
+        }
+    }
+
+    /// <summary>Removes a pending save only if both its filename and task still match.</summary>
+    private static void RemoveStillSavingFile(string fullPath, Task<byte[]> pendingTask)
+    {
+        try
+        {
+            StillSavingFiles.TryRemove(new KeyValuePair<string, Task<byte[]>>(fullPath, pendingTask));
+        }
+        catch (Exception ex)
+        {
+            LogOutputCleanupFailure("remove pending save for", ex);
+        }
+    }
+
+    /// <summary>Clears all maintained and publicly visible output filename reservations.</summary>
+    internal static void ClearOutputFilenameReservations()
+    {
+        try
+        {
+            lock (OutputFilenameReservationLock)
+            {
+                MaintainedOutputFilenameReservations.Clear();
+                RecentlyBlockedFilenames.Clear();
+            }
+        }
+        catch (Exception ex)
+        {
+            LogOutputCleanupFailure("clear", ex);
+        }
+    }
+
     /// <summary>Save an image as this user, and returns the new URL. If user has disabled saving, returns a data URL.</summary>
     /// <returns>(User-Visible-WebPath, Local-FilePath)</returns>
     public (string, string) SaveImage(T2IEngine.ImageOutput image, int batchIndex, T2IParamInput user_input, string metadata)
