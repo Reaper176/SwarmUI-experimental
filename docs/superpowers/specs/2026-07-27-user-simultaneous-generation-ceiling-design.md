@@ -1,6 +1,6 @@
 # User Simultaneous-Generation Ceiling Design
 
-**Status:** Implemented; awaiting maintainer validation
+**Status:** Implemented and maintainer-validated on Garuda Linux (Arch-based), Btrfs
 
 **Date:** 2026-07-27
 
@@ -255,6 +255,8 @@ The maintainer performs all builds and live validation. Record the operating sys
 18. One user runs normal T2I and Image Batch concurrently: each invocation respects its own local limit; the combined count may exceed the role value and is recorded as the approved account-wide caveat, not a failure of Rank 15.
 19. One WebSocket submits overlapping normal T2I producers: each producer respects its own local limit; their aggregate may exceed it and is recorded as the same caveat.
 20. Normal T2I and Image Batch with backend capacity below the role limit: backend capacity remains the independent lower constraint and both routes complete normally.
+
+**Maintainer validation record (2026-07-27):** Maintainer Reaper176 explicitly confirmed all 20 exact cases above passed on Garuda Linux (Arch-based), Btrfs. This maintainer evidence is separate from agent activity: agents performed no build, test, launch, runtime, platform, filesystem, or performance exercise. The validated guarantee remains request-local. Cases 18 and 19 passed on their expected basis: each invocation or producer respects its own local limit while the aggregate count may exceed the role value. This does not claim account-wide enforcement, multi-user fairness validation, any broader platform or filesystem result, or a performance result.
 
 ## Success Criteria
 
