@@ -1,6 +1,6 @@
 # Session-Ready Callback Failure Isolation Design
 
-**Status:** Implemented; awaiting maintainer validation
+**Status:** Implemented and maintainer-validated on Garuda Linux (Arch-based), Btrfs, using Firefox (version not provided)
 
 **Date:** 2026-07-27
 
@@ -257,7 +257,7 @@ Static evidence can establish lexical isolation, invocation order, synchronous b
 
 ## Implementation Record
 
-Rank 17 is statically implemented and remains awaiting maintainer browser/runtime validation.
+Rank 17 is implemented and maintainer-validated on Garuda Linux (Arch-based), Btrfs, using Firefox (version not provided).
 
 ### Provenance and committed scope
 
@@ -265,6 +265,7 @@ Rank 17 is statically implemented and remains awaiting maintainer browser/runtim
 - The design commit is `a70efd3280d09b3e457d66f2e8ef62c16259ce4b` (`a70efd32`, `docs: design session-ready callback isolation`).
 - The plan commit is `e6bf67c6bc576254b4ac2e6d81252399dc36db37` (`e6bf67c6`, `docs: plan session-ready callback isolation`).
 - The production source head and sole source commit are `12604a8f29444730edce871056e39c2ab523efa2` (`12604a8f`, `fix: isolate session-ready callback failures`).
+- The implementation closure is `c69eec97da088168db92266ee1fc67c0ec29c09c` (`c69eec97`, `docs: record session-ready callback isolation`); its documentation reviews returned `DOCS_SPEC_APPROVED` and `DOCS_QUALITY_APPROVED`, while the source review tokens remain recorded separately below.
 - Integrated history from the design through the source head contains the plan commit followed by the production commit. Path-filtering that history to `src/wwwroot/js/genpage/main.js` returns only the production commit.
 - The production projection changes exactly `src/wwwroot/js/genpage/main.js`, with `22 insertions(+), 3 deletions(-)` in two semantic hunks: the documented `runSessionReadyCallbacks()` addition immediately after the unchanged array declaration, and replacement of the former three-line direct loop with one dispatcher call.
 
@@ -323,7 +324,7 @@ git status --short
 
 Before this documentation edit, the first command showed exactly the two protected unstaged `main.js` hunks described above, the cached-name command was empty, and status retained all four protected tracked files plus the untracked backup directory. `git show --check --oneline --stat 12604a8f29444730edce871056e39c2ab523efa2` also completed cleanly, and `git show --format= --name-only 12604a8f29444730edce871056e39c2ab523efa2` returned only `src/wwwroot/js/genpage/main.js`.
 
-All agent evidence is static. No agent build, test, test-executing lint, browser automation, launch, server/backend execution, live API call, runtime timing, platform/filesystem validation, or performance measurement was performed, and no such result is claimed. Browser timing and rendering, actual toast visibility, external-extension behavior, asynchronous rejection behavior, platform/filesystem behavior, and the exact validation cases below remain pending maintainer exercise.
+All agent evidence is static. No agent build, test, test-executing lint, browser automation, launch, server/backend execution, live API call, runtime timing, platform/filesystem validation, or performance measurement was performed, and no such agent result is claimed. The separate maintainer browser/runtime evidence is recorded after the unchanged matrix below.
 
 ## Maintainer Validation Matrix
 
@@ -344,6 +345,12 @@ The maintainer performs all builds and live/browser validation. Record the opera
 13. After an isolated callback failure, the Krita poll, welcome message, title update, `swarmHasLoaded` publication, and initial image-history scheduling all still occur in their existing order.
 14. Normal page navigation, lazy tabs, image history, and image generation remain functional after ordinary startup and after an isolated synthetic callback failure.
 
+## Maintainer Validation Record
+
+Maintainer Reaper176 confirmed on 2026-07-27 that all 14 cases in the exact unchanged matrix above passed on Garuda Linux (Arch-based), Btrfs, using Firefox (version not provided). The raw maintainer message was `ll 14 passed on Garuda Linux (Arch-based), Btrfs, using firefox`. The controller disclosed that it interpreted the obvious omitted initial `A` and normalized the outcome to “All 14 passed on Garuda Linux (Arch-based), Btrfs, using Firefox (version not provided).” No browser version was supplied or inferred.
+
+This maintainer browser/runtime evidence is separate from the static agent evidence. It validates Frontend F2 and Rank 17 only on the recorded environment and browser. The direct array and direct-`push` registration surface, live dynamic mutation, synchronous-only isolation, callback-owned asynchronous rejections, retained callback partial effects, lack of retry or rollback, non-exhaustive external-extension coverage beyond the matrix, existing multiple-toast display semantics, and unchanged startup tail remain bounded caveats. Other browsers, platforms, and filesystems remain unvalidated, and no performance claim is made.
+
 ## Success Criteria
 
 Rank 17 is successful when:
@@ -357,7 +364,7 @@ Rank 17 is successful when:
 - async ownership, retry, rollback, and unrelated startup behavior remain unchanged;
 - production scope is limited to the dispatcher and call-site replacement in `main.js`;
 - protected maintainer work remains unstaged and absent from Rank 17 commits; and
-- documentation does not claim unperformed runtime, platform, browser, filesystem, or performance results.
+- documentation separates the recorded maintainer browser/runtime result from static agent evidence and does not claim broader runtime, platform, browser, filesystem, or performance results.
 
 ## Alternatives Considered
 
