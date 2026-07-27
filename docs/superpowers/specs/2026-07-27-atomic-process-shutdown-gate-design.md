@@ -1,6 +1,6 @@
 # Atomic Process Shutdown Gate Design
 
-**Status:** Implemented; awaiting maintainer validation
+**Status:** Implemented and maintainer-validated on Garuda Linux (Arch-based), Btrfs
 
 **Date:** 2026-07-27
 
@@ -244,7 +244,7 @@ Static review used the fixed boundaries above:
 - fixed-base source diff and caller searches confirmed gate placement, unchanged post-gate body, unchanged direct/restart inventory and signatures, literal code `42`, winning-zero no-assignment behavior, and unchanged admin and downstream contracts; and
 - `git diff --check 3d244ede73a3cc36343624bdd00329a8a5284e5b..f389da0d13be6bbf4cc81f6c9a24c21a095cdaca` reported no whitespace errors.
 
-Independent source reviews returned `SOURCE_SPEC_APPROVED` and `SOURCE_QUALITY_APPROVED`, both with no issues. This is agent static evidence only: agents performed no build, test, launch, runtime, platform, or performance exercise and make no runtime, platform, or performance claim. The exact 16-case maintainer matrix below remains pending.
+Independent source reviews returned `SOURCE_SPEC_APPROVED` and `SOURCE_QUALITY_APPROVED`, both with no issues. This is agent static evidence only: agents performed no build, test, launch, runtime, platform, or performance exercise and make no runtime, platform, or performance claim. The exact 16-case maintainer matrix follows; its separate live-validation record appears after the matrix.
 
 ## Maintainer Validation Matrix
 
@@ -268,6 +268,10 @@ The maintainer performs all builds and live validation. Record operating system/
 16. A shutdown-body failure does not reopen the gate or allow a later caller to retry the partial sequence.
 
 Validation distinguishes observed behavior from static evidence and makes no performance claim.
+
+## Maintainer Validation Record
+
+Maintainer Reaper176 explicitly confirmed that all 16 exact cases above passed on 2026-07-27 on Garuda Linux (Arch-based), Btrfs. That confirmation is maintainer runtime evidence, separate from the agent static evidence recorded above. Windows, other Linux distributions/filesystems, and performance remain unvalidated or unmeasured, and no such claim is made.
 
 ## Success Criteria
 
