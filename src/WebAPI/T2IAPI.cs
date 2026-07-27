@@ -424,7 +424,7 @@ public static class T2IAPI
         for (int i = 0; i < images && !claim.ShouldCancel; i++)
         {
             removeDoneTasks();
-            while (tasks.Count > max_degrees)
+            while (tasks.Count >= max_degrees)
             {
                 await Task.WhenAny(tasks);
                 removeDoneTasks();

@@ -122,7 +122,7 @@ public class ImageBatchToolExtension : Extension
             string fname = file.Replace('\\', '/').AfterLast('/');
             int imageIndex = batchId++;
             removeDoneTasks();
-            while (tasks.Count > max_degrees)
+            while (tasks.Count >= max_degrees)
             {
                 await Task.WhenAny(tasks);
                 removeDoneTasks();
