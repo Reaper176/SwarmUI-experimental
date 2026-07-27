@@ -274,7 +274,7 @@ Callers could detect renewal or rebind their own cleanup and cancellation. That 
 
 ## Rollback
 
-Rollback restores the five-argument recursive call:
+Rollback restores the four-argument recursive call:
 
 ```js
 makeWSRequest(url, in_data, callback, depth + 1);
