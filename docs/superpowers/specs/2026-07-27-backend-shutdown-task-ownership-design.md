@@ -1,6 +1,6 @@
 # Backend Shutdown Task Ownership Design
 
-**Status:** Implemented; awaiting maintainer validation
+**Status:** Implemented and maintainer-validated on Garuda Linux (Arch-based), Btrfs
 
 **Date:** 2026-07-27
 
@@ -237,7 +237,7 @@ Static evidence can establish collection ownership, publication order, direct aw
 
 ## Implementation Record
 
-**Implementation status:** **Implemented; awaiting maintainer validation.**
+**Implementation status:** **Implemented and maintainer-validated on Garuda Linux (Arch-based), Btrfs.**
 
 The approved design base is `f17e09557157f9c3ed13841c368885711636d96f`. The integrated design-to-source history through production head `efe5e32ad9ed93ae1727f613e19c91f27bbbfe03` contains documentation-plan commit `880d03df131977126c2557dbc5844568289e06be` followed by production commit `efe5e32ad9ed93ae1727f613e19c91f27bbbfe03`; path-filtering that history to `src/Backends/BackendHandler.cs` returns only the production commit. The production projection changes exactly `src/Backends/BackendHandler.cs`, with `24 insertions(+), 14 deletions(-)`, and is confined to `BackendHandler.Shutdown()`.
 
@@ -247,7 +247,7 @@ The existing `HasShutdown` guard, both wake-up signals, in-use predicate, `MaxUs
 
 The exact static boundary commands reported: `git rev-parse f17e0955` → `f17e09557157f9c3ed13841c368885711636d96f`; `git rev-parse 880d03df` → `880d03df131977126c2557dbc5844568289e06be`; `git rev-parse efe5e32a` → `efe5e32ad9ed93ae1727f613e19c91f27bbbfe03`; `git log --format='%H %s' f17e0955..efe5e32a` → plan then production; the same log filtered to `src/Backends/BackendHandler.cs` → only `efe5e32a`; `git show --numstat --format='' efe5e32a -- src/Backends/BackendHandler.cs` → `24	14	src/Backends/BackendHandler.cs`; and `git diff --check f17e0955..efe5e32a -- src/Backends/BackendHandler.cs` → no output. Method-boundary, caller/signature, collection-ownership, direct-await, fault-containment, downstream-text, and protected-path inspection also matched the approved scope. Independent source reviews returned `SOURCE_SPEC_APPROVED` and `SOURCE_QUALITY_APPROVED`, both with no findings.
 
-Agents performed no build, test, launch, runtime, thread-interleaving, platform, filesystem, or performance exercise and make no such claim. All runtime behavior and all platforms remain unvalidated until the maintainer records the exact matrix below; no benchmark or performance claim is made.
+Agents performed no build, test, launch, runtime, thread-interleaving, platform, filesystem, or performance exercise and make no such claim. Their evidence is limited to the static source boundary, execution-flow tracing, fixed-range whitespace review, and independent source reviews recorded above. The separate maintainer runtime evidence is recorded after the exact matrix below; no benchmark or performance claim is made.
 
 ## Maintainer Validation Matrix
 
@@ -270,6 +270,12 @@ The maintainer performs all builds and live validation. Record operating system/
 
 Validation distinguishes observed behavior from agent static evidence. Windows and other operating-system/filesystem combinations remain separately unvalidated unless explicitly recorded, and no performance claim is made.
 
+## Maintainer Validation Record
+
+Maintainer Reaper176 explicitly confirmed that all 14 exact matrix cases passed on 2026-07-27 on Garuda Linux (Arch-based), Btrfs. This runtime evidence covers empty and immediate shutdown, availability during grace, forced shutdown after grace, parallel mixed timing, slow-task pending ownership, single and multiple fault isolation, real and non-real/autoscaled snapshot entries, pending diagnostics, all recorded final-save outcomes, repeat-call guard behavior, Rank 13 outer-gate overlap, and repeated mixed-timing stress without collection mutation, a missed handler-owned task, or early handler return.
+
+This maintainer observation is separate from the agents' static-only evidence; agents performed no build, test, launch, runtime, platform, filesystem, or performance exercise. A backend added after the entry snapshot remains outside the handler-owned task set, a non-completing backend still waits indefinitely with periodic progress logs, and autoscaling parent/controlled-child internals still do not carry an exactly-once claim across all internal owners. Windows, other Linux distributions/filesystems, and performance remain unvalidated or unmeasured.
+
 ## Success Criteria
 
 Rank 14 is successful when:
@@ -282,7 +288,7 @@ Rank 14 is successful when:
 - parallelism, grace behavior, progress logs, webhook ordering, and persistence behavior remain;
 - the production diff is confined to `BackendHandler.Shutdown()`;
 - static specification and quality review pass; and
-- the maintainer confirms the exact validation matrix on a recorded platform.
+- the maintainer has confirmed the exact validation matrix on a recorded platform.
 
 ## Rollback
 
