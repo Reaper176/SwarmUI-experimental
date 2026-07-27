@@ -671,7 +671,8 @@ public class Program
         ModelPathsChangedEvent?.Invoke();
     }
 
-    private volatile static bool HasShutdown = false;
+    /// <summary>Zero before process shutdown begins; atomically changed to one by the single shutdown owner.</summary>
+    private static int HasShutdown;
 
     /// <summary>Tell the server to shutdown and restart. This call is not blocking, other code will continue momentarily.</summary>
     public static void RequestRestart()
@@ -682,11 +683,10 @@ public class Program
     /// <summary>Main shutdown handler. Tells everything to stop.</summary>
     public static void Shutdown(int code = 0)
     {
-        if (HasShutdown)
+        if (Interlocked.CompareExchange(ref HasShutdown, 1, 0) != 0)
         {
             return;
         }
-        HasShutdown = true;
         Task waitShutdown = WebhookManager.SendWebhook("Shutdown", ServerSettings.WebHooks.ServerShutdownWebhook, ServerSettings.WebHooks.ServerShutdownWebhookData);
         Task.WaitAny(waitShutdown, Task.Delay(TimeSpan.FromMinutes(2)));
         if (code != 0)
