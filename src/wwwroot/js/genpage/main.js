@@ -12,6 +12,27 @@ let shouldApplyDefault = false;
 
 let sessionReadyCallbacks = [];
 
+/** Runs all session-ready callbacks in insertion order while isolating synchronous failures. */
+function runSessionReadyCallbacks() {
+    for (let i = 0; i < sessionReadyCallbacks.length; i++) {
+        let callback = sessionReadyCallbacks[i];
+        try {
+            callback();
+        }
+        catch (e) {
+            let callbackName = typeof callback == 'function' && callback.name ? ` (${callback.name})` : '';
+            let message = `Session-ready callback #${i + 1}${callbackName} failed: ${e}`;
+            console.error(message, e);
+            try {
+                showError(message);
+            }
+            catch (showErrorException) {
+                console.error(`Failed to display error for session-ready callback #${i + 1}: ${showErrorException}`, showErrorException);
+            }
+        }
+    }
+}
+
 let allModels = [];
 
 let coreModelMap = {};
@@ -1413,9 +1434,7 @@ function genpageLoad() {
             loadUserData(() => {
                 selectInitialPresetList();
             });
-            for (let callback of sessionReadyCallbacks) {
-                callback();
-            }
+            runSessionReadyCallbacks();
             startPendingKritaImportPoll();
             automaticWelcomeMessage();
             autoTitle();
