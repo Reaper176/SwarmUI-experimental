@@ -8,7 +8,7 @@
 
 ## Summary
 
-`T2IAPI.GenT2I_Internal` and `ImageBatchToolExtension.GenBatchRun_Internal` each maintain a request-local list of active generation tasks. Both loops currently remove completed tasks, wait only while `tasks.Count > max_degrees`, and then add another task. When the count is exactly equal to the effective limit, the next task is admitted, so either loop can hold `limit + 1` active orchestration tasks.
+`T2IAPI.GenT2I_Internal` and `ImageBatchToolExtension.GenBatchRun_Internal` each maintain a request-local list of active generation tasks. Historically, both loops removed completed tasks, waited only while `tasks.Count > max_degrees`, and then added another task. When the count equaled the effective limit, the historical predicate admitted the next task, so either loop could hold `limit + 1` active orchestration tasks.
 
 Rank 15 corrects both predicates so a task is admitted only while the request-local active count is strictly below the effective limit. The change preserves the existing effective-limit calculation, task order, cancellation behavior, keep-alives, batch indices, error reporting, backend capacity, and route contracts.
 
@@ -41,7 +41,7 @@ Rank 15 does not:
 - add instrumentation, benchmarks, or a performance claim; or
 - edit frontend code, settings, launchers, external extensions, upstream code, generated files, user data, or protected maintainer work.
 
-## Existing Boundary and Failure
+## Historical Boundary and Failure
 
 ### Normal T2I
 
@@ -52,18 +52,18 @@ Rank 15 does not:
 3. captures `session.User.CalcMaxT2ISimultaneous` in `max_degrees`;
 4. maintains a local `List<Task>`;
 5. removes completed tasks and logs task faults;
-6. waits while `tasks.Count > max_degrees`;
+6. historically waited while `tasks.Count > max_degrees`;
 7. checks request cancellation;
 8. adds the next `T2IEngine.CreateImageTask`; and
 9. drains the list while preserving periodic keep-alives.
 
-At a limit of one, the first task makes the count one. The current comparison is false because `1 > 1` is false, so a second task is added. The same arithmetic produces `limit + 1` at every positive limit.
+At a limit of one, the first task made the count one. The historical comparison was false because `1 > 1` is false, so a second task was added. The same arithmetic produced `limit + 1` at every positive limit.
 
 The WebSocket route can start multiple `GenT2I_Internal` producers on one connection, and the direct HTTP route can be called concurrently. Each producer owns a separate list and separately captures the effective limit.
 
 ### Image Batch
 
-`ImageBatchToolExtension.GenBatchRun_Internal` follows the same admission structure around its local `List<Task>`. It removes completed work, waits only while `tasks.Count > max_degrees`, checks cancellation, prepares the next input image, and adds a `T2IEngine.CreateImageTask`.
+`ImageBatchToolExtension.GenBatchRun_Internal` historically followed the same admission structure around its local `List<Task>`. It removed completed work, waited only while `tasks.Count > max_degrees`, checked cancellation, prepared the next input image, and added a `T2IEngine.CreateImageTask`.
 
 Its equal-to-limit transition therefore has the same off-by-one. Image loading, parameter cloning, resolution selection, output naming, metadata, webhooks, streaming output, and the final task drain are downstream of the predicate and are not part of the defect.
 
@@ -81,7 +81,7 @@ The local `tasks.Count` admission predicate does not read or mutate those counte
 
 ### Direct predicate correction
 
-In both maintained loops, replace:
+In both maintained loops, production replaced the historical:
 
 ```csharp
 while (tasks.Count > max_degrees)
@@ -179,16 +179,16 @@ A per-user semaphore or lease coordinator could enforce the role value across co
 
 ## Production Scope
 
-Expected production modifications:
+Completed production modifications:
 
 - `src/WebAPI/T2IAPI.cs`
   - change only the `GenT2I_Internal` local admission comparison.
 - `src/BuiltinExtensions/ImageBatchTool/ImageBatchToolExtension.cs`
   - change only the `GenBatchRun_Internal` local admission comparison.
 
-The production diff is expected to contain exactly two one-character predicate additions and no other source edits.
+The production diff contains exactly two one-character predicate additions and no other source edits.
 
-Expected unchanged source includes:
+Confirmed unchanged source includes:
 
 - `src/Accounts/Role.cs`;
 - `src/Accounts/User.cs`;
@@ -228,6 +228,7 @@ Static evidence can establish the local arithmetic boundary and unchanged source
 - **Final local invariant:** after the unchanged completed-task cleanup, both handlers use `while (tasks.Count >= max_degrees)`. Each handler invocation therefore admits a task only when its cleaned local task count is below that invocation's captured request-local effective limit.
 - **Preserved behavior:** cleanup, waiting, cancellation placement, ordering, normal T2I keep-alives, indices, errors, outputs, Image Batch webhooks, `Session.GenClaim`, role calculation/capture, Grid Generator, backend selection/capacity, route contracts, and public source/binary extension ABI behavior are unchanged.
 - **Review and static evidence:** `SOURCE_SPEC_APPROVED` and `SOURCE_QUALITY_APPROVED` both returned no findings. Fixed-range source inspection confirmed the exact two-file/two-character boundary, the equality wait in both loops, and the unchanged surrounding flow; `git diff --check` is part of the static closure.
+- **Exact static commands and observed results:** `git log --format='%H %s' e48920bee4db248e0dfa91bbc1099a9161509f05^..1fa1d5356c1446cd9d5ec9c33b76eddf1e06deb7` reported the design commit `e48920bee4db248e0dfa91bbc1099a9161509f05`, plan commit `74b64f527ccebd01c8bd15a8835a35d72282b377`, and production commit `1fa1d5356c1446cd9d5ec9c33b76eddf1e06deb7`. `git log --format='%H %s' e48920bee4db248e0dfa91bbc1099a9161509f05..1fa1d5356c1446cd9d5ec9c33b76eddf1e06deb7 -- src/WebAPI/T2IAPI.cs src/BuiltinExtensions/ImageBatchTool/ImageBatchToolExtension.cs` reported only `1fa1d5356c1446cd9d5ec9c33b76eddf1e06deb7 fix: enforce simultaneous generation ceiling`. `git show --numstat --format='' 1fa1d5356c1446cd9d5ec9c33b76eddf1e06deb7` reported `1 1 src/BuiltinExtensions/ImageBatchTool/ImageBatchToolExtension.cs` and `1 1 src/WebAPI/T2IAPI.cs`. `git diff e48920bee4db248e0dfa91bbc1099a9161509f05 1fa1d5356c1446cd9d5ec9c33b76eddf1e06deb7 -- src/WebAPI/T2IAPI.cs src/BuiltinExtensions/ImageBatchTool/ImageBatchToolExtension.cs` showed only the two `>` to `>=` predicate edits. `git diff --check e48920bee4db248e0dfa91bbc1099a9161509f05 1fa1d5356c1446cd9d5ec9c33b76eddf1e06deb7 -- src/WebAPI/T2IAPI.cs src/BuiltinExtensions/ImageBatchTool/ImageBatchToolExtension.cs` exited successfully with no output.
 - **Validation boundary:** agents performed no build, test, launch, runtime, platform, filesystem, or performance exercise. The guarantee remains request-local: concurrent HTTP calls, overlapping WebSocket producers, normal T2I plus Image Batch, or multiple sessions for one account can exceed the role value in aggregate and remain out of scope. No account-wide enforcement, multi-user fairness validation, runtime scheduling result, or platform result is claimed.
 
 ## Maintainer Validation Matrix
