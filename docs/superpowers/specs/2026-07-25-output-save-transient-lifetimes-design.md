@@ -1,6 +1,6 @@
 # Output Save Transient Lifetimes Design
 
-**Status:** Approved design; implementation pending
+**Status:** Implemented; awaiting maintainer validation
 
 **Date:** 2026-07-25
 
@@ -15,7 +15,7 @@
 - `StillSavingFiles[fullPath]` lets immediate output readers use pending or recently completed bytes; and
 - `RecentlyBlockedFilenames[fullPath]` prevents a concurrent save from selecting the same output name.
 
-In the original baseline, the pending-byte entry was removed only after the entire background operation and a ten-second delay. A conversion, file, sidecar, preview, history-index, or logging failure skipped that removal. Filename reservations had no normal completion or expiry path, so maintained saves and deletions could retain transient state for the process lifetime. The five source commits from `24a7df6b` through `6d230e4c` implement the initial cleanup design; the integrated-review correction specified here remains pending.
+In the original baseline, the pending-byte entry was removed only after the entire background operation and a ten-second delay. A conversion, file, sidecar, preview, history-index, or logging failure skipped that removal. Filename reservations had no normal completion or expiry path, so maintained saves and deletions could retain transient state for the process lifetime. Historically, the five source commits from `24a7df6b` through `6d230e4c` implemented the initial cleanup design. Integrated review then refined the multi-owner and deletion-serialization contract, and source commit `216949ed` completed that correction.
 
 Rank 12 gives these structures explicit, owner-aware lifetimes. It preserves active-save collision protection, the successful ten-second read-through window, current path and metadata behavior, and the public dictionary fields used by extensions. A private coordinator records every owner generation and its lifecycle independently. Cleanup from one owner cannot erase a sibling owner, and the aggregate public key remains present until the final owner for that path ends or an administrative clear removes its inactive state. Exact-path deletion acquisition is refused while any maintained owner is active, serializing filesystem mutation without waiting or lock-order deadlock.
 
@@ -304,6 +304,80 @@ Repository policy forbids agents from building, launching, or testing SwarmUI. A
 27. prove no frontend, settings, launcher, extension, generated, upstream, user-data, or protected working-tree file entered the production diff.
 
 Permitted verification is limited to source inventory, numbered source review, exact-range diff inspection, static lint where configured, and `git diff --check`.
+
+## Implementation Record
+
+### Integrated and production boundaries
+
+The stable integrated range base is `e5fcebf781ad68822d6269f73b7d1b182e54997b`. The reviewed source state ends at `216949edac9e80db91cb0b639b66c88d2d642b83`. This document labels `216949ed` the **pre-closure static implementation head**: the documentation-only closure commit that follows it records status and must not be conflated with the production implementation.
+
+The complete interleaved history in `e5fcebf7..216949ed`, newest first, is:
+
+1. `216949ed` — `fix: serialize output deletion acquisition`
+2. `35e939b0` — `docs: serialize output deletion acquisition`
+3. `d15c364e` — `docs: isolate output lifetime source range`
+4. `87c576f9` — `docs: support overlapping output reservation owners`
+5. `f401d4e2` — `docs: clarify output deletion failure boundary`
+6. `632ae1cc` — `docs: correct output reservation safety boundaries`
+7. `6d230e4c` — `fix: expire inactive output filename blocks`
+8. `ac2b8bd6` — `fix: bound pending output save state`
+9. `aa2c9fbd` — `fix: preserve output cleanup recovery`
+10. `d05b8757` — `fix: align output reservation primitives`
+11. `24a7df6b` — `refactor: own output filename reservations`
+12. `60520338` — `docs: plan output save transient lifetimes`
+
+Path filtering to the production owners excludes the documentation commits and gives, newest first:
+
+1. `216949ed` — `fix: serialize output deletion acquisition`
+2. `6d230e4c` — `fix: expire inactive output filename blocks`
+3. `ac2b8bd6` — `fix: bound pending output save state`
+4. `aa2c9fbd` — `fix: preserve output cleanup recovery`
+5. `d05b8757` — `fix: align output reservation primitives`
+6. `24a7df6b` — `refactor: own output filename reservations`
+
+The production projection is exactly:
+
+```text
+289	18	src/Accounts/Session.cs
+1	1	src/WebAPI/BackendAPI.cs
+30	10	src/WebAPI/ImageHistoryAPI.cs
+```
+
+The authoritative stat is:
+
+```text
+ src/Accounts/Session.cs       | 307 +++++++++++++++++++++++++++++++++++++++---
+ src/WebAPI/BackendAPI.cs      |   2 +-
+ src/WebAPI/ImageHistoryAPI.cs |  40 ++++--
+ 3 files changed, 320 insertions(+), 29 deletions(-)
+```
+
+The final source correction `216949ed` changes only `src/Accounts/Session.cs` and `src/WebAPI/ImageHistoryAPI.cs`. `src/WebAPI/BackendAPI.cs` needed no Task 4A textual correction because the earlier source already called `Session.ClearOutputFilenameReservations`.
+
+### Implemented behavior and compatibility
+
+The implementation uses a nested path-to-generation-to-owner coordinator with independently tracked active and inactive owners. Every cleanup addresses its exact generation; the aggregate public reservation key remains until the final owner ends or its inactive state is administratively cleared. Exact-path deletion acquisition refuses while any maintained owner is active and returns the retryable JObject before primary, companion, metadata, or history-index mutation. An inactive owner can coexist with an accepted active deletion retry, and each completion, expiry, or clear removes only the addressed owner.
+
+Transitions to inactive state are synchronous. Failed saves and successful deletions expire after ten seconds. Partial or failed deletions remain inactive and retained until `system_ram: true` clear or restart. Coordinated clear removes inactive and legacy entries while continuously preserving active private state and its aggregate public key. Pending-byte cleanup removes only the exact key-and-task pair, so an older completion cannot remove a replacement task.
+
+Static review confirms that the public dictionary field declarations, types, static form, and object identity remain unchanged, as do their existing readers. `SaveImage`'s signature, output URLs, templates, work order, no-save behavior, and existing reporting contract also remain unchanged.
+
+### Static verification and review results
+
+The closure review used these source-only commands and results:
+
+- `git log --oneline --no-merges e5fcebf781ad68822d6269f73b7d1b182e54997b..216949edac9e80db91cb0b639b66c88d2d642b83` returned the twelve-entry interleaved history above.
+- The same `git log` range path-filtered to `src/Accounts/Session.cs`, `src/WebAPI/BackendAPI.cs`, and `src/WebAPI/ImageHistoryAPI.cs` returned the six production commits above.
+- `git diff --numstat e5fcebf781ad68822d6269f73b7d1b182e54997b..216949edac9e80db91cb0b639b66c88d2d642b83 -- src/Accounts/Session.cs src/WebAPI/BackendAPI.cs src/WebAPI/ImageHistoryAPI.cs` returned the exact three-line production projection above.
+- `git diff --stat` over that same fixed range and path set returned `3 files changed, 320 insertions(+), 29 deletions(-)`.
+- `git diff --check` over that same fixed production range returned no output.
+- Declaration and reader searches found the same two public static `ConcurrentDictionary` fields in `Session`, the two maintained `StillSavingFiles` readers in `WebServer` and `T2IParamTypes`, the unchanged `SaveImage` signature, and the existing `Session.ClearOutputFilenameReservations` call in `BackendAPI`.
+
+Independent static specification review returned `SPEC_APPROVED` with no issues. Independent static quality review returned `QUALITY_APPROVED` with no issues.
+
+### Caveats and validation boundary
+
+The direct-extension same-key race remains: an extension that mutates a public dictionary directly does not participate in the private coordinator and receives no new atomic ownership guarantee. This closure makes no agent build, test, runtime, platform, or performance claim. All 37 cases below remain pending maintainer execution. Rank 12 therefore remains the Recommended Next Project until maintainer validation is recorded; rank 13 is neither advanced nor designed by this implementation closure.
 
 ## Maintainer Validation Matrix
 
