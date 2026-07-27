@@ -8,9 +8,9 @@
 
 ## Summary
 
-`BackendHandler.Shutdown()` currently creates one wrapper task per configured backend, but each wrapper later appends the backend's real `DoShutdownNow()` task to the same `List<(BackendData, Task)>` that the shutdown thread concurrently enumerates, filters, and replaces. The monitor can race with those worker additions, miss a newly published task, return before a backend has actually shut down, or encounter unsafe list mutation.
+At the approved design base, `BackendHandler.Shutdown()` created one wrapper task per configured backend, but each wrapper later appended the backend's real `DoShutdownNow()` task to the same `List<(BackendData, Task)>` that the shutdown thread concurrently enumerated, filtered, and replaced. The monitor could race with those worker additions, miss a newly published task, return before a backend had actually shut down, or encounter unsafe list mutation.
 
-Rank 14 replaces that two-stage shared-list publication with one stable handler-owned task per backend captured when handler shutdown begins. Each task owns the complete existing per-backend sequence: usage-grace polling, the existing forced-after-grace message, and direct awaiting of `DoShutdownNow()`. All tasks are published before monitoring starts, workers never mutate the collection, and the controller derives pending views from the stable task set.
+Rank 14 replaced that two-stage shared-list publication with one stable handler-owned task per backend captured when handler shutdown begins. Each task owns the complete existing per-backend sequence: usage-grace polling, the existing forced-after-grace message, and direct awaiting of `DoShutdownNow()`. All tasks are published before monitoring starts, workers never mutate the collection, and the controller derives pending views from the stable task set.
 
 An individual backend failure is logged with backend identity and readable exception detail, then isolated so every other backend, done-generating webhook, final persistence attempt, and later `Program.Shutdown()` owner can continue. The design adds no backend timeout, forced cancellation, late-add coordination, autoscaling redesign, persistence change, or performance claim.
 
@@ -45,28 +45,28 @@ Rank 14 does not:
 - add instrumentation, benchmarks, or a performance claim; or
 - edit frontend, settings, launchers, extensions, upstream code, generated files, user data, or protected maintainer work.
 
-## Existing Boundary and Failure
+## Historical Approved-Design-Base Boundary and Failure
 
-### Current handler flow
+### Historical handler flow at the approved design base
 
-After its existing idempotence check, `BackendHandler.Shutdown()`:
+At the approved design base, after its existing idempotence check, `BackendHandler.Shutdown()`:
 
-1. marks `HasShutdown`;
-2. signals backend initialization and selection loops;
-3. creates a mutable list of `(BackendData, Task)` entries;
-4. starts one wrapper `Task.Run` per value enumerated from `AllBackends`;
-5. inside each wrapper, waits while the backend is in use, applies the existing grace counter, then appends the real `DoShutdownNow()` task to the shared list;
-6. on the shutdown thread, repeatedly logs pending backends, delays, filters completed entries, and replaces the list;
-7. waits for `WebhookManager.TryMarkDoneGenerating()`; and
-8. performs the existing pending final-save handling.
+1. marked `HasShutdown`;
+2. signaled backend initialization and selection loops;
+3. created a mutable list of `(BackendData, Task)` entries;
+4. started one wrapper `Task.Run` per value enumerated from `AllBackends`;
+5. inside each wrapper, waited while the backend was in use, applied the existing grace counter, then appended the real `DoShutdownNow()` task to the shared list;
+6. on the shutdown thread, repeatedly logged pending backends, delayed, filtered completed entries, and replaced the list;
+7. waited for `WebhookManager.TryMarkDoneGenerating()`; and
+8. performed the existing pending final-save handling.
 
-The wrapper task is initially the monitored entry, but it completes after publishing rather than awaiting the backend shutdown task. The real task is therefore a second ownership object whose visibility depends on an unsynchronized worker-side list mutation.
+The wrapper task was initially the monitored entry, but it completed after publishing rather than awaiting the backend shutdown task. The real task was therefore a second ownership object whose visibility depended on an unsynchronized worker-side list mutation.
 
-### Confirmed race
+### Confirmed historical race
 
-`List<T>` does not support concurrent mutation and enumeration. A worker can execute `tasks.Add(...)` while the controller evaluates `tasks.Any()`, builds its progress message, or evaluates `tasks.Where(...)`. The controller can also build and assign a replacement list from an older view after a worker publishes the real task, dropping that task from subsequent monitoring.
+`List<T>` does not support concurrent mutation and enumeration. At the approved design base, a worker could execute `tasks.Add(...)` while the controller evaluated `tasks.Any()`, built its progress message, or evaluated `tasks.Where(...)`. The controller could also build and assign a replacement list from an older view after a worker published the real task, dropping that task from subsequent monitoring.
 
-The unsafe publication and monitor overlap are statically confirmed. Runtime frequency, exact interleavings, and whether a given early return has occurred in production are not inferred.
+The unsafe publication and monitor overlap at the approved design base were statically confirmed. Runtime frequency, exact interleavings, and whether a given early return had occurred in production were not inferred.
 
 ### Maintained consumers
 
@@ -107,7 +107,7 @@ The controller alone builds the task-entry collection. Monitoring starts only af
 
 The synchronous `Shutdown()` method retains its current polling shape. It derives a controller-local pending view from the stable task entries and periodically replaces only that private view with the incomplete entries.
 
-Progress logs retain the current cadence and message structure, but backend IDs and type names come only from incomplete stable tasks. A task remains incomplete throughout its usage grace and its awaited `DoShutdownNow()`, so the controller cannot discard it merely because a wrapper finished publishing a second task.
+Progress logs retain the current cadence and message structure, but backend IDs and type names come only from incomplete stable tasks. A task remains incomplete throughout its usage grace and its awaited `DoShutdownNow()`, so the controller cannot discard it at the former wrapper-publication boundary.
 
 No `Task.WaitAll` propagation is introduced. Backend faults are handled inside their owner tasks, allowing the synchronous monitor to observe completion without aborting the composition-root shutdown sequence.
 
@@ -136,7 +136,7 @@ The owner task catches exceptions covering its complete grace-and-shutdown body.
 
 After logging, that owner task completes. Other backend tasks remain independent and continue running. The controller continues until all handler-owned tasks have completed, then proceeds to the done-generating webhook and final persistence.
 
-This is an intentional improvement over the current effectively unobserved inner-task fault. Rank 14 does not rethrow a backend fault into `Program.Shutdown()`, because doing so could skip sessions, proxy, model handlers, extensions, metadata, temp cleanup, and log flushing.
+This is an intentional improvement over the former effectively unobserved inner-task fault. Rank 14 does not rethrow a backend fault into `Program.Shutdown()`, because doing so could skip sessions, proxy, model handlers, extensions, metadata, temp cleanup, and log flushing.
 
 ### Non-completing backend
 
@@ -173,9 +173,9 @@ No public field, property, method, event, or extension contract changes.
 
 The stable owner tasks could be combined with `Task.WhenAll`, while another loop reports progress. This can be correct, but it introduces a second aggregate-completion owner or requires exception propagation suppression around the aggregate. The controller already has a clear synchronous polling contract, so a stable entry set with one pending view is simpler and preserves more local structure.
 
-### Lock the existing shared list
+### Lock the former shared list
 
-A lock could protect worker additions and controller enumeration/replacement. This retains the fragile wrapper-task/real-task split, requires careful coordination around list replacement, and leaves task ownership harder to prove. It treats unsafe publication as a locking problem instead of removing the second publication entirely.
+A lock could have protected worker additions and controller enumeration/replacement. This would have retained the fragile wrapper-task/real-task split, required careful coordination around list replacement, and left task ownership harder to prove. It would have treated unsafe publication as a locking problem instead of removing the second publication entirely.
 
 ### Sequential shutdown
 
