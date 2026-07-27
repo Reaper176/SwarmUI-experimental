@@ -1,6 +1,6 @@
 # Backend Loading Phase Completion Design
 
-**Status:** Design approved; not implemented
+**Status:** Implemented; awaiting maintainer validation
 
 **Date:** 2026-07-27
 
@@ -8,9 +8,9 @@
 
 ## Summary
 
-`BackendHandler.LoadInternal()` starts the backend initialization monitor and then loads configured backends from `Backends.fds`. The static startup-phase flag `BackendHandler.IsLoading` begins as `true` and is currently set to `false` only after a non-null file has been enumerated successfully.
+At the approved design base, `BackendHandler.LoadInternal()` started the backend initialization monitor and then loaded configured backends from `Backends.fds`. The static startup-phase flag `BackendHandler.IsLoading` began as `true` and was set to `false` only after a non-null file had been enumerated successfully.
 
-Missing storage, an unreadable or malformed file handled by the existing read catch, or a null parser result returns before that assignment. An unexpected exception during entry processing also bypasses it. The startup storage phase has terminated in each case, but the flag remains true. Later fast-capable backend additions or reloads therefore continue to capture the startup-only anti-thrash delay.
+Historically, missing storage, an unreadable or malformed file handled by the existing read catch, or a null parser result returned before that assignment. An unexpected exception during entry processing also bypassed it. The startup storage phase had terminated in each case, but the flag remained true. Later fast-capable backend additions or reloads therefore continued to capture the startup-only anti-thrash delay.
 
 Rank 16 moves completion publication into a `finally` around only the storage-load phase after successful monitor startup. Every return or exception from that phase sets `IsLoading = false` exactly once. Existing tolerated outcomes remain tolerated, unexpected exceptions still propagate, startup-file entries still capture their existing anti-thrash decision while the phase is active, and all later backend initialization paths remain unchanged.
 
@@ -62,9 +62,9 @@ Rank 16 does not:
 
 `LoadInternal()` is public but documented as internal and has no other maintained caller.
 
-### Current storage flow
+### Historical storage flow at the design base
 
-`LoadInternal()` currently:
+At the approved design base, `LoadInternal()`:
 
 1. emits the backend-loading initialization log;
 2. starts `InternalInitMonitor` on a named thread;
@@ -79,7 +79,7 @@ Rank 16 does not:
 11. calls `DoInitBackend(data)`; and
 12. assigns `IsLoading = false` only after the complete non-null enumeration.
 
-The three tolerated early returns and every unexpected exception after monitor startup bypass step 12.
+The three tolerated early returns and every unexpected exception after monitor startup historically bypassed step 12.
 
 ### Startup-only delay consumer
 
@@ -89,13 +89,13 @@ The only maintained consumer of the startup-phase `BackendHandler.IsLoading` fie
 2. synchronously captures `shouldWait = count > 1 && IsLoading`; and
 3. starts a task that applies `1 + min(5, count / 10)` seconds of delay when `shouldWait` is true before calling `LoadBackendDirect`.
 
-Configured entries call `DoInitBackend` before the current trailing completion assignment, so their delay decisions are captured while `IsLoading` is true. Later add, non-real add, edit, reload, API restart, and extension registration paths also call `DoInitBackend`, but should do so after the startup storage phase is complete.
+Configured entries called `DoInitBackend` before the former trailing completion assignment, so their delay decisions were captured while `IsLoading` was true. Later add, non-real add, edit, reload, API restart, and extension registration paths also call `DoInitBackend`, but should do so after the startup storage phase is complete.
 
-When a tolerated storage outcome returns early, `Load()` still starts its signal, loaded-model reassignment, and request loop. Because the phase flag remains true, the second and later fast-capable initialization performed afterward can receive the startup-only delay even though no startup file enumeration remains active.
+Historically, when a tolerated storage outcome returned early, `Load()` still started its signal, loaded-model reassignment, and request loop. Because the phase flag remained true, the second and later fast-capable initialization performed afterward could receive the startup-only delay even though no startup file enumeration remained active.
 
 ### Unexpected entry-processing failure
 
-Operations such as section access, numeric ID parsing, backend instantiation, settings creation/loading, or `DoInitBackend` may throw after some entries have been processed. The exception currently escapes `LoadInternal()` and prevents the remainder of `Load()` from running.
+Operations such as section access, numeric ID parsing, backend instantiation, settings creation/loading, or `DoInitBackend` may throw after some entries have been processed. Such an exception escapes `LoadInternal()` and prevents the remainder of `Load()` from running both before and after the implementation.
 
 Rank 16 does not change that propagation or partial-progress behavior. It changes only the stale phase flag: the storage phase is no longer reported active after control exits it exceptionally.
 
@@ -246,14 +246,14 @@ Per-entry isolation could let later entries and the remainder of `Load()` contin
 
 ## Production Scope
 
-Expected production modification:
+Approved and implemented production modification:
 
 - `src/Backends/BackendHandler.cs`
   - modify only `BackendHandler.LoadInternal()`;
   - wrap the existing storage body after monitor startup in `try/finally`;
   - move the successful-path `IsLoading = false` assignment into `finally`.
 
-Expected unchanged source includes:
+Source confirmed unchanged includes:
 
 - `src/Core/Program.cs`;
 - every other `BackendHandler` method and field;
@@ -289,6 +289,38 @@ Agents must not build, launch, or test SwarmUI. Static verification must:
 18. run `git diff --check`.
 
 Static evidence can prove lexical completion, control-flow preservation, consumer inventory, captured delay decisions, source scope, and unchanged declarations. It cannot prove runtime thread scheduling, observed delay timing, backend process behavior, filesystem/parser outcomes, external extension behavior, platform behavior, or performance.
+
+## Implementation Record
+
+**Implementation status:** **Implemented; awaiting maintainer validation.**
+
+### Provenance and exact scope
+
+- Approved design base: `bcf96879d9d4769ce5913d8afd4f8a59d199d3eb` (`docs: design backend loading phase completion`).
+- Plan commit: `5e520b4a82a9d28cb468312445672bd05d7bc891` (`docs: plan backend loading phase completion`).
+- Production commit and source head: `f3313c7b56774833c7765e4770d90d5a2fff1158` (`fix: complete backend loading phase`).
+- The integrated design-to-source history contains those three commits in order. Filtering that history to `src/Backends/BackendHandler.cs` returns only the production commit.
+- Production changes exactly `BackendHandler.LoadInternal()` in `src/Backends/BackendHandler.cs`: one file, `38 insertions(+), 32 deletions(-)`. The count includes indentation of the existing body under the new lifecycle boundary.
+
+### Implemented lifecycle boundary and outcome traces
+
+The initialization log and successful `InternalInitMonitor` thread start remain before and outside one outer `try`. The complete existing storage read, nested handled-read catch, null check, root-key enumeration, entry population, registration, and initialization scheduling body is inside that `try`. One `finally` contains the sole `BackendHandler.IsLoading = false` completion assignment; there is no outer catch.
+
+Consequently, a missing file, missing directory, other read error handled by the existing nested catch, null parsed file, empty valid file, unknown-type continuation, and normal successful enumeration all leave the storage phase complete. An unexpected root-enumeration, entry-processing, or scheduling exception clears the phase in `finally` and then propagates unchanged because no catch was added. Entries registered or scheduled before such a failure remain partial progress; rollback was not added. A failure in the pre-`try` initialization log or monitor start still propagates without clearing the flag because the approved storage phase never began.
+
+Completion means that backend-storage reading, enumeration, and scheduling ended. It does not mean that scheduled backends are initialized, ready, or successful.
+
+### Preserved captured-delay behavior
+
+Startup entries still call the unchanged `DoInitBackend(data)` while `BackendHandler.IsLoading` is true. `DoInitBackend` still synchronously increments `CountBackendsFastLoaded`, captures `bool shouldWait = count > 1 && IsLoading`, preserves the first-fast path and `1 + Math.Min(5, count / 10.0)` delay formula, and either starts the same direct-load task or uses the same queued path. Clearing the shared phase flag after enumeration does not change already captured `shouldWait` decisions.
+
+### Compatibility and static evidence
+
+`Load()`, `DoInitBackend`, the counter, monitor, request loop, retry/status behavior, callers, persistence, parser policy, public/protected declarations and binary extension ABI, and all source outside `LoadInternal()` remain unchanged. In particular, `src/Core/Program.cs` and `src/WebAPI/BackendAPI.cs` are unchanged.
+
+Independent fresh source reviews returned `SOURCE_SPEC_APPROVED` and `SOURCE_QUALITY_APPROVED`, both static-only and with no findings. Static verification passed for the exact fixed-range diff, the one-file implementation commit and `38/32` numstat, the public/protected declaration diff, unchanged `Program.cs` and `BackendAPI.cs`, maintained caller and consumer inventories, one lexical post-monitor completion boundary, preserved captured-delay ordering, `git diff --check`, a clean index, and isolation of protected working-tree changes.
+
+This evidence establishes source structure, control flow, scope, and compatibility boundaries only. Agents did not build, test, launch, run SwarmUI, exercise backend processes, reproduce parser or filesystem outcomes, inspect runtime scheduling/timing, validate any operating system or filesystem, or measure performance. All 14 live cases below remain pending maintainer validation; no runtime, platform, filesystem, or performance result is inferred.
 
 ## Maintainer Validation Matrix
 
