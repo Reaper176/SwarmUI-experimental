@@ -1,10 +1,12 @@
 # Output Save Transient Lifetimes Design
 
-**Status:** Implemented; awaiting maintainer validation
+**Status:** Implemented and maintainer-validated on Garuda Linux (Arch-based), Btrfs
 
 **Date:** 2026-07-25
 
 **Multi-owner and deletion-serialization corrections approved:** 2026-07-26
+
+**Maintainer validation:** 2026-07-27
 
 **Roadmap scope:** Backend F19 and Backend F20, rank 12
 
@@ -377,11 +379,13 @@ Independent static specification review returned `SPEC_APPROVED` with no issues.
 
 ### Caveats and validation boundary
 
-The direct-extension same-key race remains: an extension that mutates a public dictionary directly does not participate in the private coordinator and receives no new atomic ownership guarantee. This closure makes no agent build, test, runtime, platform, or performance claim. All 37 cases below remain pending maintainer execution. Rank 12 therefore remains the Recommended Next Project until maintainer validation is recorded; rank 13 is neither advanced nor designed by this implementation closure.
+The direct-extension same-key race remains: an extension that mutates a public dictionary directly does not participate in the private coordinator and receives no new atomic ownership guarantee. Save or deletion failure can still leave partial media, sidecar, preview, metadata, or history-index state; the ownership correction bounds transient state but does not repair those artifacts. Partial or failed deletion reservations remain retained until `system_ram: true` clear or process restart. That administrative clear deliberately removes inactive protection and can permit reuse, but it does not repair an orphan companion or override a surviving sibling owner or on-disk collision.
+
+Agent evidence remains static only: agents performed no build, test, launch, runtime, platform, or performance validation. Maintainer Reaper176 separately performed the live matrix and confirmed the platform-specific result recorded below. Windows and Linux/filesystem combinations other than Garuda Linux (Arch-based) on Btrfs remain runtime-unvalidated. No performance measurement or claim is recorded.
 
 ## Maintainer Validation Matrix
 
-The maintainer performs all builds and live validation.
+This is the exact historical validation specification executed by the maintainer.
 
 ### Successful flow
 
@@ -436,6 +440,14 @@ The maintainer performs all builds and live validation.
 37. Maintained pending and expiring-inactive owner counts return to baseline after successful windows; retained failed-deletion owners remain until RAM clear or restart.
 
 Validation records the operating system and filesystem, distinguishes observed behavior from static evidence, and avoids performance claims unless separately measured.
+
+### Validation record — 2026-07-27
+
+Maintainer Reaper176 explicitly confirmed that all 37 matrix cases passed on Garuda Linux (Arch-based) using Btrfs. The observed successful cases covered persisted output and immediate/read-after-cleanup reads, Image History and Grid saves, no-save bypasses, formats and non-image media, and `[number]`/suffix templates. Failure cases covered conversion, primary-write, sidecar, preview, and history-index cleanup while preserving existing reporting and partial-output or disk collision protection. Deletion cases covered successful expiry, primary/recycle, metadata, and history-index failure retention, and orphan multi-suffix companion protection.
+
+The confirmed race and ownership cases covered rapid and concurrent save/delete ownership, active-save and active-deletion refusal before mutation, inactive-owner deletion-retry coexistence, exact-generation cleanup, final-owner public-key release, stale pending-task protection, and isolation across users and folders. Administrative and compatibility cases covered `system_ram: true` inactive/legacy clearing with active save/deletion preservation, deliberate failed-deletion override behavior, `system_ram: false`, pre-clear/post-clear generation safety, and existing extension reads and writes through both public fields. Maintained pending and expiring-inactive counts returned to baseline after successful windows; failed-deletion counts remained retained until explicit clear or restart.
+
+This maintainer runtime record is distinct from the static agent evidence above. It validates Rank 12, Backend F19, and Backend F20 only on the recorded Garuda Linux/Btrfs platform. The later documentation-only validation record does not alter or extend the production source boundary ending at `216949ed`.
 
 ## Rollback
 
