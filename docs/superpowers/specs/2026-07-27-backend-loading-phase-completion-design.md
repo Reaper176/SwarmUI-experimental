@@ -320,7 +320,108 @@ Startup entries still call the unchanged `DoInitBackend(data)` while `BackendHan
 
 Independent fresh source reviews returned `SOURCE_SPEC_APPROVED` and `SOURCE_QUALITY_APPROVED`, both static-only and with no findings. Static verification passed for the exact fixed-range diff, the one-file implementation commit and `38/32` numstat, the public/protected declaration diff, unchanged `Program.cs` and `BackendAPI.cs`, maintained caller and consumer inventories, one lexical post-monitor completion boundary, preserved captured-delay ordering, `git diff --check`, a clean index, and isolation of protected working-tree changes.
 
-This evidence establishes source structure, control flow, scope, and compatibility boundaries only. Agents did not build, test, launch, run SwarmUI, exercise backend processes, reproduce parser or filesystem outcomes, inspect runtime scheduling/timing, validate any operating system or filesystem, or measure performance. All 14 live cases below remain pending maintainer validation; no runtime, platform, filesystem, or performance result is inferred.
+### Exact static commands and observed results
+
+The inclusive integrated history and its source-path projection were pinned with:
+
+```bash
+git log --format='%H %s' --reverse \
+  bcf96879d9d4769ce5913d8afd4f8a59d199d3eb^..f3313c7b56774833c7765e4770d90d5a2fff1158
+git log --format='%H %s' --reverse \
+  bcf96879d9d4769ce5913d8afd4f8a59d199d3eb^..f3313c7b56774833c7765e4770d90d5a2fff1158 \
+  -- src/Backends/BackendHandler.cs
+```
+
+The first command returned exactly:
+
+```text
+bcf96879d9d4769ce5913d8afd4f8a59d199d3eb docs: design backend loading phase completion
+5e520b4a82a9d28cb468312445672bd05d7bc891 docs: plan backend loading phase completion
+f3313c7b56774833c7765e4770d90d5a2fff1158 fix: complete backend loading phase
+```
+
+The path-filtered command returned only:
+
+```text
+f3313c7b56774833c7765e4770d90d5a2fff1158 fix: complete backend loading phase
+```
+
+The production commit and fixed source range were checked with:
+
+```bash
+git show --format= --name-only f3313c7b56774833c7765e4770d90d5a2fff1158
+git show --format= --stat f3313c7b56774833c7765e4770d90d5a2fff1158
+git show --format= --numstat f3313c7b56774833c7765e4770d90d5a2fff1158
+git diff --check \
+  bcf96879d9d4769ce5913d8afd4f8a59d199d3eb..f3313c7b56774833c7765e4770d90d5a2fff1158 \
+  -- src/Backends/BackendHandler.cs
+```
+
+The name-only output was exactly `src/Backends/BackendHandler.cs`. The stat was exactly one file with `38 insertions(+), 32 deletions(-)`, and numstat was `38	32	src/Backends/BackendHandler.cs`. The fixed-range `git diff --check` produced no output and exited 0.
+
+The exact source diff and the complete neighboring methods at both pinned revisions were inspected with:
+
+```bash
+git diff \
+  bcf96879d9d4769ce5913d8afd4f8a59d199d3eb..f3313c7b56774833c7765e4770d90d5a2fff1158 \
+  -- src/Backends/BackendHandler.cs
+git show bcf96879d9d4769ce5913d8afd4f8a59d199d3eb:src/Backends/BackendHandler.cs \
+  | nl -ba | sed -n '560,705p'
+git show f3313c7b56774833c7765e4770d90d5a2fff1158:src/Backends/BackendHandler.cs \
+  | nl -ba | sed -n '560,715p'
+```
+
+Those outputs included complete `Load()`, `LoadInternal()`, and `DoInitBackend()` bodies. `Load()` and `DoInitBackend()` were textually unchanged; the exact diff showed only the existing `LoadInternal()` storage body indented into the post-monitor `try`, the former trailing assignment moved into `finally`, and no outer catch.
+
+Declaration and explicitly unchanged-file checks used:
+
+```bash
+git diff \
+  bcf96879d9d4769ce5913d8afd4f8a59d199d3eb..f3313c7b56774833c7765e4770d90d5a2fff1158 \
+  -- src/Backends/BackendHandler.cs \
+  | rg -n '^[+-].*(public|protected)\b' || true
+git diff --name-only \
+  bcf96879d9d4769ce5913d8afd4f8a59d199d3eb..f3313c7b56774833c7765e4770d90d5a2fff1158 \
+  -- src/Core/Program.cs src/WebAPI/BackendAPI.cs
+```
+
+Both commands produced no output: no public/protected declaration changed, and neither `Program.cs` nor `BackendAPI.cs` had a Rank 16 diff.
+
+Maintained owner, consumer, later-path, and assignment inventories were pinned to the source head with:
+
+```bash
+git grep -n -F 'Backends.Load()' f3313c7b56774833c7765e4770d90d5a2fff1158 \
+  -- ':(glob)src/**/*.cs' ':(exclude)src/Extensions/**'
+git grep -n -F 'LoadInternal(' f3313c7b56774833c7765e4770d90d5a2fff1158 \
+  -- ':(glob)src/**/*.cs' ':(exclude)src/Extensions/**'
+git grep -n -w 'IsLoading' f3313c7b56774833c7765e4770d90d5a2fff1158 \
+  -- src/Backends/BackendHandler.cs
+git grep -n -F 'BackendHandler.IsLoading' f3313c7b56774833c7765e4770d90d5a2fff1158 \
+  -- ':(glob)src/**/*.cs' ':(exclude)src/Extensions/**' || true
+git grep -n -F 'DoInitBackend(' f3313c7b56774833c7765e4770d90d5a2fff1158 \
+  -- ':(glob)src/**/*.cs' ':(exclude)src/Extensions/**'
+git grep -n -F 'IsLoading = false' f3313c7b56774833c7765e4770d90d5a2fff1158 \
+  -- src/Backends/BackendHandler.cs
+```
+
+The results were:
+
+- one `Backends.Load()` match, `src/Core/Program.cs:359`, so `Program.Main` remains the sole maintained owner;
+- two `LoadInternal(` matches, the call from `Load()` at `BackendHandler.cs:582` and the declaration at line 592, so `Load()` remains its sole maintained caller;
+- eleven unqualified `IsLoading` matches in `BackendHandler.cs`: the Rank 16 declaration at line 589, sole startup completion assignment at line 642, and synchronous `shouldWait` capture at line 658, plus eight members/accesses of the unrelated `ModelRequestPressure.IsLoading` field declared at lines 1056-1068; the qualified `BackendHandler.IsLoading` search outside that lexical use produced no output;
+- eleven `DoInitBackend(` matches: one declaration and ten maintained calls. The calls include real add at line 434, non-real add at 453, edit at 549, reload at 572, startup enumeration at 637, forced timeout restart at 1416, `BackendAPI` restart at `BackendAPI.cs:810`, and the three built-in Comfy self-start/restart paths at `ComfyUISelfStartBackend.cs:206` and `ComfyUIWebAPI.cs:188,290`; and
+- three textual `IsLoading = false` matches: the sole startup completion assignment in the new `finally` at line 642 and unrelated `highestPressure.IsLoading` cleanup assignments at lines 1621 and 1656. The latter belong to `ModelRequestPressure`, not the static startup phase.
+
+After the implementation and documentation commits, repository isolation was checked with:
+
+```bash
+git diff --cached --name-only
+git status --short
+```
+
+The staged-name command produced no output. Status contained exactly the four protected unstaged modifications `src/Data/Settings.fds`, `src/Pages/Text2Image.cshtml`, `src/wwwroot/js/genpage/gentab/loras.js`, and `src/wwwroot/js/genpage/main.js`, plus untracked `Data.pre-restore-2026-07-19/`.
+
+This evidence establishes source structure, control flow, scope, and compatibility boundaries only. Agents did not build, test, lint, launch, run SwarmUI, exercise backend processes, reproduce parser or filesystem outcomes, inspect runtime scheduling/timing, validate any operating system or filesystem, or measure performance. All 14 live cases below remain pending maintainer validation; no runtime, platform, filesystem, or performance result is inferred.
 
 ## Maintainer Validation Matrix
 
