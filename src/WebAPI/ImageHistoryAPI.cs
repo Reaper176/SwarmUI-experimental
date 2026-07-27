@@ -1209,7 +1209,11 @@ public static class ImageHistoryAPI
         }
         string standardizedPath = Path.GetFullPath(path);
         Action<string> deleteFile = Program.ServerSettings.Paths.RecycleDeletedImages ? Utilities.SendFileToRecycle : File.Delete;
-        Session.OutputFilenameReservation reservation = Session.ReserveDeletedOutputFilename(standardizedPath);
+        if (!Session.TryReserveDeletedOutputFilename(standardizedPath, out Session.OutputFilenameReservation reservation))
+        {
+            return new JObject() { ["error"] = "That file is currently being saved or deleted. Please retry shortly." };
+        }
+        bool deletionSucceeded = false;
         try
         {
             deleteFile(path);
@@ -1224,11 +1228,20 @@ public static class ImageHistoryAPI
             }
             OutputMetadataTracker.RemoveMetadataFor(path);
             RemoveHistoryIndexForPath(root, path);
-            return new JObject() { ["success"] = true };
+            JObject result = new() { ["success"] = true };
+            deletionSucceeded = true;
+            return result;
         }
         finally
         {
-            Session.ReleaseOutputFilenameReservationAfterDelay(reservation);
+            if (deletionSucceeded)
+            {
+                Session.ReleaseOutputFilenameReservationAfterDelay(reservation);
+            }
+            else
+            {
+                Session.RetainOutputFilenameReservationUntilClear(reservation);
+            }
         }
     }
 

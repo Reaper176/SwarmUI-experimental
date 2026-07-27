@@ -212,148 +212,198 @@ public class Session : IEquatable<Session>
     /// <summary>File data that will be saved soon, or has very recently saved.</summary>
     public static ConcurrentDictionary<string, Task<byte[]>> StillSavingFiles = [];
 
-    /// <summary>Ownership handle for a reserved output filename.</summary>
+    /// <summary>Opaque ownership handle for one maintained output filename reservation.</summary>
     internal readonly record struct OutputFilenameReservation(string Path, long Generation);
 
-    /// <summary>Synchronizes ownership changes to output filename reservations.</summary>
+    /// <summary>Serializes maintained output filename reservation publication, release, and clearing.</summary>
     private static readonly LockObject OutputFilenameReservationLock = new();
 
-    /// <summary>Maps reserved output filenames to the generation that currently owns them.</summary>
-    private static readonly Dictionary<string, long> MaintainedOutputFilenameReservations = [];
+    /// <summary>Lifecycle state for one maintained output filename reservation generation.</summary>
+    private readonly record struct OutputFilenameReservationState(bool IsActive);
 
-    /// <summary>Monotonically increasing generation used to distinguish successive owners of the same output filename.</summary>
-    private static long OutputFilenameReservationGeneration = 0;
+    /// <summary>Maintained output filename reservation owners by normalized full path and generation.</summary>
+    private static readonly Dictionary<string, Dictionary<long, OutputFilenameReservationState>> MaintainedOutputFilenameReservations = [];
 
-    /// <summary>How long an inactive output filename reservation remains maintained.</summary>
+    /// <summary>Monotonic generation source for maintained output filename reservations.</summary>
+    private static long OutputFilenameReservationGeneration;
+
+    /// <summary>How long a failed save or successful deletion keeps an expiring inactive filename reservation.</summary>
     private static readonly TimeSpan InactiveOutputFilenameReservationLifetime = TimeSpan.FromSeconds(10);
 
-    /// <summary>Logs an output cleanup failure without allowing diagnostics to disrupt cleanup.</summary>
+    /// <summary>Best-effort diagnostic for output transient-state cleanup failures.</summary>
     private static void LogOutputCleanupFailure(string action, Exception ex)
     {
         try
         {
-            string message = $"Internal error while {action}: {ex.ReadableString()}";
-            Logs.Error(message);
+            Logs.Error($"Internal error while {action}: {ex.ReadableString()}");
         }
         catch
         {
+            // Cleanup diagnostics must not mask the save or deletion failure being handled.
         }
     }
 
-    /// <summary>Attempts to reserve an output filename and returns an ownership handle if successful.</summary>
-    private static bool TryReserveOutputFilename(string fullPath, out OutputFilenameReservation handle)
+    /// <summary>Attempts to reserve a persisted output path without colliding with any extensionless public reservation.</summary>
+    private static bool TryReserveOutputFilename(string fullPath, out OutputFilenameReservation reservation)
     {
         lock (OutputFilenameReservationLock)
         {
-            string extensionlessPath = fullPath.BeforeLast('.');
-            foreach (string reservedPath in RecentlyBlockedFilenames.Keys)
+            string fullPathNoExt = fullPath.BeforeLast('.');
+            if (RecentlyBlockedFilenames.Keys.Any(path => path.BeforeLast('.') == fullPathNoExt))
             {
-                if (reservedPath.BeforeLast('.') == extensionlessPath)
-                {
-                    handle = default;
-                    return false;
-                }
+                reservation = default;
+                return false;
             }
-            bool hadPriorGeneration = MaintainedOutputFilenameReservations.TryGetValue(fullPath, out long priorGeneration);
             long generation = Interlocked.Increment(ref OutputFilenameReservationGeneration);
-            OutputFilenameReservation reservation = new(fullPath, generation);
-            MaintainedOutputFilenameReservations[fullPath] = generation;
+            if (!MaintainedOutputFilenameReservations.TryGetValue(fullPath, out Dictionary<long, OutputFilenameReservationState> owners))
+            {
+                owners = [];
+                MaintainedOutputFilenameReservations[fullPath] = owners;
+            }
+            owners.Add(generation, new OutputFilenameReservationState(true));
             try
             {
                 RecentlyBlockedFilenames[fullPath] = fullPath;
             }
             catch
             {
-                if (hadPriorGeneration)
-                {
-                    MaintainedOutputFilenameReservations[fullPath] = priorGeneration;
-                }
-                else
+                owners.Remove(generation);
+                if (owners.Count == 0)
                 {
                     MaintainedOutputFilenameReservations.Remove(fullPath);
                 }
                 throw;
             }
-            handle = reservation;
+            reservation = new OutputFilenameReservation(fullPath, generation);
             return true;
         }
     }
 
-    /// <summary>Reserves a deleted output filename, replacing ownership of that exact path.</summary>
-    internal static OutputFilenameReservation ReserveDeletedOutputFilename(string fullPath)
+    /// <summary>Attempts to add a deletion reservation owner when the exact path has no active maintained owner.</summary>
+    internal static bool TryReserveDeletedOutputFilename(string fullPath, out OutputFilenameReservation handle)
     {
         lock (OutputFilenameReservationLock)
         {
-            bool hadPriorGeneration = MaintainedOutputFilenameReservations.TryGetValue(fullPath, out long priorGeneration);
+            if (MaintainedOutputFilenameReservations.TryGetValue(fullPath, out Dictionary<long, OutputFilenameReservationState> owners))
+            {
+                foreach (OutputFilenameReservationState owner in owners.Values)
+                {
+                    if (owner.IsActive)
+                    {
+                        handle = default;
+                        return false;
+                    }
+                }
+            }
+            else
+            {
+                owners = [];
+                MaintainedOutputFilenameReservations[fullPath] = owners;
+            }
             long generation = Interlocked.Increment(ref OutputFilenameReservationGeneration);
-            OutputFilenameReservation reservation = new(fullPath, generation);
-            MaintainedOutputFilenameReservations[fullPath] = generation;
+            owners.Add(generation, new OutputFilenameReservationState(true));
             try
             {
                 RecentlyBlockedFilenames[fullPath] = fullPath;
             }
             catch
             {
-                if (hadPriorGeneration)
-                {
-                    MaintainedOutputFilenameReservations[fullPath] = priorGeneration;
-                }
-                else
+                owners.Remove(generation);
+                if (owners.Count == 0)
                 {
                     MaintainedOutputFilenameReservations.Remove(fullPath);
                 }
                 throw;
             }
-            return reservation;
+            handle = new OutputFilenameReservation(fullPath, generation);
+            return true;
         }
     }
 
-    /// <summary>Removes an output filename reservation only if the supplied handle still owns it.</summary>
-    private static void RemoveOutputFilenameReservation(OutputFilenameReservation handle)
+    /// <summary>Best-effort removal of the maintained filename reservation generation identified by a handle.</summary>
+    private static void RemoveOutputFilenameReservation(OutputFilenameReservation reservation)
     {
         try
         {
             lock (OutputFilenameReservationLock)
             {
-                if (!MaintainedOutputFilenameReservations.TryGetValue(handle.Path, out long generation) || generation != handle.Generation)
+                if (!MaintainedOutputFilenameReservations.TryGetValue(reservation.Path, out Dictionary<long, OutputFilenameReservationState> owners)
+                    || !owners.Remove(reservation.Generation))
                 {
                     return;
                 }
-                MaintainedOutputFilenameReservations.Remove(handle.Path);
-                RecentlyBlockedFilenames.TryRemove(handle.Path, out _);
+                if (owners.Count == 0)
+                {
+                    MaintainedOutputFilenameReservations.Remove(reservation.Path);
+                    RecentlyBlockedFilenames.TryRemove(reservation.Path, out _);
+                }
             }
         }
         catch (Exception ex)
         {
-            LogOutputCleanupFailure($"removing output filename reservation for '{handle.Path}'", ex);
+            LogOutputCleanupFailure($"removing output filename reservation '{reservation.Path}'", ex);
         }
     }
 
-    /// <summary>Releases an output filename reservation owned by the supplied handle.</summary>
-    private static void ReleaseOutputFilenameReservation(OutputFilenameReservation handle)
+    /// <summary>Immediately releases a matching successful-save filename reservation.</summary>
+    private static void ReleaseOutputFilenameReservation(OutputFilenameReservation reservation)
     {
-        RemoveOutputFilenameReservation(handle);
+        RemoveOutputFilenameReservation(reservation);
     }
 
-    /// <summary>Releases an output filename reservation after the inactive reservation lifetime.</summary>
-    internal static void ReleaseOutputFilenameReservationAfterDelay(OutputFilenameReservation handle)
+    /// <summary>Transitions a matching active reservation to inactive before its terminal policy is selected.</summary>
+    private static bool TryTransitionOutputFilenameReservationToInactive(OutputFilenameReservation reservation)
     {
+        try
+        {
+            lock (OutputFilenameReservationLock)
+            {
+                if (!MaintainedOutputFilenameReservations.TryGetValue(reservation.Path, out Dictionary<long, OutputFilenameReservationState> owners)
+                    || !owners.TryGetValue(reservation.Generation, out OutputFilenameReservationState currentState)
+                    || !currentState.IsActive)
+                {
+                    return false;
+                }
+                owners[reservation.Generation] = currentState with { IsActive = false };
+                return true;
+            }
+        }
+        catch (Exception ex)
+        {
+            LogOutputCleanupFailure($"transitioning output filename reservation '{reservation.Path}' to inactive", ex);
+            return false;
+        }
+    }
+
+    /// <summary>Transitions a matching failed-save or successful-deletion reservation to inactive and releases it after the safety window.</summary>
+    internal static void ReleaseOutputFilenameReservationAfterDelay(OutputFilenameReservation reservation)
+    {
+        if (!TryTransitionOutputFilenameReservationToInactive(reservation))
+        {
+            return;
+        }
         try
         {
             _ = Utilities.RunCheckedTask(async () =>
             {
                 await Task.Delay(InactiveOutputFilenameReservationLifetime);
-                ReleaseOutputFilenameReservation(handle);
+                RemoveOutputFilenameReservation(reservation);
             }, "output filename reservation expiry");
         }
         catch (Exception ex)
         {
-            LogOutputCleanupFailure($"scheduling output filename reservation expiry for '{handle.Path}'", ex);
-            ReleaseOutputFilenameReservation(handle);
+            LogOutputCleanupFailure($"scheduling output filename reservation expiry for '{reservation.Path}'", ex);
+            RemoveOutputFilenameReservation(reservation);
         }
     }
 
-    /// <summary>Removes a pending save only if both its filename and task still match.</summary>
+    /// <summary>Transitions a matching failed-deletion reservation to inactive without automatic expiry.</summary>
+    internal static void RetainOutputFilenameReservationUntilClear(OutputFilenameReservation reservation)
+    {
+        TryTransitionOutputFilenameReservationToInactive(reservation);
+    }
+
+    /// <summary>Removes a pending output entry only when it still contains the captured task.</summary>
     private static void RemoveStillSavingFile(string fullPath, Task<byte[]> pendingTask)
     {
         try
@@ -362,19 +412,39 @@ public class Session : IEquatable<Session>
         }
         catch (Exception ex)
         {
-            LogOutputCleanupFailure($"removing pending output save for '{fullPath}'", ex);
+            LogOutputCleanupFailure($"removing pending output bytes for '{fullPath}'", ex);
         }
     }
 
-    /// <summary>Clears all maintained and publicly visible output filename reservations.</summary>
+    /// <summary>Clears inactive maintained owners and legacy public reservations while preserving active owners.</summary>
     internal static void ClearOutputFilenameReservations()
     {
         try
         {
             lock (OutputFilenameReservationLock)
             {
-                RecentlyBlockedFilenames.Clear();
-                MaintainedOutputFilenameReservations.Clear();
+                foreach (KeyValuePair<string, Dictionary<long, OutputFilenameReservationState>> pathOwners in MaintainedOutputFilenameReservations.ToArray())
+                {
+                    foreach (KeyValuePair<long, OutputFilenameReservationState> owner in pathOwners.Value.ToArray())
+                    {
+                        if (!owner.Value.IsActive)
+                        {
+                            pathOwners.Value.Remove(owner.Key);
+                        }
+                    }
+                    if (pathOwners.Value.Count == 0)
+                    {
+                        MaintainedOutputFilenameReservations.Remove(pathOwners.Key);
+                        RecentlyBlockedFilenames.TryRemove(pathOwners.Key, out _);
+                    }
+                }
+                foreach (string path in RecentlyBlockedFilenames.Keys)
+                {
+                    if (!MaintainedOutputFilenameReservations.ContainsKey(path))
+                    {
+                        RecentlyBlockedFilenames.TryRemove(path, out _);
+                    }
+                }
             }
         }
         catch (Exception ex)
