@@ -1,6 +1,6 @@
 # Atomic Process Shutdown Gate Design
 
-**Status:** Approved design; implementation pending
+**Status:** Implemented; awaiting maintainer validation
 
 **Date:** 2026-07-27
 
@@ -8,9 +8,9 @@
 
 ## Summary
 
-`Program.Shutdown(int code = 0)` is the composition root for process shutdown. It currently checks a private volatile Boolean and assigns it in a separate operation. Two thread-capable callers can both observe `false` before either assignment and then overlap the shutdown webhook, pre-shutdown event, global cancellation, owner disposal, metadata shutdown, temporary-directory deletion, and final log flush.
+`Program.Shutdown(int code = 0)` is the composition root for process shutdown. At the approved design base, it checked a private volatile Boolean and assigned it in a separate operation. Two thread-capable callers could both observe `false` before either assignment and then overlap the shutdown webhook, pre-shutdown event, global cancellation, owner disposal, metadata shutdown, temporary-directory deletion, and final log flush.
 
-Rank 13 replaces only that non-atomic check/set with an `Interlocked.CompareExchange` one-way gate. The caller that changes the gate from zero to one owns the complete existing shutdown body and its requested exit-code behavior. Every later caller returns immediately. No public API, caller, shutdown step, ordering rule, wait, exception boundary, or child-owner lifecycle changes.
+The approved rank-13 change replaces only that non-atomic check/set with an `Interlocked.CompareExchange` one-way gate. The caller that changes the gate from zero to one owns the complete existing shutdown body and its requested exit-code behavior. Every later caller returns immediately. No public API, caller, shutdown step, ordering rule, wait, exception boundary, or child-owner lifecycle changes.
 
 ## Goals
 
@@ -44,7 +44,7 @@ Rank 13 does not:
 
 ### Guard and shutdown body
 
-`Program.Shutdown` currently performs:
+At the approved design base, `Program.Shutdown` performed:
 
 1. a separate `HasShutdown` read and write;
 2. shutdown-webhook dispatch and a wait bounded at two minutes;
@@ -220,6 +220,31 @@ Agents must not build, launch, or test SwarmUI. Static verification must:
 12. run `git diff --check`.
 
 Static evidence can establish atomic ownership, branch placement, source scope, signatures, call sites, literal exit codes, and unchanged body text. It cannot prove runtime trigger timing, framework callback behavior, process exit status, owner idempotence, platform behavior, or exactly-once side effects.
+
+## Implementation Record
+
+### Integrated and production boundaries
+
+The approved design base is `3d244ede73a3cc36343624bdd00329a8a5284e5b`. The integrated design-to-source history `3d244ede73a3cc36343624bdd00329a8a5284e5b..f389da0d13be6bbf4cc81f6c9a24c21a095cdaca` contains the documentation-only implementation-plan commit `8083c644a37ff614099f5f105e87af091cae0615` and production commit `f389da0d13be6bbf4cc81f6c9a24c21a095cdaca`. These boundaries are intentionally distinct: path-filtering that history to production source returns only `f389da0d13be6bbf4cc81f6c9a24c21a095cdaca`.
+
+The production commit changes exactly `src/Core/Program.cs`, with `3 insertions(+), 3 deletions(-)`. It replaces the private volatile Boolean with the XML-documented private static integer specified above and replaces the separate check/set with `Interlocked.CompareExchange(ref HasShutdown, 1, 0)` as the first `Shutdown` operation. The zero-to-one winner continues into the existing body; every loser returns immediately. The complete post-gate body is unchanged.
+
+### Implemented behavior and compatibility
+
+First-caller exit-code ownership matches the approved semantics. A winning `Shutdown(42)` retains the existing assignment of `42`; a winning `Shutdown(0)` makes no assignment and therefore preserves any prior CI exit code. Losing callers cannot alter the exit code or any other shutdown state.
+
+The direct and restart caller inventories, `Shutdown` and `RequestRestart` signatures, admin permission/early-success response/half-second delay, webhook behavior and bound, body order, owner calls, extension isolation, temporary-directory handling, final log flush, and existing failure behavior are unchanged. `HasShutdown` remains private, so its storage change does not alter the public source or binary extension ABI. The gate is deliberately not reset if the winning body fails; later callers cannot retry or repair a partial shutdown.
+
+### Static review and runtime boundary
+
+Static review used the fixed boundaries above:
+
+- `git log --format='%H %s' 3d244ede73a3cc36343624bdd00329a8a5284e5b..f389da0d13be6bbf4cc81f6c9a24c21a095cdaca` returned the plan and production commits, while the same history filtered to `src/Core/Program.cs` returned only the production commit;
+- `git show --numstat f389da0d13be6bbf4cc81f6c9a24c21a095cdaca -- src/Core/Program.cs` returned `3` insertions and `3` deletions in that one source file;
+- fixed-base source diff and caller searches confirmed gate placement, unchanged post-gate body, unchanged direct/restart inventory and signatures, literal code `42`, winning-zero no-assignment behavior, and unchanged admin and downstream contracts; and
+- `git diff --check 3d244ede73a3cc36343624bdd00329a8a5284e5b..f389da0d13be6bbf4cc81f6c9a24c21a095cdaca` reported no whitespace errors.
+
+Independent source reviews returned `SOURCE_SPEC_APPROVED` and `SOURCE_QUALITY_APPROVED`, both with no issues. This is agent static evidence only: agents performed no build, test, launch, runtime, platform, or performance exercise and make no runtime, platform, or performance claim. The exact 16-case maintainer matrix below remains pending.
 
 ## Maintainer Validation Matrix
 
