@@ -593,48 +593,54 @@ public class BackendHandler
     {
         Logs.Init("Loading backends from file...");
         new Thread(InternalInitMonitor) { Name = "BackendHandler_Init_Monitor" }.Start();
-        FDSSection file;
         try
         {
-            file = FDSUtility.ReadFile(SaveFilePath);
-        }
-        catch (Exception ex)
-        {
-            if (ex is FileNotFoundException || ex is DirectoryNotFoundException)
+            FDSSection file;
+            try
+            {
+                file = FDSUtility.ReadFile(SaveFilePath);
+            }
+            catch (Exception ex)
+            {
+                if (ex is FileNotFoundException || ex is DirectoryNotFoundException)
+                {
+                    return;
+                }
+                Logs.Error($"Could not read Backends save file: {ex.ReadableString()}");
+                return;
+            }
+            if (file is null)
             {
                 return;
             }
-            Logs.Error($"Could not read Backends save file: {ex.ReadableString()}");
-            return;
-        }
-        if (file is null)
-        {
-            return;
-        }
-        foreach (string idstr in file.GetRootKeys())
-        {
-            FDSSection section = file.GetSection(idstr);
-            if (!BackendTypes.TryGetValue(section.GetString("type"), out BackendType type))
+            foreach (string idstr in file.GetRootKeys())
             {
-                Logs.Error($"Unknown backend type '{section.GetString("type")}' in save file, skipping backend #{idstr}.");
-                continue;
+                FDSSection section = file.GetSection(idstr);
+                if (!BackendTypes.TryGetValue(section.GetString("type"), out BackendType type))
+                {
+                    Logs.Error($"Unknown backend type '{section.GetString("type")}' in save file, skipping backend #{idstr}.");
+                    continue;
+                }
+                BackendData data = RawInstantiate(type);
+                data.ID = int.Parse(idstr);
+                data.AbstractBackend.AbstractBackendData = data;
+                LastBackendID = Math.Max(LastBackendID, data.ID + 1);
+                data.AbstractBackend.SettingsRaw = Activator.CreateInstance(type.SettingsClass) as AutoConfiguration;
+                data.AbstractBackend.SettingsRaw.Load(section.GetSection("settings"));
+                data.AbstractBackend.IsEnabled = section.GetBool("enabled", true).Value;
+                data.AbstractBackend.Title = section.GetString("title", "");
+                data.AbstractBackend.Handler = this;
+                lock (CentralLock)
+                {
+                    AllBackends.TryAdd(data.ID, data);
+                }
+                DoInitBackend(data);
             }
-            BackendData data = RawInstantiate(type);
-            data.ID = int.Parse(idstr);
-            data.AbstractBackend.AbstractBackendData = data;
-            LastBackendID = Math.Max(LastBackendID, data.ID + 1);
-            data.AbstractBackend.SettingsRaw = Activator.CreateInstance(type.SettingsClass) as AutoConfiguration;
-            data.AbstractBackend.SettingsRaw.Load(section.GetSection("settings"));
-            data.AbstractBackend.IsEnabled = section.GetBool("enabled", true).Value;
-            data.AbstractBackend.Title = section.GetString("title", "");
-            data.AbstractBackend.Handler = this;
-            lock (CentralLock)
-            {
-                AllBackends.TryAdd(data.ID, data);
-            }
-            DoInitBackend(data);
         }
-        IsLoading = false;
+        finally
+        {
+            IsLoading = false;
+        }
     }
 
     /// <summary>How many backends have fast-loaded thus far.</summary>
