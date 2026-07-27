@@ -1,6 +1,6 @@
 # Session-Ready Callback Failure Isolation Design
 
-**Status:** Design approved; not implemented
+**Status:** Implemented; awaiting maintainer validation
 
 **Date:** 2026-07-27
 
@@ -10,11 +10,11 @@
 
 ## Summary
 
-The generation page exposes the classic-script global `sessionReadyCallbacks` array. After a successful `ListT2IParams` response builds the model and parameter UI, `genpageLoad()` invokes every entry synchronously in insertion order. The loop has no per-callback exception boundary.
+The generation page exposes the classic-script global `sessionReadyCallbacks` array. At the approved source base, after a successful `ListT2IParams` response built the model and parameter UI, `genpageLoad()` invoked every entry synchronously in insertion order. That historical loop had no per-callback exception boundary.
 
-A synchronous exception from one callback therefore escapes the response callback, prevents every later callback from running, and skips the remaining core startup tail: the Krita import poll, welcome-message work, automatic title update, `swarmHasLoaded = true`, and initial image-history scheduling.
+A synchronous exception from one callback therefore historically escaped the response callback, prevented every later callback from running, and skipped the remaining core startup tail: the Krita import poll, welcome-message work, automatic title update, `swarmHasLoaded = true`, and initial image-history scheduling.
 
-Rank 17 adds one synchronous dispatcher in `src/wwwroot/js/genpage/main.js`. It invokes each existing array entry under an individual `try`/`catch`, reports a failure through the browser console and the existing error toast, and continues to later callbacks. The existing array, direct `push` registration contract, insertion order, synchronous execution, dynamic-array behavior, and startup-tail order remain unchanged.
+Rank 17 implements one synchronous dispatcher in `src/wwwroot/js/genpage/main.js`. It invokes each existing array entry under an individual `try`/`catch`, reports a failure through the browser console and the existing error toast, and continues to later callbacks. The existing array, direct `push` registration contract, insertion order, synchronous execution, dynamic-array behavior, and startup-tail order remain unchanged.
 
 ## Goals
 
@@ -76,9 +76,9 @@ Committed `src/Pages/Text2Image.cshtml` loads base generation scripts in order. 
 
 The callback array therefore reflects classic-script execution and extension contribution order. Rank 17 preserves the actual insertion order rather than introducing a separate priority or registration order.
 
-### Current dispatch and tail
+### Approved-base dispatch and tail (historical)
 
-Inside the successful `ListT2IParams` response callback, the page constructs models, parameters, tools, persisted controls, and initial user-data work. It then executes:
+At the approved source base, inside the successful `ListT2IParams` response callback, the page constructed models, parameters, tools, persisted controls, and initial user-data work. It then executed:
 
 ```js
 for (let callback of sessionReadyCallbacks) {
@@ -86,7 +86,7 @@ for (let callback of sessionReadyCallbacks) {
 }
 ```
 
-The following statements run only if the loop completes:
+The following statements ran only if the historical loop completed:
 
 1. `startPendingKritaImportPoll();`
 2. `automaticWelcomeMessage();`
@@ -94,7 +94,7 @@ The following statements run only if the loop completes:
 4. `swarmHasLoaded = true;`
 5. `scheduleInitialImageHistoryLoad(250);`
 
-`genericRequest` does not catch an exception thrown by its successful response callback. One callback exception therefore suppresses all later callback owners and the complete tail.
+`genericRequest` does not catch an exception thrown by its successful response callback. Before Rank 17, one callback exception therefore suppressed all later callback owners and the complete tail.
 
 ## Approved Design
 
@@ -160,14 +160,14 @@ Exceptions from later asynchronous work remain outside this synchronous boundary
 
 ## Production Scope
 
-Expected production modification:
+Implemented production modification:
 
 - `src/wwwroot/js/genpage/main.js`
   - add the documented synchronous dispatcher;
   - replace the direct session-ready loop with one dispatcher call; and
   - change no other production behavior.
 
-Expected unchanged source includes:
+Confirmed unchanged source includes:
 
 - all six maintained callback registration sites;
 - `sessionReadyCallbacks` declaration and array identity;
@@ -192,7 +192,7 @@ At the approved base, the maintainer has unrelated unstaged changes in:
 - `src/wwwroot/js/genpage/main.js`; and
 - untracked `Data.pre-restore-2026-07-19/`.
 
-The committed `44e3317a177978926d4b7b280f514d4cf1fcce6b` snapshot is the Rank 17 design authority. Before implementation:
+The committed `44e3317a177978926d4b7b280f514d4cf1fcce6b` snapshot is the Rank 17 design authority. The implementation workflow:
 
 1. confirm the callback declaration, maintained registration, direct loop, and startup tail still match the approved committed boundary;
 2. confirm the intended working-file edit does not overlap the maintainer's unrelated `main.js` hunks;
@@ -254,6 +254,76 @@ Static verification must:
 18. run `git diff --check`.
 
 Static evidence can establish lexical isolation, invocation order, synchronous behavior, source scope, and compatibility surfaces. It cannot prove browser rendering, actual callback timing, external extension behavior, toast visibility, runtime initialization success, platform behavior, or performance.
+
+## Implementation Record
+
+Rank 17 is statically implemented and remains awaiting maintainer browser/runtime validation.
+
+### Provenance and committed scope
+
+- The approved source/audit base is `44e3317a177978926d4b7b280f514d4cf1fcce6b`.
+- The design commit is `a70efd3280d09b3e457d66f2e8ef62c16259ce4b` (`a70efd32`, `docs: design session-ready callback isolation`).
+- The plan commit is `e6bf67c6bc576254b4ac2e6d81252399dc36db37` (`e6bf67c6`, `docs: plan session-ready callback isolation`).
+- The production source head and sole source commit are `12604a8f29444730edce871056e39c2ab523efa2` (`12604a8f`, `fix: isolate session-ready callback failures`).
+- Integrated history from the design through the source head contains the plan commit followed by the production commit. Path-filtering that history to `src/wwwroot/js/genpage/main.js` returns only the production commit.
+- The production projection changes exactly `src/wwwroot/js/genpage/main.js`, with `22 insertions(+), 3 deletions(-)` in two semantic hunks: the documented `runSessionReadyCallbacks()` addition immediately after the unchanged array declaration, and replacement of the former three-line direct loop with one dispatcher call.
+
+### Implemented behavior and preserved boundaries
+
+`runSessionReadyCallbacks()` uses a standard indexed loop whose condition reads the live `sessionReadyCallbacks.length` on every iteration. It reads the current entry once and invokes it as plain `callback()` with no arguments, receiver, return-value use, or completion signal. An entry appended during dispatch is therefore eligible later in that same dispatch; the array is not copied, snapshotted, locked, frozen, renamed, replaced, or reassigned.
+
+Each entry has its own synchronous `try`/`catch`. A synchronous exception—including invocation of a non-function entry—is contained after a diagnostic with its one-based position, optional function name, and `${e}` text. `console.error(message, e)` retains the original exception; `showError(message)` uses the existing toast path; and a position-specific secondary `try`/`catch` logs a toast-rendering failure without aborting later entries. Multiple callback failures are independently reported and later callbacks continue.
+
+The dispatcher does not use `async`, `await`, `Promise.resolve`, `.then`, or `.catch` on callback results. A returned pending or rejected promise remains owned by its callback and does not delay dispatch or the startup tail. A callback is not retried, its partial effects are not rolled back, and no compensation, metadata, priority, registration helper, telemetry, instrumentation, or new public surface was added.
+
+The `sessionReadyCallbacks` declaration and exact six maintained non-backup direct `push` registrations are unchanged, so external classic-script direct registration remains compatible. Text2Image script order, `WebServer.PageFooterExtra` extension contribution, `site.js::showError`, the other callback arrays, and extension composition remain unchanged. The complete successful `ListT2IParams` work before dispatch is unchanged. After the dispatcher returns, the exact five-statement tail remains textually ordered as `startPendingKritaImportPoll()`, `automaticWelcomeMessage()`, `autoTitle()`, `swarmHasLoaded = true`, and `scheduleInitialImageHistoryLoad(250)`. The failure branch and request behavior are unchanged. Lazy-tab, hash, Krita, welcome, title, and history behavior outside the new synchronous exception boundary, plus all server APIs, permissions, persistence, and public source/binary ABI, are unchanged.
+
+### Protected working state
+
+The source commit used partial staging. It excluded the maintainer's two unrelated unstaged `src/wwwroot/js/genpage/main.js` hunks: removal of the `featureSetChangedCallbacks` declaration and four `lazyTabState` changes from `loaded: false` to `loaded: true` for `imageediting`, `utilities`, `user`, and `server`. Both hunks remain unstaged after the source commit. The other protected tracked changes in `src/Data/Settings.fds`, `src/Pages/Text2Image.cshtml`, and `src/wwwroot/js/genpage/gentab/loras.js`, plus untracked `Data.pre-restore-2026-07-19/`, were not staged or included. The committed source projection contains neither protected `main.js` hunk.
+
+### Static evidence
+
+Fresh independent source reviews returned `SOURCE_SPEC_APPROVED` and `SOURCE_QUALITY_APPROVED` with no findings. The following static commands and observed results bound that approval:
+
+```bash
+git log --oneline a70efd32..12604a8f29444730edce871056e39c2ab523efa2
+git log --oneline a70efd32..12604a8f29444730edce871056e39c2ab523efa2 -- src/wwwroot/js/genpage/main.js
+```
+
+The integrated command returned `12604a8f` and `e6bf67c6`; the path-filtered command returned only `12604a8f`.
+
+```bash
+git diff --name-only a70efd32..12604a8f29444730edce871056e39c2ab523efa2 -- src/wwwroot/js/genpage/main.js
+git diff --stat a70efd32..12604a8f29444730edce871056e39c2ab523efa2 -- src/wwwroot/js/genpage/main.js
+git diff --check a70efd32..12604a8f29444730edce871056e39c2ab523efa2 -- src/wwwroot/js/genpage/main.js
+```
+
+These returned only `src/wwwroot/js/genpage/main.js`, the exact `1 file changed, 22 insertions(+), 3 deletions(-)` statistic, and silent whitespace success. Direct inspection of that projection counted two `@@` hunks and no protected-hunk text.
+
+```bash
+git grep -n -F 'sessionReadyCallbacks.push' 12604a8f29444730edce871056e39c2ab523efa2 \
+  -- 'src/**' ':(exclude)src/Extensions/**' ':(exclude)**/*.bak'
+```
+
+This returned exactly six maintained registrations: Comfy workflow preparation, Grid Generator, Image Batch Tool, Settings Editor, the `main.js` server-lazy-tab check, and Prompt Lab. The same committed-tree inventory found one unchanged array declaration, one dispatcher definition, and one dispatcher call.
+
+```bash
+git diff a70efd32..12604a8f29444730edce871056e39c2ab523efa2 -- src/wwwroot/js/genpage/main.js \
+  | rg -n '^\+.*(await.*callback|Promise\.resolve\(callback|callback\(\)\.then|callback\(\)\.catch|sessionReadyCallbacks\.slice|\[\.\.\.sessionReadyCallbacks\])'
+```
+
+This returned no matches (`rg` exit 1), confirming that the added source contains no async/promise-result or snapshot behavior. The unchanged-file diff for the five registration-owner files outside `main.js`, plus `Text2Image.cshtml`, `WebServer.cs`, and `site.js`, was silent; separate inspection confirmed that the maintained registration inside `main.js` was unchanged.
+
+```bash
+git diff --unified=0 -- src/wwwroot/js/genpage/main.js
+git diff --cached --name-only
+git status --short
+```
+
+Before this documentation edit, the first command showed exactly the two protected unstaged `main.js` hunks described above, the cached-name command was empty, and status retained all four protected tracked files plus the untracked backup directory. `git show --check --oneline --stat 12604a8f29444730edce871056e39c2ab523efa2` also completed cleanly, and `git show --format= --name-only 12604a8f29444730edce871056e39c2ab523efa2` returned only `src/wwwroot/js/genpage/main.js`.
+
+All agent evidence is static. No agent build, test, test-executing lint, browser automation, launch, server/backend execution, live API call, runtime timing, platform/filesystem validation, or performance measurement was performed, and no such result is claimed. Browser timing and rendering, actual toast visibility, external-extension behavior, asynchronous rejection behavior, platform/filesystem behavior, and the exact validation cases below remain pending maintainer exercise.
 
 ## Maintainer Validation Matrix
 
