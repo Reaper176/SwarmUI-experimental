@@ -10,9 +10,9 @@
 
 ## Summary
 
-`src/wwwroot/js/site.js::makeWSRequest(url, in_data, callback, depth, errorHandle, onOpenHandle)` preserves the caller's data callback when it renews an invalid session, but its recursive call drops `errorHandle` and `onOpenHandle`.
+At the approved base, `src/wwwroot/js/site.js::makeWSRequest(url, in_data, callback, depth, errorHandle, onOpenHandle)` preserved the caller's data callback when it renewed an invalid session, but its recursive call dropped `errorHandle` and `onOpenHandle`.
 
-The first physical WebSocket therefore uses the caller's lifecycle handlers, while a retry after session renewal does not. A retry failure falls back to generic error reporting instead of caller-owned cleanup. A successful model-download retry does not rebind cancellation to the active retry socket because its open handler remains attached only to the initially rejected socket.
+The first physical WebSocket therefore used the caller's lifecycle handlers, while a retry after session renewal did not. A retry failure fell back to generic error reporting instead of caller-owned cleanup. A successful model-download retry did not rebind cancellation to the active retry socket because its open handler remained attached only to the initially rejected socket.
 
 Rank 18 forwards both existing lifecycle handlers through only the invalid-session recursive call. The public signature, initial behavior, retry depth, request mutation, data callback, streaming delivery, and returned initial socket remain unchanged.
 
@@ -70,7 +70,7 @@ The function:
 9. sends application errors through the local `fail` helper; and
 10. assigns either the supplied error handler or generic error UI to `socket.onerror`.
 
-### Current invalid-session recursion
+### Approved-base invalid-session recursion
 
 The approved base contains:
 
@@ -185,7 +185,7 @@ The implementation adds no syntax and changes only existing positional arguments
 
 ### Performance
 
-The change adds no new work outside passing two references during the rare retry branch. Rank 18 makes no performance improvement or regression claim.
+The change adds no new work outside passing two references during the retry branch. Rank 18 makes no performance improvement or regression claim.
 
 ## Protected Working-Tree Boundary
 
