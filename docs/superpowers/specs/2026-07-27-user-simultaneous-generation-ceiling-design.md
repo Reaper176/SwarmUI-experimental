@@ -1,6 +1,6 @@
 # User Simultaneous-Generation Ceiling Design
 
-**Status:** Design approved; not implemented
+**Status:** Implemented; awaiting maintainer validation
 
 **Date:** 2026-07-27
 
@@ -218,6 +218,17 @@ Agents must not build, launch, or test SwarmUI. Static verification must:
 13. run `git diff --check` without building or testing.
 
 Static evidence can establish the local arithmetic boundary and unchanged source flow. It cannot establish runtime scheduling, backend concurrency, cancellation timing, external extension behavior, platform behavior, filesystem outcomes, or an account-wide ceiling.
+
+## Implementation Record
+
+- **Approved design base:** `e48920bee4db248e0dfa91bbc1099a9161509f05` (`docs: design simultaneous generation ceiling`).
+- **Plan commit:** `74b64f527ccebd01c8bd15a8835a35d72282b377` (`docs: plan simultaneous generation ceiling`).
+- **Production source head:** `1fa1d5356c1446cd9d5ec9c33b76eddf1e06deb7` (`fix: enforce simultaneous generation ceiling`). The integrated design-to-source history is the approved design base followed by the plan commit and this production commit; source-path filtering to the approved production paths returns only `1fa1d5356c1446cd9d5ec9c33b76eddf1e06deb7`.
+- **Exact production boundary:** the production commit changes exactly `src/WebAPI/T2IAPI.cs` and `src/BuiltinExtensions/ImageBatchTool/ImageBatchToolExtension.cs`. Each file has numstat `1 insertion, 1 deletion`; the complete semantic change is one added `=` in each predicate.
+- **Final local invariant:** after the unchanged completed-task cleanup, both handlers use `while (tasks.Count >= max_degrees)`. Each handler invocation therefore admits a task only when its cleaned local task count is below that invocation's captured request-local effective limit.
+- **Preserved behavior:** cleanup, waiting, cancellation placement, ordering, normal T2I keep-alives, indices, errors, outputs, Image Batch webhooks, `Session.GenClaim`, role calculation/capture, Grid Generator, backend selection/capacity, route contracts, and public source/binary extension ABI behavior are unchanged.
+- **Review and static evidence:** `SOURCE_SPEC_APPROVED` and `SOURCE_QUALITY_APPROVED` both returned no findings. Fixed-range source inspection confirmed the exact two-file/two-character boundary, the equality wait in both loops, and the unchanged surrounding flow; `git diff --check` is part of the static closure.
+- **Validation boundary:** agents performed no build, test, launch, runtime, platform, filesystem, or performance exercise. The guarantee remains request-local: concurrent HTTP calls, overlapping WebSocket producers, normal T2I plus Image Batch, or multiple sessions for one account can exceed the role value in aggregate and remain out of scope. No account-wide enforcement, multi-user fairness validation, runtime scheduling result, or platform result is claimed.
 
 ## Maintainer Validation Matrix
 
