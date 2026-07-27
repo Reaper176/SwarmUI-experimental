@@ -134,7 +134,7 @@ function makeWSRequest(url, in_data, callback, depth = 0, errorHandle = null, on
             }
             console.log('Session refused, will get new one and try again.');
             getSession(() => {
-                makeWSRequest(url, in_data, callback, depth + 1);
+                makeWSRequest(url, in_data, callback, depth + 1, errorHandle, onOpenHandle);
             });
             return;
         }
