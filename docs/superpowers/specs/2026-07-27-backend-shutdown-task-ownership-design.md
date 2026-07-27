@@ -1,6 +1,6 @@
 # Backend Shutdown Task Ownership Design
 
-**Status:** Approved design; implementation pending
+**Status:** Implemented; awaiting maintainer validation
 
 **Date:** 2026-07-27
 
@@ -234,6 +234,20 @@ Agents must not build, launch, or test SwarmUI. Static verification must:
 15. run `git diff --check`.
 
 Static evidence can establish collection ownership, publication order, direct awaiting, fault containment, source scope, signatures, and unchanged downstream text. It cannot prove runtime thread schedules, backend timing, external extension behavior, process/resource release, filesystem outcomes, platform behavior, or exactly-once effects inside backend-specific parent/child implementations.
+
+## Implementation Record
+
+**Implementation status:** **Implemented; awaiting maintainer validation.**
+
+The approved design base is `f17e09557157f9c3ed13841c368885711636d96f`. The integrated design-to-source history through production head `efe5e32ad9ed93ae1727f613e19c91f27bbbfe03` contains documentation-plan commit `880d03df131977126c2557dbc5844568289e06be` followed by production commit `efe5e32ad9ed93ae1727f613e19c91f27bbbfe03`; path-filtering that history to `src/Backends/BackendHandler.cs` returns only the production commit. The production projection changes exactly `src/Backends/BackendHandler.cs`, with `24 insertions(+), 14 deletions(-)`, and is confined to `BackendHandler.Shutdown()`.
+
+The implemented method captures one `BackendData[]` snapshot from `AllBackends.Values`, then the controller synchronously publishes one stable named-tuple task entry per snapshot backend before it begins monitoring. Each task owns the complete usage-grace body and directly awaits `backend.AbstractBackend.DoShutdownNow()`. Workers have no path to mutate either the stable `shutdownTasks` collection or the controller-local `pendingTasks` view. The controller alone derives and replaces the pending view from incomplete stable tasks, so a slow real shutdown remains pending until its awaited lifetime completes. Each owner task catches its own grace-or-shutdown exception, logs backend ID, backend type name, and `ReadableString()` detail, and completes without rethrowing, canceling, or suppressing other backend tasks or downstream shutdown work.
+
+The existing `HasShutdown` guard, both wake-up signals, in-use predicate, `MaxUsages > 0` condition, 100-millisecond polling, counter threshold, forced-after-grace message, progress cadence and message content, done-generating webhook placement, final persistence body and outcomes, maintained callers, individual backend implementations, autoscaling parent/controlled-child internals, `Program.Shutdown()` ordering, and public source/binary extension ABI remain unchanged. A backend added after the entry snapshot remains outside this task set. A backend whose shutdown task never completes still causes an indefinite wait with periodic progress logs because no timeout or cancellation was added. One handler-owned task per snapshot entry does not assert exactly-once invocation across backend-specific parent/child owners.
+
+The exact static boundary commands reported: `git rev-parse f17e0955` → `f17e09557157f9c3ed13841c368885711636d96f`; `git rev-parse 880d03df` → `880d03df131977126c2557dbc5844568289e06be`; `git rev-parse efe5e32a` → `efe5e32ad9ed93ae1727f613e19c91f27bbbfe03`; `git log --format='%H %s' f17e0955..efe5e32a` → plan then production; the same log filtered to `src/Backends/BackendHandler.cs` → only `efe5e32a`; `git show --numstat --format='' efe5e32a -- src/Backends/BackendHandler.cs` → `24	14	src/Backends/BackendHandler.cs`; and `git diff --check f17e0955..efe5e32a -- src/Backends/BackendHandler.cs` → no output. Method-boundary, caller/signature, collection-ownership, direct-await, fault-containment, downstream-text, and protected-path inspection also matched the approved scope. Independent source reviews returned `SOURCE_SPEC_APPROVED` and `SOURCE_QUALITY_APPROVED`, both with no findings.
+
+Agents performed no build, test, launch, runtime, thread-interleaving, platform, filesystem, or performance exercise and make no such claim. All runtime behavior and all platforms remain unvalidated until the maintainer records the exact matrix below; no benchmark or performance claim is made.
 
 ## Maintainer Validation Matrix
 
