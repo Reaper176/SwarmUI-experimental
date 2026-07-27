@@ -986,34 +986,44 @@ public class BackendHandler
         HasShutdown = true;
         NewBackendInitSignal.Set();
         CheckBackendsSignal.Set();
-        List<(BackendData, Task)> tasks = [];
-        foreach (BackendData backend in AllBackends.Values)
+        BackendData[] shutdownBackends = [.. AllBackends.Values];
+        List<(BackendData Backend, Task Task)> shutdownTasks = [];
+        foreach (BackendData backend in shutdownBackends)
         {
-            tasks.Add((backend, Task.Run(async () =>
+            Task shutdownTask = Task.Run(async () =>
             {
-                int backTicks = 0;
-                while (backend.CheckIsInUse && backend.AbstractBackend.MaxUsages > 0)
+                try
                 {
-                    if (backTicks++ > 50)
+                    int backTicks = 0;
+                    while (backend.CheckIsInUse && backend.AbstractBackend.MaxUsages > 0)
                     {
-                        Logs.Info($"Backend {backend.ID} ({backend.AbstractBackend.HandlerTypeData.Name}) has been locked in use for at least 5 seconds after shutdown, giving up and killing anyway.");
-                        break;
+                        if (backTicks++ > 50)
+                        {
+                            Logs.Info($"Backend {backend.ID} ({backend.AbstractBackend.HandlerTypeData.Name}) has been locked in use for at least 5 seconds after shutdown, giving up and killing anyway.");
+                            break;
+                        }
+                        Thread.Sleep(100);
                     }
-                    Thread.Sleep(100);
+                    await backend.AbstractBackend.DoShutdownNow();
                 }
-                tasks.Add((backend, backend.AbstractBackend.DoShutdownNow()));
-            })));
+                catch (Exception ex)
+                {
+                    Logs.Error($"Backend {backend.ID} ({backend.AbstractBackend.HandlerTypeData.Name}) failed to shut down cleanly: {ex.ReadableString()}");
+                }
+            });
+            shutdownTasks.Add((backend, shutdownTask));
         }
+        List<(BackendData Backend, Task Task)> pendingTasks = shutdownTasks;
         int ticks = 0;
-        while (tasks.Any())
+        while (pendingTasks.Any())
         {
             if (ticks++ > 20)
             {
                 ticks = 0;
-                Logs.Info($"Still waiting for {tasks.Count} backends to shut down ({string.Join(", ", tasks.Select(p => p.Item1).Select(b => $"{b.ID}: {b.AbstractBackend.HandlerTypeData.Name}"))})...");
+                Logs.Info($"Still waiting for {pendingTasks.Count} backends to shut down ({string.Join(", ", pendingTasks.Select(p => p.Backend).Select(b => $"{b.ID}: {b.AbstractBackend.HandlerTypeData.Name}"))})...");
             }
             Task.Delay(TimeSpan.FromMilliseconds(100)).Wait();
-            tasks = [.. tasks.Where(t => !t.Item2.IsCompleted)];
+            pendingTasks = [.. pendingTasks.Where(t => !t.Task.IsCompleted)];
         }
         WebhookManager.TryMarkDoneGenerating().Wait();
         if (BackendsEdited)
