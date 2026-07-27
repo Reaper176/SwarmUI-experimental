@@ -1,6 +1,6 @@
 # Backend Loading Phase Completion Design
 
-**Status:** Implemented; awaiting maintainer validation
+**Status:** Implemented and maintainer-validated on Garuda Linux (Arch-based), Btrfs
 
 **Date:** 2026-07-27
 
@@ -292,7 +292,7 @@ Static evidence can prove lexical completion, control-flow preservation, consume
 
 ## Implementation Record
 
-**Implementation status:** **Implemented; awaiting maintainer validation.**
+**Implementation status:** **Implemented and maintainer-validated on Garuda Linux (Arch-based), Btrfs.**
 
 ### Provenance and exact scope
 
@@ -421,7 +421,7 @@ git status --short
 
 The staged-name command produced no output. Status contained exactly the four protected unstaged modifications `src/Data/Settings.fds`, `src/Pages/Text2Image.cshtml`, `src/wwwroot/js/genpage/gentab/loras.js`, and `src/wwwroot/js/genpage/main.js`, plus untracked `Data.pre-restore-2026-07-19/`.
 
-This evidence establishes source structure, control flow, scope, and compatibility boundaries only. Agents did not build, test, lint, launch, run SwarmUI, exercise backend processes, reproduce parser or filesystem outcomes, inspect runtime scheduling/timing, validate any operating system or filesystem, or measure performance. All 14 live cases below remain pending maintainer validation; no runtime, platform, filesystem, or performance result is inferred.
+This evidence establishes source structure, control flow, scope, and compatibility boundaries only. Agents did not build, test, lint, launch, run SwarmUI, exercise backend processes, reproduce parser or filesystem outcomes, inspect runtime scheduling/timing, validate any operating system or filesystem, or measure performance. No runtime, platform, filesystem, or performance result is inferred from agent evidence; the separate maintainer result below is the only runtime validation record.
 
 ## Maintainer Validation Matrix
 
@@ -441,6 +441,18 @@ The maintainer performs all builds and live validation. Record operating system,
 12. An injected unexpected entry-processing failure still propagates through the existing startup path while inspection confirms `IsLoading` was set false before propagation.
 13. Backend initialization failure, retry delay/count, final error, and later retry behavior remain unchanged.
 14. Normal multi-backend startup retains monitor activity, request-loop startup, backend statuses, model-state reassignment, and successful generation behavior.
+
+## Maintainer Validation Record
+
+**Maintainer:** Reaper176
+
+**Date:** 2026-07-27
+
+**Scope:** The exact unchanged 14-case `Maintainer Validation Matrix` above.
+
+**Result:** `All 14 passed on Garuda Linux (Arch-based), Btrfs.`
+
+This maintainer runtime evidence is separate from the static-only agent evidence above. It validates Backend F15/rank 16 only on the recorded Garuda Linux (Arch-based), Btrfs environment. Platforms and filesystems other than the recorded combination remain runtime-unvalidated, and no performance result is claimed. The result does not change the preserved boundaries: failures before monitor startup do not clear the flag; the duplicate `Load()` guard does not enter the phase; unexpected entry-processing exceptions still propagate and can leave partial progress and prevent the remainder of `Load()`; phase completion is not backend readiness; and no rollback or recovery behavior changed.
 
 ## Success Criteria
 
