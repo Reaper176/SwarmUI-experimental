@@ -231,7 +231,7 @@ public static class BasicAPIFeatures
             Logs.Warning($"Register attempt from {ip} as {username}, failed due to reserved username.");
             return new JObject() { ["error_id"] = "username_exists" };
         }
-        if (!Program.Sessions.TempAuths.TryGetValue(oauth_tracker_key, out string email))
+        if (!Program.Sessions.TryConsumeTempAuth(oauth_tracker_key, out string email))
         {
             Logs.Warning($"Register attempt from {ip} as {username}, failed due to invalid OAuth tracker key.");
             return new JObject() { ["error_id"] = "invalid_input" };
@@ -243,7 +243,6 @@ public static class BasicAPIFeatures
             return new JObject() { ["error_id"] = "registration_failed" };
         }
         user.SetOAuthEmail(email);
-        Program.Sessions.TempAuths.Remove(oauth_tracker_key, out _);
         Logs.Info($"Register attempt from {ip} as {username}, successful.");
         return new JObject() { ["success"] = "true" };
     }
