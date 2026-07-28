@@ -4,7 +4,7 @@
 
 **Goal:** Make model metadata cache reuse depend on the ordinary filesystem freshness of all four supported JSON sidecars, without changing metadata parsing, merge order, writers, consumers, or the cache database owner.
 
-**Architecture:** Add one optional ordered sidecar fingerprint to `T2IModelHandler.ModelMetadataStore`. Compute a stable existence/length/UTC-last-write fingerprint before each cache decision, require it to match for reuse, persist the same captured value only after successful recomputation, and update it in `ResetMetadataFrom`.
+**Architecture:** Add one optional ordered sidecar fingerprint to `T2IModelHandler.ModelMetadataStore`. Compute a stable existence/length/UTC-last-write fingerprint before each cache decision, require it to match for reuse, assign the same captured value only to the newly constructed `LoadMetadata` record, attempt persistence through the existing caught upsert, and update the in-memory record before `ResetMetadataFrom` attempts its upsert.
 
 **Tech Stack:** C# 12, .NET 8, LiteDB, `FileInfo`, FreneticUtilities string helpers, Git/static source inspection, maintainer-run SwarmUI validation.
 
@@ -176,7 +176,7 @@ Inside `lock (ModificationLock)`, after assigning `ModelFileVersion`, add:
                 metadata.ModelSidecarFingerprint = sidecarFingerprint;
 ```
 
-The filesystem inspection stays outside `ModificationLock` and `MetadataLock`.
+The capture textually precedes `ResetMetadataFrom`'s own `ModificationLock` and `MetadataLock` statements. Do not add or reorder locks. Maintained `GetOrGenerateTensorHashSha256` and `ResaveModel` callers may already hold the existing reentrant `ModificationLock`, so do not claim the inspection is universally outside that lock.
 
 - [ ] **Step 4: Capture the fingerprint once before the `LoadMetadata` cache decision**
 
@@ -211,7 +211,7 @@ with:
 
 A legacy null property therefore recomputes without a separate migration branch.
 
-- [ ] **Step 6: Persist the captured fingerprint only in the successful record construction**
+- [ ] **Step 6: Assign the captured fingerprint only in the newly constructed record**
 
 In the `metadata = new()` initializer, immediately after `ModelFileVersion = modified`, add:
 
@@ -219,7 +219,7 @@ In the `metadata = new()` initializer, immediately after `ModelFileVersion = mod
                 ModelSidecarFingerprint = sidecarFingerprint,
 ```
 
-Do not assign the new fingerprint to the previously loaded record before recomputation. A read/parse/conversion failure must leave the stored old fingerprint mismatched.
+Do not assign the new fingerprint to the previously loaded record before recomputation. A read/parse/conversion failure before record construction must not attach or publish a new fingerprint. The existing LiteDB upsert catch remains after construction: if that upsert fails, the persistent old record remains, but existing control flow still publishes the newly constructed metadata and fingerprint to `model.Metadata`; a later refresh reloads and reevaluates persistent state. Do not claim successful upsert is a prerequisite for in-memory publication.
 
 - [ ] **Step 7: Inspect the focused source diff**
 
@@ -254,7 +254,7 @@ Trace these cases without executing code:
 8. embedded resave changing model mtime; and
 9. central/per-folder cache IDs.
 
-Expected: no path can publish a new fingerprint before successful record construction/upsert, and a concurrent ordinary change forces a later mismatch.
+Expected: no read/parse/conversion failure before record construction can attach or publish a new fingerprint. A caught `LoadMetadata` upsert failure leaves persistent state old but still permits existing in-memory publication of the newly constructed record; `ResetMetadataFrom` mutates its existing in-memory record before upsert, so its log-and-throw failure can leave that memory mutation in place. A later refresh reloads and reevaluates persistent state, and a concurrent ordinary change forces a later mismatch. No new lock or lock order is introduced, including when maintained callers already hold the reentrant `ModificationLock`.
 
 - [ ] **Step 9: Commit the production change**
 
@@ -303,7 +303,7 @@ Run focused searches and inspect numbered source to prove:
 - `FormattableString.Invariant` makes numeric formatting stable;
 - `LoadMetadata` captures once before the decision;
 - the same captured value reaches the new record;
-- `ResetMetadataFrom` captures before locks and assigns under the existing lock;
+- `ResetMetadataFrom` captures before its own lock statements and assigns under the existing lock, while maintained callers may already hold the reentrant `ModificationLock`;
 - legacy null differs from every current fingerprint; and
 - no content read/hash or preview suffix enters the helper.
 
@@ -315,6 +315,8 @@ Compare the production diff and inventories to confirm:
 - merge and `procAltHeader` order is unchanged;
 - invalid JSON still propagates through the existing path;
 - no new catch, fallback, retry, log, or lock exists;
+- read/parse/conversion failure before construction cannot publish a new fingerprint, but caught `LoadMetadata` upsert failure leaves persistent state old and still publishes the constructed record in memory;
+- `ResetMetadataFrom` mutates in-memory metadata before upsert, so upsert failure throws after that memory mutation and does not make persistent success a prerequisite for the mutation;
 - cache DB selection and IDs are unchanged;
 - `T2IModel`, `ModelsAPI`, `T2IAPI`, `Program`, settings, and Comfy files have no production diff; and
 - Core P4 remains unimplemented.

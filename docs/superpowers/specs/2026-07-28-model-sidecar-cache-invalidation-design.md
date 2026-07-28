@@ -135,13 +135,13 @@ The normal cache-hit path performs filesystem metadata inspection only. It does 
 
 Rank 22 does not restructure the recomputation body. Embedded-header reads, both existing sidecar passes, merge order, `procAltHeader`, metadata limits, class identification, image validation, record construction, LiteDB upsert, and final model publication retain their current control flow.
 
-The captured fingerprint is assigned only to the new record that is constructed after successful metadata processing. A parse, I/O, conversion, or later recomputation failure therefore does not publish a new fingerprint and does not mark the failed sidecar state current.
+The captured fingerprint is assigned only to the new record that is constructed after successful metadata processing. A sidecar read, parse, or conversion failure before record construction therefore does not attach or publish a new fingerprint.
 
-The prior LiteDB record may remain stored after a failed recomputation, as it does for other recomputation failures. Its old fingerprint continues to mismatch the changed filesystem state, so later refreshes retry rather than silently reusing it.
+Persistent upsert and in-memory publication retain their distinct existing error boundaries. If the caught LiteDB upsert fails, the prior persistent record and its old fingerprint remain stored, while `LoadMetadata` continues with the newly constructed metadata and fingerprint and publishes them to `model.Metadata`. A later refresh reloads and reevaluates the still-old persistent record rather than treating the failed upsert as durable. Successful upsert is not a prerequisite for this existing in-memory publication path.
 
 ## Application Writer Interaction
 
-`ResetMetadataFrom` records the fingerprint currently visible for the model's selected sidecar prefix when it upserts the in-memory metadata.
+`ResetMetadataFrom` captures the fingerprint currently visible for the model's selected sidecar prefix, assigns it to the existing in-memory metadata, and then attempts the LiteDB upsert. If that upsert fails, the existing log-and-throw path runs and the persistent record is not updated, while the already-mutated in-memory metadata may retain the captured fingerprint.
 
 This preserves existing application timing:
 
@@ -189,6 +189,8 @@ Folder discovery remains parallel and LiteDB access retains `MetadataLock`. The 
 
 No attempt is made to lock external filesystem writers. Capturing the fingerprint before recomputation prevents the cache from recording a later sidecar state as consumed when the reads may have observed an earlier state. A normal subsequent refresh converges.
 
+Within `ResetMetadataFrom`, the fingerprint capture textually precedes that method's own `ModificationLock` and `MetadataLock` statements, and Rank 22 introduces no lock or lock-order change. This does not mean the inspection is always outside `ModificationLock`: maintained `GetOrGenerateTensorHashSha256` and `ResaveModel` paths may call `ResetMetadataFrom` while already holding the existing reentrant modification lock.
+
 The contract uses the timestamp and file-size resolution supplied by the active filesystem and .NET runtime. Changes that intentionally restore both values, or occur within a filesystem's indistinguishable metadata resolution while retaining the same byte length, are outside the approved bounded guarantee.
 
 ## Static Verification
@@ -204,11 +206,11 @@ Static verification must:
 7. prove the fingerprint contains exactly the four ordered suffixes and distinguishes missing, size, and UTC last-write ticks;
 8. prove an all-missing fingerprint is non-null and legacy null records recompute;
 9. prove one captured fingerprint controls both the decision and the successfully constructed record;
-10. prove a failed recomputation cannot upsert the new fingerprint;
+10. distinguish failure before record construction, caught persistent-upsert failure, and subsequent in-memory publication, including `ResetMetadataFrom`'s pre-upsert in-memory mutation;
 11. prove unchanged fingerprints retain the existing cache-reuse path;
 12. prove model-file and legacy invalidation remain effective;
 13. prove sidecar merge, parsing, extraction, limits, and publication code are unchanged;
-14. prove edit/download/duplicate writers retain their timing and ownership;
+14. prove edit/download/duplicate writers retain their timing and ownership, and that maintained reentrant callers introduce no new lock or lock-order behavior;
 15. prove model/API/parameter/prompt/workflow/remote consumers are unchanged;
 16. prove Core P4's duplicate sidecar read/parse loops are not optimized or otherwise changed;
 17. inspect the public/member and source-projection diffs;
