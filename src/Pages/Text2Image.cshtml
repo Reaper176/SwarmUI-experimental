@@ -4,13 +4,12 @@
     GeneratePageModel pageModel = new(HttpContext);
     string doCheckForUpdates = Program.ServerSettings.Maintenance.CheckForUpdates ? "true" : "false";
     bool enablePromptLab = pageModel.User?.Settings.EnablePromptLab != false;
-    List<(string Key, string TabId, string Partial, string LoadingText)> lazyTabs = new()
+    IReadOnlyList<UtilAPI.LazyGenPageTabDescriptor> lazyTabDescriptors = UtilAPI.LazyGenPageTabs;
+    List<(string Key, string TabId, string Partial, string LoadingText)> lazyTabs = [];
+    foreach (UtilAPI.LazyGenPageTabDescriptor lazyTab in lazyTabDescriptors)
     {
-        ("imageediting", "ImageEditing", "_Generate/ImageEditingTab", "Loading image editor..."),
-        ("utilities", "utilities_tab", "_Generate/UtilitiesTab", "Loading utilities..."),
-        ("user", "user_tab", "_Generate/UserTab", "Loading user settings..."),
-        ("server", "server_tab", "_Generate/ServerTab", "Loading server tools...")
-    };
+        lazyTabs.Add((lazyTab.Key, lazyTab.TabId, lazyTab.Partial, lazyTab.LoadingText));
+    }
 }
 @section Header {
     <link rel="stylesheet" href="css/genpage.css?vary=@Utilities.VaryID" />
@@ -109,19 +108,18 @@
             <a class="nav-link translate" data-bs-toggle="tab" href="#PromptLab" id="promptlabtabbutton" aria-selected="false" tabindex="-1" role="tab">Prompt Lab</a>
         </li>
     }
-    <li class="nav-item" role="presentation">
-        <a class="nav-link translate" data-bs-toggle="tab" href="#ImageEditing" id="imageeditingtabbutton" aria-selected="false" tabindex="-1" role="tab">Image Editing</a>
+@for (int i = 0; i < lazyTabDescriptors.Count; i++)
+{
+    UtilAPI.LazyGenPageTabDescriptor lazyTab = lazyTabDescriptors[i];
+    string requiredPermission = lazyTab.ShowPermissionOnHeader ? lazyTab.Permission.ID : null;
+    <li class="nav-item" role="presentation" data-requiredpermission="@requiredPermission">
+        <a class="nav-link translate" data-bs-toggle="tab" href="#@lazyTab.TabId" id="@lazyTab.ButtonId" aria-selected="false" tabindex="-1" role="tab">@lazyTab.DisplayLabel</a>
     </li>
-    @WebServer.T2ITabHeader
-    <li class="nav-item" role="presentation" data-requiredpermission="utilities_tab">
-        <a class="nav-link translate" data-bs-toggle="tab" href="#utilities_tab" id="utilitiestabbutton" aria-selected="false" tabindex="-1" role="tab">Utilities</a>
-    </li>
-    <li class="nav-item" role="presentation" data-requiredpermission="user_tab">
-        <a class="nav-link translate" data-bs-toggle="tab" href="#user_tab" id="usersettingstabbutton" aria-selected="false" tabindex="-1" role="tab">User</a>
-    </li>
-    <li class="nav-item" role="presentation" data-requiredpermission="view_server_tab">
-        <a class="nav-link translate" data-bs-toggle="tab" href="#server_tab" id="servertabbutton" aria-selected="false" tabindex="-1" role="tab">Server</a>
-    </li>
+    @if (i == 0)
+    {
+        @WebServer.T2ITabHeader
+    }
+}
     <li class="nav-item ms-auto" role="presentation">
         <a class="nav-link translate" style="opacity:0" data-bs-toggle="tab" aria-selected="false" tabindex="-1" role="tab" disabled>Quick Tools Space</a>
     </li>
