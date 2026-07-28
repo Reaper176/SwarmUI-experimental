@@ -15,14 +15,37 @@ namespace SwarmUI.WebAPI;
 [API.APIClass("General utility API routes.")]
 public static class UtilAPI
 {
-    /// <summary>Allowlisted lazy genpage tab partials keyed by client-safe tab identifiers.</summary>
-    public static readonly IReadOnlyDictionary<string, (string PartialView, PermInfo Permission)> LazyGenPageTabPartials = new Dictionary<string, (string PartialView, PermInfo Permission)>()
+    /// <summary>Shared identity for one core lazy-loaded generation-page tab.</summary>
+    public record class LazyGenPageTabDescriptor(string Key, string TabId, string ButtonId, string DisplayLabel,
+        string Partial, string LoadingText, PermInfo Permission, bool ShowPermissionOnHeader);
+
+    /// <summary>Ordered shared descriptors for the core lazy-loaded generation-page tabs.</summary>
+    public static readonly IReadOnlyList<LazyGenPageTabDescriptor> LazyGenPageTabs = new List<LazyGenPageTabDescriptor>()
     {
-        ["imageediting"] = ("/Pages/_Generate/ImageEditingTab.cshtml", Permissions.FundamentalGenerateTabAccess),
-        ["utilities"] = ("/Pages/_Generate/UtilitiesTab.cshtml", Permissions.UtilitiesTab),
-        ["user"] = ("/Pages/_Generate/UserTab.cshtml", Permissions.UserTab),
-        ["server"] = ("/Pages/_Generate/ServerTab.cshtml", Permissions.ViewServerTab)
-    };
+        new("imageediting", "ImageEditing", "imageeditingtabbutton", "Image Editing", "_Generate/ImageEditingTab",
+            "Loading image editor...", Permissions.FundamentalGenerateTabAccess, false),
+        new("utilities", "utilities_tab", "utilitiestabbutton", "Utilities", "_Generate/UtilitiesTab",
+            "Loading utilities...", Permissions.UtilitiesTab, true),
+        new("user", "user_tab", "usersettingstabbutton", "User", "_Generate/UserTab",
+            "Loading user settings...", Permissions.UserTab, true),
+        new("server", "server_tab", "servertabbutton", "Server", "_Generate/ServerTab",
+            "Loading server tools...", Permissions.ViewServerTab, true)
+    }.AsReadOnly();
+
+    /// <summary>Builds the compatible server-rendered partial allowlist from the shared lazy-tab descriptors.</summary>
+    private static IReadOnlyDictionary<string, (string PartialView, PermInfo Permission)> BuildLazyGenPageTabPartials()
+    {
+        Dictionary<string, (string PartialView, PermInfo Permission)> partials = new();
+        foreach (LazyGenPageTabDescriptor tab in LazyGenPageTabs)
+        {
+            partials.Add(tab.Key, ($"/Pages/{tab.Partial}.cshtml", tab.Permission));
+        }
+        return partials;
+    }
+
+    /// <summary>Allowlisted lazy genpage tab partials keyed by client-safe tab identifiers.</summary>
+    public static readonly IReadOnlyDictionary<string, (string PartialView, PermInfo Permission)> LazyGenPageTabPartials
+        = BuildLazyGenPageTabPartials();
 
     public static void Register()
     {
