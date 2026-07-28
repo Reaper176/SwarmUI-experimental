@@ -3305,13 +3305,13 @@ public partial class WorkflowGenerator
     /// <summary>Returns an array of all nodes currently in the workflow with a given class_type.</summary>
     public JProperty[] NodesOfClass(string classType)
     {
-        return [.. Workflow.Properties().Where(p => $"{p.Value["class_type"]}" == classType)];
+        return GetGraphEditor().NodesOfClass(classType);
     }
 
     /// <summary>Returns an array of all nodes currently in the workflow with a given class_type.</summary>
     public JProperty[] NodesOfClasses(HashSet<string> classTypes)
     {
-        return [.. Workflow.Properties().Where(p => classTypes.Contains($"{p.Value["class_type"]}"))];
+        return GetGraphEditor().NodesOfClasses(classTypes);
     }
 
     /// <summary>Runs an action against all nodes of a given class_type.</summary>
@@ -3319,10 +3319,7 @@ public partial class WorkflowGenerator
     /// <param name="action">The action(NodeID, JObject Data) to run against the node.</param>
     public void RunOnNodesOfClass(string classType, Action<string, JObject> action)
     {
-        foreach (JProperty property in NodesOfClass(classType))
-        {
-            action(property.Name, property.Value as JObject);
-        }
+        GetGraphEditor().RunOnNodesOfClass(classType, action);
     }
 
     /// <summary>Replace all instances of <paramref name="oldNode"/> with <paramref name="newNode"/> in node input connections.</summary>
