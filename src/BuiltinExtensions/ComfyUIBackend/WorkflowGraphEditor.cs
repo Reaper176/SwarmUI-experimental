@@ -83,4 +83,21 @@ internal sealed class WorkflowGraphEditor
             action(property.Name, property.Value as JObject);
         }
     }
+
+    /// <summary>Replace all instances of <paramref name="oldNode"/> with <paramref name="newNode"/> in node input connections.</summary>
+    public void ReplaceNodeConnection(JArray oldNode, JArray newNode)
+    {
+        string target0 = $"{oldNode[0]}", target1 = $"{oldNode[1]}";
+        foreach (JObject node in Generator.Workflow.Values().Cast<JObject>())
+        {
+            JObject inputs = node["inputs"] as JObject;
+            foreach (JProperty property in inputs.Properties().ToArray())
+            {
+                if (property.Value is JArray jarr && jarr.Count == 2 && $"{jarr[0]}" == target0 && $"{jarr[1]}" == target1)
+                {
+                    inputs[property.Name] = newNode;
+                }
+            }
+        }
+    }
 }
