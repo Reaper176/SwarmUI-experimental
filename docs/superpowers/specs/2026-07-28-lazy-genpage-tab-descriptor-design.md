@@ -10,13 +10,13 @@
 
 ## Summary
 
-The generation page currently repeats the identities of four core lazy tabs across three composition owners:
+At the approved source/audit base, the generation page repeated the identities of four core lazy tabs across three composition owners:
 
-- `src/Pages/Text2Image.cshtml` defines the Razor tab list and emits `window.genpageLazyTabs`;
-- `src/wwwroot/js/genpage/main.js` separately defines client state and explicit activation hooks; and
-- `src/WebAPI/UtilAPI.cs` independently allowlists server-rendered partials and their permissions.
+- `src/Pages/Text2Image.cshtml` defined the Razor tab list and emitted `window.genpageLazyTabs`;
+- `src/wwwroot/js/genpage/main.js` separately defined client state and explicit activation hooks; and
+- `src/WebAPI/UtilAPI.cs` independently allowlisted server-rendered partials and their permissions.
 
-The current mappings agree, so Rank 23 is a maintainability and future-compatibility project rather than a current runtime-failure fix. A future add, removal, or rename can nevertheless leave a tab without state, point the client at an invalid API key, apply the wrong permission, or leave a loading shell uninitialized.
+The approved-base mappings agreed, so Rank 23 was framed as a maintainability and future-compatibility project rather than a current runtime-failure fix. Without a canonical owner, a future add, removal, or rename could nevertheless leave a tab without state, point the client at an invalid API key, apply the wrong permission, or leave a loading shell uninitialized.
 
 Rank 23 establishes one ordered C# descriptor list as the literal owner of core lazy-tab identity. The existing server allowlist and Razor compatibility manifest are derived from that list, while JavaScript derives generic state from the emitted manifest. Explicit activation hooks, script groups, hash sub-tab mappings, and extension tabs retain their current owners because they describe tab-specific behavior rather than shared identity.
 
@@ -59,16 +59,16 @@ It separately owns explicit hooks for Image Editing, Utilities, User, and Server
 
 No external extension participates in this four-key allowlist. Extension top tabs remain composed through `WebServer.T2ITabHeader`, `WebServer.T2ITabBody`, and existing extension script surfaces.
 
-## Confirmed Duplication and Risk
+## Approved-Base Duplication and Risk
 
 At the approved base:
 
-1. Razor literally defines all four keys, DOM IDs, partials, and loading strings.
-2. JavaScript literally defines four corresponding state entries and four explicit hooks.
-3. C# literally defines all four keys, server partial paths, and permissions.
-4. Razor navigation headers separately repeat DOM IDs, button IDs, labels, and three permission IDs.
+1. Razor literally defined all four keys, DOM IDs, partials, and loading strings.
+2. JavaScript literally defined four corresponding state entries and four explicit hooks.
+3. C# literally defined all four keys, server partial paths, and permissions.
+4. Razor navigation headers separately repeated DOM IDs, button IDs, labels, and three permission IDs.
 
-The literal sets currently match. The defect is therefore duplicated ownership and the ability for a future edit to drift silently, not an observed incorrect tab at the approved base.
+The approved-base literal sets matched. The defect was therefore duplicated ownership and the ability for a future edit to drift silently, not an observed incorrect tab at the approved base.
 
 The explicit hook map, script-group manifest, and hash sub-tab map are not equivalent copies:
 
