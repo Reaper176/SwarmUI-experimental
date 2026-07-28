@@ -65,6 +65,11 @@ Run:
 git branch --show-current
 git rev-parse HEAD
 git log -1 --format='%H %s'
+git merge-base --is-ancestor 984930be HEAD
+git merge-base --is-ancestor 58ef9983 HEAD
+git log --oneline --decorate 984930be^..HEAD -- \
+  docs/superpowers/specs/2026-07-27-autoscaling-launch-script-platform-validation-design.md \
+  docs/superpowers/plans/2026-07-27-autoscaling-launch-script-platform-validation.md
 git diff --cached --name-only
 git status --short
 git diff --numstat -- \
@@ -77,8 +82,9 @@ git diff --numstat -- \
 Expected:
 
 - branch `master`;
-- HEAD `984930be...`;
-- subject `docs: design autoscaling launch-script validation`;
+- design `984930be` and plan `58ef9983` are ancestors of the current HEAD;
+- HEAD immediately before Task 2 may be `58ef9983` or a later focused planning correction;
+- no source commit or source diff since the approved base is allowed before Task 2;
 - empty index;
 - only the four protected tracked files and backup directory appear outside committed Rank 20 work;
 - protected numstats remain `83/3`, `9/2`, `2/0`, and `4/5`.
@@ -91,13 +97,15 @@ Run:
 git diff e65550b0b90b62504f0495723db95567fe192673..HEAD -- \
   src/Backends/AutoScalingBackend.cs
 git rev-parse e65550b0b90b62504f0495723db95567fe192673:src/Backends/AutoScalingBackend.cs
+git rev-parse 984930be:src/Backends/AutoScalingBackend.cs
+git rev-parse 58ef9983:src/Backends/AutoScalingBackend.cs
 git rev-parse HEAD:src/Backends/AutoScalingBackend.cs
 ```
 
 Expected:
 
 - no source diff since the approved base;
-- identical source blob IDs at both endpoints.
+- identical source blob IDs at the approved base, design, plan, and current HEAD.
 
 - [ ] **Step 3: Record the exact pre-change initialization flow**
 
