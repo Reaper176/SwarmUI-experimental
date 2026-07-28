@@ -225,24 +225,13 @@ public partial class WorkflowGenerator
     /// <summary>Creates a new node with the given class type and configuration action, and optional manual ID.</summary>
     public string CreateNode(string classType, Action<string, JObject> configure, string id = null)
     {
-        id ??= $"{LastID++}";
-        JObject obj = new() { ["class_type"] = classType };
-        configure(id, obj);
-        Workflow[id] = obj;
-        return id;
+        return GetGraphEditor().CreateNode(classType, configure, id);
     }
 
     /// <summary>Creates a new node with the given class type and input data, and optional manual ID.</summary>
     public string CreateNode(string classType, JObject input, string id = null, bool idMandatory = true)
     {
-        string lookup = $"__generic_node__{classType}___{input}";
-        if ((id is null || !idMandatory) && NodeHelpers.TryGetValue(lookup, out string existingNode))
-        {
-            return existingNode;
-        }
-        string result = CreateNode(classType, (_, n) => n["inputs"] = input, id);
-        NodeHelpers[lookup] = result;
-        return result;
+        return GetGraphEditor().CreateNode(classType, input, id, idMandatory);
     }
 
     /// <summary>Helper to download a core model file required by the workflow.</summary>

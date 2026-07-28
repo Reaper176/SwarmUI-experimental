@@ -35,4 +35,27 @@ internal sealed class WorkflowGraphEditor
         }
         throw new Exception("Failed to find a stable dynamic ID.");
     }
+
+    /// <summary>Creates a workflow node through a configuration action.</summary>
+    public string CreateNode(string classType, Action<string, JObject> configure, string id = null)
+    {
+        id ??= $"{Generator.LastID++}";
+        JObject obj = new() { ["class_type"] = classType };
+        configure(id, obj);
+        Generator.Workflow[id] = obj;
+        return id;
+    }
+
+    /// <summary>Creates or reuses a workflow node with the given input data.</summary>
+    public string CreateNode(string classType, JObject input, string id = null, bool idMandatory = true)
+    {
+        string lookup = $"__generic_node__{classType}___{input}";
+        if ((id is null || !idMandatory) && Generator.NodeHelpers.TryGetValue(lookup, out string existingNode))
+        {
+            return existingNode;
+        }
+        string result = CreateNode(classType, (_, n) => n["inputs"] = input, id);
+        Generator.NodeHelpers[lookup] = result;
+        return result;
+    }
 }
