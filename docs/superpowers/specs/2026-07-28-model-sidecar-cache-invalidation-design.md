@@ -1,6 +1,6 @@
 # Model Sidecar Cache Invalidation Design
 
-**Status:** Approved for planning
+**Status:** Implemented; awaiting maintainer validation
 
 **Date:** 2026-07-28
 
@@ -218,6 +218,14 @@ Static verification must:
 19. confirm the index and protected maintainer work remain isolated.
 
 Agents perform static review only. Repository policy forbids agents from building, running tests, launching SwarmUI or its backends, executing launch scripts, automating browsers, calling live APIs, or performing platform/filesystem/runtime exercises.
+
+### Implementation and Review Record
+
+The approved source/audit base is `d2508564975c5ca149048e29f57e428dde6d96f2`, the approved design is `2048a2bb67e9c8da31233f729695e5d7469683fb`, the implementation plan is `e68ffce03535ff8d5948226e4a23d0c062a8cce6`, the production implementation is `207c595c01eefd27987159b770fc99ca7b26ae0d`, and the post-production precision correction is `ccb016228e071fc06ce09b364b7796be98511da3`. The exact source projection from the approved source/audit base through the corrected documentation head changes only `src/Text2Image/T2IModelHandler.cs`, with `29 insertions(+), 2 deletions(-)` and resulting blob `1db9a1d609911cbfc98277904ca481635aa52aa5`; source is unchanged after the production commit.
+
+Production adds the optional `ModelSidecarFingerprint` record property and one handler-local helper. The helper emits exactly four ordered entries for `.swarm.json`, `.json`, `.cm-info.json`, and `.civitai.info`: each entry records either an explicit missing marker or file length plus UTC last-write ticks. `LoadMetadata` captures that fingerprint once before cache lookup/reuse and stores the same conservative pre-read value on a successfully constructed record; legacy null records, model timestamp changes, the legacy `TextEncoders` condition, and fingerprint mismatches recompute. `ResetMetadataFrom` captures the same selected-path fingerprint before its own lock statements and mutates the in-memory record before attempting the unchanged central/per-folder upsert. A caught `LoadMetadata` persistent-upsert failure can therefore leave the old durable record while the newly constructed record is still published in memory; a `ResetMetadataFrom` upsert failure retains its existing log-and-throw boundary after the prior in-memory mutation. Maintained hash/resave callers may already hold the reentrant `ModificationLock`, so the textual capture position does not establish a universal outside-lock guarantee.
+
+Static design reviews returned `TASK1_SPEC_APPROVED` and `TASK1_QUALITY_APPROVED`; source reviews returned `SOURCE_SPEC_APPROVED` and `SOURCE_QUALITY_APPROVED`; and post-implementation documentation reviews returned `TASK3_SPEC_APPROVED` and `TASK3_QUALITY_APPROVED`. All six approvals are current and have no findings after the precision correction. Static review confirmed the nullable legacy upgrade, exact suffix order and invariant fields, central and per-folder record selection, unchanged merge/extraction/error flows, conservative capture semantics, writer/consumer and public/API isolation, and the unchanged Core P4 duplicate read/parse loops. It does not establish runtime behavior, content-hash equivalence, preview freshness, watcher behavior, performance, permission-only invalidation, or detection of same-length changes whose UTC timestamp is unchanged or indistinguishable at the active filesystem's resolution. Invalid or unreadable changed sidecars retain the existing recomputation failure behavior rather than returning stale metadata as current.
 
 ## Maintainer Validation Matrix
 
