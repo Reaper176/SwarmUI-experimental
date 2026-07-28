@@ -157,6 +157,16 @@ public partial class WorkflowGenerator
     /// <summary>Last used ID, tracked to safely add new nodes with sequential IDs. Note that this starts at 100, as below 100 is reserved for constant node IDs.</summary>
     public int LastID = 100;
 
+    /// <summary>Internal owner for low-level edits against this generator's current public graph state.</summary>
+    private WorkflowGraphEditor GraphEditor = null;
+
+    /// <summary>Gets the internal graph editor, creating it only when a graph primitive is first used.</summary>
+    private WorkflowGraphEditor GetGraphEditor()
+    {
+        GraphEditor ??= new(this);
+        return GraphEditor;
+    }
+
     /// <summary>Model folder separator format, if known.</summary>
     public string ModelFolderFormat;
 
@@ -209,16 +219,7 @@ public partial class WorkflowGenerator
     /// <summary>Gets a dynamic ID within a semi-stable registration set.</summary>
     public string GetStableDynamicID(int index, int offset)
     {
-        for (int i = 0; i < 99999; i++)
-        {
-            int id = 1000 + index + offset + i;
-            string result = $"{id}";
-            if (!HasNode(result))
-            {
-                return result;
-            }
-        }
-        throw new Exception("Failed to find a stable dynamic ID.");
+        return GetGraphEditor().GetStableDynamicID(index, offset);
     }
 
     /// <summary>Creates a new node with the given class type and configuration action, and optional manual ID.</summary>
@@ -923,7 +924,7 @@ public partial class WorkflowGenerator
     /// <summary>Returns true if the given node ID has already been used.</summary>
     public bool HasNode(string id)
     {
-        return Workflow.ContainsKey(id);
+        return GetGraphEditor().HasNode(id);
     }
 
     public int T2VFPSOverride = -1;
