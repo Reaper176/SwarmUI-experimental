@@ -111,10 +111,18 @@
 @for (int i = 0; i < lazyTabDescriptors.Count; i++)
 {
     UtilAPI.LazyGenPageTabDescriptor lazyTab = lazyTabDescriptors[i];
-    string requiredPermission = lazyTab.ShowPermissionOnHeader ? lazyTab.Permission.ID : null;
-    <li class="nav-item" role="presentation" data-requiredpermission="@requiredPermission">
-        <a class="nav-link translate" data-bs-toggle="tab" href="#@lazyTab.TabId" id="@lazyTab.ButtonId" aria-selected="false" tabindex="-1" role="tab">@lazyTab.DisplayLabel</a>
-    </li>
+    @if (lazyTab.ShowPermissionOnHeader)
+    {
+        <li class="nav-item" role="presentation" data-requiredpermission="@lazyTab.Permission.ID">
+            <a class="nav-link translate" data-bs-toggle="tab" href="#@lazyTab.TabId" id="@lazyTab.ButtonId" aria-selected="false" tabindex="-1" role="tab">@lazyTab.DisplayLabel</a>
+        </li>
+    }
+    else
+    {
+        <li class="nav-item" role="presentation">
+            <a class="nav-link translate" data-bs-toggle="tab" href="#@lazyTab.TabId" id="@lazyTab.ButtonId" aria-selected="false" tabindex="-1" role="tab">@lazyTab.DisplayLabel</a>
+        </li>
+    }
     @if (i == 0)
     {
         @WebServer.T2ITabHeader
