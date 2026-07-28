@@ -881,22 +881,34 @@ function debugGenAPIDocs() {
     genericRequest('DebugGenDocs', { }, data => { });
 }
 
+/** Returns whether a lazy tab target already contains rendered markup rather than its loading shell. */
+function isLazyTabMarkupLoaded(tabInfo) {
+    if (!tabInfo) {
+        return false;
+    }
+    let target = document.getElementById(tabInfo.tabId);
+    if (!target || !target.firstElementChild) {
+        return false;
+    }
+    return !target.firstElementChild.classList.contains('tab-loading-shell');
+}
+
 let lazyTabInfoById = {};
+let lazyTabState = {};
 for (let [tabKey, tabInfo] of Object.entries(window.genpageLazyTabs || {})) {
     lazyTabInfoById[tabInfo.tabId] = tabKey;
+    lazyTabState[tabKey] = {
+        loaded: isLazyTabMarkupLoaded(tabInfo),
+        loading: null,
+        initDone: false,
+        activation: null
+    };
 }
 
 let lazyScriptLoaders = {};
 let lazyScriptGroupState = {};
 let latestTopTabOpenRequestId = 0;
 let suppressHashUpdateDepth = 0;
-
-let lazyTabState = {
-    imageediting: { loaded: false, loading: null, initDone: false, activation: null },
-    utilities: { loaded: false, loading: null, initDone: false, activation: null },
-    user: { loaded: false, loading: null, initDone: false, activation: null },
-    server: { loaded: false, loading: null, initDone: false, activation: null }
-};
 
 /** Loads a JavaScript file exactly once and resolves when it is ready. */
 function loadScript(src) {
