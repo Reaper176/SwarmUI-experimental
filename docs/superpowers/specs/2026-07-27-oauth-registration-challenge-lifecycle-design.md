@@ -1,6 +1,6 @@
 # OAuth Registration Challenge Lifecycle Design
 
-**Status:** Implemented; awaiting maintainer validation
+**Status:** Implemented and maintainer-validated on Garuda Linux (Arch-based), Btrfs, using Firefox (version not provided)
 
 **Date:** 2026-07-27
 
@@ -232,7 +232,7 @@ The production changes are limited to `src/Accounts/SessionHandler.cs` and `src/
 
 ## Implementation Record
 
-**Status:** **Implemented; awaiting maintainer validation.** Rank 19 remains the sole **Recommended Next Project** until the maintainer validation result is recorded; Rank 20 has not advanced.
+**Status:** **Implemented and maintainer-validated on Garuda Linux (Arch-based), Btrfs, using Firefox (version not provided).** Rank 19 is no longer the Recommended Next Project. Rank 20, **Correct autoscaling launch-script platform validation**, is the sole **Recommended Next Project** and remains neither designed nor implemented.
 
 The approved source/audit base is `1426c55c0f18176486442180c67a86c133f8d6d0`. The design commit is `bb88532e94e59b422728245fa10d29884bc1a810` (`docs: design OAuth registration challenge lifecycle`), the plan is `8e7b5fb9a7f05640b93550fe14e396d3e3002f34` (`docs: plan OAuth registration challenge lifecycle`), and the production commits are `06aa090cf12a0030d2a060dd0febb558c1ba382b` (`fix: bound OAuth registration challenges`) followed by source head `ed8a06fb822d6ea2d7cf890ccedeca5056162252` (`fix: consume OAuth registration challenges atomically`).
 
@@ -247,7 +247,7 @@ Static inspection records the maintained lifecycle as follows: age is invalid at
 
 The implementation preserves the public `TempAuths` field ABI and object identity, the `CheckOAuth(string)` signature and tuple meaning, validation/rate-limit ordering, and the existing API route/signature/sessionless status, browser fields and tracker format, error IDs/UI behavior, Google verification and registered-login flow, logging exposure, settings timing, account creation/linking behavior, persistence, and unrelated public members. The challenge lock covers only in-memory bookkeeping: no network, database, account, response, or logging work runs under it, and no new log contains an email or tracker.
 
-Deferred boundaries remain explicit. There is no timer or physical expiry until a maintained issuance or consumption operation runs. Unsupported external writes through the public dictionary can temporarily exceed the bound until the next maintained operation reconciles state. The account/email time-of-check/time-of-use race and transaction/rollback behavior remain deferred, with `SetOAuthEmail` as final authority. Runtime environments remain unvalidated.
+Deferred boundaries remain explicit. There is no timer or physical expiry until a maintained issuance or consumption operation runs. Unsupported external writes through the public dictionary can temporarily exceed the bound until the next maintained operation reconciles state. The account/email time-of-check/time-of-use race and transaction/rollback behavior remain deferred, with `SetOAuthEmail` as final authority. Runtime environments outside the recorded validation remain unvalidated.
 
 ## Static Verification
 
@@ -311,6 +311,16 @@ Rank 19 is successful when:
 - static review finds no uncovered maintained access, lock escape, sensitive log, ABI drift, or whitespace error;
 - the maintainer confirms the complete matrix; and
 - protected maintainer work remains untouched.
+
+## Maintainer Validation Record
+
+- **Maintainer and date:** Reaper176, 2026-07-27.
+- **Raw evidence:** the message was exactly `All 20 passed on Garuda Linux (Arch-based), Btrfs, using Firefox`
+- **Normalization and outcome:** no textual normalization was required. The normalized outcome is that all 20 cases in the exact unchanged approved matrix passed.
+- **Recorded environment:** Garuda Linux (Arch-based), Btrfs, using Firefox.
+- **Browser version:** no browser version was provided or inferred.
+- **Evidence boundary:** this maintainer runtime result validates only the exact unchanged 20-case matrix on the recorded operating system, filesystem, and browser. Other browsers, browser versions, platforms, and filesystems remain unvalidated. Agent evidence remains static-only: agents performed no build, tests, launch, browser, services, live APIs, test-executing lint, runtime/environment validation, performance measurement, or benchmark.
+- **Preserved contracts and retained caveats:** the public `TempAuths` ABI, `CheckOAuth` signature, validation/rate-limit ordering, API/sessionless/browser/error/log/settings/account contracts, lock boundary, and sensitive-log boundary remain as recorded above. There is still no timer or physical expiry until a maintained operation; unsupported public external writes can temporarily overflow until reconciliation; account/email time-of-check/time-of-use and transactional rollback remain deferred; `SetOAuthEmail` remains final authority; and no performance result is claimed.
 
 ## Rollback
 
