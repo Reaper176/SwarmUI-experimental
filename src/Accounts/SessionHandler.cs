@@ -552,7 +552,134 @@ public class SessionHandler
         Logs.Info("Session handler is shut down.");
     }
 
-    public ConcurrentDictionary<string, string> TempAuths = []; // TODO: Autoclean this over time
+    /// <summary>Public compatibility map of temporary OAuth registration trackers to verified email addresses.</summary>
+    public ConcurrentDictionary<string, string> TempAuths = [];
+
+    /// <summary>Maximum valid age of a temporary OAuth registration tracker, in milliseconds.</summary>
+    private const long TempAuthLifetimeMilliseconds = 15 * 60 * 1000;
+
+    /// <summary>Maximum number of temporary OAuth registration trackers retained by maintained lifecycle operations.</summary>
+    private const int TempAuthMaxCount = 256;
+
+    /// <summary>Process-monotonic creation ticks for temporary OAuth registration trackers.</summary>
+    private readonly Dictionary<string, long> TempAuthCreationTicks = [];
+
+    /// <summary>Coordinates maintained temporary OAuth registration tracker lifecycle operations.</summary>
+    private readonly LockObject TempAuthLock = new();
+
+    /// <summary>Removes a temporary OAuth tracker and its creation metadata. Must be called while holding <see cref="TempAuthLock"/>.</summary>
+    private void RemoveTempAuthLocked(string tracker)
+    {
+        TempAuths.TryRemove(tracker, out _);
+        TempAuthCreationTicks.Remove(tracker);
+    }
+
+    /// <summary>Removes the deterministically oldest temporary OAuth tracker. Must be called while holding <see cref="TempAuthLock"/>.</summary>
+    private bool RemoveOldestTempAuthLocked()
+    {
+        string oldestTracker = null;
+        long oldestTick = 0;
+        foreach (KeyValuePair<string, long> entry in TempAuthCreationTicks)
+        {
+            if (!TempAuths.ContainsKey(entry.Key))
+            {
+                continue;
+            }
+            if (oldestTracker is null
+                || entry.Value < oldestTick
+                || (entry.Value == oldestTick && string.CompareOrdinal(entry.Key, oldestTracker) < 0))
+            {
+                oldestTracker = entry.Key;
+                oldestTick = entry.Value;
+            }
+        }
+        if (oldestTracker is null)
+        {
+            return false;
+        }
+        RemoveTempAuthLocked(oldestTracker);
+        return true;
+    }
+
+    /// <summary>Reconciles compatibility entries, expires old trackers, and restores the maintained capacity bound. Must be called while holding <see cref="TempAuthLock"/>.</summary>
+    private void NormalizeTempAuthsLocked(long now)
+    {
+        foreach (string tracker in TempAuthCreationTicks.Keys.Where(tracker => !TempAuths.ContainsKey(tracker)).ToArray())
+        {
+            TempAuthCreationTicks.Remove(tracker);
+        }
+        foreach (string tracker in TempAuths.Keys)
+        {
+            if (!TempAuthCreationTicks.ContainsKey(tracker))
+            {
+                TempAuthCreationTicks[tracker] = now;
+            }
+        }
+        foreach (KeyValuePair<string, long> entry in TempAuthCreationTicks.ToArray())
+        {
+            if (now - entry.Value >= TempAuthLifetimeMilliseconds)
+            {
+                RemoveTempAuthLocked(entry.Key);
+            }
+        }
+        while (TempAuths.Count > TempAuthMaxCount)
+        {
+            if (!RemoveOldestTempAuthLocked())
+            {
+                break;
+            }
+        }
+    }
+
+    /// <summary>Creates a bounded temporary OAuth registration tracker for a verified email address.</summary>
+    private string CreateTempAuth(string email)
+    {
+        long now = Environment.TickCount64;
+        lock (TempAuthLock)
+        {
+            NormalizeTempAuthsLocked(now);
+            foreach (KeyValuePair<string, string> entry in TempAuths.ToArray())
+            {
+                if (entry.Value == email)
+                {
+                    RemoveTempAuthLocked(entry.Key);
+                }
+            }
+            while (TempAuths.Count >= TempAuthMaxCount)
+            {
+                if (!RemoveOldestTempAuthLocked())
+                {
+                    break;
+                }
+            }
+            while (true)
+            {
+                string tracker = Utilities.SecureRandomHex(32);
+                if (TempAuths.TryAdd(tracker, email))
+                {
+                    TempAuthCreationTicks[tracker] = now;
+                    return tracker;
+                }
+            }
+        }
+    }
+
+    /// <summary>Atomically consumes a valid temporary OAuth registration tracker.</summary>
+    internal bool TryConsumeTempAuth(string tracker, out string email)
+    {
+        long now = Environment.TickCount64;
+        lock (TempAuthLock)
+        {
+            NormalizeTempAuthsLocked(now);
+            if (!TempAuths.TryRemove(tracker, out email))
+            {
+                TempAuthCreationTicks.Remove(tracker);
+                return false;
+            }
+            TempAuthCreationTicks.Remove(tracker);
+            return true;
+        }
+    }
 
     public async Task<(bool, string)> CheckOAuth(string credential)
     {
@@ -590,8 +717,6 @@ public class SessionHandler
         {
             return (true, userData.UserID);
         }
-        string cypherText = Utilities.SecureRandomHex(32);
-        TempAuths[cypherText] = email;
-        return (false, cypherText);
+        return (false, CreateTempAuth(email));
     }
 }
