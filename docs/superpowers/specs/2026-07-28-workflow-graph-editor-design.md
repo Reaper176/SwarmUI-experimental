@@ -14,8 +14,8 @@ At the approved source/audit base, `WorkflowGenerator` owns both high-level
 generation behavior and the low-level mechanics used to build and rewrite a
 Comfy workflow graph. Its public mutable state and public step APIs are also
 extension surfaces. Core generation code, model support, built-in steps,
-`WGNodeData`, Dynamic Thresholding, tools, and unknown external extensions can
-all operate on the same `WorkflowGenerator` instance.
+`WGNodeData`, Dynamic Thresholding, repository tool examples, and unknown
+external extensions can all operate on the same `WorkflowGenerator` instance.
 
 Rank 24 extracts only the low-level graph mechanics into an internal
 `WorkflowGraphEditor`. `WorkflowGenerator` remains the public facade, and every
@@ -39,7 +39,7 @@ concurrency.
 
 ## Approved-Base Boundary
 
-The primary `WorkflowGenerator.cs` partial contains 3,405 lines at the audit
+The primary `WorkflowGenerator.cs` partial contains 3,414 lines at the approved
 boundary. File length alone is not the finding. The relevant problem is that the
 following graph primitives are embedded beside unrelated generation behavior:
 
@@ -84,6 +84,9 @@ At the approved base:
 - `WGNodeData` reads source-node data directly from `Gen.Workflow`.
 - Dynamic Thresholding registers an ordinary priority step, creates a node
   through the facade, and replaces `CurrentModel`.
+- Repository tool examples under `tools/` also call facade node-creation
+  methods; they are compatibility evidence outside the maintained core consumer
+  inventory.
 - `ComfyUIAPIAbstractBackend` constructs `WorkflowGenerator` through its public
   parameterless constructor and object initializer.
 - External extensions may have been compiled against any existing public field,
@@ -135,7 +138,7 @@ Rank 24 narrows the owner while deliberately preserving these behaviors.
 - Extract model loading, conditioning, sampling, prompt handling, media
   conversion, or generation steps.
 - Change `WorkflowGeneratorSteps`, `WorkflowGeneratorModelSupport`, `WGNodeData`,
-  Dynamic Thresholding, built-in tools, or external extension source.
+  Dynamic Thresholding, repository tool examples, or external extension source.
 - Replace, wrap, sort, or canonicalize `JObject`.
 - Convert public fields to properties or introduce a new public graph API.
 - Replace anonymous generation steps or change step registration.
@@ -201,9 +204,10 @@ external step replaces `Workflow`, `NodeHelpers`, or `UsedInputs`, or assigns
 `LastID`, the next facade operation sees that assignment.
 
 `WorkflowGenerator` lazily creates its editor through private implementation
-state. The private field receives repository-required XML documentation. No
-explicit public constructor is added, so the existing implicit public
-parameterless constructor remains the construction surface.
+state. Every new explicit field, including the editor's generator reference and
+the facade's lazy collaborator field, receives repository-required XML
+documentation. No explicit public constructor is added, so the existing
+implicit public parameterless constructor remains the construction surface.
 
 The editor introduces no locks and assumes no new lifecycle. A generator and
 its editor continue to have the same effective request-local usage as the
@@ -472,9 +476,14 @@ For expected failure cases, the fixture records:
 - compact post-failure `Workflow`;
 - `LastID`;
 - ordered `NodeHelpers` entries; and
-- null/non-null state plus ordered contents of `UsedInputs`.
+- null/non-null state plus ordinal-sorted membership of `UsedInputs`.
 
 Those records must match the approved base exactly.
+
+Sorting is permitted only for the validation representation of the
+`HashSet<string>` membership because set enumeration order is not graph order.
+The fixture must not sort or mutate the runtime set itself. Graph object
+properties, arrays, and `NodeHelpers` enumeration remain order-sensitive.
 
 If a case contains nondeterministic graph data, the relevant input or capability
 must be frozen. The comparison must not hide the difference through broader
