@@ -667,6 +667,12 @@ Do not record `FINAL_INTEGRATED_APPROVED` before it is returned.
 Commit only the two documentation files:
 
 ```bash
+test -z "$(git diff --cached --name-only)"
+git add -- \
+  docs/superpowers/specs/2026-07-28-comfy-object-info-warm-fallback-design.md \
+  docs/superpowers/audits/2026-07-21-maintainability-architecture-refresh.md
+git diff --cached --check
+git diff --cached
 git commit -m "docs: record Comfy object-info validation reviews"
 ```
 
@@ -686,7 +692,19 @@ Dispatch a fresh read-only reviewer over the complete design-to-head history. Re
 - clean whitespace and empty index;
 - protected state unchanged and unstaged.
 
-After the token is returned, use `apply_patch` to replace only Rank 21's pending-final-review statements with `FINAL_INTEGRATED_APPROVED`, commit `docs: record Comfy object-info final review`, and have the same final reviewer re-review that focused tail commit.
+After the token is returned, use `apply_patch` to replace only Rank 21's pending-final-review statements with `FINAL_INTEGRATED_APPROVED`, then run:
+
+```bash
+test -z "$(git diff --cached --name-only)"
+git add -- \
+  docs/superpowers/specs/2026-07-28-comfy-object-info-warm-fallback-design.md \
+  docs/superpowers/audits/2026-07-21-maintainability-architecture-refresh.md
+git diff --cached --check
+git diff --cached
+git commit -m "docs: record Comfy object-info final review"
+```
+
+Have the same final reviewer re-review that focused tail commit.
 
 - [ ] **Step 9: Run final controller static verification**
 
