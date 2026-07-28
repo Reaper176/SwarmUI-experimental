@@ -10,7 +10,7 @@
 
 ## Summary
 
-`T2IModelHandler.LoadMetadata` caches file-derived model metadata in LiteDB. The cache currently uses the model file's last-write timestamp and one legacy `TextEncoders` condition to decide whether a record can be reused. Four ordered JSON sidecars—`.swarm.json`, `.json`, `.cm-info.json`, and `.civitai.info`—also contribute model class, title, description, trigger phrases, preview data, dimensions, and other metadata, but their existence and freshness are absent from the reuse decision.
+`T2IModelHandler.LoadMetadata` caches file-derived model metadata in LiteDB. At the approved source/audit base, the cache used only the model file's last-write timestamp and one legacy `TextEncoders` condition to decide whether a record could be reused. Four ordered JSON sidecars—`.swarm.json`, `.json`, `.cm-info.json`, and `.civitai.info`—also contributed model class, title, description, trigger phrases, preview data, dimensions, and other metadata, but their existence and freshness were absent from that approved-base reuse decision.
 
 Rank 22 adds a compatible ordered sidecar fingerprint to each `ModelMetadataStore` record. A record is reusable only when its model-file version and sidecar fingerprint both match the current filesystem state and the legacy condition does not invalidate it. The fingerprint uses normal filesystem identity signals: existence, byte length, and UTC last-write ticks for each supported suffix in the established order. This detects ordinary add, edit, and delete operations without reading and hashing every sidecar on every refresh.
 
@@ -25,13 +25,13 @@ The production owner is `T2IModelHandler` in `src/Text2Image/T2IModelHandler.cs`
 1. derives the central or per-folder LiteDB database and record ID;
 2. reads a `ModelMetadataStore`;
 3. rejects a legacy variable-text-encoder record when required;
-4. reuses the record unless it is absent or its `ModelFileVersion` differs from the model file's last-write timestamp;
+4. reuses the record only when it exists, the legacy condition does not invalidate it, its `ModelFileVersion` matches the model file's last-write timestamp, and its non-null `ModelSidecarFingerprint` matches one current pre-read fingerprint capture;
 5. on recomputation, reads embedded metadata where supported;
 6. processes the four JSON suffixes in `AltModelMetadataJsonFileSuffixes`;
 7. builds and upserts a new record; and
 8. publishes the selected record into the newly discovered `T2IModel`.
 
-`ResetMetadataFrom` is the maintained direct cache-update path used after application metadata edits and selected hash updates. It writes the current in-memory metadata into the same central or per-folder record.
+`ResetMetadataFrom` is the maintained direct cache-update path used after application metadata edits and selected hash updates. It captures the current sidecar fingerprint into the in-memory metadata, then attempts to write that record into the same central or per-folder database.
 
 The existing supported sidecar order is:
 
@@ -42,17 +42,17 @@ The existing supported sidecar order is:
 
 `AllModelAttachedExtensions` also includes preview-image attachments. Rank 22 fingerprints only the four JSON metadata suffixes because preview freshness is not part of Core F12 or this approved project.
 
-## Confirmed Defect
+## Confirmed Defect at the Approved Base
 
-When a cache record is present, its `ModelFileVersion` matches the model file, and the legacy `TextEncoders` condition does not apply, `LoadMetadata` skips every sidecar existence check, read, parse, merge, and extraction step.
+Before Rank 22, when a cache record was present, its `ModelFileVersion` matched the model file, and the legacy `TextEncoders` condition did not apply, `LoadMetadata` skipped every sidecar existence check, read, parse, merge, and extraction step.
 
-Therefore, with the model file unchanged:
+Therefore, at the approved base and with the model file unchanged:
 
-- adding a supported sidecar can leave its metadata absent;
-- editing a supported sidecar can leave old values visible; and
-- deleting a supported sidecar can leave formerly derived values visible.
+- adding a supported sidecar could leave its metadata absent;
+- editing a supported sidecar could leave old values visible; and
+- deleting a supported sidecar could leave formerly derived values visible.
 
-The stale values flow through model listing and description APIs, parameter data, prompt metadata, workflow/model-support decisions, remote serialization, viewing, and related model consumers. The defect is the missing cache-invalidation input, not a defect in those consumers.
+Those stale values could flow through model listing and description APIs, parameter data, prompt metadata, workflow/model-support decisions, remote serialization, viewing, and related model consumers. The approved-base defect was the missing cache-invalidation input, not a defect in those consumers; current production adds the fingerprint gate described above.
 
 ## Goals
 
@@ -137,7 +137,7 @@ Rank 22 does not restructure the recomputation body. Embedded-header reads, both
 
 The captured fingerprint is assigned only to the new record that is constructed after successful metadata processing. A sidecar read, parse, or conversion failure before record construction therefore does not attach or publish a new fingerprint.
 
-Persistent upsert and in-memory publication retain their distinct existing error boundaries. If the caught LiteDB upsert fails, the prior persistent record and its old fingerprint remain stored, while `LoadMetadata` continues with the newly constructed metadata and fingerprint and publishes them to `model.Metadata`. A later refresh reloads and reevaluates the still-old persistent record rather than treating the failed upsert as durable. Successful upsert is not a prerequisite for this existing in-memory publication path.
+Persistent upsert and in-memory publication retain their distinct existing error boundaries. If the caught LiteDB upsert fails, the prior persistent record and its old fingerprint can remain stored, while `LoadMetadata` continues with the newly constructed metadata and fingerprint and publishes them to `model.Metadata`. `HadNewError` may also dispose and delete the affected database after its existing error threshold, so a later refresh either reloads and reevaluates a retained old record or rebuilds after that cache reset; it does not treat the failed upsert as durable. Successful upsert is not a prerequisite for this existing in-memory publication path.
 
 ## Application Writer Interaction
 
@@ -167,7 +167,7 @@ No new catch, fallback, retry loop, log content, or user-facing error contract i
 
 ## Compatibility
 
-The new LiteDB property is optional. Existing records remain readable and recompute once because their fingerprint is null. Newer records remain readable by a rollback that ignores the extra property.
+The new public `ModelMetadataStore.ModelSidecarFingerprint` persistence property is additive and optional in stored LiteDB records. Existing records remain readable and recompute once because their fingerprint is null. Newer records remain readable by a rollback that ignores the extra property.
 
 The following remain unchanged:
 
@@ -175,7 +175,7 @@ The following remain unchanged:
 - central versus per-folder database selection;
 - database filenames, collection names, and cleanup behavior;
 - `ModelFileVersion` and the legacy `TextEncoders` condition;
-- public fields, methods, model JSON shape, APIs, permissions, and refresh signals;
+- all pre-existing public fields and methods, wire/model JSON shapes, API routes and payloads, permissions, and refresh signals; the additive public persistence property above is the sole public-member addition;
 - suffix list, order, paths, merge precedence, extraction order, and invalid JSON behavior;
 - `EditMetadataWriteJSON`, `EditMetadataAcrossAllDups`, and stray-attachment cleanup settings;
 - single edit, bulk edit, download, rename, delete, and resave response timing;
@@ -223,9 +223,9 @@ Agents perform static review only. Repository policy forbids agents from buildin
 
 The approved source/audit base is `d2508564975c5ca149048e29f57e428dde6d96f2`, the approved design is `2048a2bb67e9c8da31233f729695e5d7469683fb`, the implementation plan is `e68ffce03535ff8d5948226e4a23d0c062a8cce6`, the production implementation is `207c595c01eefd27987159b770fc99ca7b26ae0d`, and the post-production precision correction is `ccb016228e071fc06ce09b364b7796be98511da3`. The exact source projection from the approved source/audit base through the corrected documentation head changes only `src/Text2Image/T2IModelHandler.cs`, with `29 insertions(+), 2 deletions(-)` and resulting blob `1db9a1d609911cbfc98277904ca481635aa52aa5`; source is unchanged after the production commit.
 
-Production adds the optional `ModelSidecarFingerprint` record property and one handler-local helper. The helper emits exactly four ordered entries for `.swarm.json`, `.json`, `.cm-info.json`, and `.civitai.info`: each entry records either an explicit missing marker or file length plus UTC last-write ticks. `LoadMetadata` captures that fingerprint once before cache lookup/reuse and stores the same conservative pre-read value on a successfully constructed record; legacy null records, model timestamp changes, the legacy `TextEncoders` condition, and fingerprint mismatches recompute. `ResetMetadataFrom` captures the same selected-path fingerprint before its own lock statements and mutates the in-memory record before attempting the unchanged central/per-folder upsert. A caught `LoadMetadata` persistent-upsert failure can therefore leave the old durable record while the newly constructed record is still published in memory; a `ResetMetadataFrom` upsert failure retains its existing log-and-throw boundary after the prior in-memory mutation. Maintained hash/resave callers may already hold the reentrant `ModificationLock`, so the textual capture position does not establish a universal outside-lock guarantee.
+Production adds the optional public persistence property `ModelSidecarFingerprint` to `ModelMetadataStore` and one handler-local helper. The helper emits exactly four ordered entries for `.swarm.json`, `.json`, `.cm-info.json`, and `.civitai.info`: each entry records either an explicit missing marker or file length plus UTC last-write ticks. `LoadMetadata` captures that fingerprint once before cache lookup/reuse and stores the same conservative pre-read value on a successfully constructed record; legacy null records, model timestamp changes, the legacy `TextEncoders` condition, and fingerprint mismatches recompute. `ResetMetadataFrom` captures the same selected-path fingerprint before its own lock statements and mutates the in-memory record before attempting the unchanged central/per-folder upsert. A caught `LoadMetadata` persistent-upsert failure can therefore leave the old durable record while the newly constructed record is still published in memory, but existing `HadNewError` threshold handling may instead dispose/delete that database; a later refresh reevaluates a retained old record or rebuilds after cache reset. A `ResetMetadataFrom` upsert failure retains its existing log-and-throw boundary after the prior in-memory mutation. Maintained hash/resave callers may already hold the reentrant `ModificationLock`, so the textual capture position does not establish a universal outside-lock guarantee.
 
-Static design reviews returned `TASK1_SPEC_APPROVED` and `TASK1_QUALITY_APPROVED`; source reviews returned `SOURCE_SPEC_APPROVED` and `SOURCE_QUALITY_APPROVED`; and post-implementation documentation reviews returned `TASK3_SPEC_APPROVED` and `TASK3_QUALITY_APPROVED`. All six approvals are current and have no findings after the precision correction. Static review confirmed the nullable legacy upgrade, exact suffix order and invariant fields, central and per-folder record selection, unchanged merge/extraction/error flows, conservative capture semantics, writer/consumer and public/API isolation, and the unchanged Core P4 duplicate read/parse loops. It does not establish runtime behavior, content-hash equivalence, preview freshness, watcher behavior, performance, permission-only invalidation, or detection of same-length changes whose UTC timestamp is unchanged or indistinguishable at the active filesystem's resolution. Invalid or unreadable changed sidecars retain the existing recomputation failure behavior rather than returning stale metadata as current.
+Static design reviews returned `TASK1_SPEC_APPROVED` and `TASK1_QUALITY_APPROVED`; source reviews returned `SOURCE_SPEC_APPROVED` and `SOURCE_QUALITY_APPROVED`; and post-implementation documentation reviews returned `TASK3_SPEC_APPROVED` and `TASK3_QUALITY_APPROVED`. All six approvals are current and have no findings after the precision correction. Static review confirmed the nullable legacy upgrade, exact suffix order and invariant fields, central and per-folder record selection, unchanged merge/extraction/error flows, conservative capture semantics, unchanged wire/model JSON and API contracts, the single additive public persistence property, and the unchanged Core P4 duplicate read/parse loops. It does not establish runtime behavior, content-hash equivalence, preview freshness, watcher behavior, performance, permission-only invalidation, or detection of same-length changes whose UTC timestamp is unchanged or indistinguishable at the active filesystem's resolution. Invalid or unreadable changed sidecars retain the existing recomputation failure behavior rather than returning stale metadata as current.
 
 ## Maintainer Validation Matrix
 
