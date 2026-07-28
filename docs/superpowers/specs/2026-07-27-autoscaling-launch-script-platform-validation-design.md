@@ -1,6 +1,6 @@
 # Autoscaling Launch-Script Platform Validation Design
 
-**Status:** Approved; implementation not started
+**Status:** Implemented; awaiting maintainer validation
 
 **Date:** 2026-07-27
 
@@ -8,17 +8,25 @@
 
 **Approved source/audit base:** `e65550b0b90b62504f0495723db95567fe192673`
 
+**Design commit:** `984930bed4624b760b717d06f699e6f653358c28`
+
+**Plan commit:** `58ef998369a51d1c803938c3c89a15c6e472e30b`
+
+**Plan correction commit:** `a107c2834b17a1d715934f71f861c5d05643d3ce`
+
+**Production source/head:** `c82d9b6c8f340c6017349fa01c57788b210735f5`
+
 ## Summary
 
-`AutoScalingBackend.Init` is intended to reject launch scripts whose final extension is inappropriate for the current operating-system family. The current guard does not do that: `Path.GetExtension` returns a leading dot, the comparisons omit that dot, and the error branch rejects a matching expression instead of rejecting its negation. Ordinary extension-bearing paths therefore pass regardless of platform.
+At the approved source/audit base, `AutoScalingBackend.Init` was intended to reject launch scripts whose final extension was inappropriate for the current operating-system family. The base guard did not do that: `Path.GetExtension` returned a leading dot, the comparisons omitted that dot, and the error branch rejected a matching expression instead of rejecting its negation. Ordinary extension-bearing paths therefore passed regardless of platform.
 
-Rank 20 replaces only that defective condition with one positive local appropriateness predicate using dotted lowercase extensions, then rejects the predicate's negation. Windows continues to accept `.bat` and `.ps1`; every non-Windows platform continues to accept `.sh`.
+Rank 20 replaces only that defective condition with one positive local appropriateness predicate using dotted lowercase extensions, then rejects the predicate's negation. Windows accepts `.bat` and `.ps1`; every non-Windows platform accepts `.sh`.
 
 ## Current Boundary
 
 The production owner is `AutoScalingBackend.Init` in `src/Backends/AutoScalingBackend.cs`.
 
-Its current validation and initialization order is:
+At the approved source/audit base, its validation and initialization order was:
 
 1. Set `CanLoadModels` false and reset start/stop timing.
 2. Disable when `MaxBackends` is non-positive or `StartScript` is blank.
@@ -30,17 +38,17 @@ Its current validation and initialization order is:
 8. Register tick, pre-shutdown, and new-backend-needed hooks.
 9. Enter `RUNNING`.
 
-Only step 4 changes.
+Only step 4 was permitted to change.
 
 ## Defect
 
-The current code derives:
+The approved-base code derived:
 
 ```csharp
 string scriptExt = Path.GetExtension(Settings.StartScript).ToLowerInvariant();
 ```
 
-For an ordinary path such as `worker.sh`, this returns `.sh`. The guard compares that result to `sh`, `bat`, and `ps1`, so no ordinary extension matches. The guard also enters the rejection branch when its expression is true, even though the expression is written as an allow-list.
+For an ordinary path such as `worker.sh`, this returns `.sh`. The base guard compared that result to `sh`, `bat`, and `ps1`, so no ordinary extension matched. The base guard also entered the rejection branch when its expression was true, even though the expression was written as an allow-list.
 
 These defects mask each other:
 
@@ -179,6 +187,20 @@ Static review must:
 12. confirm the source projection is only `src/Backends/AutoScalingBackend.cs`;
 13. run fixed-range whitespace checks; and
 14. confirm the index and protected maintainer work remain isolated.
+
+## Implementation Record
+
+Rank 20 is **Implemented; awaiting maintainer validation**. The integrated provenance is approved source/audit base `e65550b0b90b62504f0495723db95567fe192673`, design commit `984930bed4624b760b717d06f699e6f653358c28` (`docs: design autoscaling launch-script validation`), plan commit `58ef998369a51d1c803938c3c89a15c6e472e30b` (`docs: plan autoscaling launch-script validation`), plan correction `a107c2834b17a1d715934f71f861c5d05643d3ce` (`docs: correct autoscaling plan baseline`), and production source/head `c82d9b6c8f340c6017349fa01c57788b210735f5` (`fix: validate autoscaling launch script platform`).
+
+The exact production projection from the approved source/audit base through the production source/head is only `src/Backends/AutoScalingBackend.cs`, with `4 insertions(+), 1 deletion(-)`. Independent static source reviews returned `SOURCE_SPEC_APPROVED` and `SOURCE_QUALITY_APPROVED` with no findings.
+
+The implemented predicate uses `Path.GetExtension(...).ToLowerInvariant()`, so matching is case-insensitive and only the final extension participates. Windows accepts `.bat` and `.ps1` and rejects `.sh`; every non-Windows platform accepts `.sh` and rejects `.bat` and `.ps1`. Both platform families reject empty, trailing-dot, unrelated, and wrong-platform extensions. Multi-dot paths therefore follow only their final extension.
+
+The existing disabled and invalid-settings checks remain before the platform guard. An inappropriate extension reaches the unchanged platform error, `ERRORED`, and return before `File.Exists`, process launch, or tick, pre-shutdown, and new-backend-needed hook registration. A platform-appropriate missing file reaches the existing missing-file error boundary. All code after the guard retains its prior order.
+
+The implementation preserves `StartScript`, every setting and schema contract, the `autoscalingbackend` type ID and public ABI, logs, statuses, returns, `ProcessStartInfo`, arguments, standard-output protocol, minimum/maximum and queue gates, timing and failure delays, idle behavior, shutdown lifecycle, callers, and documentation contracts. Acceptance proves only a matching final extension: it does not prove interpreter availability, permissions, executability, or process success. All non-Windows platforms still share `.sh`. Windows runtime behavior remains unvalidated unless a Windows environment is supplied, and no performance claim is made.
+
+Agents performed static review only. They did not build, test, launch SwarmUI, execute scripts, start services or backends, call live APIs, automate a browser, perform runtime or platform validation, or run test-executing lint. The unchanged maintainer matrix below remains the authority for runtime validation.
 
 ## Maintainer Validation Matrix
 
