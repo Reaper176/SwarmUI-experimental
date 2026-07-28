@@ -368,7 +368,7 @@ Task 3 review found that a null-valued permission attribute did not preserve the
 
 At the validation-documentation base, the index was empty. The remaining protected working-tree deltas were `src/Data/Settings.fds` `83/3`, `src/Pages/Text2Image.cshtml` `9/2` containing eager partial rendering and eager Image Editing/Server scripts, `src/wwwroot/js/genpage/gentab/loras.js` `2/0`, `src/wwwroot/js/genpage/main.js` `0/1` containing only the protected `featureSetChangedCallbacks` declaration deletion, and untracked `Data.pre-restore-2026-07-19/`. None is part of the committed production projection or this documentation record.
 
-The exact matrix below remained byte-identical through the implementation and documentation corrections; its recorded hash is `4f9294138ee845a6d924fa51780d499e2846de89`.
+The exact matrix below is byte-identical to the matrix in approved design commit `431290254e2ab889795428457f9061d6e77bbfa3` and contains exactly 20 numbered cases.
 
 ## Maintainer Validation Record
 
