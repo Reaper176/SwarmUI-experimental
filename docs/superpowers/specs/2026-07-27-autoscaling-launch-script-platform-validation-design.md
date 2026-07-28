@@ -1,6 +1,6 @@
 # Autoscaling Launch-Script Platform Validation Design
 
-**Status:** Implemented; awaiting maintainer validation
+**Status:** Implemented and maintainer-validated on Garuda Linux (Arch-based), Btrfs, using Bash (version not provided); Windows runtime unvalidated
 
 **Date:** 2026-07-27
 
@@ -190,7 +190,7 @@ Static review must:
 
 ## Implementation Record
 
-Rank 20 is **Implemented; awaiting maintainer validation**. The integrated provenance is approved source/audit base `e65550b0b90b62504f0495723db95567fe192673`, design commit `984930bed4624b760b717d06f699e6f653358c28` (`docs: design autoscaling launch-script validation`), plan commit `58ef998369a51d1c803938c3c89a15c6e472e30b` (`docs: plan autoscaling launch-script validation`), plan correction `a107c2834b17a1d715934f71f861c5d05643d3ce` (`docs: correct autoscaling plan baseline`), and production source/head `c82d9b6c8f340c6017349fa01c57788b210735f5` (`fix: validate autoscaling launch script platform`).
+Rank 20 is **Implemented and maintainer-validated on Garuda Linux (Arch-based), Btrfs, using Bash (version not provided); Windows runtime unvalidated**. The integrated provenance is approved source/audit base `e65550b0b90b62504f0495723db95567fe192673`, design commit `984930bed4624b760b717d06f699e6f653358c28` (`docs: design autoscaling launch-script validation`), plan commit `58ef998369a51d1c803938c3c89a15c6e472e30b` (`docs: plan autoscaling launch-script validation`), plan correction `a107c2834b17a1d715934f71f861c5d05643d3ce` (`docs: correct autoscaling plan baseline`), and production source/head `c82d9b6c8f340c6017349fa01c57788b210735f5` (`fix: validate autoscaling launch script platform`).
 
 The exact production projection from the approved source/audit base through the production source/head is only `src/Backends/AutoScalingBackend.cs`, with `4 insertions(+), 1 deletion(-)`. Independent static source reviews returned `SOURCE_SPEC_APPROVED` and `SOURCE_QUALITY_APPROVED` with no findings.
 
@@ -198,9 +198,19 @@ The implemented predicate uses `Path.GetExtension(...).ToLowerInvariant()`, so m
 
 The existing disabled and invalid-settings checks remain before the platform guard. An inappropriate extension reaches the unchanged platform error, `ERRORED`, and return before `File.Exists`, process launch, or tick, pre-shutdown, and new-backend-needed hook registration. A platform-appropriate missing file reaches the existing missing-file error boundary. All code after the guard retains its prior order.
 
-The implementation preserves `StartScript`, every setting and schema contract, the `autoscalingbackend` type ID and public ABI, logs, statuses, returns, `ProcessStartInfo`, arguments, standard-output protocol, minimum/maximum and queue gates, timing and failure delays, idle behavior, shutdown lifecycle, callers, and documentation contracts. Acceptance proves only a matching final extension: it does not prove interpreter availability, permissions, executability, or process success. All non-Windows platforms still share `.sh`. Windows runtime behavior remains unvalidated unless a Windows environment is supplied, and no performance claim is made.
+The implementation preserves `StartScript`, every setting and schema contract, the `autoscalingbackend` type ID and public ABI, logs, statuses, returns, `ProcessStartInfo`, arguments, standard-output protocol, minimum/maximum and queue gates, timing and failure delays, idle behavior, shutdown lifecycle, callers, and documentation contracts. Acceptance proves only a matching final extension: it does not prove interpreter availability, permissions, executability, or process success. All non-Windows platforms still share `.sh`. Windows runtime behavior remains unvalidated because no Windows environment was available, wider platform/filesystem/runtime behavior remains unvalidated, and performance remains unmeasured.
 
 Agents performed static review only. They did not build, test, launch SwarmUI, execute scripts, start services or backends, call live APIs, automate a browser, perform runtime or platform validation, or run test-executing lint. The unchanged maintainer matrix below remains the authority for runtime validation.
+
+**Raw maintainer evidence (verbatim, 2026-07-27):**
+
+> Cases 1–18 passed on Garuda Linux (Arch-based), Btrfs, Bash [version]. Cases 19–20 were not run; no Windows environment was available.
+
+**Disclosed normalization:** the literal placeholder `[version]` means no Bash version was supplied. The recorded environment is therefore `Garuda Linux (Arch-based), Btrfs, using Bash (version not provided)`.
+
+**Normalized result:** 18 passed, 0 failed, and 2 unrun. Cases 1–18 are all 18/18 available non-Windows cases in the exact unchanged matrix and passed on the recorded environment. Windows-only cases 19–20 were not run because no Windows environment was available; they remain unvalidated and are not failures. No Windows behavior is inferred from the non-Windows result.
+
+This maintainer evidence is runtime evidence only for the exact unchanged cases 1–18 on the recorded environment. It does not expand the agent evidence beyond static review and does not prove interpreter availability, permissions, executability, process success, wider platform/filesystem/runtime behavior, or performance. Windows runtime remains unvalidated, and performance remains unmeasured.
 
 ## Maintainer Validation Matrix
 
