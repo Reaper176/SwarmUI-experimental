@@ -22,7 +22,7 @@
 
 **Independent documentation reviews:** `DOCS_SPEC_APPROVED` and `DOCS_QUALITY_APPROVED`, with no findings.
 
-**Validation-document reviews:** The initial validation specification review found that two current-architecture statements in the audit still said Comfy F24 awaited maintainer validation. Focused correction commit `8e2601c2891c63bc9ebbed24651ff8f53abd9ee7` (`docs: update Comfy object-info validation status`) fixed both statements, after which the same reviewer re-review returned `VALIDATION_SPEC_APPROVED`. Validation quality review returned `VALIDATION_QUALITY_APPROVED` with no findings. No validation findings remain. Final integrated review is pending.
+**Validation-document reviews:** The initial validation specification review found that two current-architecture statements in the audit still said Comfy F24 awaited maintainer validation. Focused correction commit `8e2601c2891c63bc9ebbed24651ff8f53abd9ee7` (`docs: update Comfy object-info validation status`) fixed both statements, after which the same reviewer re-review returned `VALIDATION_SPEC_APPROVED`. Validation quality review returned `VALIDATION_QUALITY_APPROVED` with no findings. No validation findings remain. Final integrated review returned `FINAL_INTEGRATED_APPROVED` with no findings.
 
 ## Summary
 
