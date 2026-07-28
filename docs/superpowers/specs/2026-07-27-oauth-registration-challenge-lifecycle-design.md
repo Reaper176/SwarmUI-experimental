@@ -1,6 +1,6 @@
 # OAuth Registration Challenge Lifecycle Design
 
-**Status:** Approved; implementation not started
+**Status:** Implemented; awaiting maintainer validation
 
 **Date:** 2026-07-27
 
@@ -10,9 +10,9 @@
 
 ## Summary
 
-SwarmUI currently stores pending OAuth registration challenges in the public process-wide `SessionHandler.TempAuths` field, a `ConcurrentDictionary<string, string>` from opaque tracker to verified email address. `CheckOAuth` creates one entry for every valid Google identity that is not already registered. `RegisterOAuth` reads the entry without consuming it, creates and links the account, and removes the entry only after success.
+At the approved base, SwarmUI stored pending OAuth registration challenges in the public process-wide `SessionHandler.TempAuths` field, a `ConcurrentDictionary<string, string>` from opaque tracker to verified email address. `CheckOAuth` created one entry for every valid Google identity that was not already registered. `RegisterOAuth` read the entry without consuming it, created and linked the account, and removed the entry only after success.
 
-This leaves abandoned email-bearing entries in memory until process shutdown and lets concurrent requests observe the same tracker before either removes it. Rank 19 gives maintained challenges a 15-minute validity lifetime, keeps at most 256 entries, retains only the newest pending tracker for one email, and atomically consumes a valid tracker immediately before account creation.
+This left abandoned email-bearing entries in memory until process shutdown and let concurrent requests observe the same tracker before either removed it. Rank 19 gives maintained challenges a 15-minute validity lifetime, keeps at most 256 entries, retains only the newest pending tracker for one email, and atomically consumes a valid tracker immediately before account creation.
 
 The public dictionary declaration, generic type, and object identity remain unchanged for extension source and binary compatibility. Private metadata and one dedicated lock provide the maintained lifecycle without changing the browser wire key, route, parameters, OAuth verification, UI, error identifiers, settings, or persistence.
 
@@ -228,7 +228,26 @@ Rank 19 preserves:
 - logs and their existing data exposure; and
 - unrelated server routes, permissions, persistence, and public C# members.
 
-Expected production changes are limited to `src/Accounts/SessionHandler.cs` and `src/WebAPI/BasicAPIFeatures.cs`. `GoogleOAuthVerify.cshtml` and `registerpage.js` are validation-only compatibility surfaces and should not change.
+The production changes are limited to `src/Accounts/SessionHandler.cs` and `src/WebAPI/BasicAPIFeatures.cs`. `GoogleOAuthVerify.cshtml` and `registerpage.js` remain validation-only compatibility surfaces and did not change.
+
+## Implementation Record
+
+**Status:** **Implemented; awaiting maintainer validation.** Rank 19 remains the sole **Recommended Next Project** until the maintainer validation result is recorded; Rank 20 has not advanced.
+
+The approved source/audit base is `1426c55c0f18176486442180c67a86c133f8d6d0`. The design commit is `bb88532e94e59b422728245fa10d29884bc1a810` (`docs: design OAuth registration challenge lifecycle`), the plan is `8e7b5fb9a7f05640b93550fe14e396d3e3002f34` (`docs: plan OAuth registration challenge lifecycle`), and the production commits are `06aa090cf12a0030d2a060dd0febb558c1ba382b` (`fix: bound OAuth registration challenges`) followed by source head `ed8a06fb822d6ea2d7cf890ccedeca5056162252` (`fix: consume OAuth registration challenges atomically`).
+
+The exact source projection since the design commit changes only:
+
+- `src/Accounts/SessionHandler.cs`: `129 insertions(+), 4 deletions(-)`;
+- `src/WebAPI/BasicAPIFeatures.cs`: `1 insertion(+), 2 deletions(-)`.
+
+Independent source reviews returned `SOURCE_SPEC_APPROVED` and `SOURCE_QUALITY_APPROVED` with no findings. Agent evidence is static-only: agents ran no build, tests, launch, browser, services, live APIs, or test-executing lint, in accordance with repository policy. No runtime success, platform behavior, filesystem behavior, concurrency outcome, performance improvement, or benchmark result is claimed.
+
+Static inspection records the maintained lifecycle as follows: age is invalid at `15 minutes` or more; maintained operations finish with no more than 256 entries; reconciliation expires entries before evicting live entries; deterministic oldest selection uses creation tick and ordinal tracker tie-breaking; a new issuance removes every older tracker for the same email; metadata-free legacy entries receive metadata when first reconciled; unique tracker issuance retries `TryAdd`; and consumption is atomic, one-way, and never restored after account or linking work begins. Username validation and both rate limits remain before consumption, while `SetOAuthEmail` remains the final email-uniqueness authority.
+
+The implementation preserves the public `TempAuths` field ABI and object identity, the `CheckOAuth(string)` signature and tuple meaning, validation/rate-limit ordering, and the existing API route/signature/sessionless status, browser fields and tracker format, error IDs/UI behavior, Google verification and registered-login flow, logging exposure, settings timing, account creation/linking behavior, persistence, and unrelated public members. The challenge lock covers only in-memory bookkeeping: no network, database, account, response, or logging work runs under it, and no new log contains an email or tracker.
+
+Deferred boundaries remain explicit. There is no timer or physical expiry until a maintained issuance or consumption operation runs. Unsupported external writes through the public dictionary can temporarily exceed the bound until the next maintained operation reconciles state. The account/email time-of-check/time-of-use race and transaction/rollback behavior remain deferred, with `SetOAuthEmail` as final authority. Runtime environments remain unvalidated.
 
 ## Static Verification
 
