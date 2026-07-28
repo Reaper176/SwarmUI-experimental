@@ -22,9 +22,9 @@ Rank 23 establishes one ordered C# descriptor list as the literal owner of core 
 
 The existing public globals, public server dictionary type, API route and payload, keys, IDs, permissions, partial paths, labels, Bootstrap behavior, hash behavior, script order, and `openGenPageTab` surface remain compatible.
 
-## Current Boundary
+## Approved-Base Boundary
 
-The four current core lazy tabs are:
+At the approved base, the four core lazy tabs were:
 
 | Key | Tab ID | Button ID | Label | Partial | API permission |
 | --- | --- | --- | --- | --- | --- |
@@ -33,7 +33,7 @@ The four current core lazy tabs are:
 | `user` | `user_tab` | `usersettingstabbutton` | User | `_Generate/UserTab` | `Permissions.UserTab` |
 | `server` | `server_tab` | `servertabbutton` | Server | `_Generate/ServerTab` | `Permissions.ViewServerTab` |
 
-`Text2Image.cshtml` also owns:
+At the approved base, `Text2Image.cshtml` also owned:
 
 - loading text for each tab;
 - the generated `window.genpageLazyTabs` compatibility object;
@@ -43,7 +43,7 @@ The four current core lazy tabs are:
 - the `WebServer.T2ITabHeader` and `WebServer.T2ITabBody` extension insertion points; and
 - page script tags and their order.
 
-`main.js` consumes `window.genpageLazyTabs` for:
+At the approved base, `main.js` consumed `window.genpageLazyTabs` for:
 
 - tab-ID-to-key lookup;
 - top-tab activation;
@@ -53,11 +53,11 @@ The four current core lazy tabs are:
 - the server resource loop; and
 - `openGenPageTab`.
 
-It separately owns explicit hooks for Image Editing, Utilities, User, and Server because each tab has different initialization work. It also consumes `window.genpageLazyScriptGroups`; Image Editing and Server have ordered lazy script groups, while Utilities and User currently have empty groups.
+It separately owned explicit hooks for Image Editing, Utilities, User, and Server because each tab had different initialization work. It also consumed `window.genpageLazyScriptGroups`; Image Editing and Server had ordered lazy script groups, while Utilities and User had empty groups.
 
-`UtilAPI.LazyGenPageTabPartials` is a public read-only dictionary whose values contain the fully qualified Razor partial path and `PermInfo`. `GetGenPageTabPartial` normalizes a supplied key, rejects an unknown key, checks the mapped permission, renders the mapped partial with a `GeneratePageModel`, and returns `{ "html": ... }`.
+At the approved base, `UtilAPI.LazyGenPageTabPartials` was a public read-only dictionary whose values contained the fully qualified Razor partial path and `PermInfo`. `GetGenPageTabPartial` normalized a supplied key, rejected an unknown key, checked the mapped permission, rendered the mapped partial with a `GeneratePageModel`, and returned `{ "html": ... }`.
 
-No external extension participates in this four-key allowlist. Extension top tabs remain composed through `WebServer.T2ITabHeader`, `WebServer.T2ITabBody`, and existing extension script surfaces.
+At the approved base, no external extension participated in this four-key allowlist. Extension top tabs remained composed through `WebServer.T2ITabHeader`, `WebServer.T2ITabBody`, and existing extension script surfaces.
 
 ## Approved-Base Duplication and Risk
 
