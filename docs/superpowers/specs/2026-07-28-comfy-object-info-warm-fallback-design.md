@@ -56,7 +56,7 @@ and can also assign:
 result[property.Name] = property.Value;
 ```
 
-The intended stale fallback therefore faults before it can return `LastObjectInfo` whenever the loop reaches an available backend with non-null `RawObjectInfo`. The prior published object is not used as the merge target.
+The intended stale fallback therefore faults before it can return `LastObjectInfo` when the union enumerates at least one backend-local property and calls `result.ContainsKey`. An empty `RawObjectInfo`, like any path that reaches no property, follows the fallthrough described below. The prior published object is not used as the merge target.
 
 If no backend-local property is reached, `result` remains null, publication is skipped, and `return LastObjectInfo` returns the prior object on a warm thrown-failure path. A fresh parse that yields null follows the same union behavior without entering the catch: reaching any property faults, while reaching none returns the prior object when warm or null when cold. After a cold null return, `ComfyBackendDirectHandler` invokes its internal `ForceExpire()` safeguard and can then fault when response construction calls `data.ToString()`.
 
