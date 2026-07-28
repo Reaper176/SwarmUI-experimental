@@ -1,6 +1,6 @@
 # Comfy Object-Info Warm Fallback Design
 
-**Status:** Approved; not implemented
+**Status:** Implemented; awaiting maintainer validation
 
 **Date:** 2026-07-28
 
@@ -8,11 +8,27 @@
 
 **Approved source/audit base:** `0a814fc86942a15dcdfa3062834a6c7d9ef95718`
 
+**Approved design:** `9369ef993583fc5e8bcc34b18c1a73de4d99e0f8`
+
+**Implementation plan:** `84f21937d121a463177305f539aea8f10cc06ae6`
+
+**Planning/design review corrections:** `c9b9ea4927ecec417fa85e840d1c7df15ad31809` corrected the baseline inventory in the plan and design; `ec68ec35dbbc55a9c411696c43280b4aee2dcdda` clarified the empty-object-info fallthrough in the design; and `ed2e9dd1a5571072c80f95317224906e48e9473c` staged source-review provenance requirements in the plan.
+
+**Production source/head:** `87a7282e04b3452b7607d8c1be25591f06c4b630`
+
+**Exact production projection:** only `src/BuiltinExtensions/ComfyUIBackend/ComfyUIRedirectHelper.cs`, `8 insertions(+), 2 deletions(-)`; resulting blob `693fdffadf09f3abf5e0cf6448e9695470d062b5`.
+
+**Independent source reviews:** `SOURCE_SPEC_APPROVED` and `SOURCE_QUALITY_APPROVED`, with no findings.
+
 ## Summary
 
 `ComfyUIRedirectHelper.ObjectInfoReadCacher` serves merged Comfy `object_info` to the embedded/direct Comfy UI through a ten-minute cache. A successful calculation fetches the first direct backend's current `object_info`, adds missing node definitions from the local raw information of every available Comfy backend, publishes the merged object as `LastObjectInfo`, and returns it.
 
-The factory already attempts to tolerate a later fresh-fetch failure when `LastObjectInfo` exists. That fallback is defective: the catch does not assign the prior object to the private `result`, so the following union faults if it reaches any backend-local property. If the union reaches no property, publication is skipped and the prior `LastObjectInfo` is returned without becoming the private merge target. Rank 21 makes the fallback explicit and safe by deep-cloning the prior snapshot before the existing union. The first-ever thrown failure still propagates.
+At the approved base, the factory attempted to tolerate a later fresh-fetch failure when `LastObjectInfo` existed. That fallback was defective: the catch did not assign the prior object to the private `result`, so the following union faulted if it reached any backend-local property. If the union reached no property, publication was skipped and the prior `LastObjectInfo` was returned without becoming the private merge target. Rank 21 makes the fallback explicit and safe by deep-cloning the prior snapshot before the existing union. The first-ever thrown failure still propagates.
+
+The implemented factory now keeps first-backend selection, fetch, parse, and an explicit null-result failure inside one catch boundary. A cold failure logs and rethrows the active exception. A warm failure captures `LastObjectInfo` once, deep-clones that snapshot, performs the existing ordered missing-only union, and publishes only the completed private result. Every path reaching the merge therefore has a non-null private result, and a union failure occurs before publication. Unexpired cache hits retain the cache wrapper's unchanged behavior.
+
+This closure is static-only. Agents did not build, test, launch, execute scripts, start services or backends, automate a browser, call live APIs, run test-executing lint, or measure runtime or performance. The exact unchanged 20-case Maintainer Validation Matrix remains the authority for runtime validation.
 
 ## Current Boundary
 
@@ -42,25 +58,25 @@ The approved-base factory initializes:
 JObject result = null;
 ```
 
-It then attempts a synchronous first-backend GET and parse. Its catch logs the exception and rethrows only when `LastObjectInfo` is null. With a prior snapshot, it continues while `result` is still null.
+It then attempted a synchronous first-backend GET and parse. Its catch logged the exception and rethrew only when `LastObjectInfo` was null. With a prior snapshot, it continued while `result` was still null.
 
-If the next loop reaches any property, it evaluates:
+If the next loop reached any property, it evaluated:
 
 ```csharp
 result.ContainsKey(property.Name)
 ```
 
-and can also assign:
+and could also assign:
 
 ```csharp
 result[property.Name] = property.Value;
 ```
 
-The intended stale fallback therefore faults before it can return `LastObjectInfo` when the union enumerates at least one backend-local property and calls `result.ContainsKey`. An empty `RawObjectInfo`, like any path that reaches no property, follows the fallthrough described below. The prior published object is not used as the merge target.
+The intended stale fallback therefore faulted before it could return `LastObjectInfo` when the union enumerated at least one backend-local property and called `result.ContainsKey`. An empty `RawObjectInfo`, like any path that reached no property, followed the fallthrough described below. The prior published object was not used as the merge target.
 
-If no backend-local property is reached, `result` remains null, publication is skipped, and `return LastObjectInfo` returns the prior object on a warm thrown-failure path. A fresh parse that yields null follows the same union behavior without entering the catch: reaching any property faults, while reaching none returns the prior object when warm or null when cold. After a cold null return, `ComfyBackendDirectHandler` invokes its internal `ForceExpire()` safeguard and can then fault when response construction calls `data.ToString()`.
+If no backend-local property was reached, `result` remained null, publication was skipped, and `return LastObjectInfo` returned the prior object on a warm thrown-failure path. A fresh parse that yielded null followed the same union behavior without entering the catch: reaching any property faulted, while reaching none returned the prior object when warm or null when cold. After a cold null return, `ComfyBackendDirectHandler` invoked its internal `ForceExpire()` safeguard and could then fault when response construction called `data.ToString()`.
 
-First-backend selection currently occurs before the exception boundary. A transient race that leaves no direct backend between the handler's initial availability check and cache calculation therefore cannot use a warm fallback either.
+At the approved base, first-backend selection occurred before the exception boundary. A transient race that left no direct backend between the handler's initial availability check and cache calculation therefore could not use a warm fallback either.
 
 ## Goals
 
@@ -155,6 +171,8 @@ This is snapshot replacement, not in-place repair. A request already holding the
 
 The design does not promise that every caller receives a distinct object. Unexpired cache hits continue returning the cache wrapper's current published value.
 
+The prior published snapshot is not a maintained mutation target. Unsupported mutation through the preserved public field remains outside the maintained contract, and broader topology, concurrency, and performance behavior remains unvalidated.
+
 ## Merge and Precedence Contract
 
 Successful refresh behavior remains:
@@ -208,6 +226,8 @@ Rank 21 preserves:
 - Comfy UI, workflow, generation, validation, and model behavior;
 - every public signature and extension binary-compatibility surface; and
 - all unrelated audit ranks and performance gates.
+
+The production change also leaves backend-local `RawObjectInfo`, per-backend capability publication, workflow construction, generation, model handling, and validation unchanged. It does not add alternate-backend retries, a shorter fallback expiry, or freshness guarantees: a fallback may remain stale until a later expired calculation succeeds. Permissions, backend-selection headers, response construction, the four cached routes, cache-disabled proxying, all three `ForceExpire()` sites, and the ten-minute cache remain unchanged.
 
 ## Static Verification
 
