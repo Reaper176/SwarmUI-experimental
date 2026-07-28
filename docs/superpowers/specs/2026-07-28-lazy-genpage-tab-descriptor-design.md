@@ -1,6 +1,6 @@
 # Lazy Generation-Page Tab Descriptor Design
 
-**Status:** Designed; awaiting implementation
+**Status:** Implemented; awaiting maintainer validation
 
 **Date:** 2026-07-28
 
