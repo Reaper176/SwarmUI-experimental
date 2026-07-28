@@ -257,9 +257,17 @@ Static review must:
 16. run fixed-range whitespace checks; and
 17. confirm the index and protected maintainer work remain isolated.
 
+On 2026-07-28, the authoritative raw maintainer message was exactly `mark as passed and continue`.
+
+The controller disclosed that it interprets this response to the exact unchanged 20-case Rank 21 matrix as instruction and confirmation to mark all 20 cases passed. The normalized result is **20 passed, 0 failed, 0 unrun**. No more specific per-case prose is attributed to the maintainer, and no particular injection method is claimed.
+
+The operating system, filesystem, browser and browser version, Comfy version, number or type of direct or linked backends, and backend topology were not provided for this Rank 21 validation. None is inferred from earlier ranks. No environment or topology behavior beyond the maintainer-confirmed exact matrix is claimed.
+
+Fallback data may remain stale until a later successful expired calculation and is not proof that any node or backend is currently available. Unsupported external mutation through the preserved public field remains outside the maintained contract. Broader platform, filesystem, browser and browser-version, Comfy-version, backend-topology, concurrency, and performance behavior remains unvalidated or unmeasured. Agent evidence remains static-only.
+
 ## Maintainer Validation Matrix
 
-The following exact unchanged matrix is the authority for maintainer runtime validation.
+The maintainer performs runtime validation and records the date, operating system, filesystem, browser, and Comfy/backend arrangement actually exercised.
 
 1. A cache-enabled cold request with valid first-backend object-info succeeds, publishes the merged snapshot, and returns the existing JSON response shape.
 2. A cold first-backend HTTP failure emits the existing object-info error and propagates failure without publishing a fallback.
@@ -282,13 +290,7 @@ The following exact unchanged matrix is the authority for maintainer runtime val
 19. Permissions, backend-selection headers, response status/content type, first-backend preference, and one-calculation-per-expiry serialization remain unchanged.
 20. Backend-local capability publication, raw workflow validation, standard generation, and ordinary embedded/direct Comfy UI use remain unchanged.
 
-On 2026-07-28, the authoritative raw maintainer message was exactly `mark as passed and continue`.
-
-The controller disclosed that it interprets this response to the exact unchanged 20-case Rank 21 matrix as instruction and confirmation to mark all 20 cases passed. The normalized result is **20 passed, 0 failed, 0 unrun**. No more specific per-case prose is attributed to the maintainer, and no particular injection method is claimed.
-
-The operating system, filesystem, browser and browser version, Comfy version, number or type of direct or linked backends, and backend topology were not provided for this Rank 21 validation. None is inferred from earlier ranks. No environment or topology behavior beyond the maintainer-confirmed exact matrix is claimed.
-
-Fallback data may remain stale until a later successful expired calculation and is not proof that any node or backend is currently available. Unsupported external mutation through the preserved public field remains outside the maintained contract. Broader platform, filesystem, browser and browser-version, Comfy-version, backend-topology, concurrency, and performance behavior remains unvalidated or unmeasured. Agent evidence remains static-only.
+Results are recorded only for environments and arrangements actually exercised. Other browsers, operating systems, filesystems, Comfy versions, backend topologies, concurrency conditions, and performance remain unvalidated or unmeasured unless explicitly supplied.
 
 ## Success Criteria
 
