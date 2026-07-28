@@ -1,6 +1,6 @@
 # Lazy Generation-Page Tab Descriptor Design
 
-**Status:** Implemented; awaiting maintainer validation
+**Status:** Implemented and maintainer-validated on Garuda Linux (Arch-based), Btrfs, using Firefox (version not provided); loading-mode details not provided
 
 **Date:** 2026-07-28
 
@@ -342,6 +342,47 @@ Static verification must:
 21. confirm the index is empty after each intended commit and protected working-tree numstats remain accounted for.
 
 Agents perform static review only. Repository policy forbids agents from building, running tests, executing test-running linters or scripts, launching SwarmUI or its backends, automating browsers, calling live APIs, or performing runtime/platform/filesystem exercises.
+
+## Implementation and Review Record
+
+The approved source/audit base is `1b2d769d14f9a62c2d0e754b768b487701ae41c6`, the approved design is commit `431290254e2ab889795428457f9061d6e77bbfa3` with design blob `fef25ff81ef17ebe20f6d99f95b2f1b98dedbbe8`, and the implementation plan is commit `b18906cbfb63e2f392aafa8db24049ee1b80558d` with plan blob `1c776cf878c6c0aa549fafdddc9ef51b3ded3842`.
+
+The exact path-filtered production history is:
+
+1. `85a2a0aa2c3f2538576f68d320636fc907e46e73` — `refactor: centralize lazy tab descriptors`
+2. `e804078516301fbf1fb1c0d9e439554a077245f8` — `refactor: derive lazy tab markup descriptors`
+3. `a3dab98e07350bab202f70f5dc04ad378587b102` — `fix: omit empty lazy tab permission attribute`
+4. `0bbe7d38d889f072790e97dcd44186140a118456` — `refactor: derive lazy tab client state`
+5. `66102f52d4cb8e22c56b018e7b95d66f59fda801` — `refactor: document lazy tab descriptor properties`
+6. `b94bbbaed9a2209310e591fb4753e453e322e23a` — `fix: preserve positional lazy tab descriptor contract`
+
+Source head `b94bbbaed9a2209310e591fb4753e453e322e23a` produces exactly the three-file `107 insertions / 33 deletions` projection:
+
+- `src/WebAPI/UtilAPI.cs` — `63/7`, blob `73a03b86135854301682ad5f59d54c8568c57180`;
+- `src/Pages/Text2Image.cshtml` — `25/19`, blob `557d2589f3dbae033fd3d4d8b4aac5844a03f65e`; and
+- `src/wwwroot/js/genpage/main.js` — `19/7`, blob `a6b3bb3f8209d7f1bb6a596c9b298c78881614a8`.
+
+Implementation documentation commit `753d647698a096178e984267248baeec7249aece` recorded the source state. Audit-status correction `55d982fa302f9a70b9dc3618041fac097c6e321c`, design-status correction `90e94f4e3966417e50f565e14ff6aee3c7ddd72d`, design-tense correction `5d8db186ae28f0c93cea04b74128ae6ae0b3ecba`, and approved-base boundary correction `31d9740dc5f9d2c37487023d0da54d88e6a85319` brought the pre-validation documentation to design blob `14d0865baf4d6308963aff8a35446a9d17855bb5` and audit blob `c93fe04b45e09a306db7bff8155b5da0fb03acec`.
+
+Task 3 review found that a null-valued permission attribute did not preserve the no-attribute contract, producing correction `a3dab98e07350bab202f70f5dc04ad378587b102`. The first integrated Task 5 review found missing per-property XML documentation, producing `66102f52d4cb8e22c56b018e7b95d66f59fda801`; specification re-review then found that revision lost the positional public-record contract, producing `b94bbbaed9a2209310e591fb4753e453e322e23a`. Every corrected source and documentation state was re-reviewed. The current approval tokens are `SOURCE_SPEC_APPROVED`, `SOURCE_QUALITY_APPROVED`, `TASK5_SPEC_APPROVED`, `TASK5_QUALITY_APPROVED`, `TASK6_SPEC_APPROVED`, and `TASK6_QUALITY_APPROVED`, with no remaining findings.
+
+At the validation-documentation base, the index was empty. The remaining protected working-tree deltas were `src/Data/Settings.fds` `83/3`, `src/Pages/Text2Image.cshtml` `9/2` containing eager partial rendering and eager Image Editing/Server scripts, `src/wwwroot/js/genpage/gentab/loras.js` `2/0`, `src/wwwroot/js/genpage/main.js` `0/1` containing only the protected `featureSetChangedCallbacks` declaration deletion, and untracked `Data.pre-restore-2026-07-19/`. None is part of the committed production projection or this documentation record.
+
+The exact matrix below remained byte-identical through the implementation and documentation corrections; its recorded hash is `4f9294138ee845a6d924fa51780d499e2846de89`.
+
+## Maintainer Validation Record
+
+On 2026-07-28, maintainer Reaper176 supplied this exact raw evidence sequence:
+
+1. `ll 14 passed on Garuda Linux (Arch-based), Btrfs, using`
+2. After the controller asked whether all 20 or only cases 1–14 passed, requested browser/version details, and asked whether both loading modes were exercised: `all passed on Garuda Linux (Arch-based), Btrfs, using firefox`
+3. After the controller stated that the result would be recorded as all 20 and requested final confirmation whether both modes were exercised: `unknown`
+
+The second response directly answered the count clarification and superseded/corrected the first partial `ll 14...` count. The normalized result is all exact Rank 23 cases 1–20 passed: **20 passed, 0 failed, and 0 unrun**. Lowercase `firefox` is normalized to Firefox. No browser version was supplied or inferred.
+
+The recorded environment is Garuda Linux (Arch-based), Btrfs, using Firefox (version not provided). The separate loading-mode detail is explicitly unknown. The record establishes the maintainer's asserted outcome for all 20 numbered matrix entries, but it does not establish that both clean lazy-shell and protected eager-render setups were actually exercised and does not attribute any unreported loading-mode setup, separate checkout/worktree arrangement, per-case procedure, failure-injection method, permission configuration, hash path, or installed-extension identity.
+
+This validation is limited to the exact unchanged matrix and recorded environment/browser. Other browsers and browser versions, platforms, filesystems, loading-mode arrangements, extension identities outside the asserted numbered outcomes, and performance remain unvalidated or unmeasured. Agents performed static review only: no agent ran a build, test, test-running lint, script, launcher, browser, server/backend, live API, runtime, platform, filesystem, or performance exercise.
 
 ## Maintainer Validation Matrix
 
