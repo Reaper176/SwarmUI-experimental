@@ -16,53 +16,40 @@ namespace SwarmUI.WebAPI;
 public static class UtilAPI
 {
     /// <summary>Shared identity for one core lazy-loaded generation-page tab.</summary>
-    public record class LazyGenPageTabDescriptor
+    /// <param name="Key">Client-safe key used to identify the lazy tab.</param>
+    /// <param name="TabId">DOM ID of the lazy tab content element.</param>
+    /// <param name="ButtonId">DOM ID of the lazy tab navigation button.</param>
+    /// <param name="DisplayLabel">User-facing label shown for the lazy tab.</param>
+    /// <param name="Partial">Razor partial name rendered for the lazy tab.</param>
+    /// <param name="LoadingText">Loading text shown while the lazy tab partial is fetched.</param>
+    /// <param name="Permission">Permission required to request the lazy tab partial.</param>
+    /// <param name="ShowPermissionOnHeader">Whether the navigation header declares the tab permission requirement.</param>
+    public record class LazyGenPageTabDescriptor(string Key, string TabId, string ButtonId, string DisplayLabel,
+        string Partial, string LoadingText, PermInfo Permission, bool ShowPermissionOnHeader)
     {
         /// <summary>Client-safe key used to identify the lazy tab.</summary>
-        public string Key { get; }
+        public string Key { get; init; } = Key;
 
         /// <summary>DOM ID of the lazy tab content element.</summary>
-        public string TabId { get; }
+        public string TabId { get; init; } = TabId;
 
         /// <summary>DOM ID of the lazy tab navigation button.</summary>
-        public string ButtonId { get; }
+        public string ButtonId { get; init; } = ButtonId;
 
         /// <summary>User-facing label shown for the lazy tab.</summary>
-        public string DisplayLabel { get; }
+        public string DisplayLabel { get; init; } = DisplayLabel;
 
         /// <summary>Razor partial name rendered for the lazy tab.</summary>
-        public string Partial { get; }
+        public string Partial { get; init; } = Partial;
 
         /// <summary>Loading text shown while the lazy tab partial is fetched.</summary>
-        public string LoadingText { get; }
+        public string LoadingText { get; init; } = LoadingText;
 
         /// <summary>Permission required to request the lazy tab partial.</summary>
-        public PermInfo Permission { get; }
+        public PermInfo Permission { get; init; } = Permission;
 
         /// <summary>Whether the navigation header declares the tab permission requirement.</summary>
-        public bool ShowPermissionOnHeader { get; }
-
-        /// <summary>Constructs a shared core lazy-tab descriptor.</summary>
-        /// <param name="key">Client-safe key used to identify the lazy tab.</param>
-        /// <param name="tabId">DOM ID of the lazy tab content element.</param>
-        /// <param name="buttonId">DOM ID of the lazy tab navigation button.</param>
-        /// <param name="displayLabel">User-facing label shown for the lazy tab.</param>
-        /// <param name="partial">Razor partial name rendered for the lazy tab.</param>
-        /// <param name="loadingText">Loading text shown while the lazy tab partial is fetched.</param>
-        /// <param name="permission">Permission required to request the lazy tab partial.</param>
-        /// <param name="showPermissionOnHeader">Whether the navigation header declares the tab permission requirement.</param>
-        public LazyGenPageTabDescriptor(string key, string tabId, string buttonId, string displayLabel,
-            string partial, string loadingText, PermInfo permission, bool showPermissionOnHeader)
-        {
-            Key = key;
-            TabId = tabId;
-            ButtonId = buttonId;
-            DisplayLabel = displayLabel;
-            Partial = partial;
-            LoadingText = loadingText;
-            Permission = permission;
-            ShowPermissionOnHeader = showPermissionOnHeader;
-        }
+        public bool ShowPermissionOnHeader { get; init; } = ShowPermissionOnHeader;
     }
 
     /// <summary>Ordered shared descriptors for the core lazy-loaded generation-page tabs.</summary>
