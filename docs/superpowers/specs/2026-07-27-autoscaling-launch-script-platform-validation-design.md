@@ -53,7 +53,7 @@ For an ordinary path such as `worker.sh`, this returns `.sh`. The base guard com
 These defects mask each other:
 
 - adding dots without changing the polarity would reject appropriate scripts;
-- negating the current undotted comparison would reject every ordinary extension;
+- negating the approved-base undotted comparison would reject every ordinary extension;
 - both the dotted comparisons and the polarity must be corrected together.
 
 ## Goals
