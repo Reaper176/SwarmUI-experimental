@@ -22,6 +22,8 @@
 
 **Independent documentation reviews:** `DOCS_SPEC_APPROVED` and `DOCS_QUALITY_APPROVED`, with no findings.
 
+**Validation-document reviews:** The initial validation specification review found that two current-architecture statements in the audit still said Comfy F24 awaited maintainer validation. Focused correction commit `8e2601c2891c63bc9ebbed24651ff8f53abd9ee7` (`docs: update Comfy object-info validation status`) fixed both statements, after which the same reviewer re-review returned `VALIDATION_SPEC_APPROVED`. Validation quality review returned `VALIDATION_QUALITY_APPROVED` with no findings. No validation findings remain. Final integrated review is pending.
+
 ## Summary
 
 `ComfyUIRedirectHelper.ObjectInfoReadCacher` serves merged Comfy `object_info` to the embedded/direct Comfy UI through a ten-minute cache. A successful calculation fetches the first direct backend's current `object_info`, adds missing node definitions from the local raw information of every available Comfy backend, publishes the merged object as `LastObjectInfo`, and returns it.
