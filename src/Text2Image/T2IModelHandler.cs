@@ -104,6 +104,9 @@ public class T2IModelHandler
 
         public long ModelFileVersion { get; set; }
 
+        /// <summary>Ordered filesystem fingerprint of the supported model metadata sidecars.</summary>
+        public string ModelSidecarFingerprint { get; set; }
+
         public string ModelClassType { get; set; }
 
         public string Title { get; set; }
@@ -412,6 +415,8 @@ public class T2IModelHandler
             bool perFolder = Program.ServerSettings.Metadata.ModelMetadataPerFolder;
             long modified = ((DateTimeOffset)File.GetLastWriteTimeUtc(model.RawFilePath)).ToUnixTimeMilliseconds();
             string folder = model.RawFilePath.Replace('\\', '/').BeforeAndAfterLast('/', out string fileName);
+            string altModelPrefix = $"{model.OriginatingFolderPath}/{model.Name.BeforeLast('.')}";
+            string sidecarFingerprint = GetModelSidecarFingerprint(altModelPrefix);
             cache = GetCacheForFolder(perFolder ? folder : Program.DataDir);
             if (cache is null)
             {
@@ -422,6 +427,7 @@ public class T2IModelHandler
                 model.Metadata ??= new();
                 ModelMetadataStore metadata = model.Metadata;
                 metadata.ModelFileVersion = modified;
+                metadata.ModelSidecarFingerprint = sidecarFingerprint;
                 metadata.ModelName = perFolder ? fileName : model.RawFilePath;
                 metadata.Title = model.Title;
                 metadata.Description = model.Description;
@@ -445,6 +451,25 @@ public class T2IModelHandler
     public static readonly string[] AutoImageFormatSuffixes = [".jpg", ".png", ".preview.png", ".preview.jpg", ".jpeg", ".preview.jpeg", ".thumb.jpg", ".thumb.png"];
 
     public static readonly string[] AltModelMetadataJsonFileSuffixes = [".swarm.json", ".json", ".cm-info.json", ".civitai.info"];
+
+    /// <summary>Builds a stable ordered filesystem fingerprint for all supported model metadata sidecars.</summary>
+    private static string GetModelSidecarFingerprint(string altModelPrefix)
+    {
+        List<string> entries = [];
+        foreach (string altSuffix in AltModelMetadataJsonFileSuffixes)
+        {
+            FileInfo sidecar = new($"{altModelPrefix}{altSuffix}");
+            if (!sidecar.Exists)
+            {
+                entries.Add($"{altSuffix}:missing");
+            }
+            else
+            {
+                entries.Add(FormattableString.Invariant($"{altSuffix}:{sidecar.Length}:{sidecar.LastWriteTimeUtc.Ticks}"));
+            }
+        }
+        return entries.JoinString("|");
+    }
 
     public static readonly string[] AllModelAttachedExtensions = [.. AutoImageFormatSuffixes.Concat(AltModelMetadataJsonFileSuffixes)];
 
@@ -494,6 +519,8 @@ public class T2IModelHandler
         }
         string folder = model.RawFilePath.Replace('\\', '/').BeforeAndAfterLast('/', out string fileName);
         long modified = new DateTimeOffset(File.GetLastWriteTimeUtc(model.RawFilePath)).ToUnixTimeMilliseconds();
+        string altModelPrefix = $"{model.OriginatingFolderPath}/{model.Name.BeforeLast('.')}";
+        string sidecarFingerprint = GetModelSidecarFingerprint(altModelPrefix);
         bool perFolder = Program.ServerSettings.Metadata.ModelMetadataPerFolder;
         ModelDatabase cache = GetCacheForFolder(perFolder ? folder : Program.DataDir);
         if (cache is null)
@@ -518,7 +545,7 @@ public class T2IModelHandler
         {
             metadata = null;
         }
-        if (metadata is null || metadata.ModelFileVersion != modified)
+        if (metadata is null || metadata.ModelFileVersion != modified || metadata.ModelSidecarFingerprint != sidecarFingerprint)
         {
             string autoImg = GetAutoFormatImage(model);
             if (autoImg is not null)
@@ -549,7 +576,6 @@ public class T2IModelHandler
                     Logs.Warning($"Failed to load embedded metadata header for {model.Name}, continuing with sidecar metadata only:\n{ex.ReadableString()}");
                 }
             }
-            string altModelPrefix = $"{model.OriginatingFolderPath}/{model.Name.BeforeLast('.')}";
             foreach (string altSuffix in AltModelMetadataJsonFileSuffixes)
             {
                 if (File.Exists(altModelPrefix + altSuffix))
@@ -767,6 +793,7 @@ public class T2IModelHandler
             metadata = new()
             {
                 ModelFileVersion = modified,
+                ModelSidecarFingerprint = sidecarFingerprint,
                 TimeModified = modified,
                 TimeCreated = new DateTimeOffset(File.GetCreationTimeUtc(model.RawFilePath)).ToUnixTimeMilliseconds(),
                 ModelName = modelCacheId,
