@@ -3333,27 +3333,7 @@ public partial class WorkflowGenerator
     /// <summary>Returns true if the node is connected to anything, or false if it has no outbound connections.</summary>
     public bool NodeIsConnectedAnywhere(string nodeId, int ind = -1, string exclude = null)
     {
-        if (UsedInputs is null)
-        {
-            UsedInputs = [];
-            foreach (JProperty node in Workflow.Properties())
-            {
-                if (node.Name == exclude)
-                {
-                    continue;
-                }
-                JObject inputs = node.Value["inputs"] as JObject;
-                foreach (JProperty property in inputs.Properties().ToArray())
-                {
-                    if (property.Value is JArray jarr && jarr.Count == 2)
-                    {
-                        UsedInputs.Add($"{jarr[0]}:-1");
-                        UsedInputs.Add($"{jarr[0]}:{jarr[1]}");
-                    }
-                }
-            }
-        }
-        return UsedInputs.Contains($"{nodeId}:{ind}");
+        return GetGraphEditor().NodeIsConnectedAnywhere(nodeId, ind, exclude);
     }
 
     /// <summary>Removes a class of nodes if they are not connected to anything.</summary>

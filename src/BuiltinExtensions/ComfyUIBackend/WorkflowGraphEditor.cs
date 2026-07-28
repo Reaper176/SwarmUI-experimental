@@ -100,4 +100,30 @@ internal sealed class WorkflowGraphEditor
             }
         }
     }
+
+    /// <summary>Returns whether a node output has an outbound connection in the current cached index.</summary>
+    public bool NodeIsConnectedAnywhere(string nodeId, int ind = -1, string exclude = null)
+    {
+        if (Generator.UsedInputs is null)
+        {
+            Generator.UsedInputs = [];
+            foreach (JProperty node in Generator.Workflow.Properties())
+            {
+                if (node.Name == exclude)
+                {
+                    continue;
+                }
+                JObject inputs = node.Value["inputs"] as JObject;
+                foreach (JProperty property in inputs.Properties().ToArray())
+                {
+                    if (property.Value is JArray jarr && jarr.Count == 2)
+                    {
+                        Generator.UsedInputs.Add($"{jarr[0]}:-1");
+                        Generator.UsedInputs.Add($"{jarr[0]}:{jarr[1]}");
+                    }
+                }
+            }
+        }
+        return Generator.UsedInputs.Contains($"{nodeId}:{ind}");
+    }
 }
