@@ -89,7 +89,10 @@ public class AutoScalingBackend : AbstractT2IBackend
             return;
         }
         string scriptExt = Path.GetExtension(Settings.StartScript).ToLowerInvariant();
-        if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows) ? (scriptExt == "bat" || scriptExt == "ps1") : (scriptExt == "sh"))
+        bool isAppropriate = RuntimeInformation.IsOSPlatform(OSPlatform.Windows)
+            ? scriptExt == ".bat" || scriptExt == ".ps1"
+            : scriptExt == ".sh";
+        if (!isAppropriate)
         {
             Logs.Error($"AutoScalingBackend cannot handle start script: '{Settings.StartScript}', not an OS-appropriate shell script. Use 'sh' for Linux/Mac, or 'bat'/'ps1' for Windows.");
             Status = BackendStatus.ERRORED;
