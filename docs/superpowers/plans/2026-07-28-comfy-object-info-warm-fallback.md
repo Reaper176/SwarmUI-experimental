@@ -39,7 +39,7 @@
   - Records implementation provenance, static review, and later maintainer evidence.
 - Modify architecture audit: `docs/superpowers/audits/2026-07-21-maintainability-architecture-refresh.md`
   - Updates Comfy F24, the risk register, roadmap Rank 21, current summaries, and recommended-next state.
-- Review-only cache expiry callers:
+- Review-only external manual-expiry callers:
   - `src/BuiltinExtensions/ComfyUIBackend/ComfyUIBackendExtension.cs`;
   - `src/BuiltinExtensions/ComfyUIBackend/ComfyUIWebAPI.cs`.
 - Review-only backend-local object-info owner:
@@ -144,7 +144,7 @@ Confirm:
 
 - the factory is the only maintained `LastObjectInfo` writer;
 - the cached route is the only maintained `ObjectInfoReadCacher.GetValue()` caller;
-- exactly two maintained `ForceExpire()` callers exist;
+- three maintained `ForceExpire()` call sites exist: the two external callers in `ComfyUIBackendExtension.Refresh` and `ComfyUIWebAPI.ComfyEnsureRefreshable`, plus the internal null-data safeguard in `ComfyBackendDirectHandler`;
 - the four cached route forms remain in one conditional;
 - `RawObjectInfo` is backend-local input to the union and has separate publication ownership;
 - capability snapshots do not consume `LastObjectInfo`;
@@ -171,8 +171,9 @@ Statically record:
 | Fresh fetch and parse succeeds | null or non-null | fresh object enters union and publishes |
 | First-backend selection fails | null or non-null | throws before existing catch |
 | Fetch or parse throws | null | logs and rethrows |
-| Fetch or parse throws | non-null | logs, continues with null `result`, then faults if union dereferences |
-| Fresh parse yields null | null or non-null | null reaches union and can fault |
+| Fetch or parse throws | non-null | logs and leaves `result` null; faults if the union reaches any property, otherwise skips publication and returns the prior object |
+| Fresh parse yields null | non-null | leaves `result` null without entering the catch; faults if the union reaches any property, otherwise skips publication and returns the prior object |
+| Fresh parse yields null | null | leaves `result` null without entering the catch; faults if the union reaches any property, otherwise returns null, after which the handler expires the cache and can fault at `data.ToString()` |
 | Unexpired cache hit | any | wrapper returns retained value without calculation |
 
 - [ ] **Step 7: Confirm protected scope**
@@ -413,7 +414,7 @@ Confirm from unchanged source:
 - backend-data cache selection remains unchanged;
 - cached response remains HTTP 200 JSON with the existing `StringContent`;
 - cache-disabled requests still use the selected backend's direct GET;
-- both `ForceExpire` callers are unchanged;
+- all three `ForceExpire` call sites are unchanged: the two external manual-expiry callers and the handler's internal null-data safeguard;
 - backend-local `RawObjectInfo`, node types, model lists, feature snapshots, and publication remain unchanged;
 - no workflow, generation, validation, model, or UI contract changed.
 

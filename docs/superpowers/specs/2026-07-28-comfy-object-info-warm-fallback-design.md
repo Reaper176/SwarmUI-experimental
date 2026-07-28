@@ -12,7 +12,7 @@
 
 `ComfyUIRedirectHelper.ObjectInfoReadCacher` serves merged Comfy `object_info` to the embedded/direct Comfy UI through a ten-minute cache. A successful calculation fetches the first direct backend's current `object_info`, adds missing node definitions from the local raw information of every available Comfy backend, publishes the merged object as `LastObjectInfo`, and returns it.
 
-The factory already attempts to tolerate a later fresh-fetch failure when `LastObjectInfo` exists. That fallback is defective: the catch does not assign the prior object to the private `result`, so the following union loop dereferences null. Rank 21 makes the fallback explicit and safe by deep-cloning the prior snapshot before the existing union. The first-ever failure still propagates.
+The factory already attempts to tolerate a later fresh-fetch failure when `LastObjectInfo` exists. That fallback is defective: the catch does not assign the prior object to the private `result`, so the following union faults if it reaches any backend-local property. If the union reaches no property, publication is skipped and the prior `LastObjectInfo` is returned without becoming the private merge target. Rank 21 makes the fallback explicit and safe by deep-cloning the prior snapshot before the existing union. The first-ever thrown failure still propagates.
 
 ## Current Boundary
 
@@ -24,9 +24,11 @@ src/BuiltinExtensions/ComfyUIBackend/ComfyUIRedirectHelper.cs
 
 Its maintained consumers are:
 
-- `ComfyBackendDirectHandler`, for cached `object_info`, queried `object_info`, `api/object_info`, and queried `api/object_info` routes when backend-data caching is enabled;
+- `ComfyBackendDirectHandler`, for cached `object_info`, queried `object_info`, `api/object_info`, and queried `api/object_info` routes when backend-data caching is enabled, including its internal null-data `ForceExpire()` safeguard;
 - `ComfyUIBackendExtension.Refresh`, which forces cache expiry before backend value refresh; and
 - `ComfyUIWebAPI.ComfyEnsureRefreshable`, which forces cache expiry on request.
+
+These are three maintained `ForceExpire()` call sites: the handler's internal null-data safeguard and the two named external manual-expiry callers.
 
 `LastObjectInfo` has no other maintained reader or writer. `SingleValueExpiringCacheAsync<JObject>` serializes refresh calculation and returns the current value without recalculation until expiry.
 
@@ -42,7 +44,7 @@ JObject result = null;
 
 It then attempts a synchronous first-backend GET and parse. Its catch logs the exception and rethrows only when `LastObjectInfo` is null. With a prior snapshot, it continues while `result` is still null.
 
-The next loop unconditionally evaluates:
+If the next loop reaches any property, it evaluates:
 
 ```csharp
 result.ContainsKey(property.Name)
@@ -55,6 +57,8 @@ result[property.Name] = property.Value;
 ```
 
 The intended stale fallback therefore faults before it can return `LastObjectInfo` whenever the loop reaches an available backend with non-null `RawObjectInfo`. The prior published object is not used as the merge target.
+
+If no backend-local property is reached, `result` remains null, publication is skipped, and `return LastObjectInfo` returns the prior object on a warm thrown-failure path. A fresh parse that yields null follows the same union behavior without entering the catch: reaching any property faults, while reaching none returns the prior object when warm or null when cold. After a cold null return, `ComfyBackendDirectHandler` invokes its internal `ForceExpire()` safeguard and can then fault when response construction calls `data.ToString()`.
 
 First-backend selection currently occurs before the exception boundary. A transient race that leaves no direct backend between the handler's initial availability check and cache calculation therefore cannot use a warm fallback either.
 
@@ -71,7 +75,7 @@ First-backend selection currently occurs before the exception boundary. A transi
 
 - Do not change the Comfy `object_info` schema or reinterpret any node definition.
 - Do not add retries, alternate fetch targets, background refresh, timers, cache bounds, or persistence.
-- Do not change the ten-minute expiry or either manual-expiry caller.
+- Do not change the ten-minute expiry, the two external manual-expiry callers, or the handler's internal null-data expiry safeguard.
 - Do not change backend ordering, first-backend preference, or duplicate-node precedence.
 - Do not treat cached node information as proof that a backend or node is currently available.
 - Do not modify backend-local `RawObjectInfo`, capability snapshots, capability aggregation, generation, validation, model lists, or workflow construction.
@@ -213,7 +217,7 @@ Static review must:
 
 1. pin the approved source/audit base, branch, index, and protected maintainer state;
 2. inventory every maintained `ObjectInfoReadCacher` and `LastObjectInfo` reader/writer;
-3. inventory both `ForceExpire` callers and all four cached route forms;
+3. inventory all three `ForceExpire` call sites—the two external manual-expiry callers and the handler's internal null-data safeguard—and all four cached route forms;
 4. compare the complete factory before and after;
 5. prove first-backend selection occurs within the failure boundary;
 6. prove a null fresh result becomes an explicit failure;
