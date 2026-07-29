@@ -126,4 +126,36 @@ internal sealed class WorkflowGraphEditor
         }
         return Generator.UsedInputs.Contains($"{nodeId}:{ind}");
     }
+
+    /// <summary>Removes a class of nodes if they are not connected to anything.</summary>
+    public void RemoveClassIfUnused(string classType)
+    {
+        Generator.UsedInputs = null;
+        RunOnNodesOfClass(classType, (id, data) =>
+        {
+            if (!NodeIsConnectedAnywhere(id))
+            {
+                Generator.Workflow.Remove(id);
+            }
+        });
+    }
+
+    /// <summary>Removes a set of classes of nodes if they are not connected to anything.</summary>
+    public void RemoveClassesIfUnused(HashSet<string> classTypes)
+    {
+        bool run = true;
+        while (run)
+        {
+            Generator.UsedInputs = null;
+            run = false;
+            foreach (JProperty property in NodesOfClasses(classTypes))
+            {
+                if (!NodeIsConnectedAnywhere(property.Name))
+                {
+                    Generator.Workflow.Remove(property.Name);
+                    run = true;
+                }
+            }
+        }
+    }
 }

@@ -3339,32 +3339,12 @@ public partial class WorkflowGenerator
     /// <summary>Removes a class of nodes if they are not connected to anything.</summary>
     public void RemoveClassIfUnused(string classType)
     {
-        UsedInputs = null;
-        RunOnNodesOfClass(classType, (id, data) =>
-        {
-            if (!NodeIsConnectedAnywhere(id))
-            {
-                Workflow.Remove(id);
-            }
-        });
+        GetGraphEditor().RemoveClassIfUnused(classType);
     }
 
     /// <summary>Removes a set of classes of nodes if they are not connected to anything.</summary>
     public void RemoveClassesIfUnused(HashSet<string> classTypes)
     {
-        bool run = true;
-        while (run)
-        {
-            UsedInputs = null;
-            run = false;
-            foreach (JProperty property in NodesOfClasses(classTypes))
-            {
-                if (!NodeIsConnectedAnywhere(property.Name))
-                {
-                    Workflow.Remove(property.Name);
-                    run = true;
-                }
-            }
-        }
+        GetGraphEditor().RemoveClassesIfUnused(classTypes);
     }
 }
