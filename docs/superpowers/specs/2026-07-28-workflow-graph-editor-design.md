@@ -1,6 +1,6 @@
 # Facade-Preserving Workflow Graph Editor Design
 
-**Status:** Design approved; implementation not started
+**Status:** Implemented; partially validated under a one-time maintainer-authorized agent override (24 passed, 0 failed, 18 unrun)
 
 **Date:** 2026-07-28
 
@@ -490,10 +490,13 @@ must be frozen. The comparison must not hide the difference through broader
 normalization. A case that cannot be made reproducible does not satisfy the
 parity gate.
 
-The capture fixture and comparison utility are maintainer validation tools, not
-committed production instrumentation. Agents do not build, execute the fixture,
-run SwarmUI, submit workflows, automate a browser, or perform runtime
-comparisons.
+The capture fixture and comparison utility are external validation tools, not
+committed production instrumentation. Repository policy normally reserves their
+execution to the maintainer. For this implementation only, maintainer Reaper176
+granted a one-time override for the agent to run the required build and
+out-of-tree deterministic fixture. The override did not authorize SwarmUI
+service/backend execution, browser automation, live APIs, GPU work, or user-data
+access.
 
 ## Maintainer Validation Matrix
 
@@ -578,8 +581,9 @@ Agent static verification must:
 14. run whitespace/error checks that do not build, execute tests, or launch
     runtime code;
 15. verify the index excludes protected maintainer work; and
-16. record that all runtime, graph, ABI, platform, and filesystem evidence comes
-    from the maintainer.
+16. record the exact authority and origin of every runtime, graph, ABI, platform,
+    and filesystem result without representing authorized agent evidence as a
+    maintainer-run result.
 
 Static inspection cannot establish compiled ABI loading or runtime graph parity.
 Those claims require the maintainer matrix.
@@ -652,16 +656,101 @@ public members or unrelated generation behavior. If integrated parity fails and
 the failing stage cannot be isolated, revert all Rank 24 production delegates
 together.
 
-## Evidence Boundary
+## Implementation and Review Record
 
-This document records an approved design, not an implementation or validation
-result. No source implementation has begun. No agent build, test, test-running
-lint, launcher, server, browser, backend, live API, workflow-generation,
-extension-loading, platform, filesystem, ABI, or performance exercise is
-claimed.
+The approved source/audit base is
+`e9d99dead294740265676c78a711b03593906211`. The approved design history is
+`db5ae4e0e4e4e7341f6ecf26edd565ac5dd1ff62` followed by corrected design head
+`5ce36366ca64482f59e965ab62a86a7d779bdc1f`; the implementation plan is
+`2064ffd937472c5cf958c196bc30d7ea38474417`.
 
-The recorded runtime target is the maintainer's Garuda Linux (Arch-based), Btrfs
-environment. Browser details are relevant only to any browser-mediated capture
-procedure and must be recorded if used. Wider platforms, filesystems, model
-families, optional dependencies, external extensions, and performance remain
-unvalidated unless the final evidence explicitly states otherwise.
+Six independently reviewable production commits implement the staged
+delegation:
+
+1. `f3dc3d3cb87a1f7a06ca2f27626f338221c22a8e` — node identity;
+2. `ac26e743e423a932cc9821d8998fd341638646b0` — node creation;
+3. `891e42dea1d0e0e0f9e85668d32a47e3a2a6702d` — traversal;
+4. `b342b3bddcb726da190dd1f9b8f35b7c6f63a339` — connection replacement;
+5. `8f667aff1d88a4e9add81346ce0597b537eea7bb` — connectivity indexing; and
+6. `cebd450daecabeb5808aa41c477860828c92de83` — unused-node cleanup and final
+   source head.
+
+The exact production projection from the parent of the first production commit
+through the final source head is two files and no others:
+
+- `src/BuiltinExtensions/ComfyUIBackend/WorkflowGenerator.cs` — 21 insertions,
+  85 deletions, final blob
+  `6e9e8a05eeba4a35f4ca05dfeb57b1f304b1954c`; and
+- `src/BuiltinExtensions/ComfyUIBackend/WorkflowGraphEditor.cs` — 161
+  insertions, final blob
+  `22f5f25bc14ee7d20d9cb860c834b0bf6e9bf097`.
+
+Static comparison against the approved base found the public declaration
+inventory unchanged, including public fields, facade method signatures, static
+step/list surfaces, and the implicit public parameterless constructor.
+Out-of-scope maintained consumers were byte-unchanged, no consumer references
+the internal editor, and the editor stores only its owning generator reference.
+The stage reviews returned `TASK1_SPEC_APPROVED`,
+`TASK1_QUALITY_APPROVED`, `TASK2_SPEC_APPROVED`,
+`TASK2_QUALITY_APPROVED`, `TASK3_SPEC_APPROVED`,
+`TASK3_QUALITY_APPROVED`, `TASK4_SPEC_APPROVED`,
+`TASK4_QUALITY_APPROVED`, `TASK5_SPEC_APPROVED`,
+`TASK5_QUALITY_APPROVED`, `TASK6_SPEC_APPROVED`,
+`TASK6_QUALITY_APPROVED`, `TASK7_SPEC_APPROVED`, and
+`TASK7_QUALITY_APPROVED`. Final source review returned
+`SOURCE_SPEC_APPROVED` and `SOURCE_QUALITY_APPROVED`.
+
+The frozen focused-parity record contains
+`RANK24_BASELINE_CAPTURED`, `RANK24_STAGE1_PARITY_PASSED`,
+`RANK24_STAGE2_PARITY_PASSED`, `RANK24_STAGE3_PARITY_PASSED`,
+`RANK24_STAGE4_PARITY_PASSED`, `RANK24_STAGE5_PARITY_PASSED`, and
+`RANK24_STAGE6_PARITY_PASSED`. Each stage used the unchanged approved-base
+fixture. Stage 1 matched cases 1–4 and 24; stage 2 matched cases 5–12 and
+24; stage 3 matched cases 13, 14, 23, and 24; stage 4 matched cases 15–17
+and 24; stage 5 matched cases 18–20, 23, and 24; and stage 6 matched cases
+21–24. Every focused comparison had zero failures. The final available-case
+record is `FINAL_VALIDATION_PASS`.
+
+## Validation Result and Evidence Boundary
+
+Maintainer Reaper176 supplied these two exact raw messages:
+
+- `user is unable to provide results but as a maintainer they are granting one time over ride permission for you to run the tests required.`
+- `RANK24_BASELINE_CAPTURED`
+
+No textual normalization was applied to either message. The first message is
+authorization for a one-time agent-run validation override, not a maintainer-run
+test result. Under that override, the agent used only external output paths for
+a Release build and an out-of-tree deterministic fixture. The final source head
+built with 0 warnings and 0 errors on 2026-07-28. The unchanged precompiled
+fixture loaded and executed. Cases 1–24 matched the approved-base compact
+records byte for byte, including the expected-failure records in cases 4, 17,
+and 23. Cases 25–42 were explicitly preserved as unrun because they require
+representative models, workflow families, services/backends, optional
+dependencies, or other live setup outside the override. The exact normalized
+outcome is therefore 24 passed, 0 failed, and 18 unrun.
+
+The reproducibility evidence is outside the repository under
+`.worktrees/rank24-validation`: the frozen fixture
+`abi/Rank24Fixture.dll` has SHA-256
+`6845b6c2b9d06985faca8b3aaf1fc6c1bac5a61124023c2de5ade51ed5d58a27`;
+`capture/baseline.json` has SHA-256
+`08e38d59a1c11fa7c09af69ac9eda9230bd6b4eb645068e6dd7fcd9f46b9f216`;
+and the final candidate `final-task9/runner/SwarmUI.dll` has SHA-256
+`32d988d754ce2645394306476fa8ddd7ee26212bc32b1dda9b33578114243b7c`.
+The concise final record is
+`final-task9/final-verification.log`.
+
+The recorded environment is Garuda Linux rolling (Arch-based) on Btrfs.
+Browser and backend topology were not used for cases 1–24. No browser version,
+Comfy/backend topology, model identity, model family, optional-node inventory,
+or representative workflow-family result was supplied or inferred. No SwarmUI
+service/backend, browser, live API, GPU, user-data, generated-media, concurrency,
+performance, other-platform, or other-filesystem result is claimed. The
+unchanged external fixture demonstrates only the exercised ABI/public-state
+surface; unknown external extensions remain unvalidated.
+
+Because cases 25–42 remain unrun, this is not full 42-case validation and is not
+described as completely maintainer-validated. Rank 24 remains the unresolved
+Recommended Next Project until the missing representative workflow matrix is
+run or separately dispositioned.
