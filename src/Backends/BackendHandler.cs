@@ -31,19 +31,27 @@ public class BackendHandler
     /// <summary>Signal when any backends are available, or other reason to check backends (eg new requests came in).</summary>
     public AsyncAutoResetEvent CheckBackendsSignal = new(false);
 
-    /// <summary>Sequence number of the latest maintained scheduler signal for temporary Rank 26 measurement.</summary>
-    private long SchedulerMeasurementSignalSequence = 0;
+    /// <summary>Lazily created queue of immutable temporary Rank 26 maintained scheduler signal samples.</summary>
+    private ConcurrentQueue<SchedulerCostMeasurement.SignalSample> SchedulerMeasurementSignals = null;
 
-    /// <summary>Atomic immutable timestamp and source snapshot of the latest maintained scheduler signal for temporary Rank 26 measurement.</summary>
-    private SchedulerCostMeasurement.SignalSnapshot SchedulerMeasurementSignalSnapshot = null;
-
-    /// <summary>Lazily created measurement-only lock that keeps maintained signal sequence and snapshot publication coherent.</summary>
-    private object SchedulerMeasurementSignalLock = null;
-
-    /// <summary>Returns a nonblocking snapshot of the latest maintained scheduler signal.</summary>
-    internal SchedulerCostMeasurement.SignalSnapshot CaptureSchedulerSignalSnapshot()
+    /// <summary>Drains maintained scheduler signal samples without blocking or synchronizing scheduler state.</summary>
+    internal SchedulerCostMeasurement.SignalDrain DrainSchedulerSignals()
     {
-        return Volatile.Read(ref SchedulerMeasurementSignalSnapshot) ?? new(0, 0, "timeout_or_external");
+        ConcurrentQueue<SchedulerCostMeasurement.SignalSample> signals = Volatile.Read(ref SchedulerMeasurementSignals);
+        if (signals is null)
+        {
+            return new(0, 0, "timeout_or_external", false);
+        }
+        int count = 0;
+        bool containsShutdown = false;
+        SchedulerCostMeasurement.SignalSample latest = null;
+        while (signals.TryDequeue(out SchedulerCostMeasurement.SignalSample sample))
+        {
+            count++;
+            containsShutdown |= sample.Source == "shutdown";
+            latest = sample;
+        }
+        return latest is null ? new(0, 0, "timeout_or_external", false) : new(count, latest.Timestamp, latest.Source, containsShutdown);
     }
 
     /// <summary>Records a maintained scheduler signal when enabled, then wakes the unchanged scheduler event exactly once.</summary>
@@ -53,18 +61,14 @@ public class BackendHandler
         {
             try
             {
-                object signalLock = Volatile.Read(ref SchedulerMeasurementSignalLock);
-                if (signalLock is null)
+                ConcurrentQueue<SchedulerCostMeasurement.SignalSample> signals = Volatile.Read(ref SchedulerMeasurementSignals);
+                if (signals is null)
                 {
-                    object candidateLock = new();
-                    signalLock = Interlocked.CompareExchange(ref SchedulerMeasurementSignalLock, candidateLock, null) ?? candidateLock;
+                    ConcurrentQueue<SchedulerCostMeasurement.SignalSample> candidate = new();
+                    ConcurrentQueue<SchedulerCostMeasurement.SignalSample> existing = Interlocked.CompareExchange(ref SchedulerMeasurementSignals, candidate, null);
+                    signals = existing ?? candidate;
                 }
-                lock (signalLock)
-                {
-                    long sequence = Interlocked.Increment(ref SchedulerMeasurementSignalSequence);
-                    SchedulerCostMeasurement.SignalSnapshot snapshot = new(sequence, Stopwatch.GetTimestamp(), SchedulerCostMeasurement.NormalizeSignalSource(source));
-                    Volatile.Write(ref SchedulerMeasurementSignalSnapshot, snapshot);
-                }
+                signals.Enqueue(new(Stopwatch.GetTimestamp(), SchedulerCostMeasurement.NormalizeSignalSource(source)));
             }
             catch
             {
@@ -1568,7 +1572,7 @@ public class BackendHandler
             }
         }
         bool wasNone = true;
-        long lastSignalSequence = -1;
+        bool hasMeasuredPass = false;
         while (true)
         {
             SchedulerCostMeasurement.PassAttempt passAttempt = null;
@@ -1585,7 +1589,7 @@ public class BackendHandler
                 }
                 return;
             }
-            passAttempt = SchedulerCostMeasurement.BeginPass(this, ref lastSignalSequence);
+            passAttempt = SchedulerCostMeasurement.BeginPass(this, ref hasMeasuredPass);
             try
             {
                 bool anyMoved = false;
@@ -1621,7 +1625,7 @@ public class BackendHandler
                         request.Failure = ex;
                         Logs.Error($"[BackendHandler] Backend request #{request.ID} failed: {ex.ReadableString()}");
                     }
-                    passAttempt?.RecordRequestState(request.Result is not null, request.Failure is not null);
+                    passAttempt?.RecordRequestState(request, request.Result is not null, request.Failure is not null);
                     if (request.Result is not null || request.Failure is not null)
                     {
                         T2IBackendRequests.TryRemove(request.ID, out _);
@@ -1660,7 +1664,7 @@ public class BackendHandler
                         foreach (T2IBackendRequest request in T2IBackendRequests.Values.ToArray())
                         {
                             request.Failure = new TimeoutException($"No backend has responded in {Program.ServerSettings.Backends.MaxTimeoutMinutes} minutes.");
-                            passAttempt?.RecordWaitingFailure();
+                            passAttempt?.RecordWaitingFailure(request);
                             anyMoved = true;
                             request.CompletedEvent.Set();
                         }
@@ -1673,7 +1677,6 @@ public class BackendHandler
                     Program.TickNoGenerationsEvent?.Invoke();
                 }
                 SchedulerCostMeasurement.MarkPassActiveComplete(passAttempt);
-                bool shutdownWake = false;
                 if (empty || !anyMoved)
                 {
                     SchedulerCostMeasurement.MarkPassWaitStart(passAttempt);
@@ -1681,18 +1684,17 @@ public class BackendHandler
                     {
                         CheckBackendsSignal.WaitAsync(TimeSpan.FromSeconds(1), Program.GlobalProgramCancel).Wait();
                     }
-                    catch
-                    {
-                        shutdownWake = SchedulerCostMeasurement.ObserveShutdownWake(this, passAttempt, ref lastSignalSequence);
-                        throw;
-                    }
                     finally
                     {
                         SchedulerCostMeasurement.MarkPassWaitEnd(passAttempt);
                     }
-                    shutdownWake = SchedulerCostMeasurement.ObserveShutdownWake(this, passAttempt, ref lastSignalSequence);
                 }
-                SchedulerCostMeasurement.CompletePass(passAttempt, shutdownWake ? "shutdown" : startedEmpty ? "idle" : anyMoved ? "progress" : "waiting");
+                bool isShutdown = HasShutdown || Program.GlobalProgramCancel.IsCancellationRequested;
+                if (isShutdown)
+                {
+                    SchedulerCostMeasurement.DrainSignalsIntoPass(this, passAttempt);
+                }
+                SchedulerCostMeasurement.CompletePass(passAttempt, isShutdown ? "shutdown" : startedEmpty ? "idle" : anyMoved ? "progress" : "waiting");
                 if (MonitorTimes)
                 {
                     mark("PostSignal");
@@ -1703,7 +1705,12 @@ public class BackendHandler
             }
             catch (Exception ex)
             {
-                SchedulerCostMeasurement.CompletePass(passAttempt, passAttempt?.WakeSource == "shutdown" ? "shutdown" : "error");
+                bool isShutdown = HasShutdown || Program.GlobalProgramCancel.IsCancellationRequested;
+                if (isShutdown)
+                {
+                    SchedulerCostMeasurement.DrainSignalsIntoPass(this, passAttempt);
+                }
+                SchedulerCostMeasurement.CompletePass(passAttempt, isShutdown ? "shutdown" : "error");
                 SchedulerCostMeasurement.EmitCompletedPass(passAttempt);
                 Logs.Error($"Backend handler loop error: {ex.ReadableString()}");
                 if (Program.GlobalProgramCancel.IsCancellationRequested)

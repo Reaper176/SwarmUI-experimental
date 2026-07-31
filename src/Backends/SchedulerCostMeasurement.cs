@@ -17,26 +17,25 @@ internal static class SchedulerCostMeasurement
     /// <summary>Process-local source for monotonically increasing scheduler pass identifiers.</summary>
     private static long NextPassId = 0;
 
-    /// <summary>Snapshot of the latest maintained scheduler signal.</summary>
-    internal sealed class SignalSnapshot
+    /// <summary>Immutable bounded data for one maintained scheduler signal.</summary>
+    internal sealed class SignalSample
     {
-        /// <summary>Monotonic sequence number for this maintained signal snapshot.</summary>
-        public long Sequence { get; }
-
         /// <summary>Monotonic timestamp at which this maintained signal was recorded.</summary>
         public long Timestamp { get; }
 
         /// <summary>Bounded category for this maintained signal.</summary>
         public string Source { get; }
 
-        /// <summary>Constructs an immutable maintained scheduler signal snapshot.</summary>
-        public SignalSnapshot(long sequence, long timestamp, string source)
+        /// <summary>Constructs an immutable maintained scheduler signal sample.</summary>
+        public SignalSample(long timestamp, string source)
         {
-            Sequence = sequence;
             Timestamp = timestamp;
             Source = source;
         }
     }
+
+    /// <summary>Bounded aggregate of maintained scheduler signals drained at one measurement boundary.</summary>
+    internal readonly record struct SignalDrain(int Count, long Timestamp, string Source, bool ContainsShutdown);
 
     /// <summary>Measurements accumulated for one scheduler loop pass.</summary>
     internal sealed class PassAttempt
@@ -128,6 +127,9 @@ internal static class SchedulerCostMeasurement
         /// <summary>Completed request-search attempts whose record emission is deferred until this pass endpoint is captured.</summary>
         public List<TryFindAttempt> TryFindAttempts = [];
 
+        /// <summary>References to requests classified as waiting during this pass, used only for exact timeout reclassification.</summary>
+        public HashSet<BackendHandler.T2IBackendRequest> WaitingRequests = [];
+
         /// <summary>Records a cancellation before request-search work.</summary>
         public void RecordCancelled()
         {
@@ -135,7 +137,7 @@ internal static class SchedulerCostMeasurement
         }
 
         /// <summary>Records completed request-search aggregates for this pass.</summary>
-        public void RecordRequestState(bool claimed, bool failed)
+        public void RecordRequestState(BackendHandler.T2IBackendRequest request, bool claimed, bool failed)
         {
             Visits++;
             if (claimed)
@@ -149,13 +151,14 @@ internal static class SchedulerCostMeasurement
             else
             {
                 Waiting++;
+                WaitingRequests.Add(request);
             }
         }
 
         /// <summary>Reclassifies a previously waiting request when the existing pass-level timeout assigns its failure.</summary>
-        public void RecordWaitingFailure()
+        public void RecordWaitingFailure(BackendHandler.T2IBackendRequest request)
         {
-            if (Waiting > 0)
+            if (WaitingRequests.Remove(request))
             {
                 Waiting--;
                 Failed++;
@@ -341,7 +344,7 @@ internal static class SchedulerCostMeasurement
     }
 
     /// <summary>Begins a scheduler pass measurement when enabled.</summary>
-    internal static PassAttempt BeginPass(BackendHandler handler, ref long lastSignalSequence)
+    internal static PassAttempt BeginPass(BackendHandler handler, ref bool hasMeasuredPass)
     {
         if (!IsEnabled())
         {
@@ -349,14 +352,13 @@ internal static class SchedulerCostMeasurement
         }
         try
         {
-            SignalSnapshot signal = handler.CaptureSchedulerSignalSnapshot();
+            SignalDrain signal = handler.DrainSchedulerSignals();
             long now = Stopwatch.GetTimestamp();
-            bool firstPass = lastSignalSequence < 0;
-            bool hasSignal = !firstPass && signal.Sequence > lastSignalSequence;
-            long signalCount = hasSignal ? signal.Sequence - lastSignalSequence : 0;
-            string source = firstPass ? "startup" : hasSignal ? signal.Source : "timeout_or_external";
+            bool firstPass = !hasMeasuredPass;
+            bool hasSignal = signal.Count > 0;
+            long signalCount = signal.Count;
+            string source = hasSignal ? signal.Source : firstPass ? "startup" : "timeout_or_external";
             long signalAgeUs = hasSignal && signal.Timestamp > 0 ? ToMicroseconds(signal.Timestamp, now) : -1;
-            lastSignalSequence = signal.Sequence;
             int pressureCount = 0;
             int pressureMembershipCount = 0;
             foreach (BackendHandler.ModelRequestPressure pressure in handler.ModelRequests.Values)
@@ -364,7 +366,7 @@ internal static class SchedulerCostMeasurement
                 pressureCount++;
                 pressureMembershipCount += Math.Max(0, pressure.Count);
             }
-            return new()
+            PassAttempt attempt = new()
             {
                 PassId = Interlocked.Increment(ref NextPassId),
                 Scenario = GetScenario(),
@@ -379,10 +381,38 @@ internal static class SchedulerCostMeasurement
                 PressureCount = pressureCount,
                 PressureMembershipCount = pressureMembershipCount
             };
+            hasMeasuredPass = true;
+            return attempt;
         }
         catch
         {
             return null;
+        }
+    }
+
+    /// <summary>Drains maintained signals into a current pass only when shutdown prevents a subsequent pass from observing them.</summary>
+    internal static void DrainSignalsIntoPass(BackendHandler handler, PassAttempt attempt)
+    {
+        if (attempt is null)
+        {
+            return;
+        }
+        try
+        {
+            SignalDrain signal = handler.DrainSchedulerSignals();
+            if (signal.Count == 0)
+            {
+                return;
+            }
+            long now = Stopwatch.GetTimestamp();
+            attempt.SignalSource = NormalizeSignalSource(signal.Source);
+            attempt.SignalCount += signal.Count;
+            attempt.SignalAgeUs = ToMicroseconds(signal.Timestamp, now);
+            attempt.SignalTimestamp = signal.Timestamp;
+            attempt.WakeSource = signal.ContainsShutdown ? "shutdown" : attempt.SignalSource;
+        }
+        catch
+        {
         }
     }
 
@@ -517,38 +547,6 @@ internal static class SchedulerCostMeasurement
         }
     }
 
-    /// <summary>Observes whether a maintained shutdown signal woke the current pass without creating a new pass.</summary>
-    internal static bool ObserveShutdownWake(BackendHandler handler, PassAttempt attempt, ref long lastSignalSequence)
-    {
-        if (attempt is null)
-        {
-            return false;
-        }
-        try
-        {
-            SignalSnapshot signal = handler.CaptureSchedulerSignalSnapshot();
-            if (signal.Sequence <= lastSignalSequence)
-            {
-                return false;
-            }
-            lastSignalSequence = signal.Sequence;
-            if (signal.Source != "shutdown")
-            {
-                return false;
-            }
-            attempt.SignalSource = "shutdown";
-            attempt.SignalCount = 1;
-            attempt.SignalAgeUs = 0;
-            attempt.SignalTimestamp = signal.Timestamp;
-            attempt.WakeSource = "shutdown";
-            return true;
-        }
-        catch
-        {
-            return false;
-        }
-    }
-
     /// <summary>Captures a request-search endpoint before any nested record construction or emission.</summary>
     internal static void CompleteTryFind(TryFindAttempt attempt, string outcome)
     {
@@ -611,36 +609,38 @@ internal static class SchedulerCostMeasurement
             }
             long activeEndTimestamp = attempt.ActiveEndTimestamp == 0 ? attempt.EndTimestamp : attempt.ActiveEndTimestamp;
             long waitUs = attempt.WaitStartTimestamp > 0 && attempt.WaitEndTimestamp > 0 ? ToMicroseconds(attempt.WaitStartTimestamp, attempt.WaitEndTimestamp) : 0;
-            long signalToClaimUs = attempt.SignalTimestamp > 0 && attempt.FirstClaimTimestamp > 0 ? ToMicroseconds(attempt.SignalTimestamp, attempt.FirstClaimTimestamp) : -1;
-            object record = new
+            Dictionary<string, object> record = new()
             {
-                schema = Schema,
-                record = "pass",
-                pass_id = attempt.PassId,
-                scenario = attempt.Scenario,
-                outcome = attempt.Outcome,
-                signal_source = attempt.SignalSource,
-                wake_source = attempt.WakeSource,
-                signal_count = attempt.SignalCount,
-                signal_age_us = attempt.SignalAgeUs,
-                pending_count = attempt.PendingCount,
-                backend_count = attempt.BackendCount,
-                pressure_count = attempt.PressureCount,
-                pressure_membership_count = attempt.PressureMembershipCount,
-                visits = attempt.Visits,
-                cancelled = attempt.Cancelled,
-                claimed = attempt.Claimed,
-                failed = attempt.Failed,
-                waiting = attempt.Waiting,
-                matcher_calls = attempt.MatcherCalls,
-                matcher_us = attempt.MatcherUs,
-                pressure_us = attempt.PressureUs,
-                active_us = ToMicroseconds(attempt.StartTimestamp, activeEndTimestamp),
-                wait_us = waitUs,
-                total_us = ToMicroseconds(attempt.StartTimestamp, attempt.EndTimestamp),
-                allocation_bytes = attempt.EndAllocation - attempt.StartAllocation,
-                signal_to_first_claim_us = signalToClaimUs
+                ["schema"] = Schema,
+                ["record"] = "pass",
+                ["pass_id"] = attempt.PassId,
+                ["scenario"] = attempt.Scenario,
+                ["outcome"] = attempt.Outcome,
+                ["signal_source"] = attempt.SignalSource,
+                ["wake_source"] = attempt.WakeSource,
+                ["signal_count"] = attempt.SignalCount,
+                ["signal_age_us"] = attempt.SignalAgeUs,
+                ["pending_count"] = attempt.PendingCount,
+                ["backend_count"] = attempt.BackendCount,
+                ["pressure_count"] = attempt.PressureCount,
+                ["pressure_membership_count"] = attempt.PressureMembershipCount,
+                ["visits"] = attempt.Visits,
+                ["cancelled"] = attempt.Cancelled,
+                ["claimed"] = attempt.Claimed,
+                ["failed"] = attempt.Failed,
+                ["waiting"] = attempt.Waiting,
+                ["matcher_calls"] = attempt.MatcherCalls,
+                ["matcher_us"] = attempt.MatcherUs,
+                ["pressure_us"] = attempt.PressureUs,
+                ["active_us"] = ToMicroseconds(attempt.StartTimestamp, activeEndTimestamp),
+                ["wait_us"] = waitUs,
+                ["total_us"] = ToMicroseconds(attempt.StartTimestamp, attempt.EndTimestamp),
+                ["allocation_bytes"] = attempt.EndAllocation - attempt.StartAllocation
             };
+            if (attempt.SignalTimestamp > 0 && attempt.FirstClaimTimestamp > 0)
+            {
+                record["signal_to_first_claim_us"] = ToMicroseconds(attempt.SignalTimestamp, attempt.FirstClaimTimestamp);
+            }
             Emit(record);
         }
         catch
