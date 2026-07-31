@@ -112,7 +112,7 @@ matrix uses these applicable combinations rather than a Cartesian product:
 | D1000 animated | 1440x900 | 1,000 | thumbnails/animated GIF/dehydrated | separate top, middle, bottom groups |
 | D1000 resize | 1440x900 ↔ 1024x720 | 1,000 | thumbnails/still/stable | resize/alternate |
 | M1000 resize | 390x844 ↔ 844x390 | 1,000 | thumbnails/still/stable | resize/alternate |
-| D1000 tab show | 1440x900 | 1,000 | thumbnails/still/dehydrated | tab show/top |
+| D1000 tab show | 1440x900 | 1,000 | thumbnails/still/stable | tab show/top |
 | D129 background | 1440x900 | production initial chunk | thumbnails/still/dehydrated | background/top |
 
 The scenario allowlist and exact aggregation key include viewport, actual-entry

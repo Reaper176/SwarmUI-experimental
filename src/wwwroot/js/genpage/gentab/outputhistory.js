@@ -32,7 +32,7 @@ class ImageHistoryLayoutMeasurement {
             'desktop_1000_thumbs_animated_dehydrated_scroll_bottom',
             'desktop_1000_thumbs_still_stable_resize_alternate',
             'mobile_1000_thumbs_still_stable_resize_alternate',
-            'desktop_1000_thumbs_still_dehydrated_tab_show_top',
+            'desktop_1000_thumbs_still_stable_tab_show_top',
             'desktop_129_thumbs_still_dehydrated_background_top'
         ]);
     }
