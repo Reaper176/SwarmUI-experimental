@@ -23,19 +23,23 @@ internal static class SchedulerCostMeasurement
         /// <summary>Monotonic timestamp at which this maintained signal was recorded.</summary>
         public long Timestamp { get; }
 
+        /// <summary>Monotonic process-local sequence of this maintained signal.</summary>
+        public long Sequence { get; }
+
         /// <summary>Bounded category for this maintained signal.</summary>
         public string Source { get; }
 
         /// <summary>Constructs an immutable maintained scheduler signal sample.</summary>
-        public SignalSample(long timestamp, string source)
+        public SignalSample(long sequence, long timestamp, string source)
         {
+            Sequence = sequence;
             Timestamp = timestamp;
             Source = source;
         }
     }
 
-    /// <summary>Bounded aggregate of maintained scheduler signals drained at one measurement boundary.</summary>
-    internal readonly record struct SignalDrain(int Count, long Timestamp, string Source, bool ContainsShutdown);
+    /// <summary>Bounded latest maintained scheduler signal read from the fixed signal ring.</summary>
+    internal readonly record struct SignalSnapshot(long Sequence, long Timestamp, string Source, bool IsComplete);
 
     /// <summary>Measurements accumulated for one scheduler loop pass.</summary>
     internal sealed class PassAttempt
@@ -63,6 +67,15 @@ internal static class SchedulerCostMeasurement
 
         /// <summary>Timestamp of a maintained signal observed by this pass, or zero when absent.</summary>
         public long SignalTimestamp;
+
+        /// <summary>Bounded latest signal source separately captured only while finishing a terminal shutdown pass.</summary>
+        public string TerminalSignalSource = "none";
+
+        /// <summary>Coalesced maintained signal count separately captured only while finishing a terminal shutdown pass.</summary>
+        public long TerminalSignalCount;
+
+        /// <summary>Age of the latest separately captured terminal signal, or -1 when absent.</summary>
+        public long TerminalSignalAgeUs = -1;
 
         /// <summary>Pending request count observed at pass start.</summary>
         public int PendingCount;
@@ -344,7 +357,7 @@ internal static class SchedulerCostMeasurement
     }
 
     /// <summary>Begins a scheduler pass measurement when enabled.</summary>
-    internal static PassAttempt BeginPass(BackendHandler handler, ref bool hasMeasuredPass)
+    internal static PassAttempt BeginPass(BackendHandler handler, ref long lastObservedSignalSequence, ref bool hasMeasuredPass)
     {
         if (!IsEnabled())
         {
@@ -352,13 +365,17 @@ internal static class SchedulerCostMeasurement
         }
         try
         {
-            SignalDrain signal = handler.DrainSchedulerSignals();
+            SignalSnapshot signal = handler.CaptureSchedulerSignalSample();
             long now = Stopwatch.GetTimestamp();
             bool firstPass = !hasMeasuredPass;
-            bool hasSignal = signal.Count > 0;
-            long signalCount = signal.Count;
-            string source = hasSignal ? signal.Source : firstPass ? "startup" : "timeout_or_external";
+            bool hasSignal = signal.IsComplete && signal.Sequence > lastObservedSignalSequence;
+            long signalCount = hasSignal ? signal.Sequence - lastObservedSignalSequence : 0;
+            string source = hasSignal ? signal.Source : firstPass && signal.Sequence <= lastObservedSignalSequence ? "startup" : "timeout_or_external";
             long signalAgeUs = hasSignal && signal.Timestamp > 0 ? ToMicroseconds(signal.Timestamp, now) : -1;
+            if (hasSignal)
+            {
+                lastObservedSignalSequence = signal.Sequence;
+            }
             int pressureCount = 0;
             int pressureMembershipCount = 0;
             foreach (BackendHandler.ModelRequestPressure pressure in handler.ModelRequests.Values)
@@ -390,8 +407,8 @@ internal static class SchedulerCostMeasurement
         }
     }
 
-    /// <summary>Drains maintained signals into a current pass only when shutdown prevents a subsequent pass from observing them.</summary>
-    internal static void DrainSignalsIntoPass(BackendHandler handler, PassAttempt attempt)
+    /// <summary>Captures a bounded terminal signal snapshot without overwriting the pass-start wake metadata.</summary>
+    internal static void CaptureTerminalSignal(BackendHandler handler, PassAttempt attempt, ref long lastObservedSignalSequence)
     {
         if (attempt is null)
         {
@@ -399,17 +416,16 @@ internal static class SchedulerCostMeasurement
         }
         try
         {
-            SignalDrain signal = handler.DrainSchedulerSignals();
-            if (signal.Count == 0)
+            SignalSnapshot signal = handler.CaptureSchedulerSignalSample();
+            if (!signal.IsComplete || signal.Sequence <= lastObservedSignalSequence)
             {
                 return;
             }
             long now = Stopwatch.GetTimestamp();
-            attempt.SignalSource = NormalizeSignalSource(signal.Source);
-            attempt.SignalCount += signal.Count;
-            attempt.SignalAgeUs = ToMicroseconds(signal.Timestamp, now);
-            attempt.SignalTimestamp = signal.Timestamp;
-            attempt.WakeSource = signal.ContainsShutdown ? "shutdown" : attempt.SignalSource;
+            attempt.TerminalSignalSource = NormalizeSignalSource(signal.Source);
+            attempt.TerminalSignalCount = signal.Sequence - lastObservedSignalSequence;
+            attempt.TerminalSignalAgeUs = ToMicroseconds(signal.Timestamp, now);
+            lastObservedSignalSequence = signal.Sequence;
         }
         catch
         {
@@ -637,9 +653,15 @@ internal static class SchedulerCostMeasurement
                 ["total_us"] = ToMicroseconds(attempt.StartTimestamp, attempt.EndTimestamp),
                 ["allocation_bytes"] = attempt.EndAllocation - attempt.StartAllocation
             };
-            if (attempt.SignalTimestamp > 0 && attempt.FirstClaimTimestamp > 0)
+            if (attempt.SignalTimestamp > 0 && attempt.FirstClaimTimestamp >= attempt.SignalTimestamp)
             {
                 record["signal_to_first_claim_us"] = ToMicroseconds(attempt.SignalTimestamp, attempt.FirstClaimTimestamp);
+            }
+            if (attempt.TerminalSignalCount > 0)
+            {
+                record["terminal_signal_source"] = attempt.TerminalSignalSource;
+                record["terminal_signal_count"] = attempt.TerminalSignalCount;
+                record["terminal_signal_age_us"] = attempt.TerminalSignalAgeUs;
             }
             Emit(record);
         }
