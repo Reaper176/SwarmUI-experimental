@@ -1141,7 +1141,8 @@ public class T2IModelHandler
             }
         });
     }
-\n+    /// <summary>Temporary, opt-in Rank 32 duplicate model-sidecar parsing cost recorder.</summary>
+
+    /// <summary>Temporary, opt-in Rank 32 duplicate model-sidecar parsing cost recorder.</summary>
     private static class ModelSidecarCostMeasurement
     {
         /// <summary>Prefix used for every Rank 32 measurement record.</summary>
