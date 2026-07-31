@@ -160,9 +160,6 @@ public partial class WorkflowGenerator
     /// <summary>Internal owner for low-level edits against this generator's current public graph state.</summary>
     private WorkflowGraphEditor GraphEditor = null;
 
-    /// <summary>Temporary Rank 27 measurement attempt bound only while a priority-200 action executes.</summary>
-    internal WorkflowCleanupCostMeasurement.Attempt WorkflowCleanupMeasurementAttempt = null;
-
     /// <summary>Gets the internal graph editor, creating it only when a graph primitive is first used.</summary>
     private WorkflowGraphEditor GetGraphEditor()
     {
@@ -902,39 +899,9 @@ public partial class WorkflowGenerator
     public JObject Generate()
     {
         Workflow = [];
-        int cleanupActionOrdinal = 0;
         foreach (WorkflowGenStep step in Steps)
         {
-            if (step.Priority != 200)
-            {
-                step.Action(this);
-            }
-            else
-            {
-                WorkflowCleanupCostMeasurement.Attempt attempt = WorkflowCleanupCostMeasurement.BeginAttempt(++cleanupActionOrdinal, Workflow);
-                if (attempt is null)
-                {
-                    step.Action(this);
-                }
-                else
-                {
-                    WorkflowCleanupMeasurementAttempt = attempt;
-                    try
-                    {
-                        step.Action(this);
-                        WorkflowCleanupCostMeasurement.CompleteSuccess(attempt, Workflow);
-                    }
-                    catch
-                    {
-                        WorkflowCleanupCostMeasurement.CompleteFailure(attempt);
-                        throw;
-                    }
-                    finally
-                    {
-                        WorkflowCleanupMeasurementAttempt = null;
-                    }
-                }
-            }
+            step.Action(this);
             if (SkipFurtherSteps)
             {
                 break;

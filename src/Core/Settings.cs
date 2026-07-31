@@ -220,14 +220,6 @@ public class Settings : AutoConfiguration
 
         [ConfigComment("How many models can be loaded in a model list at once.\nPast this count, the list will simply be cut off.\nUse sub-folder organization to prevent issues.")]
         public int ModelListSanityCap = 5000;
-
-        /// <summary>Temporary opt-in control for Rank 27 generated-workflow cleanup cost measurement.</summary>
-        [ConfigComment("Temporary Rank 27 measurement control. If true, generated-workflow cleanup cost records are emitted.\nDefaults to false.")]
-        public bool WorkflowCleanupMeasurementEnabled = false;
-
-        /// <summary>Temporary bounded scenario label for Rank 27 generated-workflow cleanup cost measurement.</summary>
-        [ConfigComment("Temporary Rank 27 measurement scenario label. Use only lowercase letters, digits, '/', '_', or '-'.\nDefaults to empty.")]
-        public string WorkflowCleanupMeasurementScenario = "";
     }
 
     /// <summary>Settings related to local Krita integration.</summary>
