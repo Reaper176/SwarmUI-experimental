@@ -17,29 +17,14 @@ internal static class SchedulerCostMeasurement
     /// <summary>Process-local source for monotonically increasing scheduler pass identifiers.</summary>
     private static long NextPassId = 0;
 
-    /// <summary>Immutable bounded data for one maintained scheduler signal.</summary>
-    internal sealed class SignalSample
-    {
-        /// <summary>Monotonic timestamp at which this maintained signal was recorded.</summary>
-        public long Timestamp { get; }
+    /// <summary>Per-source monotonic maintained scheduler signal sequence watermark.</summary>
+    internal readonly record struct SignalSequences(long Request, long Release, long Shutdown);
 
-        /// <summary>Monotonic process-local sequence of this maintained signal.</summary>
-        public long Sequence { get; }
+    /// <summary>Bounded per-source maintained scheduler signal sequences and latest timestamps.</summary>
+    internal readonly record struct SignalSnapshot(SignalSequences Sequences, long RequestTimestamp, long ReleaseTimestamp, long ShutdownTimestamp);
 
-        /// <summary>Bounded category for this maintained signal.</summary>
-        public string Source { get; }
-
-        /// <summary>Constructs an immutable maintained scheduler signal sample.</summary>
-        public SignalSample(long sequence, long timestamp, string source)
-        {
-            Sequence = sequence;
-            Timestamp = timestamp;
-            Source = source;
-        }
-    }
-
-    /// <summary>Bounded latest maintained scheduler signal read from the fixed signal ring.</summary>
-    internal readonly record struct SignalSnapshot(long Sequence, long Timestamp, string Source, bool IsComplete);
+    /// <summary>Bounded aggregate of unobserved maintained scheduler signals.</summary>
+    internal readonly record struct SignalObservation(long Count, long Timestamp, string Source);
 
     /// <summary>Measurements accumulated for one scheduler loop pass.</summary>
     internal sealed class PassAttempt
@@ -357,7 +342,7 @@ internal static class SchedulerCostMeasurement
     }
 
     /// <summary>Begins a scheduler pass measurement when enabled.</summary>
-    internal static PassAttempt BeginPass(BackendHandler handler, ref long lastObservedSignalSequence, ref bool hasMeasuredPass)
+    internal static PassAttempt BeginPass(BackendHandler handler, ref SignalSequences lastObservedSignals, ref bool hasMeasuredPass)
     {
         if (!IsEnabled())
         {
@@ -365,17 +350,13 @@ internal static class SchedulerCostMeasurement
         }
         try
         {
-            SignalSnapshot signal = handler.CaptureSchedulerSignalSample();
+            SignalObservation signal = ObserveSignals(handler.CaptureSchedulerSignalSnapshot(), ref lastObservedSignals);
             long now = Stopwatch.GetTimestamp();
             bool firstPass = !hasMeasuredPass;
-            bool hasSignal = signal.IsComplete && signal.Sequence > lastObservedSignalSequence;
-            long signalCount = hasSignal ? signal.Sequence - lastObservedSignalSequence : 0;
-            string source = hasSignal ? signal.Source : firstPass && signal.Sequence <= lastObservedSignalSequence ? "startup" : "timeout_or_external";
+            bool hasSignal = signal.Count > 0;
+            long signalCount = signal.Count;
+            string source = hasSignal ? signal.Source : firstPass ? "startup" : "timeout_or_external";
             long signalAgeUs = hasSignal && signal.Timestamp > 0 ? ToMicroseconds(signal.Timestamp, now) : -1;
-            if (hasSignal)
-            {
-                lastObservedSignalSequence = signal.Sequence;
-            }
             int pressureCount = 0;
             int pressureMembershipCount = 0;
             foreach (BackendHandler.ModelRequestPressure pressure in handler.ModelRequests.Values)
@@ -408,7 +389,7 @@ internal static class SchedulerCostMeasurement
     }
 
     /// <summary>Captures a bounded terminal signal snapshot without overwriting the pass-start wake metadata.</summary>
-    internal static void CaptureTerminalSignal(BackendHandler handler, PassAttempt attempt, ref long lastObservedSignalSequence)
+    internal static void CaptureTerminalSignal(BackendHandler handler, PassAttempt attempt, ref SignalSequences lastObservedSignals)
     {
         if (attempt is null)
         {
@@ -416,20 +397,46 @@ internal static class SchedulerCostMeasurement
         }
         try
         {
-            SignalSnapshot signal = handler.CaptureSchedulerSignalSample();
-            if (!signal.IsComplete || signal.Sequence <= lastObservedSignalSequence)
+            SignalObservation signal = ObserveSignals(handler.CaptureSchedulerSignalSnapshot(), ref lastObservedSignals);
+            if (signal.Count == 0)
             {
                 return;
             }
             long now = Stopwatch.GetTimestamp();
             attempt.TerminalSignalSource = NormalizeSignalSource(signal.Source);
-            attempt.TerminalSignalCount = signal.Sequence - lastObservedSignalSequence;
+            attempt.TerminalSignalCount = signal.Count;
             attempt.TerminalSignalAgeUs = ToMicroseconds(signal.Timestamp, now);
-            lastObservedSignalSequence = signal.Sequence;
         }
         catch
         {
         }
+    }
+
+    /// <summary>Computes exact bounded per-source deltas and advances the supplied signal watermark.</summary>
+    private static SignalObservation ObserveSignals(SignalSnapshot snapshot, ref SignalSequences watermark)
+    {
+        long requestDelta = Math.Max(0, snapshot.Sequences.Request - watermark.Request);
+        long releaseDelta = Math.Max(0, snapshot.Sequences.Release - watermark.Release);
+        long shutdownDelta = Math.Max(0, snapshot.Sequences.Shutdown - watermark.Shutdown);
+        watermark = new(snapshot.Sequences.Request, snapshot.Sequences.Release, snapshot.Sequences.Shutdown);
+        long count = requestDelta + releaseDelta + shutdownDelta;
+        if (count == 0)
+        {
+            return new(0, 0, "timeout_or_external");
+        }
+        string source = "request";
+        long timestamp = requestDelta > 0 ? snapshot.RequestTimestamp : 0;
+        if (releaseDelta > 0 && snapshot.ReleaseTimestamp >= timestamp)
+        {
+            source = "release";
+            timestamp = snapshot.ReleaseTimestamp;
+        }
+        if (shutdownDelta > 0 && snapshot.ShutdownTimestamp >= timestamp)
+        {
+            source = "shutdown";
+            timestamp = snapshot.ShutdownTimestamp;
+        }
+        return new(count, timestamp, source);
     }
 
     /// <summary>Begins a request-search measurement when enabled.</summary>
