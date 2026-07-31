@@ -228,6 +228,31 @@ internal static class FileMediaConversionMeasurement
         }
     }
 
+    /// <summary>Notes invalid validation of an item already counted by a completed file call.</summary>
+    internal static void NoteInvalidAfterFileCall()
+    {
+        if (!IsEnabled())
+        {
+            return;
+        }
+        try
+        {
+            for (Scope scope = GetActiveScope(); scope is not null; scope = scope.Parent)
+            {
+                lock (scope)
+                {
+                    if (!scope.IsComplete)
+                    {
+                        scope.InvalidItems++;
+                    }
+                }
+            }
+        }
+        catch
+        {
+        }
+    }
+
     /// <summary>Completes and emits one successful file conversion.</summary>
     internal static void CompleteFileCall(CallStart start, string normalizedPath, string source, long sourceBytes,
         long authorizationUs, long waitUs, long readUs, long encodeUs)

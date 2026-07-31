@@ -1208,7 +1208,14 @@ public class T2IParamTypes
                         }
                         if (!ValidBase64Matcher.IsOnlyMatches(partVal) || partVal.Length < 10)
                         {
-                            FileMediaConversionMeasurement.NoteMediaItem("invalid");
+                            if (wasPath)
+                            {
+                                FileMediaConversionMeasurement.NoteInvalidAfterFileCall();
+                            }
+                            else
+                            {
+                                FileMediaConversionMeasurement.NoteMediaItem("invalid");
+                            }
                             string shortText = partVal.Length > 10 ? partVal[..10] + "..." : partVal;
                             throw new SwarmUserErrorException($"Invalid image-list value for param {type.Name} - '{origVal}' - must be a valid base64 string - got '{shortText}'");
                         }
