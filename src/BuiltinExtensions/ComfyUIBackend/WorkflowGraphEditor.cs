@@ -78,26 +78,86 @@ internal sealed class WorkflowGraphEditor
     /// <param name="action">The action(NodeID, JObject Data) to run against the node.</param>
     public void RunOnNodesOfClass(string classType, Action<string, JObject> action)
     {
-        foreach (JProperty property in NodesOfClass(classType))
+        WorkflowCleanupCostMeasurement.Attempt attempt = Generator.WorkflowCleanupMeasurementAttempt;
+        if (attempt is null)
         {
-            action(property.Name, property.Value as JObject);
+            foreach (JProperty property in NodesOfClass(classType))
+            {
+                action(property.Name, property.Value as JObject);
+            }
+            return;
+        }
+        WorkflowCleanupCostMeasurement.ScanStart scan = attempt.BeginScan();
+        long examined = 0;
+        long matched = 0;
+        long callbacks = 0;
+        try
+        {
+            JProperty[] properties = [.. Generator.Workflow.Properties().Where(p =>
+            {
+                examined++;
+                return $"{p.Value["class_type"]}" == classType;
+            })];
+            matched = properties.Length;
+            foreach (JProperty property in properties)
+            {
+                callbacks++;
+                action(property.Name, property.Value as JObject);
+            }
+        }
+        finally
+        {
+            attempt.CompleteScan(scan, examined, matched, callbacks);
         }
     }
 
     /// <summary>Replace all instances of <paramref name="oldNode"/> with <paramref name="newNode"/> in node input connections.</summary>
     public void ReplaceNodeConnection(JArray oldNode, JArray newNode)
     {
-        string target0 = $"{oldNode[0]}", target1 = $"{oldNode[1]}";
-        foreach (JObject node in Generator.Workflow.Values().Cast<JObject>())
+        WorkflowCleanupCostMeasurement.Attempt attempt = Generator.WorkflowCleanupMeasurementAttempt;
+        if (attempt is null)
         {
-            JObject inputs = node["inputs"] as JObject;
-            foreach (JProperty property in inputs.Properties().ToArray())
+            string target0 = $"{oldNode[0]}", target1 = $"{oldNode[1]}";
+            foreach (JObject node in Generator.Workflow.Values().Cast<JObject>())
             {
-                if (property.Value is JArray jarr && jarr.Count == 2 && $"{jarr[0]}" == target0 && $"{jarr[1]}" == target1)
+                JObject inputs = node["inputs"] as JObject;
+                foreach (JProperty property in inputs.Properties().ToArray())
                 {
-                    inputs[property.Name] = newNode;
+                    if (property.Value is JArray jarr && jarr.Count == 2 && $"{jarr[0]}" == target0 && $"{jarr[1]}" == target1)
+                    {
+                        inputs[property.Name] = newNode;
+                    }
                 }
             }
+            return;
+        }
+        WorkflowCleanupCostMeasurement.OperationStart start = attempt.BeginOperation();
+        long nodes = 0;
+        long directInputs = 0;
+        long matches = 0;
+        long assignments = 0;
+        try
+        {
+            string target0 = $"{oldNode[0]}", target1 = $"{oldNode[1]}";
+            foreach (JObject node in Generator.Workflow.Values().Cast<JObject>())
+            {
+                nodes++;
+                JObject inputs = node["inputs"] as JObject;
+                foreach (JProperty property in inputs.Properties().ToArray())
+                {
+                    directInputs++;
+                    if (property.Value is JArray jarr && jarr.Count == 2 && $"{jarr[0]}" == target0 && $"{jarr[1]}" == target1)
+                    {
+                        matches++;
+                        inputs[property.Name] = newNode;
+                        assignments++;
+                    }
+                }
+            }
+        }
+        finally
+        {
+            attempt.CompleteReplacement(start, nodes, directInputs, matches, assignments);
         }
     }
 
@@ -106,21 +166,57 @@ internal sealed class WorkflowGraphEditor
     {
         if (Generator.UsedInputs is null)
         {
-            Generator.UsedInputs = [];
-            foreach (JProperty node in Generator.Workflow.Properties())
+            WorkflowCleanupCostMeasurement.Attempt attempt = Generator.WorkflowCleanupMeasurementAttempt;
+            if (attempt is null)
             {
-                if (node.Name == exclude)
+                Generator.UsedInputs = [];
+                foreach (JProperty node in Generator.Workflow.Properties())
                 {
-                    continue;
-                }
-                JObject inputs = node.Value["inputs"] as JObject;
-                foreach (JProperty property in inputs.Properties().ToArray())
-                {
-                    if (property.Value is JArray jarr && jarr.Count == 2)
+                    if (node.Name == exclude)
                     {
-                        Generator.UsedInputs.Add($"{jarr[0]}:-1");
-                        Generator.UsedInputs.Add($"{jarr[0]}:{jarr[1]}");
+                        continue;
                     }
+                    JObject inputs = node.Value["inputs"] as JObject;
+                    foreach (JProperty property in inputs.Properties().ToArray())
+                    {
+                        if (property.Value is JArray jarr && jarr.Count == 2)
+                        {
+                            Generator.UsedInputs.Add($"{jarr[0]}:-1");
+                            Generator.UsedInputs.Add($"{jarr[0]}:{jarr[1]}");
+                        }
+                    }
+                }
+            }
+            else
+            {
+                WorkflowCleanupCostMeasurement.OperationStart start = attempt.BeginOperation();
+                long nodes = 0;
+                long directInputs = 0;
+                try
+                {
+                    Generator.UsedInputs = [];
+                    foreach (JProperty node in Generator.Workflow.Properties())
+                    {
+                        nodes++;
+                        if (node.Name == exclude)
+                        {
+                            continue;
+                        }
+                        JObject inputs = node.Value["inputs"] as JObject;
+                        foreach (JProperty property in inputs.Properties().ToArray())
+                        {
+                            directInputs++;
+                            if (property.Value is JArray jarr && jarr.Count == 2)
+                            {
+                                Generator.UsedInputs.Add($"{jarr[0]}:-1");
+                                Generator.UsedInputs.Add($"{jarr[0]}:{jarr[1]}");
+                            }
+                        }
+                    }
+                }
+                finally
+                {
+                    attempt.CompleteConnectivity(start, nodes, directInputs);
                 }
             }
         }
@@ -143,19 +239,53 @@ internal sealed class WorkflowGraphEditor
     /// <summary>Removes a set of classes of nodes if they are not connected to anything.</summary>
     public void RemoveClassesIfUnused(HashSet<string> classTypes)
     {
-        bool run = true;
-        while (run)
+        WorkflowCleanupCostMeasurement.Attempt attempt = Generator.WorkflowCleanupMeasurementAttempt;
+        if (attempt is null)
         {
-            Generator.UsedInputs = null;
-            run = false;
-            foreach (JProperty property in NodesOfClasses(classTypes))
+            bool run = true;
+            while (run)
             {
-                if (!NodeIsConnectedAnywhere(property.Name))
+                Generator.UsedInputs = null;
+                run = false;
+                foreach (JProperty property in NodesOfClasses(classTypes))
                 {
-                    Generator.Workflow.Remove(property.Name);
-                    run = true;
+                    if (!NodeIsConnectedAnywhere(property.Name))
+                    {
+                        Generator.Workflow.Remove(property.Name);
+                        run = true;
+                    }
                 }
             }
+            return;
+        }
+        WorkflowCleanupCostMeasurement.OperationStart start = attempt.BeginOperation();
+        long passes = 0;
+        long candidates = 0;
+        long removals = 0;
+        try
+        {
+            bool run = true;
+            while (run)
+            {
+                passes++;
+                Generator.UsedInputs = null;
+                run = false;
+                JProperty[] properties = NodesOfClasses(classTypes);
+                candidates += properties.Length;
+                foreach (JProperty property in properties)
+                {
+                    if (!NodeIsConnectedAnywhere(property.Name))
+                    {
+                        Generator.Workflow.Remove(property.Name);
+                        removals++;
+                        run = true;
+                    }
+                }
+            }
+        }
+        finally
+        {
+            attempt.CompleteFixedPoint(start, passes, candidates, removals);
         }
     }
 }
