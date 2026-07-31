@@ -2,7 +2,7 @@
 
 **Date:** 2026-07-31
 **Rank:** 26
-**Status:** Approved by delegated maintainer judgment; implementation pending
+**Status:** Measurement complete; `NO-GO` decision recorded; temporary instrumentation removal pending
 **Approved base:** `7dfc73022684f1d51b89fc7bd3235c90535ab8c9`
 
 ## Decision Authority
@@ -277,6 +277,81 @@ Under the maintainer's explicit override, the agent may build and execute the
 isolated matrix. Runtime validation records environment, exact passed/failed/
 unrun counts, evidence digest, record count, scenario coverage, and limitations.
 Failures stop the decision and are diagnosed before proceeding.
+
+## Collected Evidence and Decision
+
+The approved design is commit
+`40d4c275bb7c5ff8d0a2b57d1a24641a8910391e`, the implementation plan is
+`ee8cbc9abd8d2ab7ff0d7303dbb9690478eedee2`, and the final temporary
+instrumentation head is
+`deaab7e14349c2b26ed5c7ab449d76c67c96cafc`. Independent final source reviews
+returned `RANK26_SOURCE_SPEC_APPROVED` and
+`RANK26_SOURCE_QUALITY_APPROVED`. An external instrumented build using .NET SDK
+10.0.110 completed with 0 warnings and 0 errors; its `SwarmUI.dll` artifact has
+SHA-256
+`65f1565fbd653b1b11df49a181fa378a56a798b7752dcb1ab9fa7bd00aca03a2`.
+
+Under Reaper176's explicit self-testing override, the isolated Garuda Linux
+(Arch-based), X64, Btrfs-repository harness using .NET runtime 8.0.29 recorded
+124 passed, 0 failed, and 0 unrun cases. The privacy-reviewed JSONL evidence has
+SHA-256
+`a6bf5e2ff91fbf7c33f6e83cd256ed34505d7a787c7c11c36559ff5493df649a`;
+the summary has SHA-256
+`440dd65188cb1e6a612f507444c24fc0d26dbeb9449e65b956a247a1d1bbc0d5`.
+The 701 records comprise 104 pass, 494 `try_find`, and 103 pressure records.
+Warm-up is explicitly separated: 140 records are warm-up and 561 are measured,
+with 79 pass, 391 `try_find`, and 91 pressure measured records across 119 total
+scenarios. All 25 scaled topology groups have exactly three post-warm
+repetitions. Coverage includes idle and loaded claims; same/distinct models and
+pending counts 1/8/32; backend counts 1/8/32; cheap and deliberately bounded
+expensive matchers; extension-gate, autoscale-attempt, cancellation, release,
+pressure outcomes and pressure topologies through 32 pressures, four members,
+and 32 loaders; concurrent publication/release; unsafe scenario normalization;
+and recorder-emission failure isolation. Exact asserted call counts include
+`P * B` pressure compatibility calls, `P * R * B` perfect calls, one request
+matcher call per backend, and blocked-then-open gate order.
+
+Using nearest-rank `x[ceil(pN)]` without interpolation and post-warm scaled
+records only, active pass time (`N=52`) is p50/p95/max 64/1123/1413 microseconds
+with 4,880/142,368/142,368 allocated bytes. `try_find` (`N=300`) is
+7/26/1381 microseconds and 2,056/4,144/5,720 bytes; its snapshot/filter portion
+is 2/5/8 microseconds and availability/sort is 1/7/17 microseconds. Pressure
+selection (`N=27`) is 27/121/146 microseconds and
+4,744/28,792/28,792 bytes. Signal-to-first-claim (`N=44`) is
+110/375/1401 microseconds. Nested timer scopes overlap and must not be summed.
+
+At the exercised upper cases, a 32-request/32-backend distinct-model pass is
+p50/max 388/422 microseconds with maximum signal-to-claim 166 microseconds;
+32 same-model pending requests are 233/243 microseconds; and four claims across
+32 backends are 87/89 microseconds. The 32-pressure/four-member/32-loader case
+is 121/146 microseconds and 28,792 bytes with exactly 1,024 compatibility and
+4,096 perfect calls. The only repeated millisecond-scale scaled result is the
+deliberately expensive caller matcher: pass p50/max 1307/1413 microseconds, of
+which the callback itself accounts for 1222/1350 microseconds.
+
+A diagnostic direct-`TryFind` control at 32 backends, after 100 warm-up and over
+1,000 measured iterations per mode in disabled-then-enabled order, reports
+10.293 microseconds and 4,924.656 bytes per disabled iteration versus 32.670
+microseconds and 10,036.384 bytes enabled. The approximately 22.378-microsecond
+and 5,111.728-byte increment includes measurement record emission and shows
+that enabled allocation values are substantially instrumentation-influenced.
+
+The decision is **`NO-GO`**, scoped to a production scheduler
+snapshot/filter/sort/matcher/pressure refactor. Repeated built-in work stayed
+below 0.5 milliseconds in the exercised 32-by-32 queue and pressure selection
+stayed below 0.15 milliseconds; the repeated millisecond-scale result was
+intentional caller matcher work. Allocation lacks production pass-rate and GC
+context, and the control bounds substantial instrumentation overhead. Rank 26
+therefore authorizes no shared availability snapshot, matcher cache, centralized
+pressure state, scheduler policy change, or other optimization.
+
+This is bounded synthetic evidence, not a production-performance claim. It used
+in-memory backend data and a no-I/O fake backend; pressure was also invoked
+directly. The micro-control always ran disabled before enabled and included
+emission. No server, generation, GPU, model filesystem, real backend lifecycle,
+production matcher distribution, production wake frequency, production GC, or
+other platform/filesystem was exercised. Temporary instrumentation removal and
+an isolated post-removal build/sanity remain pending at this evidence commit.
 
 ## Removal and Final Projection
 
