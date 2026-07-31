@@ -14,6 +14,12 @@ internal static class SchedulerCostMeasurement
     /// <summary>Schema version for Rank 26 scheduler measurement records.</summary>
     private const int Schema = 1;
 
+    /// <summary>Maximum number of operator-supplied scenario characters inspected per measurement attempt.</summary>
+    private const int ScenarioInputCharacterLimit = 384;
+
+    /// <summary>Maximum number of normalized scenario characters emitted per measurement record.</summary>
+    private const int ScenarioOutputCharacterLimit = 96;
+
     /// <summary>Process-local source for monotonically increasing scheduler pass identifiers.</summary>
     private static long NextPassId = 0;
 
@@ -136,9 +142,6 @@ internal static class SchedulerCostMeasurement
         /// <summary>Timestamp immediately after the existing scheduler event wait returns or throws.</summary>
         public long WaitEndTimestamp;
 
-        /// <summary>Bounded source category observed while this pass waited, when any.</summary>
-        public string WakeSource = "none";
-
         /// <summary>Timestamp at which this pass endpoint was captured.</summary>
         public long EndTimestamp;
 
@@ -163,29 +166,41 @@ internal static class SchedulerCostMeasurement
         /// <summary>Records completed request-search aggregates for this pass.</summary>
         public void RecordRequestState(BackendHandler.T2IBackendRequest request, bool claimed, bool failed)
         {
-            Visits++;
-            if (claimed)
+            try
             {
-                Claimed++;
+                Visits++;
+                if (claimed)
+                {
+                    Claimed++;
+                }
+                else if (failed)
+                {
+                    Failed++;
+                }
+                else
+                {
+                    Waiting++;
+                    WaitingRequests.Add(request);
+                }
             }
-            else if (failed)
+            catch
             {
-                Failed++;
-            }
-            else
-            {
-                Waiting++;
-                WaitingRequests.Add(request);
             }
         }
 
         /// <summary>Reclassifies a previously waiting request when the existing pass-level timeout assigns its failure.</summary>
         public void RecordWaitingFailure(BackendHandler.T2IBackendRequest request)
         {
-            if (WaitingRequests.Remove(request))
+            try
             {
-                Waiting--;
-                Failed++;
+                if (WaitingRequests.Remove(request))
+                {
+                    Waiting--;
+                    Failed++;
+                }
+            }
+            catch
+            {
             }
         }
 
@@ -657,7 +672,6 @@ internal static class SchedulerCostMeasurement
                 ["scenario"] = attempt.Scenario,
                 ["outcome"] = attempt.Outcome,
                 ["signal_source"] = attempt.SignalSource,
-                ["wake_source"] = attempt.WakeSource,
                 ["signal_count"] = attempt.SignalCount,
                 ["signal_age_us"] = attempt.SignalAgeUs,
                 ["pending_count"] = attempt.PendingCount,
@@ -776,10 +790,12 @@ internal static class SchedulerCostMeasurement
         try
         {
             string input = Program.ServerSettings?.Performance?.SchedulerMeasurementScenario ?? "";
-            StringBuilder output = new(Math.Min(input.Length, 96));
+            int inputLength = Math.Min(input.Length, ScenarioInputCharacterLimit);
+            StringBuilder output = new(Math.Min(inputLength, ScenarioOutputCharacterLimit));
             bool previousReplacement = false;
-            foreach (char c in input)
+            for (int i = 0; i < inputLength; i++)
             {
+                char c = input[i];
                 bool allowed = c is >= 'a' and <= 'z' or >= '0' and <= '9' or '/' or '_' or '-';
                 if (allowed)
                 {
@@ -791,7 +807,7 @@ internal static class SchedulerCostMeasurement
                     output.Append('_');
                     previousReplacement = true;
                 }
-                if (output.Length >= 96)
+                if (output.Length >= ScenarioOutputCharacterLimit)
                 {
                     break;
                 }

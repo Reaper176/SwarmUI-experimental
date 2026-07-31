@@ -1385,12 +1385,13 @@ public class BackendHandler
                     return;
                 }
                 long matcherStart = Stopwatch.GetTimestamp();
+                Func<T2IBackendData, bool> filter = Filter;
                 try
                 {
-                    possible = Filter is null ? possible : [.. possible.Where(b =>
+                    possible = filter is null ? possible : [.. possible.Where(b =>
                     {
                         attempt.MatcherCalls++;
-                        return Filter(b);
+                        return filter(b);
                     })];
                 }
                 finally
