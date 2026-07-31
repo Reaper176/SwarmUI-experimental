@@ -2,7 +2,7 @@
 
 **Date:** 2026-07-31
 **Rank:** 26
-**Status:** Measurement complete; `NO-GO` decision recorded; temporary instrumentation removal pending
+**Status:** Complete; `NO-GO` decision recorded; temporary instrumentation removed and validated
 **Approved base:** `7dfc73022684f1d51b89fc7bd3235c90535ab8c9`
 
 ## Decision Authority
@@ -350,12 +350,13 @@ in-memory backend data and a no-I/O fake backend; pressure was also invoked
 directly. The micro-control always ran disabled before enabled and included
 emission. No server, generation, GPU, model filesystem, real backend lifecycle,
 production matcher distribution, production wake frequency, production GC, or
-other platform/filesystem was exercised. Temporary instrumentation removal and
-an isolated post-removal build/sanity remain pending at this evidence commit.
+other platform/filesystem was exercised. Temporary instrumentation was
+subsequently removed and the final projection was validated as recorded below.
 
 ## Removal and Final Projection
 
-After evidence and decision are recorded, remove:
+Removal commit `402f3b2dee3716f3a4377a63a4cb85193083277b`
+removed:
 
 - both temporary performance settings;
 - `SchedulerCostMeasurement.cs`;
@@ -363,15 +364,31 @@ After evidence and decision are recorded, remove:
 - signal classification state/helper and all signal hooks;
 - pass/request/pressure attempts, counters, timers, outcomes, and log prefix.
 
-The final committed `src` tree must equal the approved base `src` tree exactly.
-Only this design, its implementation plan, the architecture audit, and final
-evidence/decision documentation may remain. An isolated post-removal scheduler
-sanity must pass or be truthfully marked unrun. The protected primary dirty
-state must remain unchanged before and after local integration.
+The final committed `src` tree has OID
+`26f65adf96afc130baa8b6fedba84b437d7163dc`, exactly equal to the approved
+base `src` tree. Static projection checks confirmed that both temporary
+performance settings, `SchedulerCostMeasurement.cs`, the internal measurement
+overloads, signal classification/helper state, measurement attempts, counters,
+timers, outcomes, and the `[Rank26Scheduler]` prefix are absent. Only this
+design, its implementation plan, the architecture audit, and final
+evidence/decision documentation remain from Rank 26.
+
+The isolated external post-removal Release build at
+`/tmp/swarmui-rank26-post-usfKMt` succeeded with 0 warnings and 0 errors. Its
+`SwarmUI.dll` has SHA-256
+`048dc54ba9b78b0e633031ab698e8a640d025387e53f9fe427c1f7e58680786e`.
+An uninstrumented in-memory scheduler claim/capacity/release/shutdown sanity
+then printed `RANK26_POST_REMOVAL_SANITY_PASSED`. The initial harness compile
+failed solely because its temporary fake backend omitted the abstract
+`LoadModel` override; that harness-only omission was corrected under `/tmp` and
+the rerun passed. It exposed no production defect and caused no repository
+source change. The protected primary dirty state remains outside this worktree
+and must remain unchanged during integration.
 
 ## Rollback
 
 Before collection, revert the temporary instrumentation commits in reverse
 order. During collection, disable `SchedulerMeasurementEnabled` for immediate
-rollback. After collection, the planned removal commit is the normal final
-state regardless of `GO`, `NO-GO`, or `INSUFFICIENT`.
+rollback. After collection, removal commit
+`402f3b2dee3716f3a4377a63a4cb85193083277b` is the normal final state; the
+source projection contains no Rank 26 instrumentation.
