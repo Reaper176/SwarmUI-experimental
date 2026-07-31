@@ -25,13 +25,17 @@ all instrumentation, and close the final numbered roadmap prerequisite.
 - Generate deterministic `.engine` models and supported JSON sidecars.
 - First prove the uninstrumented behavior for suffix precedence,
   `procAltHeader`, cache hit, every invalidation family, invalid/corrected JSON,
-  both cache modes, exact publication fields, and clean shutdown/disposal.
+  conservative concurrent change, cache-unavailable and caught lookup/header/
+  upsert failures, both cache modes, exact publication fields, and clean
+  shutdown/disposal.
 - Record a failing instrumentation-contract expectation before adding hooks.
 
 ## Task 3: Add minimal temporary instrumentation
 
 - Add the two documented `PerformanceData` fields with XML/config docs.
 - Add one private call-local recorder in `T2IModelHandler.cs`.
+- Add one private null-by-default reflection-set synchronization hook solely for
+  the deterministic fingerprint-to-read concurrent-change contract case.
 - Preserve the exact disabled expressions and all production control flow.
 - Instrument fingerprint, cache, embedded header, both sidecar passes,
   recomputation, upsert reachability, publication, outcome, time, allocation,
@@ -48,15 +52,21 @@ all instrumentation, and close the final numbered roadmap prerequisite.
   also under `/tmp`; do not create `src/bin` or `src/obj`.
 - Build the harness under `/tmp` against that artifact.
 - Run all contract cases and privacy/schema checks.
-- Run five warmups and thirty enabled/disabled samples per representative group
+- Run five warmups and thirty enabled/disabled samples per group
   in counterbalanced `ABBA` blocks.
 - Cover 1/4 sidecars at ~1 KiB, 64 KiB, and 1 MiB; 16/128-model batches at 4
   KiB and 64 KiB; central/per-folder modes; and all invalidation families.
 - Capture exact raw JSONL, summary, harness, artifact, and source hashes.
+- For production `Refresh()` batches, require exact per-iteration record
+  completeness; aggregate per-model phases as overlapping CPU-work and record
+  one separate external wall interval per iteration.
 
 ## Task 5: Decide and review evidence
 
 - Compute nearest-rank p50/p95/max and chronological-half p95 values.
+- Apply the exact 25%-of-larger stability formula independently to every gate
+  numerator and denominator; only the three frozen gate-eligible groups may
+  authorize `GO`.
 - Report first pass, second pass, combined sidecar, recomputation, whole-call,
   allocation, and batch aggregates without subtracting overhead.
 - Apply only the frozen gate and record `GO`, scoped `GO`, `NO-GO`, or

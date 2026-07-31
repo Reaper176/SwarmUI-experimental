@@ -94,8 +94,16 @@ Temporary fields:
 - `ModelSidecarMeasurementEnabled`, default `false`; and
 - `ModelSidecarMeasurementScenario`, default empty.
 
-The scenario must match `[a-z0-9_/-]{1,96}` or records are suppressed. Evidence
-is compact JSON prefixed `[Rank32ModelSidecar]`. No path, file/model name,
+The scenario must be one of the fixed labels defined by this design, optionally
+followed only by `/warmup_[0-4]` or `/measured_[0-29]`; every other value
+suppresses records. The allowlisted bases are `contract`, `cache_central`,
+`cache_per_folder`, `suffix_single`, `suffix_all`, `invalid_json`,
+`concurrent_change`, `cache_unavailable`, `cache_fault`, `header_fault`,
+`single_1k_1`, `single_1k_4`, `single_64k_1`, `single_64k_4`,
+`stress_single_1m_1`, `stress_single_1m_4`, `batch16_4k_4`,
+`batch16_64k_4`, `batch128_4k_4`, `batch128_64k_1`, `control_enabled`, and
+`control_disabled`. Every record with another value is suppressed. Evidence is
+compact JSON prefixed `[Rank32ModelSidecar]`. No path, file/model name,
 sidecar content, metadata value, exception message, stack, user/session, cache
 key, or database path is emitted. Recorder failures are swallowed without
 details and never change production behavior.
@@ -104,7 +112,7 @@ Each record contains only:
 
 - schema, fixed scenario, result category, invalidation category, cache mode,
   and bounded failure stage;
-- suffix slots present, model count supplied by the harness scenario, cache
+- suffix slots present, a bounded numeric model count, cache
   hit/recompute flags, and fingerprint inspection count;
 - first- and second-pass exists/read/parse/proc/property counts and total source
   characters;
@@ -114,16 +122,27 @@ Each record contains only:
 - whether record construction, upsert attempt, and model publication were
   reached.
 
+The result category is exactly one of `cache_hit`, `recomputed`,
+`cache_unavailable`, `failed`, or `early_guard`. Failure stage is exactly one of
+`none`, `fingerprint`, `cache_lookup_caught`, `embedded_header_caught`,
+`first_exists`, `first_read`, `first_parse`, `first_merge`, `meta_extract`,
+`second_exists`, `second_read`, `second_parse`, `second_proc`,
+`record_construction`, `upsert_caught`, or `publication`. Caught lookup/header/
+upsert stages are also bounded flags while the final result records the
+continued outcome. A cache-unavailable return finalizes before returning; a
+propagating exception finalizes then rethrows the original exception.
+
 Durations use `Stopwatch.GetTimestamp`; allocation uses
 `GC.GetAllocatedBytesForCurrentThread`. Negative allocation deltas clamp to
 zero. Timers exclude log formatting and emission. The record is emitted in a
-nonthrowing final boundary on success or failure; the original exception still
-propagates unchanged.
+nonthrowing final boundary on success or failure; it cannot mask an existing
+return or exception, and the original exception still propagates unchanged.
 
 ## Instrumentation Placement
 
 One call-local measurement scope begins after the existing null/already-loaded
-guards. It observes:
+guards. The guards receive at most an `early_guard` record without evaluating
+model identity. The scope observes:
 
 1. fingerprint capture;
 2. cache lookup and the existing legacy/cache predicates;
@@ -133,6 +152,15 @@ guards. It observes:
 6. second-pass existence, read, parse, and `procAltHeader` work;
 7. remaining recomputation and upsert reachability; and
 8. final model-publication reachability and whole-call outcome.
+
+The enabled path necessarily splits each existing compound
+`File.ReadAllText(...).ParseToJson()` expression so read and top-level parse can
+be timed independently. It does not reuse the result across passes. Top-level
+parse counts include only the pass/suffix parses. JSON strings parsed inside
+`procWordsFrom` remain part of `second_proc` time and are not top-level parses.
+Property counts read the already parsed `JObject.Count` once outside the timed
+property-copy loop; instrumentation adds neither per-property increments nor a
+second enumeration.
 
 Instrumentation must not add a catch around production reads/parses, reorder a
 read or parse, pre-read a suffix, reuse a `JObject`, move fingerprint capture,
@@ -154,40 +182,71 @@ Required contract cases:
 4. `procAltHeader` nested name, descriptions, activation text, array/object/
    string trained words, and secondary-source disabled/enabled behavior;
 5. unchanged cache hit emits no sidecar reads/parses;
-6. cold/missing cache, model-mtime mismatch, sidecar-fingerprint mismatch,
-   legacy-null fingerprint, and legacy `TextEncoders` recompute;
-7. valid-to-invalid JSON and corrected recovery preserve Rank 22 behavior;
-8. changed/unreadable sidecar retains the existing failure boundary where the
+6. cold/missing cache, model-mtime mismatch, legacy-null fingerprint, and
+   legacy `TextEncoders` recompute;
+7. add, edit, and delete fingerprint invalidation separately for each of all
+   four supported suffixes;
+8. a private temporary reflection-set synchronization hook changes a sidecar
+   after fingerprint capture and before the first read, proving the record
+   retains the conservative captured fingerprint and the next refresh
+   converges; the hook is null/no-op outside this contract case;
+9. cache-unavailable return, caught cache-lookup failure followed by
+   recomputation/publication, caught embedded-header failure followed by
+   sidecar processing, and caught upsert failure followed by publication;
+10. valid-to-invalid JSON and corrected recovery preserve Rank 22 behavior;
+11. changed/unreadable sidecar retains the existing failure boundary where the
    host permits the permission case;
-9. record fields, `ModelFileVersion`, captured fingerprint, metadata/public
+12. record fields, `ModelFileVersion`, captured fingerprint, metadata/public
    model fields, upsert/publication reachability, and failure isolation;
-10. disabled mode emits no records and exact parity holds.
+13. disabled mode emits no records and exact parity holds.
 
 Performance groups use payloads of approximately 1 KiB, 64 KiB, and 1 MiB,
 with one and four sidecars. Batch groups use 16 and 128 models at 4 KiB and 64
-KiB per sidecar. Each representative group receives five warmups and thirty
+KiB per sidecar. Only `single_64k_4`, `batch128_4k_4`, and
+`batch128_64k_1` are gate-eligible. The 1 KiB, 16-model, and 1 MiB groups are
+scaling/control or stress disclosure only and cannot authorize a `GO`. Each
+group receives five warmups and thirty
 enabled plus thirty disabled samples in counterbalanced `ABBA` blocks. A fresh
 model object and deliberate recomputation precondition are established for each
 sample. Enabled and disabled outcomes are compared exactly before using timing.
 
-For every representative group, report nearest-rank p50/p95/max and both
+Batch samples call production `Refresh()`, including its existing parallel
+discovery/load behavior. The harness records one external monotonic wall
+interval per complete refresh iteration. Every per-model record carries the
+fixed scenario/iteration label; an iteration is usable only with the exact
+expected record count and passing parity. Summed per-call phase durations are
+reported as overlapping CPU-work, never wall time. For 128 models, first form
+one wall value and one summed phase-work value per iteration, then calculate
+p95 across the thirty aggregates and separately across iterations 0-14 and
+15-29.
+
+For every group, report nearest-rank p50/p95/max and both
 chronological-half p95 values for whole call, recomputation, first pass, second
 pass, combined sidecar work, and current-thread allocation. Batch summaries
-also report aggregate second-pass and whole-refresh time. Report raw enabled
+also report summed second-pass/whole-call CPU-work and separate external refresh
+wall time. Report raw enabled
 values and enabled-minus-disabled external controls separately; do not subtract
 recorder overhead from production phase values.
 
 ## Decision Gate
 
 A `GO` requires exact parity, zero privacy/schema failures, complete required
-coverage, and at least one representative non-pathological group meeting one of
-these thresholds in both chronological halves with half p95 values within 25%:
+coverage, and at least one of the three frozen gate-eligible groups meeting one
+of these thresholds independently in each chronological half:
 
 - duplicate second-pass p95 is at least 5 ms and at least 20% of recomputation;
 - duplicate second-pass current-thread allocation p95 is at least 1 MiB and at
   least 20% of recomputation allocation; or
-- a 128-model batch's aggregate duplicate second-pass time is at least 25 ms
-  and at least 15% of aggregate refresh time.
+- a 128-model batch's aggregate duplicate second-pass CPU-work p95 is at least
+  25 ms and at least 15% of aggregate whole-call CPU-work p95.
+
+For the qualifying gate, every participating p95 metric is independently
+stable by `abs(half1 - half2) / max(half1, half2) <= 0.25`: second-pass and
+recomputation time for the first gate; second-pass and recomputation allocation
+for the second; or aggregate second-pass and aggregate whole-call CPU-work for
+the batch gate. The percentage threshold is recomputed and must pass in each
+half, not only in the full run. Batch external wall time is separate and is
+never the denominator for summed overlapping CPU-work.
 
 Only the dominant measured phase may scope a later design. A `GO` can authorize
 a separate parsed-object reuse design that preserves the two logical passes;
