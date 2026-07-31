@@ -215,6 +215,88 @@ must preserve every contract above. A `NO-GO` authorizes no production change.
 Failed parity, missing production owners, uncontrollable unrelated page work, or
 unstable halves makes the result inconclusive rather than a `GO`.
 
+## Collected Evidence and Decision
+
+The final instrumented source head is
+`c7e007e4ce2af6e0b6ea727fecc11cc16b255cc1`. The external Release publish under
+`/tmp/swarmui-rank31-final-instrumented-U6HYra` completed with 0 warnings and 0
+errors. `SwarmUI.dll` SHA-256 is
+`bf85dde0f3ac030fa5c271e73619f051882310adc01fef917fd87ece5a73ff4f` and the
+served instrumented `outputhistory.js` SHA-256 is
+`7bac11f1df75c179b96b7e89189a5ba4815cb003a8ef4ac955229cb38d3588fb`.
+
+The separate contract harness passed 30 assertions with 0 failures and emitted
+two expected privacy/gating records. Its SHA-256 is
+`d6ffab06f3572949e2edcdd33035ffd5422c05aa05ce15b1b6551a986c4b6600`.
+The final full-page matrix used Chrome 148.0.7778.97 on Linux
+7.1.4-1-cachyos x64. Across 23 exact groups it ran five warmups per group and
+1,380 measured actions in fifteen-action `ABBA` blocks. All 24,540 matrix
+assertions passed, and the 690 enabled actions emitted exactly 690 schema-1
+records; the 690 disabled actions emitted none.
+
+Evidence artifacts are:
+
+- `/tmp/rank31-records.jsonl`: 1,380 lines, 1,841,826 bytes, SHA-256
+  `83c9df37e7e3b2df91b5a877a22552c86bffcf36be941504e7086e1a700ad723`;
+- `/tmp/rank31-summary.json`: 61,754 bytes, SHA-256
+  `0ddc73f10768646488282f6ed8d832c5fe7bd53044954472c33b7919d9b53133`;
+- matrix harness: SHA-256
+  `68be6166a3fd3ae31a31c220027e4b0800e4f3489d2c87a4bb26fee24f6850e6`;
+- contract harness: SHA-256
+  `d6ffab06f3572949e2edcdd33035ffd5422c05aa05ce15b1b6551a986c4b6600`;
+  and
+- animated-fixture generator: SHA-256
+  `11c06d96c7f3879101d8b135b7eab440f93e379bd5f6c38627faf6dff6a74758`.
+
+The exercised still image SHA-256 was
+`de9134969753d60a33a2b598c8ac6fc465ee7833d34722acd37f2641c7758b34`.
+The valid two-frame GIF SHA-256 was
+`e7eb226f5dddb97be2d34930392b65f34dca79ad851aea4ab1be3caf5fa0da65`.
+The final fixture exposed exact 128- and 512-entry still folders and used
+1,004-file still and animated source pools so the endpoint could return its
+configured 1,000 entries after the two per-folder metadata database files were
+excluded. `DateEdited` sorting was fixed for every group because the production
+filename-sort scan limit is applied before extension filtering and otherwise
+counts those database files. This is workload control, not a production fix or
+a Rank 31 conclusion.
+
+Five stable representative groups met one or more approved gates:
+
+- desktop 1,000-entry thumbnail bottom scroll: total/row/joined-frame p95
+  15.3/9.5/49.9 ms, meeting update-plus-frame, row/layout, and 1,000-to-128
+  growth gates;
+- mobile-sized 1,000-entry thumbnail middle scroll: 9.7/5.6/16.7 ms, meeting
+  the row/layout gate;
+- mobile-sized 1,000-entry thumbnail bottom scroll: 17.2/10.7/50.0 ms, meeting
+  the frame-budget, update-plus-frame, and row/layout gates;
+- desktop 1,000-entry Details List middle scroll: 13.8/9.7/33.4 ms, meeting
+  update-plus-frame and row/layout gates; and
+- desktop 1,000-entry Details List bottom scroll: 27.2/19.0/99.9 ms, meeting
+  the frame-budget, update-plus-frame, and row/layout gates.
+
+Every listed group's chronological fifteen-sample halves differed by at most
+25% of the larger half. The strongest group, Details List bottom, had half p95
+totals of 23.0 and 28.0 ms. The `GO` does not rely on a long-task gate. Resize
+and tab-show externally joined intervals were large while the recorded manager
+update stayed below the synchronous gates; DevTools counters and external time
+remain disclosed process/action observations and are not added to manager time.
+
+The decision is a scoped **GO** for a separate design addressing repeated
+entry-layout reads and row reconstruction inside
+`ImageHistoryWindowManager.updateVisibleWindow()`. It does not authorize
+virtualization, different hydration buffers, event-owner changes, changed
+selection/current behavior, or any production change in this measurement rank.
+Rank 32 remains the final numbered measurement prerequisite.
+
+The backend-free temporary page emitted 1,035 instances of two existing error
+kinds across 115 fresh pages: `featureSetChangedCallbacks` was undefined and the
+`clip` tokenset was absent. Neither prevented history initialization, any
+production owner, recorder delivery, or a parity assertion. The mobile-sized
+groups are responsive desktop Chromium, not mobile-device performance. No real
+user history, ordinary generation/backend work, GPU, Firefox/Safari, mobile
+device, network filesystem, other platform/filesystem, paint/decode, retained
+memory, or production-frequency conclusion is claimed.
+
 ## Evidence Provenance
 
 The final record includes approved base, design, plan, instrumentation,
