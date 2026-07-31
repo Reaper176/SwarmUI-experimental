@@ -47,7 +47,6 @@ public class BackendHandler
         {
             try
             {
-                long timestamp = Stopwatch.GetTimestamp();
                 string normalizedSource = SchedulerCostMeasurement.NormalizeSignalSource(source);
                 SchedulerCostMeasurement.SignalState current = Volatile.Read(ref SchedulerMeasurementSignalState);
                 while (true)
@@ -67,14 +66,8 @@ public class BackendHandler
                     {
                         shutdownCount++;
                     }
-                    long latestTimestamp = current?.LatestTimestamp ?? 0;
-                    string latestSource = current?.LatestSource ?? "timeout_or_external";
-                    if (timestamp > latestTimestamp)
-                    {
-                        latestTimestamp = timestamp;
-                        latestSource = normalizedSource;
-                    }
-                    SchedulerCostMeasurement.SignalState candidate = new(requestCount, releaseCount, shutdownCount, latestTimestamp, latestSource);
+                    long timestamp = Stopwatch.GetTimestamp();
+                    SchedulerCostMeasurement.SignalState candidate = new(requestCount, releaseCount, shutdownCount, timestamp, normalizedSource);
                     if (ReferenceEquals(Interlocked.CompareExchange(ref SchedulerMeasurementSignalState, candidate, current), current))
                     {
                         break;
