@@ -177,13 +177,13 @@ Corrected temporary source head
 
 The final synthetic harness under `/tmp/rank29-harness-BReemg` compiled with 0
 errors and one `MSB3277` `DiagnosticSource` assembly-unification warning, then
-passed 10,409 assertions with 0 failures. Harness-source SHA-256 is
-`c2cf9bbbfc9dd4d8a5523b82ddb8a9ed7fa3eac44035b74a99102a005a56b2ce`.
-The preserved `/tmp/rank29-final-records.jsonl` contains 1,265 schema-1 records
-(134 operation and 1,131 hydration), 1,265 lines, and 381,798 bytes; SHA-256 is
-`37dc1dcc0d67420c40639d693763502bae49086c9e22076b338c72f7515f6b3e`.
+passed 10,907 assertions with 0 failures. Harness-source SHA-256 is
+`470521616bf11a12a65ede83c02c346a6a708652abcb1daaec47699da9b72579`.
+The preserved `/tmp/rank29-final-records.jsonl` contains 1,331 schema-1 records
+(168 operation and 1,163 hydration), 1,331 lines, and 406,310 bytes; SHA-256 is
+`5722f4f51ab1c2d6dc76afba5a400321574cee961fc238d0e85708d2212f7ccc`.
 Preserved `/tmp/rank29-final-summary.json` SHA-256 is
-`a0761f23549409e4bbb407147982cf294189c057500f6f44e4eef4084d4ac808`.
+`965833e312bf26c1edd57cc8315e87b6e06de6a5d570ef11dc21211578c7a901`.
 The environment is user-identified Garuda Linux (Arch-based) on Btrfs; the
 collection reported Linux 7.1.4-1-cachyos x86_64. The harness targeted .NET 8;
 the invoking SDK reported 10.0.110.
@@ -191,30 +191,31 @@ the invoking SDK reported 10.0.110.
 ### Results
 
 The 15 measured cold snapshots across five groups have nearest-rank
-p50/p95/max 4,789/13,559/13,559 microseconds and
-3,779,424/38,748,992/38,748,992 current-thread allocated bytes. The matching 15
-warm snapshots were 20/224/224 microseconds and 1,008/5,560/5,560 bytes. Because
+p50/p95/max 4,680/14,864/14,864 microseconds and
+3,779,424/38,754,216/38,754,216 current-thread allocated bytes. The matching 15
+warm snapshots were 19/41/41 microseconds and 1,008/5,560/5,560 bytes. Because
 these groups intentionally mix counts and payload sizes, the group results are
 the primary scaling evidence:
 
-- 1 small workflow: cold p50/max 75/87 microseconds;
-- 16 small workflows: 642/669 microseconds;
-- 128 small workflows: 4,789/5,673 microseconds;
-- 16 larger workflows: 7,506/13,559 microseconds; and
-- 1 approximately 2.1 MiB serialized workflow: 8,738/11,592 microseconds.
+- 1 small workflow: cold p50/max 71/77 microseconds;
+- 16 small workflows: 639/882 microseconds;
+- 128 small workflows: 4,680/4,793 microseconds;
+- 16 larger workflows: 7,341/14,864 microseconds; and
+- 1 approximately 2.1 MiB serialized workflow: 6,183/7,883 microseconds.
 
 Across 486 measured successful file hydrations, total p50/p95/max was
-36/473/11,564 microseconds, read was 11/96/2,479 microseconds, parse/extract was
-25/349/9,894 microseconds, and current-thread allocation was
-29,336/2,421,432/37,840,128 bytes. Parse/extract rather than read dominates the
+36/440/7,847 microseconds, read was 10/100/2,789 microseconds, parse/extract was
+24/316/6,271 microseconds, and current-thread allocation was
+29,336/2,421,432/37,832,440 bytes. Parse/extract rather than read dominates the
 large-file maximum in this synthetic local-filesystem matrix.
 
 The forced-GC 64-workflow retained-memory probe observed an 8,473,512-byte
 increase after cold listing. That process-wide value includes GC/runtime noise
 and is directional rather than an exact object-size measurement. The 20-call
-direct control averaged 2,502 microseconds and 10,540,783 bytes disabled versus
-2,673 microseconds and 10,547,637 bytes enabled, a 171-microsecond and 6,854-byte
-difference. Run order, cache state, counters, and deferred emission make that a
+The 20-call direct control averaged 2,229 microseconds and 10,540,783 bytes
+disabled versus 2,591 microseconds and 10,548,045 bytes enabled, a
+362-microsecond and 7,262-byte difference. Run order, cache state, counters, and
+deferred emission make that a
 contamination/noise bound rather than subtractable stock cost; the one-file small
 group is therefore not independently material evidence.
 
@@ -225,7 +226,7 @@ was retried/omitted on the warm snapshot with parse-stage time recorded. Two
 bundled examples were copied, classified, and hydrated. A prepublished complete
 record listed with one cache hit and no hydration. Concurrent lookup/snapshot
 results matched the sequential synthetic baseline, and a 25 ms delayed first
-snapshot recorded a 25,325-microsecond refresh age. Every record passed schema,
+snapshot recorded a 25,452-microsecond refresh age. Every record passed schema,
 bounded-category, uniqueness, conservation, nonnegative-metric, and privacy
 checks; synthetic roots, names, descriptions, and content sentinels were absent.
 
@@ -234,7 +235,8 @@ checks; synthetic roots, names, descriptions, and content sentinels were absent.
 The executed evidence covers synthetic local inventory, cold/warm listing,
 count/payload scaling, direct-first and partially cold access, missing and invalid
 omission, bundled examples, refresh age, prepublished visibility, concurrent
-maintained readers, retention direction, and disabled/enabled contamination. It
+maintained readers compared exactly with a captured sequential result baseline,
+retention direction, and disabled/enabled contamination. It
 does not exercise repository or real user workflows, a live API/server, real
 presets, standard generation, backend acquisition/submission, browser/network,
 GPU, network filesystems, another platform/filesystem, or production frequency/GC.
