@@ -2,7 +2,7 @@
 
 **Date:** 2026-07-31
 **Rank:** 28
-**Status:** Approved for temporary measurement
+**Status:** Evidence collected; scoped `GO`; instrumentation removal pending
 **Approved base:** `bdbce25dc023e0661d50fe1b66094741128c8271`
 
 ## Decision Authority
@@ -78,10 +78,12 @@ the current execution context without changing public signatures. Enabled-only
 stack inspection classifies a fixed allowlist of maintained callers; everything
 else becomes `other`. Context, phase, outcome, and source are bounded literals.
 
-Resolved paths never enter records. After authorization, a process-local
-monotonic ordinal is assigned to each normalized path; only that ordinal is
-emitted. The temporary map is cleared when measurement is disabled and removed
-with the instrumentation. No user/session/model/prompt/preset/tag value,
+Resolved paths never enter records or retained identity maps. After
+authorization, an HMAC-SHA256 fingerprint keyed by process-random bytes maps the
+normalized path to a process-local monotonic ordinal; only that ordinal is
+emitted. Enable transitions and identity assignment are serialized, and the
+temporary fingerprint map is cleared when disabled and removed with the
+instrumentation. No user/session/model/prompt/preset/tag value,
 filename, directory, file content, base64 content, exception text, or stack text
 is logged.
 
@@ -96,7 +98,11 @@ scope the time from immediately before late handling to immediately before the
 backend request.
 
 Recorder failures are swallowed without exception details. Timers stop before
-record construction and logging. Disabled execution performs no stack walk,
+record construction and logging. Completed flowed scopes are pruned before
+context or claim inheritance. Compact records are queued without flowing the
+execution context so console logging stays off conversion/backend critical
+paths. Nested outer scope time still includes inner record construction and
+queueing; the direct control quantifies that contamination. Disabled execution performs no stack walk,
 path-map lookup, timer, allocation read, JSON construction, or emission.
 
 ## Instrumentation Placement
@@ -153,6 +159,79 @@ Server launch, live APIs, real user data, real presets, model loading, backend
 acquisition/submission, generation, browser, network, GPU, and repository data
 are explicitly unrun. Contexts that cannot be safely invoked without those
 systems remain static-only and are recorded as limitations rather than inferred.
+
+## Collected Evidence and Decision
+
+### Provenance
+
+Temporary source head `1c038fa8f8a9c3240d8393ce7869630228375b38`
+received `RANK28_SOURCE_SPEC_APPROVED` and
+`RANK28_SOURCE_QUALITY_APPROVED`. Its external Release build under
+`/tmp/swarmui-rank28-build-ulyW6O` completed with 0 warnings and 0 errors;
+`SwarmUI.dll` SHA-256 is
+`6ca66771a0386b0526f14cd8bff83f573e4737ee5dd3e882d64ae8c13acf8129`.
+
+The corrected synthetic harness under `/tmp/rank28-harness-qjyiYq` passed 201
+assertions with 0 failures. Harness-source SHA-256 is
+`45d8f8819488151235b90ad50b8ee8f8a1f27ca4ea02bb44d6676220e6eda8cf`.
+The 105-record, 30,355-byte evidence file contains 92 file-call and 13 scope
+records; SHA-256 is
+`53f3028f8c57ad05619d945d4a509de50ec1cf64e4c538c957048b8cc38421a1`.
+Summary SHA-256 is
+`a4b7d0f44d61a07828edfef42beec18419c2040c53734bc06226a1e5ffafa07c`.
+The environment is user-identified Garuda Linux (Arch-based) on Btrfs; the
+collection reported Linux 7.1.4-1-cachyos x86_64 and .NET 8.0.29.
+
+### Results
+
+Nearest-rank `x[ceil(pN)]` without interpolation gives 75 measured completed
+file calls overall at p50/p95/max 1,448/7,550/31,309 microseconds and
+6,642,008/6,642,216/53,129,120 current-thread allocated bytes. The exact
+three-repetition disk scale was:
+
+- 1 KiB: p50/max 79/83 microseconds;
+- 1 MiB: p50/max 1,859/2,166 microseconds; and
+- 8 MiB: p50/max 7,651/7,943 microseconds.
+
+Three measured late `<param[Init Image]:...>` applications of the same synthetic
+authorized 1 MiB PNG retained one opaque path ID. File resolution/read/encoding
+was p50/p95/max 1,763/2,352/2,352 microseconds with 6,642,064 allocated bytes;
+the inclusive late scope was p50/p95/max 9,553/10,081/10,081 microseconds. The
+inclusive figure also contains media parsing and nested instrumentation and
+must not be attributed wholly to file conversion.
+
+A delayed pending-save task produced 31,256 microseconds of recorded synchronous
+wait. Completed pending bytes won over different disk bytes exactly as before.
+Data-URL and raw-base64 request values produced bypass items and no file calls.
+The original path-backed `IMAGE_LIST` behavior converted the first path to a
+data URL and then rejected that result in list validation; disabled and enabled
+exception type/message matched. Rank 28 records this baseline edge case but does
+not authorize changing it.
+
+The 1 MiB direct control over 40 post-warm calls was mean 1,718.025 microseconds
+and 6,642,106 bytes disabled versus 1,839.35 microseconds and 6,645,859 bytes
+enabled. Approximate mean instrumentation contamination is therefore 121.325
+microseconds and 3,753 bytes. File-call endpoints exclude record construction
+and asynchronous log delivery, while inclusive parent scopes can include nested
+record construction/queueing.
+
+### Boundary and decision
+
+The executed evidence covers deterministic synthetic disk and pending sources,
+same/distinct paths, scale, repeated late parameter application, request/preset
+scopes, data-URL/raw bypasses, list/error parity, clone retention, concurrent
+independent calls, privacy/schema checks, and disabled/enabled controls. It does
+not exercise real user data, a live API/server, real saved presets, model load,
+backend acquisition/submission, generation/GPU, browser/network, network
+filesystem, another platform/filesystem, or production frequency/GC.
+
+Repeated authorized 1 MiB conversion is material in both elapsed time and
+allocation after measured contamination, and the maintained late path repeats
+that work across cloned tasks. Rank 28 therefore records a scoped `GO`: a
+separate design may evaluate request/claim-scoped authorized content
+pre-resolution or caching. This decision does not authorize an account/global
+cache, freshness relaxation, raw-path key retention, a broad async rewrite, or
+any production change in this branch.
 
 ## Decision Gate and Rollback
 
