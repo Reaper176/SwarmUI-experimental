@@ -200,6 +200,10 @@ Common fields are:
 - `batch_size`;
 - `outcome`.
 
+`media_category` is exactly `image`, `animation`, `video`, `audio`, `text`, or
+`unknown`, mapped by known `MediaMetaType` reference identity.
+Extension-controlled `Name`/`ToString` is never emitted.
+
 No exception message is included because it may contain a path. Failure
 outcomes use bounded categories only.
 

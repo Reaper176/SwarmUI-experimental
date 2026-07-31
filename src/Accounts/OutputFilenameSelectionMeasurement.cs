@@ -95,6 +95,32 @@ internal static class OutputFilenameSelectionMeasurement
         return new string(normalized);
     }
 
+    /// <summary>Maps known media meta-type identities to bounded diagnostic categories.</summary>
+    private static string GetMediaCategory(MediaMetaType metaType)
+    {
+        if (ReferenceEquals(metaType, MediaMetaType.Image))
+        {
+            return "image";
+        }
+        if (ReferenceEquals(metaType, MediaMetaType.Animation))
+        {
+            return "animation";
+        }
+        if (ReferenceEquals(metaType, MediaMetaType.Video))
+        {
+            return "video";
+        }
+        if (ReferenceEquals(metaType, MediaMetaType.Audio))
+        {
+            return "audio";
+        }
+        if (ReferenceEquals(metaType, MediaMetaType.Text))
+        {
+            return "text";
+        }
+        return "unknown";
+    }
+
     /// <summary>Starts one enabled measurement attempt, or returns null when disabled.</summary>
     internal static OutputFilenameSelectionAttempt Begin(OutputFilenameSelectionContext context, MediaFile file, int batchSize)
     {
@@ -108,7 +134,7 @@ internal static class OutputFilenameSelectionMeasurement
             Scenario = NormalizeScenario(Program.ServerSettings.Performance.OutputFilenameMeasurementScenario),
             Source = context.Source,
             BackendClaimed = context.BackendClaimed,
-            MediaCategory = $"{file.Type.MetaType}",
+            MediaCategory = GetMediaCategory(file.Type.MetaType),
             BatchSize = batchSize
         };
     }

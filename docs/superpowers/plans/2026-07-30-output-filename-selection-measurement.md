@@ -317,6 +317,32 @@ internal static class OutputFilenameSelectionMeasurement
         return new string(normalized);
     }
 
+    /// <summary>Maps known media meta-type identities to bounded diagnostic categories.</summary>
+    private static string GetMediaCategory(MediaMetaType metaType)
+    {
+        if (ReferenceEquals(metaType, MediaMetaType.Image))
+        {
+            return "image";
+        }
+        if (ReferenceEquals(metaType, MediaMetaType.Animation))
+        {
+            return "animation";
+        }
+        if (ReferenceEquals(metaType, MediaMetaType.Video))
+        {
+            return "video";
+        }
+        if (ReferenceEquals(metaType, MediaMetaType.Audio))
+        {
+            return "audio";
+        }
+        if (ReferenceEquals(metaType, MediaMetaType.Text))
+        {
+            return "text";
+        }
+        return "unknown";
+    }
+
     /// <summary>Starts one enabled measurement attempt, or returns null when disabled.</summary>
     internal static OutputFilenameSelectionAttempt Begin(OutputFilenameSelectionContext context, MediaFile file, int batchSize)
     {
@@ -330,7 +356,7 @@ internal static class OutputFilenameSelectionMeasurement
             Scenario = NormalizeScenario(Program.ServerSettings.Performance.OutputFilenameMeasurementScenario),
             Source = context.Source,
             BackendClaimed = context.BackendClaimed,
-            MediaCategory = $"{file.Type.MetaType}",
+            MediaCategory = GetMediaCategory(file.Type.MetaType),
             BatchSize = batchSize
         };
     }
@@ -439,6 +465,11 @@ test "$(rg -c 'OutputFilenameMeasurementScenario' src/Core/Settings.cs)" -eq 1
 test "$(rg -c 'internal static void EmitBypass' src/Accounts/OutputFilenameSelectionMeasurement.cs)" -eq 1
 test "$(rg -c 'internal static void EmitSelection' src/Accounts/OutputFilenameSelectionMeasurement.cs)" -eq 1
 test "$(rg -c 'internal static void EmitBackground' src/Accounts/OutputFilenameSelectionMeasurement.cs)" -eq 1
+test "$(rg -c 'private static string GetMediaCategory' src/Accounts/OutputFilenameSelectionMeasurement.cs)" -eq 1
+test -z "$(rg -n 'file\.Type\.MetaType}' src/Accounts/OutputFilenameSelectionMeasurement.cs)"
+test -z "$(awk '/private static string GetMediaCategory/{mapping=1} \
+  /internal static OutputFilenameSelectionAttempt Begin/{mapping=0} mapping' \
+  src/Accounts/OutputFilenameSelectionMeasurement.cs | rg '\.Name|\.ToString')"
 test -z "$(rg -n 'UserID|UserRequestId|fullPath|folderRoute|Exception ex|ReadableString|Prompt' \
   src/Accounts/OutputFilenameSelectionMeasurement.cs)"
 git diff --check
