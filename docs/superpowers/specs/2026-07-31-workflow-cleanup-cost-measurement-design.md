@@ -2,7 +2,7 @@
 
 **Date:** 2026-07-31
 **Rank:** 27
-**Status:** Design and implementation plan approved; ready for temporary instrumentation
+**Status:** Evidence collected; `NO-GO`; instrumentation removal and post-removal verification pending
 **Approved base:** `020f619ce54918e074892da2e9756822807cefca`
 
 ## Decision Authority
@@ -36,10 +36,10 @@ cleanup. It:
 8. repeatedly rebuilds connectivity and removes unused cleanup-class nodes
    until a complete pass makes no removal.
 
-The six scans and fixed-point rebuilds are statically confirmed. Their cost and
-materiality across generated-workflow families and graph sizes are not. Rank 27
-is therefore a measurement prerequisite only. Standard workflows produced by
-`WorkflowGenerator.Generate()` consume this cleanup. Stored or raw workflows
+The six scans and fixed-point rebuilds were statically confirmed before
+collection, while their cost and materiality were unknown. The evidence below
+closes that prerequisite with a `NO-GO` decision. Standard workflows produced
+by `WorkflowGenerator.Generate()` consume this cleanup. Stored or raw workflows
 that bypass generation are outside the measured path.
 
 ## Goals
@@ -71,7 +71,8 @@ Rank 27 does not authorize:
 - changing the public `WorkflowGenerator` facade, method signatures, fields,
   return values, or ABI;
 - changing node IDs, property order, callback order, removal order, connection
-  matching, replacement reference identity, or `UsedInputs` behavior;
+  matching, Newtonsoft's parent-aware replacement-reference behavior, or
+  `UsedInputs` behavior;
 - measuring stored/raw workflow submission paths that do not run generation;
 - a generic telemetry framework or reusable instrumentation for later ranks;
 - raw node IDs, class names, model names, user/session identity, paths, prompts,
@@ -155,9 +156,12 @@ inside the timed operation.
 
 `ReplaceNodeConnection` records calls, workflow nodes examined, direct input
 properties examined, exact two-token matches, assignments, elapsed time, and
-allocation. It retains the original workflow/input order and assigns the same
-supplied `newNode` `JArray` reference to every match; it does not clone or
-normalize either connection.
+allocation. It retains the original workflow/input order and the exact original
+`inputs[property.Name] = newNode` assignment. Newtonsoft attaches an initially
+unparented token directly for a single destination, but assigning an already
+parented token or assigning it to multiple destinations produces value-equal,
+distinct parent-aware clones. Instrumentation preserves that baseline pattern;
+it does not explicitly clone or normalize either connection.
 
 `RemoveClassesIfUnused` records fixed-point passes and candidate snapshots.
 The existing `NodeIsConnectedAnywhere` path records each actual connectivity
@@ -186,8 +190,10 @@ modes:
   current or later properties;
 - connection matching remains `JArray` only, count exactly two, with both
   tokens compared through their existing string conversion;
-- every matching input receives the exact supplied replacement `JArray`
-  reference in workflow/input-property order;
+- every matching input receives the result of the original Newtonsoft
+  assignment in workflow/input-property order: an initially unparented
+  single-target token can retain identity, while the parented stock cleanup
+  token yields value-equal, distinct destination clones;
 - cleanup-class candidates are snapshotted in workflow order on every pass;
 - fixed-point termination occurs only after a complete pass removes nothing;
 - connectivity matching, the `exclude` rule, `-1` wildcard entries, and
@@ -246,7 +252,8 @@ The matrix covers:
 11. removable dependency cascades of depth 1, 4, 16, and 32;
 12. multiple exact replacement matches in one input object and across nodes;
 13. non-array, wrong-length, and nonmatching direct input values;
-14. snapshot-removal order and shared replacement-reference assertions;
+14. snapshot-removal order and actual parent-aware replacement-reference
+    assertions in disabled and enabled modes;
 15. malformed graph cases with enabled/disabled exception parity;
 16. unsafe scenario normalization and recorder-failure isolation; and
 17. a direct disabled-versus-enabled timing/allocation control around the
@@ -256,10 +263,11 @@ At least one warm-up precedes three measured repetitions for every scaling
 topology and family/branch fixture. Warm-up records are explicitly marked and
 excluded from reported percentiles. Every successful enabled run is compared
 byte for byte with a disabled run from the same input graph. The harness also
-compares node/property order, `Workflow` identity, replacement reference
-identity, `UsedInputs`, `NodeHelpers`, `LastID`, and other exercised public
-state. Malformed cases compare success/failure, exception type and message, and
-post-failure graph/state externally; exception details never enter evidence.
+compares node/property order, `Workflow` identity, the actual Newtonsoft
+replacement-reference pattern, `UsedInputs`, `NodeHelpers`, `LastID`, and other
+exercised public state. Malformed cases compare success/failure, exception type
+and message, and post-failure graph/state externally; exception details never
+enter evidence.
 
 ## Decision Gate
 
@@ -277,6 +285,85 @@ The result is one of:
 The decision is qualitative and evidence-backed. A `GO` authorizes only a new
 design. It does not authorize combining scans, changing the fixed-point
 algorithm, caching connectivity across mutations, or altering graph semantics.
+
+## Collected Evidence and Decision
+
+### Provenance and source review
+
+The approved base is `020f619ce54918e074892da2e9756822807cefca`.
+The measurement history is design commit `e429df0d`, plan commit `ab79c45d`,
+recorder/settings commit `77a03a64`, generator/editor hook commit `622e73a8`,
+and measurement-validity fix `183d73ee`. The temporary inventory is exactly
+`src/Core/Settings.cs`, `WorkflowCleanupCostMeasurement.cs`,
+`WorkflowGenerator.cs`, and `WorkflowGraphEditor.cs`. Independent reviews
+returned `RANK27_SOURCE_SPEC_APPROVED` and
+`RANK27_SOURCE_QUALITY_APPROVED`.
+
+The isolated external Release build under
+`/tmp/swarmui-rank27-build-kVTbhk` completed with 0 warnings and 0 errors. Its
+`SwarmUI.dll` SHA-256 is
+`647d367048e3eabd06e7e36621798c4f4a37a5a7038ea25d4ccea4d984179ad4`.
+The separate `/tmp` harness compiled with 0 errors and one `DiagnosticSource`
+assembly-unification warning, then completed successfully.
+
+### Matrix and evidence integrity
+
+The corrected final run recorded 17,484 passing assertions, 0 failing
+assertions, and 668 `Generate()` invocations. These are assertion and invocation
+counts, not conventional case counts. The matrix contains 19 repeated parity
+groups, each with one warm-up and three measured repetitions in both disabled
+and enabled modes, plus 16 specialized `Generate()` invocations. Seven entries
+are explicitly out-of-scope claim categories, not skipped executable cases:
+real model load, full real `Generate()`, backend submission, server/network,
+GPU, repository-filesystem/user-data behavior, and production workload/GC.
+
+There are 335 privacy-safe schema-1 records: 333 completed and two expected
+malformed failures, with 69 warm-up and 266 measured records. Completed stock
+actions have six bounded scan slots, no overflow, and valid endpoints. The two
+failed records omit post-count/serialization validity and contain no exception
+details. The isolated emitter failure preserves graph/state behavior and
+intentionally leaves one measurement-ID gap. Disabled runs emit no record.
+Evidence SHA-256 is
+`8ace0c4894805672bc4be7343fb8f49f47164769b3c117592456273696c5df54`;
+summary SHA-256 is
+`574bd6dfa550d2359e63f3ab3a48c8bf247371d2fdcfef31cc82f19235f7711a`;
+and harness-source SHA-256 is
+`d6a889b6a217ba629f0b26ed152562ea5c230b51519e018405a8b9ced3bff08c`.
+
+Runtime parity covers graph bytes/property order, result workflow identity,
+exceptions and partial state, `UsedInputs`, `NodeHelpers`, `LastID`, snapshot
+removal, and replacement values. A corrected focused control establishes the
+actual baseline reference behavior: a parented stock replacement produces
+value-equal distinct destination clones in both disabled and enabled modes,
+while a separate initially unparented single-target primitive retains exact
+identity. The audio-only fixture is distinct from the LTX audio/video fixture.
+
+### Results and decision
+
+Nearest-rank `x[ceil(pN)]`, without interpolation and with warm-ups excluded,
+gives cleanup p50/p95/max of 82/264/576 microseconds across 266 measured
+records; current-thread allocation is 45,168/45,168/308,672 bytes. The six
+overlapping scan scopes sum to 66/209/348 microseconds; fixed-point cleanup is
+12/43/549 and connectivity rebuild work is 0/12/369 microseconds. Diagnostic
+post-cleanup serialization is separate from existing cleanup and measures
+132/225/1,284 microseconds.
+
+The 16/128/512-node scaling groups have p50/max cleanup of 16/16, 96/98, and
+396/408 microseconds, with p50 allocations of 7,536, 45,168, and 174,192 bytes.
+Depth-1/4/16/32 removable cascades require 2/5/17/33 passes and have p50/max
+cleanup of 20/23, 46/47, 176/181, and 531/576 microseconds. A direct 128-node
+control measures the disabled path at mean 98.28 microseconds, p50/p95 82/96,
+and mean 45,488 bytes. The enabled diagnostic path is mean 355.28 microseconds
+and 137,608 bytes, so it adds about 257 microseconds and 92,120 bytes; enabled
+totals and diagnostic serialization must not be presented as stock cost.
+
+Repeated stock cleanup remained sub-millisecond throughout the exercised
+synthetic matrix, including the largest graph and deepest cascade. The scoped
+decision is therefore `NO-GO`: Rank 27 authorizes no scan combination, graph
+index/cache, fixed-point rewrite, or other cleanup optimization. Rank 28 may be
+recorded as the sole Recommended Next Project, but is neither designed nor
+implemented and must not begin until Rank 27 instrumentation removal and
+post-removal projection/build/sanity verification close.
 
 ## Static and Runtime Validation
 
@@ -320,6 +407,7 @@ rank-specific recorder, the generator-bound attempt, every editor hook, and all
 Rank 27 prefixes. The final committed `src` tree must be byte-for-byte and tree-
 OID identical to approved base `020f619ce54918e074892da2e9756822807cefca`.
 
-Only this design, its later implementation plan, the audit status, and final
-evidence/decision documentation may remain. No Rank 28 status is advanced until
-Rank 27 collection, decision, removal, and final projection validation close.
+Only this design, its implementation plan, the audit status, and final
+evidence/decision documentation may remain. This intermediate evidence commit
+records Rank 28 as Recommended Next but does not authorize Rank 28 work until
+Rank 27 removal and final projection validation close.
