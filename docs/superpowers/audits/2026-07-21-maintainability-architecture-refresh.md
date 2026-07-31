@@ -954,7 +954,7 @@ Ranks 25-32 are bounded measurement projects, not implementation projects. For e
 
 ### 27. Measure generated-workflow cleanup traversal cost
 
-- **Recommendation status:** Ranks 25 and 26 completed with `NO-GO` decisions and authorize no optimization. Rank 27 is the sole Recommended Next Project as the next bounded measurement prerequisite; its design is approved and its implementation plan is pending. Rank 28 is not advanced.
+- **Recommendation status:** Ranks 25 and 26 completed with `NO-GO` decisions and authorize no optimization. Rank 27 is the sole Recommended Next Project as the next bounded measurement prerequisite; its design and implementation plan are approved and it is ready for temporary instrumentation. Rank 28 is not advanced.
 - **Evidence boundary:** Backend P6/Rank 25 and Backend P5/Rank 26 now have bounded, privacy-safe, maintainer-authorized agent-run evidence and `NO-GO` decisions. Rank 26's instrumentation removal, exact base-tree source projection, and post-removal build/sanity are complete; it authorizes no scheduler behavior/cache change. Comfy P7 confirms repeated generated-workflow graph scans and fixed-point rebuilds, but their materiality remains unknown; Rank 27 authorizes only a separately designed measurement, not a graph algorithm or behavior change.
 
 ## Deferred, Superseded, and Rejected Ideas

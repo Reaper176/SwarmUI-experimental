@@ -2,7 +2,7 @@
 
 **Date:** 2026-07-31
 **Rank:** 27
-**Status:** Design approved; implementation plan pending
+**Status:** Design and implementation plan approved; ready for temporary instrumentation
 **Approved base:** `020f619ce54918e074892da2e9756822807cefca`
 
 ## Decision Authority
