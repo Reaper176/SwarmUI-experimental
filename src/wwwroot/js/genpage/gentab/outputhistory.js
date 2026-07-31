@@ -173,6 +173,12 @@ class ImageHistoryCostMeasurement {
         }
     }
 
+    /** Returns one fixed image-history sort-family label. */
+    getSort(sortBy) {
+        let allowed = ['Name', 'DateCreated', 'DateEdited', 'Rating', 'Resolution', 'Model', 'Seed', 'FileSize'];
+        return allowed.includes(sortBy) ? sortBy : 'unspecified';
+    }
+
     /** Publishes one nonthrowing response-cost record. */
     recordResponse(data) {
         try {
@@ -189,7 +195,7 @@ class ImageHistoryCostMeasurement {
                 refresh: data.refresh == true,
                 fast_first: data.fastFirst == true,
                 depth: Number.parseInt(data.depth || 0),
-                sort: data.sortBy,
+                sort: this.getSort(data.sortBy),
                 reverse: data.reverse == true,
                 has_filter: data.hasFilter == true,
                 hide_grids: data.hideGrids == true,
@@ -1282,17 +1288,18 @@ class ImageHistoryController {
             callback(folders, mapped);
             let renderMs = performance.now() - renderStart;
             console.debug(`History load: path='${path || '/'}', refresh=${isRefresh}, fastFirst=${useFastFirst}, folders=${folders.length}, files=${mapped.length}, request=${responseMs.toFixed(1)}ms, map=${mapMs.toFixed(1)}ms, render=${renderMs.toFixed(1)}ms${this.perfText(data.perf)}`);
-            imageHistoryCostMeasurement.recordResponse({ flow: 'foreground', refresh: isRefresh, fastFirst: useFastFirst, depth, sortBy, reverse, hasFilter: !!filter, hideGrids, folderCount: folders.length, rawFileCount: data.files.length, mappedFileCount: mapped.length, requestMs: responseMs, mapMs, renderMs, handlerStart, serverPerf: data.perf });
             if (useFastFirst) {
                 this.startupStage = 'recent_loaded';
                 this.backgroundRetryCount = 0;
                 this.backgroundRequestKey = this.getRequestKey(path, depth, sortBy, reverse, showHidden, hideGrids);
                 this.queueFullLoad(path, depth, sortBy, reverse, showHidden, hideGrids);
+                imageHistoryCostMeasurement.recordResponse({ flow: 'foreground', refresh: isRefresh, fastFirst: useFastFirst, depth, sortBy, reverse, hasFilter: !!filter, hideGrids, folderCount: folders.length, rawFileCount: data.files.length, mappedFileCount: mapped.length, requestMs: responseMs, mapMs, renderMs, handlerStart, serverPerf: data.perf });
                 return;
             }
             this.startupStage = 'complete';
             this.clearBackgroundWatchdog();
             this.setRequestStatus('idle');
+            imageHistoryCostMeasurement.recordResponse({ flow: 'foreground', refresh: isRefresh, fastFirst: useFastFirst, depth, sortBy, reverse, hasFilter: !!filter, hideGrids, folderCount: folders.length, rawFileCount: data.files.length, mappedFileCount: mapped.length, requestMs: responseMs, mapMs, renderMs, handlerStart, serverPerf: data.perf });
         }, 0, error => {
             if (loadToken != this.loadToken) {
                 return;
