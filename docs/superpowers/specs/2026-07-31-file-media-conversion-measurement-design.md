@@ -174,33 +174,33 @@ received `RANK28_SOURCE_SPEC_APPROVED` and
 The corrected synthetic harness under `/tmp/rank28-harness-qjyiYq` passed 201
 assertions with 0 failures. Harness-source SHA-256 is
 `45d8f8819488151235b90ad50b8ee8f8a1f27ca4ea02bb44d6676220e6eda8cf`.
-The 105-record, 30,355-byte evidence file contains 92 file-call and 13 scope
-records; SHA-256 is
-`53f3028f8c57ad05619d945d4a509de50ec1cf64e4c538c957048b8cc38421a1`.
-Summary SHA-256 is
-`a4b7d0f44d61a07828edfef42beec18419c2040c53734bc06226a1e5ffafa07c`.
+The preserved `/tmp/rank28-final-records.jsonl` evidence file contains 105
+records (92 file-call and 13 scope), 105 lines, and 30,354 bytes; SHA-256 is
+`22ccd66b67e5537543492efa7f0d919e0f7e2d9b2e35d0f2820f5f9d4d921964`.
+Preserved `/tmp/rank28-final-summary.json` SHA-256 is
+`06c02e7a44eef72467fba363f6c6f1d68690c558f82cbf5d90be0ec51b2263e6`.
 The environment is user-identified Garuda Linux (Arch-based) on Btrfs; the
 collection reported Linux 7.1.4-1-cachyos x86_64 and .NET 8.0.29.
 
 ### Results
 
 Nearest-rank `x[ceil(pN)]` without interpolation gives 75 measured completed
-file calls overall at p50/p95/max 1,448/7,550/31,309 microseconds and
+file calls overall at p50/p95/max 1,083/7,511/31,629 microseconds and
 6,642,008/6,642,216/53,129,120 current-thread allocated bytes. The exact
 three-repetition disk scale was:
 
-- 1 KiB: p50/max 79/83 microseconds;
-- 1 MiB: p50/max 1,859/2,166 microseconds; and
-- 8 MiB: p50/max 7,651/7,943 microseconds.
+- 1 KiB: p50/max 72/80 microseconds;
+- 1 MiB: p50/max 2,309/2,365 microseconds; and
+- 8 MiB: p50/max 7,901/8,201 microseconds.
 
 Three measured late `<param[Init Image]:...>` applications of the same synthetic
 authorized 1 MiB PNG retained one opaque path ID. File resolution/read/encoding
-was p50/p95/max 1,763/2,352/2,352 microseconds with 6,642,064 allocated bytes;
-the inclusive late scope was p50/p95/max 9,553/10,081/10,081 microseconds. The
+was p50/p95/max 2,101/2,506/2,506 microseconds with 6,642,064 allocated bytes;
+the inclusive late scope was p50/p95/max 9,920/10,152/10,152 microseconds. The
 inclusive figure also contains media parsing and nested instrumentation and
 must not be attributed wholly to file conversion.
 
-A delayed pending-save task produced 31,256 microseconds of recorded synchronous
+A delayed pending-save task produced 31,558 microseconds of recorded synchronous
 wait. Completed pending bytes won over different disk bytes exactly as before.
 Data-URL and raw-base64 request values produced bypass items and no file calls.
 The original path-backed `IMAGE_LIST` behavior converted the first path to a
@@ -208,12 +208,12 @@ data URL and then rejected that result in list validation; disabled and enabled
 exception type/message matched. Rank 28 records this baseline edge case but does
 not authorize changing it.
 
-The 1 MiB direct control over 40 post-warm calls was mean 1,718.025 microseconds
-and 6,642,106 bytes disabled versus 1,839.35 microseconds and 6,645,859 bytes
-enabled. Approximate mean instrumentation contamination is therefore 121.325
-microseconds and 3,753 bytes. File-call endpoints exclude record construction
-and asynchronous log delivery, while inclusive parent scopes can include nested
-record construction/queueing.
+The 1 MiB direct control over 40 post-warm calls was mean 1,899.875 microseconds
+and 6,642,091 bytes disabled versus 1,795.825 microseconds and 6,645,857 bytes
+enabled. The negative elapsed difference (-104.05 microseconds) is run-order and
+measurement noise, not a speedup; the allocation difference is 3,766 bytes.
+File-call endpoints exclude record construction and asynchronous log delivery,
+while inclusive parent scopes can include nested record construction/queueing.
 
 ### Boundary and decision
 
