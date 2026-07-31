@@ -149,80 +149,6 @@ class ImageHistoryWindowManager {
 /** Header controls used by the image-history browser. */
 let IMAGE_HISTORY_HEADER_HTML = `<label for="image_history_sort_by">Sort:</label> <select id="image_history_sort_by"><option>Name</option><option value="DateCreated">Date-Created</option><option value="DateEdited">Date-Edited</option><option>Rating</option><option>Resolution</option><option>Model</option><option>Seed</option><option value="FileSize">File Size</option></select> <input type="checkbox" id="image_history_sort_reverse"> <label for="image_history_sort_reverse">Reverse</label> &emsp; <input type="checkbox" id="image_history_allow_anims" checked autocomplete="off"> <label for="image_history_allow_anims">Allow Animation</label> &emsp; <input type="checkbox" id="image_history_show_hidden" autocomplete="off"> <label for="image_history_show_hidden">Show Hidden</label> &emsp; <input type="checkbox" id="image_history_hide_grids" checked autocomplete="off"> <label for="image_history_hide_grids">Hide Grids</label> <button type="button" id="image_history_rescan_metadata" class="refresh-button" onclick="rescanImageHistoryMetadata()">Rescan Metadata</button> <span id="image_history_bulk_controls" class="image-history-bulk-controls"><span id="image_history_selected_count" class="image-history-selected-count">0 selected</span> <button type="button" id="image_history_select_all" class="refresh-button" onclick="selectAllImageHistory()">Select All</button> <button type="button" id="image_history_clear_selection" class="refresh-button" onclick="clearSelectedImageHistory()">Clear</button> <button type="button" id="image_history_compare_selected" class="refresh-button" onclick="compareSelectedImageHistory()">Compare</button> <button type="button" id="image_history_copy_paths_selected" class="refresh-button" onclick="copySelectedImageHistoryPaths()">Copy Paths</button> <button type="button" id="image_history_contact_sheet_selected" class="refresh-button" onclick="createSelectedImageHistoryContactSheet()">Contact Sheet</button> <button type="button" id="image_history_set_rating_selected" class="refresh-button" onclick="setSelectedImageHistoryRatingPrompt()">Set Rating</button> <button type="button" id="image_history_add_tags_selected" class="refresh-button" onclick="setSelectedImageHistoryTagsPrompt('add')">Add Tags</button> <button type="button" id="image_history_remove_tags_selected" class="refresh-button" onclick="setSelectedImageHistoryTagsPrompt('remove')">Remove Tags</button> <button type="button" id="image_history_set_notes_selected" class="refresh-button" onclick="setSelectedImageHistoryNotesPrompt()">Set Notes</button> <button type="button" id="image_history_copy_to_selected" class="refresh-button" onclick="moveSelectedImageHistoryPrompt('copy')">Copy To</button> <button type="button" id="image_history_move_to_selected" class="refresh-button" onclick="moveSelectedImageHistoryPrompt('move')">Move To</button> <button type="button" id="image_history_export_metadata_selected" class="refresh-button" onclick="exportSelectedImageHistoryMetadata()">Export Metadata</button> <button type="button" id="image_history_send_prompt_lab_selected" class="refresh-button" onclick="sendSelectedImageHistoryToPromptLab()">Send to Prompt Lab</button> <button type="button" id="image_history_star_selected" class="refresh-button" onclick="starSelectedImageHistory()">Star Selected</button> <button type="button" id="image_history_unstar_selected" class="refresh-button" onclick="unstarSelectedImageHistory()">Unstar Selected</button> <button type="button" id="image_history_hide_selected" class="refresh-button" onclick="hideSelectedImageHistory()">Hide Selected</button> <button type="button" id="image_history_unhide_selected" class="refresh-button" onclick="unhideSelectedImageHistory()">Unhide Selected</button> <button type="button" id="image_history_delete_selected" class="interrupt-button" onclick="deleteSelectedImageHistory()">Delete Selected</button></span> <span id="image_history_request_status" class="image-history-request-status" data-state="idle"><span id="image_history_request_status_text" class="image-history-request-status-text"></span> <button type="button" id="image_history_retry_button" class="refresh-button" style="display:none;">Retry</button></span>`;
 
-/** Temporarily records opt-in image-history response costs for Rank 30. */
-class ImageHistoryCostMeasurement {
-    /** Returns whether measurement is explicitly enabled. */
-    isEnabled() {
-        try {
-            return localStorage.getItem('image_history_measurement_enabled') == 'true';
-        }
-        catch (e) {
-            return false;
-        }
-    }
-
-    /** Returns a fixed-shape scenario label without exposing history values. */
-    getScenario() {
-        try {
-            let scenario = `${localStorage.getItem('image_history_measurement_scenario') || ''}`;
-            let pattern = /^(desktop|mobile)_(32|128|512|1000)_(minimal|rich)_(thumbs|details)_(foreground|refresh|fast_first|background|control|contract)$/;
-            return pattern.test(scenario) ? scenario : 'unspecified';
-        }
-        catch (e) {
-            return 'unspecified';
-        }
-    }
-
-    /** Returns one fixed image-history sort-family label. */
-    getSort(sortBy) {
-        let allowed = ['Name', 'DateCreated', 'DateEdited', 'Rating', 'Resolution', 'Model', 'Seed', 'FileSize'];
-        return allowed.includes(sortBy) ? sortBy : 'unspecified';
-    }
-
-    /** Publishes one nonthrowing response-cost record. */
-    recordResponse(data) {
-        try {
-            if (!this.isEnabled()) {
-                return;
-            }
-            let handlerMs = data.handlerEnd - data.handlerStart;
-            let perf = data.serverPerf || {};
-            let record = {
-                schema: 1,
-                scenario: this.getScenario(),
-                flow: data.flow,
-                refresh: data.refresh == true,
-                fast_first: data.fastFirst == true,
-                depth: Number.parseInt(data.depth || 0),
-                sort: this.getSort(data.sortBy),
-                reverse: data.reverse == true,
-                has_filter: data.hasFilter == true,
-                hide_grids: data.hideGrids == true,
-                folder_count: data.folderCount,
-                raw_file_count: data.rawFileCount,
-                mapped_file_count: data.mappedFileCount,
-                request_ms: data.requestMs,
-                map_ms: data.mapMs,
-                render_ms: data.renderMs,
-                handler_start_ms: data.handlerStart,
-                handler_end_ms: data.handlerEnd,
-                handler_ms: handlerMs,
-                long_task_candidate: handlerMs >= 50,
-                server_total_ms: Number(perf.total_ms || 0),
-                server_dir_scan_ms: Number(perf.dir_scan_ms || 0),
-                server_file_scan_ms: Number(perf.file_scan_ms || 0),
-                server_final_sort_ms: Number(perf.final_sort_ms || 0)
-            };
-            console.log(`[Rank30ImageHistory] ${JSON.stringify(record)}`);
-        }
-        catch (e) {
-            // Measurement must never affect image-history behavior.
-        }
-    }
-}
-
-let imageHistoryCostMeasurement = new ImageHistoryCostMeasurement();
-
 class ImageHistoryController {
     /** Creates image-history state without starting a browser request. */
     constructor() {
@@ -1270,16 +1196,12 @@ class ImageHistoryController {
             request.fastFirstLimit = IMAGE_HISTORY_FAST_FIRST_LIMIT;
         }
         this.setRequestStatus(isRetryLoad ? 'retrying' : 'loading', isRetryLoad ? 'Retrying history load...' : 'Loading history...');
-        let measurementRequestStart = performance.now();
         genericRequest('ListImages', request, data => {
             if (loadToken != this.loadToken) {
                 return;
             }
-            let measurementResponseStart = performance.now();
-            let responseMs = measurementResponseStart - requestStart;
-            let measurementRequestMs = measurementResponseStart - measurementRequestStart;
+            let responseMs = performance.now() - requestStart;
             let mapStart = performance.now();
-            let handlerStart = mapStart;
             this.clearAutoRetry();
             this.hasLoadedOnce = true;
             let prefix = path == '' ? '' : (path.endsWith('/') ? path : `${path}/`);
@@ -1295,15 +1217,11 @@ class ImageHistoryController {
                 this.backgroundRetryCount = 0;
                 this.backgroundRequestKey = this.getRequestKey(path, depth, sortBy, reverse, showHidden, hideGrids);
                 this.queueFullLoad(path, depth, sortBy, reverse, showHidden, hideGrids);
-                let handlerEnd = performance.now();
-                imageHistoryCostMeasurement.recordResponse({ flow: 'foreground', refresh: isRefresh, fastFirst: useFastFirst, depth, sortBy, reverse, hasFilter: !!filter, hideGrids, folderCount: folders.length, rawFileCount: data.files.length, mappedFileCount: mapped.length, requestMs: measurementRequestMs, mapMs, renderMs, handlerStart, handlerEnd, serverPerf: data.perf });
                 return;
             }
             this.startupStage = 'complete';
             this.clearBackgroundWatchdog();
             this.setRequestStatus('idle');
-            let handlerEnd = performance.now();
-            imageHistoryCostMeasurement.recordResponse({ flow: 'foreground', refresh: isRefresh, fastFirst: useFastFirst, depth, sortBy, reverse, hasFilter: !!filter, hideGrids, folderCount: folders.length, rawFileCount: data.files.length, mappedFileCount: mapped.length, requestMs: measurementRequestMs, mapMs, renderMs, handlerStart, handlerEnd, serverPerf: data.perf });
         }, 0, error => {
             if (loadToken != this.loadToken) {
                 return;
@@ -1333,16 +1251,12 @@ class ImageHistoryController {
         this.scheduleBackgroundWatchdog(path, depth, sortBy, reverse, showHidden, hideGrids, requestKey, backgroundToken);
         setTimeout(() => {
             let requestStart = performance.now();
-            let measurementRequestStart = performance.now();
             genericRequest('ListImages', { 'path': path, 'depth': depth, 'sortBy': serverSortBy, 'sortReverse': serverReverse, 'includeHidden': showHidden }, data => {
                 if (!this.isBackgroundRequestRelevant(path, requestKey, backgroundToken)) {
                     return;
                 }
-                let measurementResponseStart = performance.now();
-                let responseMs = measurementResponseStart - requestStart;
-                let measurementRequestMs = measurementResponseStart - measurementRequestStart;
+                let responseMs = performance.now() - requestStart;
                 let mapStart = performance.now();
-                let handlerStart = mapStart;
                 this.backgroundRequestInFlight = false;
                 let prefix = path == '' ? '' : (path.endsWith('/') ? path : `${path}/`);
                 let folders = data.folders.sort((a, b) => b.toLowerCase().localeCompare(a.toLowerCase()));
@@ -1356,8 +1270,6 @@ class ImageHistoryController {
                 let renderMs = performance.now() - renderStart;
                 console.debug(`History background load: path='${path || '/'}', folders=${folders.length}, files=${mapped.length}, request=${responseMs.toFixed(1)}ms, map=${mapMs.toFixed(1)}ms, render=${renderMs.toFixed(1)}ms${this.perfText(data.perf)}`);
                 this.setRequestStatus('idle');
-                let handlerEnd = performance.now();
-                imageHistoryCostMeasurement.recordResponse({ flow: 'background', refresh: false, fastFirst: false, depth, sortBy, reverse, hasFilter: false, hideGrids, folderCount: folders.length, rawFileCount: data.files.length, mappedFileCount: mapped.length, requestMs: measurementRequestMs, mapMs, renderMs, handlerStart, handlerEnd, serverPerf: data.perf });
             }, 0, error => {
                 if (!this.isBackgroundRequestRelevant(path, requestKey, backgroundToken)) {
                     return;
