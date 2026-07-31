@@ -520,21 +520,27 @@ Replace only the existing `RecentlyBlockedFilenames.Keys.Any` check with:
 
 ```csharp
 string fullPathNoExt = fullPath.BeforeLast('.');
-int examined = 0;
-long scanStart = measurement is null ? 0 : OutputFilenameSelectionMeasurement.Timestamp();
-bool hasCollision = RecentlyBlockedFilenames.Keys.Any(path =>
+bool hasCollision;
+if (measurement is null)
 {
-    if (measurement is not null)
+    hasCollision = RecentlyBlockedFilenames.Keys.Any(
+        path => path.BeforeLast('.') == fullPathNoExt);
+}
+else
+{
+    int examined = 0;
+    long scanStart = OutputFilenameSelectionMeasurement.Timestamp();
+    ICollection<string> reservationKeys = RecentlyBlockedFilenames.Keys;
+    hasCollision = reservationKeys.Any(path =>
     {
         examined++;
-    }
-    return path.BeforeLast('.') == fullPathNoExt;
-});
-if (measurement is not null)
-{
-    measurement.ReservationKeyCount = Math.Max(measurement.ReservationKeyCount, RecentlyBlockedFilenames.Count);
+        return path.BeforeLast('.') == fullPathNoExt;
+    });
+    measurement.ReservationScanMicroseconds +=
+        OutputFilenameSelectionMeasurement.ElapsedMicroseconds(scanStart);
+    measurement.ReservationKeyCount = Math.Max(
+        measurement.ReservationKeyCount, reservationKeys.Count);
     measurement.ReservationKeysExamined += examined;
-    measurement.ReservationScanMicroseconds += OutputFilenameSelectionMeasurement.ElapsedMicroseconds(scanStart);
     if (hasCollision)
     {
         measurement.ReservationCollisionMatches++;
@@ -546,6 +552,12 @@ if (hasCollision)
     return false;
 }
 ```
+
+The disabled branch retains the original predicate with no measurement closure,
+timestamp, or counter. The enabled branch captures exactly one
+`ICollection<string>` `Keys` snapshot, times snapshot acquisition plus the
+short-circuit `Any`, stops the timer before bookkeeping, and derives both
+examined and total key counts from that same snapshot without a second scan.
 
 The reservation publication/rollback body after this check remains byte-for-byte
 unchanged.
@@ -790,10 +802,16 @@ lock release; the error log text and returned tuple remain unchanged.
 Run:
 
 ```bash
-test "$(rg -c 'public \\(string, string\\) SaveImage' src/Accounts/Session.cs)" -eq 1
-test "$(rg -c 'internal \\(string, string\\) SaveImage' src/Accounts/Session.cs)" -eq 1
-test "$(rg -c 'Directory\\.EnumerateFiles' src/Accounts/Session.cs)" -eq 2
-test "$(rg -c 'RecentlyBlockedFilenames\\.Keys\\.Any' src/Accounts/Session.cs)" -eq 1
+test "$(rg -F -c 'public (string, string) SaveImage' src/Accounts/Session.cs)" -eq 1
+test "$(rg -F -c 'internal (string, string) SaveImage' src/Accounts/Session.cs)" -eq 1
+test "$(rg -F -c 'Directory.EnumerateFiles' src/Accounts/Session.cs)" -eq 2
+test "$(rg -F -c 'RecentlyBlockedFilenames.Keys.Any' src/Accounts/Session.cs)" -eq 1
+test "$(rg -F -c 'ICollection<string> reservationKeys = RecentlyBlockedFilenames.Keys;' src/Accounts/Session.cs)" -eq 1
+test "$(rg -F -c 'reservationKeys.Any' src/Accounts/Session.cs)" -eq 1
+test -z "$(rg -F -n 'long scanStart = measurement is null' src/Accounts/Session.cs)"
+scan_stop_line="$(rg -F -n 'measurement.ReservationScanMicroseconds +=' src/Accounts/Session.cs | cut -d: -f1)"
+bookkeeping_line="$(rg -F -n 'measurement.ReservationKeyCount = Math.Max' src/Accounts/Session.cs | cut -d: -f1)"
+test "$scan_stop_line" -lt "$bookkeeping_line"
 test "$(rg -c 'EmitSelection' src/Accounts/Session.cs)" -eq 1
 git diff --check
 git diff 30448884415c44f446136fa3e11fb06cefe375d6 -- \
@@ -804,7 +822,13 @@ Expected:
 
 - the second directory-enumeration expression exists only in the mutually
   exclusive enabled branch;
-- no second reservation scan exists;
+- the disabled reservation branch retains the original predicate without a
+  measurement closure, timestamp, or counter;
+- the enabled reservation branch acquires one `ICollection<string>` `Keys`
+  snapshot, times snapshot acquisition plus the short-circuit scan, stops the
+  timer before bookkeeping, and records `Count` from the same snapshot;
+- no second reservation scan or snapshot acquisition exists in either executed
+  branch;
 - public declaration text is unchanged;
 - reservation publication/rollback and background cleanup order are unchanged.
 

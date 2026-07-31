@@ -245,9 +245,11 @@ enabled. It must retain the same enumerated paths, extension stripping,
 `HashSet<string>` semantics, and probe order. Disabled execution retains the
 original direct path.
 
-Reservation scanning retains the current key enumeration and short-circuit
-collision result. Measurement counters and timestamps may be captured inside
-the existing predicate; they must not perform a second collision scan.
+Disabled reservation scanning retains the original predicate with no measurement
+closure or counter. Enabled scanning captures one `Keys` snapshot, times
+snapshot acquisition plus the short-circuit `Any`, stops the timer immediately,
+and then derives the key count and other bookkeeping from that same snapshot.
+Neither branch performs a second collision scan.
 
 The record is emitted after `User.UserLock` is released so log formatting and
 I/O are not included in lock hold time. Locals may carry the existing error

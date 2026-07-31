@@ -251,21 +251,27 @@ public class Session : IEquatable<Session>
         lock (OutputFilenameReservationLock)
         {
             string fullPathNoExt = fullPath.BeforeLast('.');
-            int examined = 0;
-            long scanStart = measurement is null ? 0 : OutputFilenameSelectionMeasurement.Timestamp();
-            bool hasCollision = RecentlyBlockedFilenames.Keys.Any(path =>
+            bool hasCollision;
+            if (measurement is null)
             {
-                if (measurement is not null)
+                hasCollision = RecentlyBlockedFilenames.Keys.Any(
+                    path => path.BeforeLast('.') == fullPathNoExt);
+            }
+            else
+            {
+                int examined = 0;
+                long scanStart = OutputFilenameSelectionMeasurement.Timestamp();
+                ICollection<string> reservationKeys = RecentlyBlockedFilenames.Keys;
+                hasCollision = reservationKeys.Any(path =>
                 {
                     examined++;
-                }
-                return path.BeforeLast('.') == fullPathNoExt;
-            });
-            if (measurement is not null)
-            {
-                measurement.ReservationKeyCount = Math.Max(measurement.ReservationKeyCount, RecentlyBlockedFilenames.Count);
+                    return path.BeforeLast('.') == fullPathNoExt;
+                });
+                measurement.ReservationScanMicroseconds +=
+                    OutputFilenameSelectionMeasurement.ElapsedMicroseconds(scanStart);
+                measurement.ReservationKeyCount = Math.Max(
+                    measurement.ReservationKeyCount, reservationKeys.Count);
                 measurement.ReservationKeysExamined += examined;
-                measurement.ReservationScanMicroseconds += OutputFilenameSelectionMeasurement.ElapsedMicroseconds(scanStart);
                 if (hasCollision)
                 {
                     measurement.ReservationCollisionMatches++;
