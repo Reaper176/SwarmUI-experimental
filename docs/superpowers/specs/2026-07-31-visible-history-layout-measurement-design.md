@@ -2,7 +2,7 @@
 
 **Date:** 2026-07-31
 **Rank:** 31
-**Status:** Approved for instrumentation
+**Status:** Completed with scoped design-only `GO`; instrumentation removed
 **Approved base:** `b34816189c4184c5072ed2199b31f1bee2a67cd0`
 
 ## Decision Authority
