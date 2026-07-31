@@ -10,7 +10,6 @@ using SwarmUI.Utils;
 using FreneticUtilities.FreneticExtensions;
 using FreneticUtilities.FreneticToolkit;
 using Newtonsoft.Json.Linq;
-using System.Diagnostics;
 
 namespace SwarmUI.Text2Image;
 
@@ -1156,10 +1155,8 @@ public class T2IParamTypes
             case T2IParamDataType.IMAGE:
             case T2IParamDataType.AUDIO:
             case T2IParamDataType.VIDEO:
-                bool wasSingleDataUrl = false;
                 if (val.StartsWith("data:"))
                 {
-                    wasSingleDataUrl = true;
                     val = val.After(',');
                 }
                 if (val.StartsWith("inputs/") || val.StartsWith("raw/") || val.StartsWith("Starred/"))
@@ -1168,22 +1165,12 @@ public class T2IParamTypes
                 }
                 if (string.IsNullOrWhiteSpace(val))
                 {
-                    FileMediaConversionMeasurement.NoteMediaItem(wasSingleDataUrl ? "data_url" : "empty");
                     return "";
                 }
                 if (!ValidBase64Matcher.IsOnlyMatches(val) || val.Length < 10)
                 {
-                    FileMediaConversionMeasurement.NoteMediaItem("invalid");
                     string shortText = val.Length > 10 ? val[..10] + "..." : val;
                     throw new SwarmUserErrorException($"Invalid {type.Type} value for param {type.Name} - '{origVal}' - must be a valid base64 string - got '{shortText}'");
-                }
-                if (!wasSingleDataUrl)
-                {
-                    FileMediaConversionMeasurement.NoteMediaItem("raw_base64");
-                }
-                else
-                {
-                    FileMediaConversionMeasurement.NoteMediaItem("data_url");
                 }
                 return origVal;
             case T2IParamDataType.IMAGE_LIST:
@@ -1193,39 +1180,19 @@ public class T2IParamTypes
                     for (int i = 0; i < rawSplit.Length; i++)
                     {
                         string partVal = rawSplit[i];
-                        bool wasDataUrl = false;
-                        bool wasPath = false;
                         if (partVal.StartsWith("data:"))
                         {
-                            wasDataUrl = true;
                             partVal = partVal.After(',');
                         }
                         if (partVal.StartsWith("inputs/") || partVal.StartsWith("raw/") || partVal.StartsWith("Starred/"))
                         {
-                            wasPath = true;
                             partVal = FilePathToDataString(session, partVal, $"for param {type.Name}");
                             rawSplit[i] = partVal;
                         }
                         if (!ValidBase64Matcher.IsOnlyMatches(partVal) || partVal.Length < 10)
                         {
-                            if (wasPath)
-                            {
-                                FileMediaConversionMeasurement.NoteInvalidAfterFileCall();
-                            }
-                            else
-                            {
-                                FileMediaConversionMeasurement.NoteMediaItem("invalid");
-                            }
                             string shortText = partVal.Length > 10 ? partVal[..10] + "..." : partVal;
                             throw new SwarmUserErrorException($"Invalid image-list value for param {type.Name} - '{origVal}' - must be a valid base64 string - got '{shortText}'");
-                        }
-                        if (!wasDataUrl && !wasPath)
-                        {
-                            FileMediaConversionMeasurement.NoteMediaItem("raw_base64");
-                        }
-                        else if (wasDataUrl && !wasPath)
-                        {
-                            FileMediaConversionMeasurement.NoteMediaItem("data_url");
                         }
                     }
                     return rawSplit.JoinString(splitter);
@@ -1250,102 +1217,23 @@ public class T2IParamTypes
 
     public static string FilePathToDataString(Session session, string filePath, string errorContext)
     {
-        if (!FileMediaConversionMeasurement.IsEnabled())
+        string root = Utilities.CombinePathWithAbsolute(Environment.CurrentDirectory, session.User.OutputDirectory);
+        (string path, string consoleError, string userError) = WebServer.CheckFilePath(root, filePath);
+        if (consoleError is not null)
         {
-            string originalRoot = Utilities.CombinePathWithAbsolute(Environment.CurrentDirectory, session.User.OutputDirectory);
-            (string originalPath, string originalConsoleError, string originalUserError) = WebServer.CheckFilePath(originalRoot, filePath);
-            if (originalConsoleError is not null)
-            {
-                Logs.Error(originalConsoleError);
-                throw new SwarmUserErrorException($"Invalid file path {errorContext} - '{filePath}' - {originalUserError}");
-            }
-            originalPath = UserImageHistoryHelper.GetRealPathFor(session.User, originalPath, root: originalRoot);
-            byte[] originalData = null;
-            string originalContentType = Utilities.GuessContentType(originalPath);
-            string originalPathNorm = Path.GetFullPath(originalPath);
-            if (originalData is null && Session.StillSavingFiles.TryGetValue(originalPathNorm, out Task<byte[]> originalCacheData))
-            {
-                originalData = originalCacheData.Result;
-            }
-            originalData ??= File.ReadAllBytes(originalPath);
-            return $"data:{originalContentType};base64,{Convert.ToBase64String(originalData)}";
+            Logs.Error(consoleError);
+            throw new SwarmUserErrorException($"Invalid file path {errorContext} - '{filePath}' - {userError}");
         }
-        FileMediaConversionMeasurement.CallStart call = FileMediaConversionMeasurement.BeginFileCall();
-        string pathNorm = null;
-        string source = "none";
-        long authorizationUs = 0;
-        long waitUs = 0;
-        long readUs = 0;
-        long encodeUs = 0;
-        try
+        path = UserImageHistoryHelper.GetRealPathFor(session.User, path, root: root);
+        byte[] data = null;
+        string contentType = Utilities.GuessContentType(path);
+        string pathNorm = Path.GetFullPath(path);
+        if (data is null && Session.StillSavingFiles.TryGetValue(pathNorm, out Task<byte[]> cacheData))
         {
-            string measuredRoot;
-            string measuredPath;
-            string measuredContentType;
-            long authorizationStart = Stopwatch.GetTimestamp();
-            try
-            {
-                measuredRoot = Utilities.CombinePathWithAbsolute(Environment.CurrentDirectory, session.User.OutputDirectory);
-                (string checkedPath, string measuredConsoleError, string measuredUserError) = WebServer.CheckFilePath(measuredRoot, filePath);
-                measuredPath = checkedPath;
-                if (measuredConsoleError is not null)
-                {
-                    Logs.Error(measuredConsoleError);
-                    throw new SwarmUserErrorException($"Invalid file path {errorContext} - '{filePath}' - {measuredUserError}");
-                }
-                measuredPath = UserImageHistoryHelper.GetRealPathFor(session.User, measuredPath, root: measuredRoot);
-                measuredContentType = Utilities.GuessContentType(measuredPath);
-                pathNorm = Path.GetFullPath(measuredPath);
-            }
-            finally
-            {
-                authorizationUs = FileMediaConversionMeasurement.ToMicroseconds(authorizationStart, Stopwatch.GetTimestamp());
-            }
-            byte[] measuredData = null;
-            if (Session.StillSavingFiles.TryGetValue(pathNorm, out Task<byte[]> measuredCacheData))
-            {
-                source = "pending";
-                long waitStart = Stopwatch.GetTimestamp();
-                try
-                {
-                    measuredData = measuredCacheData.Result;
-                }
-                finally
-                {
-                    waitUs = FileMediaConversionMeasurement.ToMicroseconds(waitStart, Stopwatch.GetTimestamp());
-                }
-            }
-            if (measuredData is null)
-            {
-                source = source == "pending" ? "pending_then_disk" : "disk";
-                long readStart = Stopwatch.GetTimestamp();
-                try
-                {
-                    measuredData = File.ReadAllBytes(measuredPath);
-                }
-                finally
-                {
-                    readUs = FileMediaConversionMeasurement.ToMicroseconds(readStart, Stopwatch.GetTimestamp());
-                }
-            }
-            long encodeStart = Stopwatch.GetTimestamp();
-            string result;
-            try
-            {
-                result = $"data:{measuredContentType};base64,{Convert.ToBase64String(measuredData)}";
-            }
-            finally
-            {
-                encodeUs = FileMediaConversionMeasurement.ToMicroseconds(encodeStart, Stopwatch.GetTimestamp());
-            }
-            FileMediaConversionMeasurement.CompleteFileCall(call, pathNorm, source, measuredData.LongLength, authorizationUs, waitUs, readUs, encodeUs);
-            return result;
+            data = cacheData.Result;
         }
-        catch
-        {
-            FileMediaConversionMeasurement.FailFileCall(call, pathNorm, source, authorizationUs, waitUs, readUs, encodeUs);
-            throw;
-        }
+        data ??= File.ReadAllBytes(path);
+        return $"data:{contentType};base64,{Convert.ToBase64String(data)}";
     }
 
     /// <summary>Takes user input of a parameter and applies it to the parameter tracking data object.</summary>
