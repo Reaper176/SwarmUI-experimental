@@ -220,6 +220,14 @@ public class Settings : AutoConfiguration
 
         [ConfigComment("How many models can be loaded in a model list at once.\nPast this count, the list will simply be cut off.\nUse sub-folder organization to prevent issues.")]
         public int ModelListSanityCap = 5000;
+
+        /// <summary>Whether temporary persisted-output filename-selection measurement records are enabled.</summary>
+        [ConfigComment("Temporarily enables privacy-safe Rank 25 persisted-output filename-selection measurement logs.\nDefaults to false.\nEnable only while collecting the approved measurement matrix.")]
+        public bool OutputFilenameMeasurementEnabled = false;
+
+        /// <summary>Privacy-safe operator label attached to temporary persisted-output filename-selection records.</summary>
+        [ConfigComment("Privacy-safe scenario label for Rank 25 output filename measurement, for example 'btrfs-nvme/large-flat/repeated-name'.\nDo not include users, prompts, filenames, or filesystem paths.\nDefaults to empty.")]
+        public string OutputFilenameMeasurementScenario = "";
     }
 
     /// <summary>Settings related to local Krita integration.</summary>
