@@ -23,28 +23,33 @@ interactions, then remove all instrumentation and record a bounded decision.
   keys and disabled by default.
 - Wrap existing foreground and background response handling without moving
   behavior statements.
-- Emit count-only context and separate request, map, render, handler, and server
-  timings.
+- Emit count-only context and separate request, map, synchronous build, handler,
+  and server timings.
 - Run static syntax and negative behavior-diff review.
 
 ## 3. Build the external browser fixture
 
-- Under `/tmp`, load exact class bodies from the Rank 30 worktree into headless
-  Chromium with deterministic ambient helpers and generated records.
-- Exercise production mapping/sorting and `GenPageBrowserClass.build` through
-  `replaceBrowserContents`.
+- Publish SwarmUI into `/tmp`, launch it with a clean temporary runtime/output
+  root, and open the full production Text2Image page in headless Chromium.
+- Generate only synthetic history files below the temporary output root and
+  exercise the production scripts, styles, custom elements, card descriptions,
+  mapping/sorting, deferred owners, and `GenPageBrowserClass.build` through
+  `replaceBrowserContents`. Fail inconclusive if any rendering owner is shimmed.
 - Observe browser long tasks and validate exact output order/count/map identity,
-  stale-response rejection, unchanged replacement, selection, fast-first/full,
-  refresh, navigation/depth, and optimistic insertion contracts.
+  stale-response rejection, unchanged replacement, single/multi-selection,
+  scroll/filter-focus restoration, callback ordering, fast-first/full, refresh,
+  navigation/depth, and optimistic insertion contracts.
 
 ## 4. Collect the matrix
 
-- Run desktop/mobile, sizes 32/128/512/1,000, minimal/rich metadata,
-  Thumbnails/Details List, supported/client sorts, reverse/filter/grid,
-  ordinary/refresh/fast-first/background groups.
-- Use three warmups and at least twelve measured iterations per performance
-  group.
-- Run a matched disabled-recorder control.
+- Run desktop/mobile-sized viewport, sizes 32/128/512/1,000, minimal/rich
+  metadata, Thumbnails/Details List, every supported/client sort family,
+  reverse/filter/grid, ordinary/refresh/fast-first/background groups.
+- Use five warmups and thirty measured iterations per performance group.
+- Join recorder intervals to asynchronously delivered long-task entries after
+  two animation frames and one zero-delay task, recording post-build settle.
+- Run fresh-state, harness-timed enabled/disabled blocks in counterbalanced
+  `ABBA` order with identical fixture seeds.
 - Save JSONL and summary files under `/tmp`; hash every evidence artifact.
 
 ## 5. Review and decide
