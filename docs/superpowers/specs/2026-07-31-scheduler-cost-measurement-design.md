@@ -163,6 +163,9 @@ are integer microseconds and all counts are integers. Common keys are:
 - `scenario`; and
 - `outcome`, from a bounded internal catalog.
 
+Duration values are nonnegative except that `signal_age_us` uses `-1` only
+when `signal_count` is zero and no maintained signal timestamp is available.
+
 No record contains raw model names, backend IDs/types, request IDs, user/session
 identity, filters, prompts, paths, or exception text.
 
@@ -329,8 +332,8 @@ is 121/146 microseconds and 28,792 bytes with exactly 1,024 compatibility and
 deliberately expensive caller matcher: pass p50/max 1307/1413 microseconds, of
 which the callback itself accounts for 1222/1350 microseconds.
 
-A diagnostic direct-`TryFind` control at 32 backends, after 100 warm-up and over
-1,000 measured iterations per mode in disabled-then-enabled order, reports
+A diagnostic direct-`TryFind` control at 32 backends, after 100 warm-up and
+exactly 1,000 measured iterations per mode in disabled-then-enabled order, reports
 10.293 microseconds and 4,924.656 bytes per disabled iteration versus 32.670
 microseconds and 10,036.384 bytes enabled. The approximately 22.378-microsecond
 and 5,111.728-byte increment includes measurement record emission and shows

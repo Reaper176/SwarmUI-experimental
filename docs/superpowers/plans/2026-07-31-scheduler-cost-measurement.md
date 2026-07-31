@@ -238,8 +238,9 @@ measure: instrument scheduler selection path
 - [ ] Extract only prefixed compact JSON lines to
   `/tmp/rank26-records.jsonl`.
 - [ ] Validate every line parses and has schema 1, a known record/outcome, one
-  nonempty safe scenario, nonnegative counts/durations, and no forbidden keys or
-  path-like values.
+  nonempty safe scenario, nonnegative counts/durations except the documented
+  `signal_age_us = -1` absent-signal sentinel when `signal_count = 0`, and no
+  forbidden keys or path-like values.
 - [ ] Confirm pass IDs correlate records and no disabled-control records exist.
 - [ ] Record SHA-256, line count, record-type counts, scenario counts, and
   environment (`Garuda Linux`, Arch-based, Btrfs, .NET version).
