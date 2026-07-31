@@ -376,12 +376,15 @@ are absent.
 
 The external post-removal Release build under
 `/tmp/swarmui-rank27-post-LR0xtv` completed with 0 warnings and 0 errors. Its
-`SwarmUI.dll` SHA-256 is
+original build's retained `obj/Release/net8.0/SwarmUI.dll` SHA-256 is
 `135af51e23d2ac214501fe87b046293632ef3ac94f97d8a696c55f93d5297313`.
+A later fresh verification rebuild replaced
+`out/Release/net8.0/SwarmUI.dll`; that verified output artifact's SHA-256 is
+`813378dc2649cc44827050cd884af44d5a6d1a838de8ead7299cd975bf3635cb`.
 The separate post-removal harness under `/tmp/rank27-post-harness-NscY5u`
 compiled with 0 errors and one `MSB3277` `DiagnosticSource` assembly-unification
 warning, then passed 19 assertions with 0 failures across five `Generate()`
-invocations. Harness-source SHA-256 is
+invocations against that later output artifact. Harness-source SHA-256 is
 `4bcd3930b739bea890558e2eddebe17aae7178c2489c2eae140dafa7ff43e2df`.
 
 Post-removal coverage includes sampler snapshot/removal and parent-aware
