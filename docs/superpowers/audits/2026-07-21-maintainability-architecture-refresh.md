@@ -994,7 +994,7 @@ Ranks 25-32 are bounded measurement projects, not implementation projects. For e
 
 - **Current disposition:** **Superseded by completed work**.
 - **Completed commits/files or evidence:** design/plan `b7f26c15`/`125cb1a8`; `d9b7acf1`, `ce94e710`, `9ac2927c`, and `dfc751c2` extracted comparison, filtering, bulk actions, and consolidated `ImageHistoryController`.
-- **Remaining justified seam and reason:** P1/P2 are **Retain as measurement prerequisite**, not a structural reopening. Lifecycle inspection found cleanup/deduplication guards and no new confirmed defect.
+- **Remaining justified seam and reason:** P1 completed at Rank 30 with `NO-GO`; P2 completed at Rank 31 with a scoped design-only `GO`. Both removed their instrumentation and neither structurally reopens the controller or implements a production optimization. Lifecycle inspection found cleanup/deduplication guards and no new confirmed defect.
 
 #### Previous rank 4 — Catalog Swarm-maintained Comfy node contracts
 
