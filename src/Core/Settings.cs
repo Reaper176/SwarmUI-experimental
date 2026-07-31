@@ -220,6 +220,14 @@ public class Settings : AutoConfiguration
 
         [ConfigComment("How many models can be loaded in a model list at once.\nPast this count, the list will simply be cut off.\nUse sub-folder organization to prevent issues.")]
         public int ModelListSanityCap = 5000;
+
+        /// <summary>Whether temporary Rank 28 file-media conversion measurement is enabled.</summary>
+        [ConfigComment("Temporary Rank 28 measurement control. Defaults to false and must be removed after collection.")]
+        public bool FileMediaConversionMeasurementEnabled = false;
+
+        /// <summary>Privacy-safe scenario label for temporary Rank 28 file-media conversion measurement.</summary>
+        [ConfigComment("Temporary Rank 28 privacy-safe workload label. Defaults to empty and must be removed after collection.")]
+        public string FileMediaConversionMeasurementScenario = "";
     }
 
     /// <summary>Settings related to local Krita integration.</summary>
