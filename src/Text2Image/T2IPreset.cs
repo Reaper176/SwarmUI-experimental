@@ -68,6 +68,7 @@ public class T2IPreset
     /// <summary>Automatically applies the entire preset over top of a <see cref="T2IParams"/> input.</summary>
     public void ApplyTo(T2IParamInput user_input)
     {
+        using FileMediaConversionMeasurement.Scope measurementScope = FileMediaConversionMeasurement.BeginScope("preset");
         foreach ((string key, string val) in ParamMap)
         {
             if (T2IParamTypes.TryGetType(key, out _, user_input))

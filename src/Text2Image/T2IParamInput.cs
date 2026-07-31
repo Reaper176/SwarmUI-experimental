@@ -769,6 +769,7 @@ public class T2IParamInput
     /// <summary>Late special logic handlers.</summary>
     public void ApplyLateSpecialLogic()
     {
+        using FileMediaConversionMeasurement.Scope measurementScope = FileMediaConversionMeasurement.BeginScope("late");
         foreach (Action<T2IParamInput> handler in LateSpecialParameterHandlers)
         {
             handler(this);

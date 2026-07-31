@@ -269,10 +269,18 @@ namespace SwarmUI.Text2Image
             T2IBackendAccess backend;
             try
             {
-                user_input.ApplyLateSpecialLogic();
-                PreGenerateEvent?.Invoke(new(user_input));
-                claim.Extend(backendWaits: 1);
-                sendStatus();
+                FileMediaConversionMeasurement.Scope measurementScope = FileMediaConversionMeasurement.BeginScope("engine_pre_backend");
+                try
+                {
+                    user_input.ApplyLateSpecialLogic();
+                    PreGenerateEvent?.Invoke(new(user_input));
+                    claim.Extend(backendWaits: 1);
+                    sendStatus();
+                }
+                finally
+                {
+                    measurementScope?.Dispose();
+                }
                 backend = await Program.Backends.GetNextT2IBackend(TimeSpan.FromMinutes(backendTimeoutMin), user_input.Get(T2IParamTypes.Model), user_input,
                     filter: BackendMatcherFor(user_input), session: user_input.SourceSession, notifyWillLoad: sendStatus, cancel: claim.InterruptToken);
             }
