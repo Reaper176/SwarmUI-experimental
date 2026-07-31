@@ -2,7 +2,7 @@
 
 **Date:** 2026-07-31
 **Rank:** 32
-**Status:** Evidence collected; removal pending
+**Status:** Completed with design-only GO; instrumentation removed
 **Approved base:** `5b536e1ff2d876834419d0138d8929dae3f74909`
 
 ## Decision Authority
@@ -363,3 +363,30 @@ subsequent passing run was deliberately superseded after self-review expanded
 the exact parity snapshot to every stable public model field. No repository or
 instrumented source changed during any harness correction. Only the final
 complete rerun and hashes above are authoritative.
+
+## Removal and Closure
+
+Independent reviews of exact evidence head
+`b14b8074c59d52a4b0ec7f9a918406c2604c290a` returned
+`RANK32_EVIDENCE_SPEC_APPROVED` and `RANK32_EVIDENCE_QUALITY_APPROVED` with no
+remaining findings. Removal commit
+`818a2d2ebe6ecc6262eaf1ef3a988c05f5bff58a` reverts the three source-only
+instrumentation commits. The resulting `src` tree OID is
+`26f65adf96afc130baa8b6fedba84b437d7163dc`, exactly equal to approved base
+`5b536e1ff2d876834419d0138d8929dae3f74909`; its path diff is empty, and static
+searches find no Rank 32 setting, recorder, hook, timer, counter, or log-prefix
+token.
+
+A fresh post-removal source archive excluded repository user-data and extension
+paths and published externally under `/tmp/swarmui-rank32-post-zODPX2` with 0
+warnings and 0 errors. Its `SwarmUI.dll` SHA-256 is
+`dc53950935229d8763771c4d106584078bea1bbc2f358a2729fd81d431515252`.
+The uninstrumented synthetic sanity passed 29 assertions with zero failures;
+its source SHA-256 is
+`ec29c4995dcabf431393ec238e765d9bcb8c44e77f9e864e8c0e39910d39cba4`
+and assembly SHA-256 is
+`a4cf32cd9d8430bb15941cc12bf878ef197341f86c372994723bd58f33a41f82`.
+One preceding sanity attempt expected the first suffix's trigger word despite
+the established merged-header last-suffix precedence; correcting that external
+expectation produced the authoritative 29/0 run and changed no repository
+source.
