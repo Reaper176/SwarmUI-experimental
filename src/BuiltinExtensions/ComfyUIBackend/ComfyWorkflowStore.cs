@@ -6,6 +6,7 @@ using SwarmUI.Media;
 using SwarmUI.Utils;
 using System.IO;
 using System.Security.Cryptography;
+using System.Text;
 
 namespace SwarmUI.Builtin_ComfyUIBackend;
 
@@ -1097,63 +1098,153 @@ public static class ComfyWorkflowStore
     /// <summary>Loads the available workflow files from the extension directory.</summary>
     public static void LoadWorkflowFiles(string extensionFilePath)
     {
-        lock (WorkflowLock)
+        WorkflowHydrationCostMeasurement.Operation measurement = WorkflowHydrationCostMeasurement.BeginOperation("inventory");
+        if (measurement is null)
         {
-            MarkRecoveryRequiredLocked();
-            try
-            {
-                Directory.CreateDirectory($"{extensionFilePath}CustomWorkflows");
-                Directory.CreateDirectory($"{extensionFilePath}CustomWorkflows/Examples");
-                RecoverPendingTransactionLocked();
-                string[] getCustomFlows(string path) => [.. Directory.EnumerateFiles($"{extensionFilePath}/{path}", "*.*", new EnumerationOptions() { RecurseSubdirectories = true }).Select(f => f.Replace('\\', '/').After($"/{path}/")).Order()];
-                string[] exampleWorkflowNames = getCustomFlows("ExampleWorkflows");
-                string[] customFlows = getCustomFlows("CustomWorkflows");
-                bool anyCopied = false;
-                foreach (string workflow in exampleWorkflowNames.Where(f => f.EndsWith(".json")))
-                {
-                    if (!customFlows.Contains($"Examples/{workflow}") && !customFlows.Contains($"Examples/{workflow}.deleted"))
-                    {
-                        File.Copy($"{extensionFilePath}ExampleWorkflows/{workflow}", $"{extensionFilePath}CustomWorkflows/Examples/{workflow}");
-                        anyCopied = true;
-                    }
-                }
-                if (anyCopied)
-                {
-                    customFlows = getCustomFlows("CustomWorkflows");
-                }
-                Dictionary<string, ComfyUIBackendExtension.ComfyCustomWorkflow> refreshedWorkflows = [];
-                foreach (string workflow in customFlows.Where(f => f.EndsWith(".json")))
-                {
-                    refreshedWorkflows.TryAdd(workflow.BeforeLast('.'), null);
-                }
-                ComfyUIBackendExtension.ExampleWorkflowNames = exampleWorkflowNames;
-                ComfyUIBackendExtension.CustomWorkflows.Clear();
-                foreach (KeyValuePair<string, ComfyUIBackendExtension.ComfyCustomWorkflow> workflow in refreshedWorkflows)
-                {
-                    ComfyUIBackendExtension.CustomWorkflows.TryAdd(workflow.Key, workflow.Value);
-                }
-                RecoveryRequired = false;
-            }
-            catch
+            lock (WorkflowLock)
             {
                 MarkRecoveryRequiredLocked();
-                throw;
+                try
+                {
+                    Directory.CreateDirectory($"{extensionFilePath}CustomWorkflows");
+                    Directory.CreateDirectory($"{extensionFilePath}CustomWorkflows/Examples");
+                    RecoverPendingTransactionLocked();
+                    string[] getCustomFlows(string path) => [.. Directory.EnumerateFiles($"{extensionFilePath}/{path}", "*.*", new EnumerationOptions() { RecurseSubdirectories = true }).Select(f => f.Replace('\\', '/').After($"/{path}/")).Order()];
+                    string[] exampleWorkflowNames = getCustomFlows("ExampleWorkflows");
+                    string[] customFlows = getCustomFlows("CustomWorkflows");
+                    bool anyCopied = false;
+                    foreach (string workflow in exampleWorkflowNames.Where(f => f.EndsWith(".json")))
+                    {
+                        if (!customFlows.Contains($"Examples/{workflow}") && !customFlows.Contains($"Examples/{workflow}.deleted"))
+                        {
+                            File.Copy($"{extensionFilePath}ExampleWorkflows/{workflow}", $"{extensionFilePath}CustomWorkflows/Examples/{workflow}");
+                            anyCopied = true;
+                        }
+                    }
+                    if (anyCopied)
+                    {
+                        customFlows = getCustomFlows("CustomWorkflows");
+                    }
+                    Dictionary<string, ComfyUIBackendExtension.ComfyCustomWorkflow> refreshedWorkflows = [];
+                    foreach (string workflow in customFlows.Where(f => f.EndsWith(".json")))
+                    {
+                        refreshedWorkflows.TryAdd(workflow.BeforeLast('.'), null);
+                    }
+                    ComfyUIBackendExtension.ExampleWorkflowNames = exampleWorkflowNames;
+                    ComfyUIBackendExtension.CustomWorkflows.Clear();
+                    foreach (KeyValuePair<string, ComfyUIBackendExtension.ComfyCustomWorkflow> workflow in refreshedWorkflows)
+                    {
+                        ComfyUIBackendExtension.CustomWorkflows.TryAdd(workflow.Key, workflow.Value);
+                    }
+                    RecoveryRequired = false;
+                }
+                catch
+                {
+                    MarkRecoveryRequiredLocked();
+                    throw;
+                }
             }
+            return;
+        }
+        try
+        {
+            lock (WorkflowLock)
+            {
+                MarkRecoveryRequiredLocked();
+                try
+                {
+                    Directory.CreateDirectory($"{extensionFilePath}CustomWorkflows");
+                    Directory.CreateDirectory($"{extensionFilePath}CustomWorkflows/Examples");
+                    RecoverPendingTransactionLocked();
+                    string[] getCustomFlows(string path) => [.. Directory.EnumerateFiles($"{extensionFilePath}/{path}", "*.*", new EnumerationOptions() { RecurseSubdirectories = true }).Select(f => f.Replace('\\', '/').After($"/{path}/")).Order()];
+                    string[] exampleWorkflowNames = getCustomFlows("ExampleWorkflows");
+                    string[] customFlows = getCustomFlows("CustomWorkflows");
+                    bool anyCopied = false;
+                    long copiedExamples = 0;
+                    foreach (string workflow in exampleWorkflowNames.Where(f => f.EndsWith(".json")))
+                    {
+                        if (!customFlows.Contains($"Examples/{workflow}") && !customFlows.Contains($"Examples/{workflow}.deleted"))
+                        {
+                            File.Copy($"{extensionFilePath}ExampleWorkflows/{workflow}", $"{extensionFilePath}CustomWorkflows/Examples/{workflow}");
+                            anyCopied = true;
+                            copiedExamples++;
+                        }
+                    }
+                    if (anyCopied)
+                    {
+                        customFlows = getCustomFlows("CustomWorkflows");
+                    }
+                    Dictionary<string, ComfyUIBackendExtension.ComfyCustomWorkflow> refreshedWorkflows = [];
+                    foreach (string workflow in customFlows.Where(f => f.EndsWith(".json")))
+                    {
+                        refreshedWorkflows.TryAdd(workflow.BeforeLast('.'), null);
+                    }
+                    ComfyUIBackendExtension.ExampleWorkflowNames = exampleWorkflowNames;
+                    ComfyUIBackendExtension.CustomWorkflows.Clear();
+                    foreach (KeyValuePair<string, ComfyUIBackendExtension.ComfyCustomWorkflow> workflow in refreshedWorkflows)
+                    {
+                        ComfyUIBackendExtension.CustomWorkflows.TryAdd(workflow.Key, workflow.Value);
+                    }
+                    WorkflowHydrationCostMeasurement.NoteEntry(measurement, ComfyUIBackendExtension.CustomWorkflows.Count, refreshedWorkflows.Count);
+                    WorkflowHydrationCostMeasurement.NoteInventory(measurement, customFlows.Count(f => f.EndsWith(".json")),
+                        exampleWorkflowNames.Count(f => f.EndsWith(".json")), copiedExamples, refreshedWorkflows.Count);
+                    RecoveryRequired = false;
+                }
+                catch
+                {
+                    MarkRecoveryRequiredLocked();
+                    throw;
+                }
+            }
+            WorkflowHydrationCostMeasurement.CompleteOperation(measurement, "completed");
+        }
+        catch
+        {
+            WorkflowHydrationCostMeasurement.CompleteOperation(measurement, "failed");
+            throw;
         }
     }
 
     /// <summary>Gets a workflow by its stored name.</summary>
     public static ComfyUIBackendExtension.ComfyCustomWorkflow GetWorkflowByName(string name)
     {
-        lock (WorkflowLock)
+        WorkflowHydrationCostMeasurement.Operation measurement = WorkflowHydrationCostMeasurement.BeginOperation("lookup");
+        if (measurement is null)
         {
-            EnsureRecoveryReadyLocked();
-            return GetWorkflowByNameLocked(name);
+            lock (WorkflowLock)
+            {
+                EnsureRecoveryReadyLocked();
+                return GetWorkflowByNameLockedOriginal(name);
+            }
+        }
+        try
+        {
+            ComfyUIBackendExtension.ComfyCustomWorkflow result;
+            lock (WorkflowLock)
+            {
+                EnsureRecoveryReadyLocked();
+                bool isNull = ComfyUIBackendExtension.CustomWorkflows.TryGetValue(name, out ComfyUIBackendExtension.ComfyCustomWorkflow entry) && entry is null;
+                WorkflowHydrationCostMeasurement.NoteEntry(measurement, ComfyUIBackendExtension.CustomWorkflows.Count, isNull ? 1 : 0);
+                result = GetWorkflowByNameLockedMeasured(name);
+            }
+            WorkflowHydrationCostMeasurement.CompleteOperation(measurement, "completed");
+            return result;
+        }
+        catch
+        {
+            WorkflowHydrationCostMeasurement.CompleteOperation(measurement, "failed");
+            throw;
         }
     }
 
     /// <summary>Gets a workflow by its stored name while the workflow lock is held.</summary>
     private static ComfyUIBackendExtension.ComfyCustomWorkflow GetWorkflowByNameLocked(string name)
+    {
+        return WorkflowHydrationCostMeasurement.IsEnabled() ? GetWorkflowByNameLockedMeasured(name) : GetWorkflowByNameLockedOriginal(name);
+    }
+
+    /// <summary>Gets or hydrates a workflow through the exact uninstrumented path while the workflow lock is held.</summary>
+    private static ComfyUIBackendExtension.ComfyCustomWorkflow GetWorkflowByNameLockedOriginal(string name)
     {
         EnsureRecoveryReadyLocked();
         if (!ComfyUIBackendExtension.CustomWorkflows.TryGetValue(name, out ComfyUIBackendExtension.ComfyCustomWorkflow workflow))
@@ -1203,23 +1294,116 @@ public static class ComfyWorkflowStore
         }
     }
 
+    /// <summary>Gets or hydrates a workflow through the temporary measured path while the workflow lock is held.</summary>
+    private static ComfyUIBackendExtension.ComfyCustomWorkflow GetWorkflowByNameLockedMeasured(string name)
+    {
+        EnsureRecoveryReadyLocked();
+        if (!ComfyUIBackendExtension.CustomWorkflows.TryGetValue(name, out ComfyUIBackendExtension.ComfyCustomWorkflow workflow))
+        {
+            return null;
+        }
+        if (workflow is not null)
+        {
+            WorkflowHydrationCostMeasurement.NoteCached();
+            return workflow;
+        }
+        bool isExample = name.StartsWith("Examples/", StringComparison.Ordinal);
+        WorkflowHydrationCostMeasurement.HydrationAttempt measurement = WorkflowHydrationCostMeasurement.BeginHydration(isExample);
+        string path = $"{ComfyUIBackendExtension.Folder}/CustomWorkflows/{name}.json";
+        if (!File.Exists(path))
+        {
+            ComfyUIBackendExtension.CustomWorkflows.TryRemove(name, out _);
+            WorkflowHydrationCostMeasurement.CompleteMissing(measurement);
+            return null;
+        }
+        try
+        {
+            string fileText = File.ReadAllText(path);
+            WorkflowHydrationCostMeasurement.CompleteRead(measurement, Encoding.UTF8.GetByteCount(fileText));
+            JObject json = ComfySubmittedJson.ParseObject(fileText);
+            string getStringFor(string key)
+            {
+                if (!json.TryGetValue(key, out JToken data))
+                {
+                    return null;
+                }
+                if (data.Type == JTokenType.String)
+                {
+                    return data.ToString();
+                }
+                return data.ToString(Formatting.None);
+            }
+            string workflowData = getStringFor("workflow");
+            string prompt = getStringFor("prompt");
+            string customParams = getStringFor("custom_params");
+            string paramValues = getStringFor("param_values");
+            string image = getStringFor("image") ?? "/imgs/model_placeholder.jpg";
+            string description = getStringFor("description");
+            bool enableInSimple = json.TryGetValue("enable_in_simple", out JToken enableInSimpleTok) && enableInSimpleTok.ToObject<bool>();
+            long retainedCharacters = name.Length + (workflowData?.Length ?? 0) + (prompt?.Length ?? 0) + (customParams?.Length ?? 0)
+                + (paramValues?.Length ?? 0) + image.Length + (description?.Length ?? 0);
+            WorkflowHydrationCostMeasurement.CompleteParse(measurement, retainedCharacters);
+            workflow = new(name, workflowData, prompt, customParams, paramValues, image, description, enableInSimple);
+            ComfyUIBackendExtension.CustomWorkflows[name] = workflow;
+            WorkflowHydrationCostMeasurement.CompleteSuccess(measurement);
+            return workflow;
+        }
+        catch (Exception)
+        {
+            WorkflowHydrationCostMeasurement.CompleteInvalid(measurement);
+            Logs.Error("Error loading ComfyUI custom workflow (submitted content redacted).");
+            return null;
+        }
+    }
+
     /// <summary>Gets a hydrated snapshot of all currently known workflows.</summary>
     public static List<ComfyUIBackendExtension.ComfyCustomWorkflow> GetWorkflowSnapshot()
     {
-        lock (WorkflowLock)
+        WorkflowHydrationCostMeasurement.Operation measurement = WorkflowHydrationCostMeasurement.BeginOperation("snapshot");
+        if (measurement is null)
         {
-            EnsureRecoveryReadyLocked();
-            List<string> names = ComfyUIBackendExtension.CustomWorkflows.Keys.ToList();
-            List<ComfyUIBackendExtension.ComfyCustomWorkflow> workflows = [];
-            foreach (string name in names)
+            lock (WorkflowLock)
             {
-                ComfyUIBackendExtension.ComfyCustomWorkflow workflow = GetWorkflowByNameLocked(name);
-                if (workflow is not null)
+                EnsureRecoveryReadyLocked();
+                List<string> names = ComfyUIBackendExtension.CustomWorkflows.Keys.ToList();
+                List<ComfyUIBackendExtension.ComfyCustomWorkflow> workflows = [];
+                foreach (string name in names)
                 {
-                    workflows.Add(workflow);
+                    ComfyUIBackendExtension.ComfyCustomWorkflow workflow = GetWorkflowByNameLockedOriginal(name);
+                    if (workflow is not null)
+                    {
+                        workflows.Add(workflow);
+                    }
+                }
+                return workflows;
+            }
+        }
+        try
+        {
+            List<ComfyUIBackendExtension.ComfyCustomWorkflow> workflows;
+            lock (WorkflowLock)
+            {
+                EnsureRecoveryReadyLocked();
+                List<string> names = ComfyUIBackendExtension.CustomWorkflows.Keys.ToList();
+                WorkflowHydrationCostMeasurement.NoteEntry(measurement, names.Count,
+                    names.Count(name => ComfyUIBackendExtension.CustomWorkflows.TryGetValue(name, out ComfyUIBackendExtension.ComfyCustomWorkflow workflow) && workflow is null));
+                workflows = [];
+                foreach (string name in names)
+                {
+                    ComfyUIBackendExtension.ComfyCustomWorkflow workflow = GetWorkflowByNameLockedMeasured(name);
+                    if (workflow is not null)
+                    {
+                        workflows.Add(workflow);
+                    }
                 }
             }
+            WorkflowHydrationCostMeasurement.CompleteOperation(measurement, "completed");
             return workflows;
+        }
+        catch
+        {
+            WorkflowHydrationCostMeasurement.CompleteOperation(measurement, "failed");
+            throw;
         }
     }
 
