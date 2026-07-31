@@ -496,10 +496,19 @@ public class Session : IEquatable<Session>
         OutputFilenameSelectionAttempt measurement = null;
         if (OutputFilenameSelectionMeasurement.IsEnabled)
         {
+            int batchSize = 1;
+            try
+            {
+                batchSize = user_input.Get(T2IParamTypes.BatchSize, 1);
+            }
+            catch
+            {
+                // Temporary measurement diagnostics must not affect output behavior.
+            }
             measurement = OutputFilenameSelectionMeasurement.Begin(
                 measurementContext,
                 image.File,
-                user_input.Get(T2IParamTypes.BatchSize, 1));
+                batchSize);
         }
         if (!User.Settings.SaveFiles)
         {
@@ -536,8 +545,19 @@ public class Session : IEquatable<Session>
         {
             measurement.PathResolutionMicroseconds =
                 OutputFilenameSelectionMeasurement.ElapsedMicroseconds(pathStart);
-            measurement.FolderDepth = pathFolder.Split(
-                '/', StringSplitOptions.RemoveEmptyEntries).Length;
+            int folderDepth = 0;
+            if (pathFolder.Length > 0)
+            {
+                folderDepth = 1;
+                for (int i = 0; i < pathFolder.Length; i++)
+                {
+                    if (pathFolder[i] == '/')
+                    {
+                        folderDepth++;
+                    }
+                }
+            }
+            measurement.FolderDepth = folderDepth;
         }
 
         bool saveFailed = false;
@@ -562,15 +582,16 @@ public class Session : IEquatable<Session>
                 }
                 else
                 {
-                    long enumerationStart = OutputFilenameSelectionMeasurement.Timestamp();
-                    string[] folderFiles = [.. Directory.EnumerateFiles(folderRoute)];
-                    measurement.DirectoryEnumerationMicroseconds =
-                        OutputFilenameSelectionMeasurement.ElapsedMicroseconds(enumerationStart);
-                    measurement.FolderFileCount = folderFiles.Length;
-                    long hashStart = OutputFilenameSelectionMeasurement.Timestamp();
-                    existingFiles = [.. folderFiles.Select(file => file.BeforeLast('.'))];
-                    measurement.ExtensionlessHashMicroseconds =
-                        OutputFilenameSelectionMeasurement.ElapsedMicroseconds(hashStart);
+                    long directoryScanHashStart = OutputFilenameSelectionMeasurement.Timestamp();
+                    int folderFileCount = 0;
+                    existingFiles = [.. Directory.EnumerateFiles(folderRoute).Select(file =>
+                    {
+                        folderFileCount++;
+                        return file.BeforeLast('.');
+                    })];
+                    measurement.DirectoryScanHashMicroseconds =
+                        OutputFilenameSelectionMeasurement.ElapsedMicroseconds(directoryScanHashStart);
+                    measurement.FolderFileCount = folderFileCount;
                 }
                 OutputFilenameReservation reservation = default;
                 int num = 0;

@@ -154,15 +154,19 @@ measurement-only allocation is created beyond the guarded setting checks.
 One small internal recorder owns:
 
 - the monotonic measurement ID;
-- high-resolution timestamp conversion;
+- nonthrowing enable lookup and high-resolution timestamp conversion;
 - the stable record prefix and schema version;
 - privacy-safe scenario normalization;
-- compact JSON serialization;
+- bounded media-category capture;
+- compact JSON construction and serialization;
 - nonthrowing emission through the existing logger.
 
 The recorder is specific to Rank 25 and must not become a generic metrics
-framework. Its emission path catches its own failures so diagnostics cannot
-turn a successful save into a failure or mask an existing failure.
+framework. Error isolation covers the enable check, timing, attempt allocation,
+scenario normalization, media capture, record construction, serialization, and
+logging. Each boundary catches its own failures without logging an exception
+value, so diagnostics cannot turn a successful save into a failure or mask an
+existing failure.
 
 ### Internal caller context
 
@@ -201,7 +205,8 @@ across restarts.
 Every record is one compact JSON object after a stable
 `[Rank25OutputFilename]` log prefix. All durations use a monotonic
 high-resolution clock and are emitted as integer microseconds. All counts use
-integers. Schema keys remain stable for the complete collection.
+integers. The schema contains 30 unique keys: 9 common, 14 selection, and 7
+background. Schema keys remain stable for the complete collection.
 
 Common fields are:
 
@@ -247,24 +252,28 @@ A `selection` record contains:
 - naming category: `number_token`, `suffix`, or `direct`;
 - path-resolution time;
 - user-lock wait and hold time;
-- directory-enumeration time;
-- extensionless-hash construction time;
+- combined directory-enumeration and extensionless-hash time;
 - reservation-key scan time;
 - candidate-probe time;
 - total synchronous selection time;
 - success or the existing bounded error category.
 
-Instrumentation may split the existing single-pass directory expression into
-equivalent timed enumeration and hash-add operations only while measurement is
-enabled. It must retain the same enumerated paths, extension stripping,
-`HashSet<string>` semantics, and probe order. Disabled execution retains the
-original direct path.
+Enabled instrumentation retains the existing streaming
+`Directory.EnumerateFiles` → extensionless `Select` → `HashSet<string>`
+pipeline. One outer timer covers that combined directory scan/hash operation,
+and one inline counter records folder cardinality during the same traversal.
+There is no intermediate O(n) array/copy or second traversal. Disabled execution
+retains the original direct expression. Folder depth is computed only for an
+enabled attempt with an explicit character loop rather than `Split`.
 
 Disabled reservation scanning retains the original predicate with no measurement
 closure or counter. Enabled scanning captures one `Keys` snapshot, times
 snapshot acquisition plus the short-circuit `Any`, stops the timer immediately,
 and then derives the key count and other bookkeeping from that same snapshot.
 Neither branch performs a second collision scan.
+
+`candidate_probe_us` includes `reservation_scan_us` whenever the candidate
+reaches the reservation predicate, so those fields overlap and are not additive.
 
 The record is emitted after `User.UserLock` is released so log formatting and
 I/O are not included in lock hold time. Locals may carry the existing error
@@ -288,12 +297,17 @@ The record does not move, await, combine, retry, or suppress any existing
 operation. It observes the existing background task and is emitted from that
 task without affecting reservation or `StillSavingFiles` cleanup.
 
+Synchronous/background totals overlap their component timings, and background
+emission follows cleanup. Totals and components are descriptive and must not be
+summed as if they were disjoint intervals.
+
 ## Data Flow
 
 1. A maintained caller checks the existing save/bypass policy in its current
    order.
-2. If measurement is enabled, it creates the minimal privacy-safe context and
-   ID.
+2. If measurement is enabled, diagnostic-only batch-size lookup is locally
+   caught with default `1`, then the caller creates the minimal privacy-safe
+   context and ID.
 3. A caller-side bypass emits one `bypass` record and returns the unchanged data
    URL.
 4. A persisted caller enters `Session.SaveImage` through the internal context
@@ -311,7 +325,10 @@ save/bypass branch is reached.
 
 ## Error and Concurrency Semantics
 
-- Measurement collection and emission are best-effort and nonthrowing.
+- Measurement collection and emission are end-to-end best-effort and
+  nonthrowing, including enable lookup, timing, attempt/normalization/media
+  capture, record construction, serialization, and logging.
+- Diagnostic-only batch-size queries are caller-caught and default to `1`.
 - Existing `ERROR` return behavior and existing save error messages are
   unchanged.
 - Measurement records never include exception messages or raw path-bearing
@@ -387,11 +404,14 @@ Static verification must prove:
 - unchanged public reservation dictionaries and identities;
 - unchanged path, extension, naming, probe, lock, publication, task, cleanup,
   return, and error order;
-- no second directory or reservation collision scan;
+- one streaming directory scan/hash traversal with no intermediate O(n)
+  materialization or second directory/reservation collision scan;
 - no raw identity/path/request/exception-message field in the record schema;
 - no log formatting or emission while `User.UserLock` is held;
 - disabled guards dominate every measurement-only timestamp, ID, allocation,
-  record, and temporary backend-claim marker mutation;
+  record, batch query, and temporary backend-claim marker mutation;
+- every recorder entry point and timing/enable boundary catches failures and
+  returns a false/zero/null/no-op fallback without exception logging;
 - exactly one internal marker is set at `handleFileOutput`, with one pre-claim
   `false` call and two in-claim `true` calls, and no public callback signature
   change;

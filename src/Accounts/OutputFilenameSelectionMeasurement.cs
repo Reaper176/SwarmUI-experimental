@@ -48,8 +48,7 @@ internal sealed class OutputFilenameSelectionAttempt
     internal long PathResolutionMicroseconds { get; set; }
     internal long UserLockWaitMicroseconds { get; set; }
     internal long UserLockHoldMicroseconds { get; set; }
-    internal long DirectoryEnumerationMicroseconds { get; set; }
-    internal long ExtensionlessHashMicroseconds { get; set; }
+    internal long DirectoryScanHashMicroseconds { get; set; }
     internal long ReservationScanMicroseconds { get; set; }
     internal long CandidateProbeMicroseconds { get; set; }
     internal long SynchronousSelectionMicroseconds { get; set; }
@@ -68,18 +67,49 @@ internal static class OutputFilenameSelectionMeasurement
     private static long NextMeasurementID;
 
     /// <summary>Whether temporary Rank 25 measurement is currently enabled.</summary>
-    internal static bool IsEnabled => Program.ServerSettings.Performance.OutputFilenameMeasurementEnabled;
+    internal static bool IsEnabled
+    {
+        get
+        {
+            try
+            {
+                return Program.ServerSettings.Performance.OutputFilenameMeasurementEnabled;
+            }
+            catch
+            {
+                return false;
+            }
+        }
+    }
 
     /// <summary>Returns a monotonic high-resolution timestamp.</summary>
     internal static long Timestamp()
     {
-        return Stopwatch.GetTimestamp();
+        try
+        {
+            return Stopwatch.GetTimestamp();
+        }
+        catch
+        {
+            return 0;
+        }
     }
 
     /// <summary>Converts a timestamp interval to integer microseconds.</summary>
     internal static long ElapsedMicroseconds(long start)
     {
-        return (long)(Stopwatch.GetElapsedTime(start).TotalMilliseconds * 1000);
+        if (start == 0)
+        {
+            return 0;
+        }
+        try
+        {
+            return (long)(Stopwatch.GetElapsedTime(start).TotalMilliseconds * 1000);
+        }
+        catch
+        {
+            return 0;
+        }
     }
 
     /// <summary>Normalizes an operator-provided scenario without adding runtime identities.</summary>
@@ -124,19 +154,26 @@ internal static class OutputFilenameSelectionMeasurement
     /// <summary>Starts one enabled measurement attempt, or returns null when disabled.</summary>
     internal static OutputFilenameSelectionAttempt Begin(OutputFilenameSelectionContext context, MediaFile file, int batchSize)
     {
-        if (!IsEnabled)
+        try
+        {
+            if (!IsEnabled)
+            {
+                return null;
+            }
+            return new OutputFilenameSelectionAttempt()
+            {
+                ID = Interlocked.Increment(ref NextMeasurementID),
+                Scenario = NormalizeScenario(Program.ServerSettings.Performance.OutputFilenameMeasurementScenario),
+                Source = context.Source,
+                BackendClaimed = context.BackendClaimed,
+                MediaCategory = GetMediaCategory(file.Type.MetaType),
+                BatchSize = batchSize
+            };
+        }
+        catch
         {
             return null;
         }
-        return new OutputFilenameSelectionAttempt()
-        {
-            ID = Interlocked.Increment(ref NextMeasurementID),
-            Scenario = NormalizeScenario(Program.ServerSettings.Performance.OutputFilenameMeasurementScenario),
-            Source = context.Source,
-            BackendClaimed = context.BackendClaimed,
-            MediaCategory = GetMediaCategory(file.Type.MetaType),
-            BatchSize = batchSize
-        };
     }
 
     /// <summary>Builds the common privacy-safe fields for one record.</summary>
@@ -171,42 +208,62 @@ internal static class OutputFilenameSelectionMeasurement
 
     internal static void EmitBypass(OutputFilenameSelectionAttempt attempt, string reason)
     {
-        if (attempt is null)
+        try
         {
-            return;
+            if (attempt is null)
+            {
+                return;
+            }
+            Emit(Common(attempt, "bypass", reason));
         }
-        Emit(Common(attempt, "bypass", reason));
+        catch
+        {
+            // Temporary measurement diagnostics must not affect output behavior.
+        }
     }
 
     internal static void EmitBypass(OutputFilenameSelectionContext context, MediaFile file, int batchSize, string reason)
     {
-        OutputFilenameSelectionAttempt attempt = Begin(context, file, batchSize);
-        EmitBypass(attempt, reason);
+        try
+        {
+            OutputFilenameSelectionAttempt attempt = Begin(context, file, batchSize);
+            EmitBypass(attempt, reason);
+        }
+        catch
+        {
+            // Temporary measurement diagnostics must not affect output behavior.
+        }
     }
 
     internal static void EmitSelection(OutputFilenameSelectionAttempt attempt, string outcome)
     {
-        if (attempt is null)
+        try
         {
-            return;
+            if (attempt is null)
+            {
+                return;
+            }
+            JObject record = Common(attempt, "selection", outcome);
+            record["folder_depth"] = attempt.FolderDepth;
+            record["folder_file_count"] = attempt.FolderFileCount;
+            record["reservation_key_count"] = attempt.ReservationKeyCount;
+            record["reservation_keys_examined"] = attempt.ReservationKeysExamined;
+            record["reservation_collision_matches"] = attempt.ReservationCollisionMatches;
+            record["candidate_probe_count"] = attempt.CandidateProbeCount;
+            record["naming_category"] = attempt.NamingCategory;
+            record["path_resolution_us"] = attempt.PathResolutionMicroseconds;
+            record["user_lock_wait_us"] = attempt.UserLockWaitMicroseconds;
+            record["user_lock_hold_us"] = attempt.UserLockHoldMicroseconds;
+            record["directory_scan_hash_us"] = attempt.DirectoryScanHashMicroseconds;
+            record["reservation_scan_us"] = attempt.ReservationScanMicroseconds;
+            record["candidate_probe_us"] = attempt.CandidateProbeMicroseconds;
+            record["synchronous_selection_us"] = attempt.SynchronousSelectionMicroseconds;
+            Emit(record);
         }
-        JObject record = Common(attempt, "selection", outcome);
-        record["folder_depth"] = attempt.FolderDepth;
-        record["folder_file_count"] = attempt.FolderFileCount;
-        record["reservation_key_count"] = attempt.ReservationKeyCount;
-        record["reservation_keys_examined"] = attempt.ReservationKeysExamined;
-        record["reservation_collision_matches"] = attempt.ReservationCollisionMatches;
-        record["candidate_probe_count"] = attempt.CandidateProbeCount;
-        record["naming_category"] = attempt.NamingCategory;
-        record["path_resolution_us"] = attempt.PathResolutionMicroseconds;
-        record["user_lock_wait_us"] = attempt.UserLockWaitMicroseconds;
-        record["user_lock_hold_us"] = attempt.UserLockHoldMicroseconds;
-        record["directory_enumeration_us"] = attempt.DirectoryEnumerationMicroseconds;
-        record["extensionless_hash_us"] = attempt.ExtensionlessHashMicroseconds;
-        record["reservation_scan_us"] = attempt.ReservationScanMicroseconds;
-        record["candidate_probe_us"] = attempt.CandidateProbeMicroseconds;
-        record["synchronous_selection_us"] = attempt.SynchronousSelectionMicroseconds;
-        Emit(record);
+        catch
+        {
+            // Temporary measurement diagnostics must not affect output behavior.
+        }
     }
 
     internal static void EmitBackground(OutputFilenameSelectionAttempt attempt, string outcome,
@@ -215,18 +272,25 @@ internal static class OutputFilenameSelectionMeasurement
         long historyIndexMicroseconds, long retentionMicroseconds,
         long totalMicroseconds)
     {
-        if (attempt is null)
+        try
         {
-            return;
+            if (attempt is null)
+            {
+                return;
+            }
+            JObject record = Common(attempt, "background", outcome);
+            record["conversion_wait_us"] = conversionWaitMicroseconds;
+            record["primary_write_us"] = primaryWriteMicroseconds;
+            record["metadata_write_us"] = metadataWriteMicroseconds;
+            record["preview_us"] = previewMicroseconds;
+            record["history_index_us"] = historyIndexMicroseconds;
+            record["retention_us"] = retentionMicroseconds;
+            record["total_us"] = totalMicroseconds;
+            Emit(record);
         }
-        JObject record = Common(attempt, "background", outcome);
-        record["conversion_wait_us"] = conversionWaitMicroseconds;
-        record["primary_write_us"] = primaryWriteMicroseconds;
-        record["metadata_write_us"] = metadataWriteMicroseconds;
-        record["preview_us"] = previewMicroseconds;
-        record["history_index_us"] = historyIndexMicroseconds;
-        record["retention_us"] = retentionMicroseconds;
-        record["total_us"] = totalMicroseconds;
-        Emit(record);
+        catch
+        {
+            // Temporary measurement diagnostics must not affect output behavior.
+        }
     }
 }

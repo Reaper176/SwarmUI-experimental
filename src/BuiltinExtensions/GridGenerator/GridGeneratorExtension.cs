@@ -258,11 +258,20 @@ public class GridGeneratorExtension : Extension
                         {
                             if (OutputFilenameSelectionMeasurement.IsEnabled)
                             {
+                                int batchSize = 1;
+                                try
+                                {
+                                    batchSize = thisParams.Get(T2IParamTypes.BatchSize, 1);
+                                }
+                                catch
+                                {
+                                    // Temporary measurement diagnostics must not affect output behavior.
+                                }
                                 OutputFilenameSelectionMeasurement.EmitBypass(
                                     OutputFilenameSelectionContext.GridIteration(
                                         image.OutputFilenameMeasurementBackendClaimed),
                                     image.File,
-                                    thisParams.Get(T2IParamTypes.BatchSize, 1),
+                                    batchSize,
                                     "grid_do_not_save");
                             }
                             (url, filePath) = (image.File.AsDataString(), null);
@@ -697,10 +706,19 @@ public class GridGeneratorExtension : Extension
                 {
                     if (OutputFilenameSelectionMeasurement.IsEnabled)
                     {
+                        int batchSize = 1;
+                        try
+                        {
+                            batchSize = initialParams.Get(T2IParamTypes.BatchSize, 1);
+                        }
+                        catch
+                        {
+                            // Temporary measurement diagnostics must not affect output behavior.
+                        }
                         OutputFilenameSelectionMeasurement.EmitBypass(
                             OutputFilenameSelectionContext.GridFinal,
                             outImg,
-                            initialParams.Get(T2IParamTypes.BatchSize, 1),
+                            batchSize,
                             "grid_do_not_save");
                     }
                     (url, filePath) = (outImg.AsDataString(), null);

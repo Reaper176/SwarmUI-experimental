@@ -386,10 +386,19 @@ public static class T2IAPI
                 }
                 if (OutputFilenameSelectionMeasurement.IsEnabled)
                 {
+                    int batchSize = 1;
+                    try
+                    {
+                        batchSize = thisParams.Get(T2IParamTypes.BatchSize, 1);
+                    }
+                    catch
+                    {
+                        // Temporary measurement diagnostics must not affect output behavior.
+                    }
                     OutputFilenameSelectionMeasurement.EmitBypass(
                         measurementContext,
                         file,
-                        thisParams.Get(T2IParamTypes.BatchSize, 1),
+                        batchSize,
                         intermediateNoSave ? "intermediate_policy" : "request_do_not_save");
                 }
                 (url, filePath) = (file.AsDataString(), null);

@@ -268,8 +268,7 @@ internal sealed class OutputFilenameSelectionAttempt
     internal long PathResolutionMicroseconds { get; set; }
     internal long UserLockWaitMicroseconds { get; set; }
     internal long UserLockHoldMicroseconds { get; set; }
-    internal long DirectoryEnumerationMicroseconds { get; set; }
-    internal long ExtensionlessHashMicroseconds { get; set; }
+    internal long DirectoryScanHashMicroseconds { get; set; }
     internal long ReservationScanMicroseconds { get; set; }
     internal long CandidateProbeMicroseconds { get; set; }
     internal long SynchronousSelectionMicroseconds { get; set; }
@@ -288,18 +287,49 @@ internal static class OutputFilenameSelectionMeasurement
     private static long NextMeasurementID;
 
     /// <summary>Whether temporary Rank 25 measurement is currently enabled.</summary>
-    internal static bool IsEnabled => Program.ServerSettings.Performance.OutputFilenameMeasurementEnabled;
+    internal static bool IsEnabled
+    {
+        get
+        {
+            try
+            {
+                return Program.ServerSettings.Performance.OutputFilenameMeasurementEnabled;
+            }
+            catch
+            {
+                return false;
+            }
+        }
+    }
 
     /// <summary>Returns a monotonic high-resolution timestamp.</summary>
     internal static long Timestamp()
     {
-        return Stopwatch.GetTimestamp();
+        try
+        {
+            return Stopwatch.GetTimestamp();
+        }
+        catch
+        {
+            return 0;
+        }
     }
 
     /// <summary>Converts a timestamp interval to integer microseconds.</summary>
     internal static long ElapsedMicroseconds(long start)
     {
-        return (long)(Stopwatch.GetElapsedTime(start).TotalMilliseconds * 1000);
+        if (start == 0)
+        {
+            return 0;
+        }
+        try
+        {
+            return (long)(Stopwatch.GetElapsedTime(start).TotalMilliseconds * 1000);
+        }
+        catch
+        {
+            return 0;
+        }
     }
 
     /// <summary>Normalizes an operator-provided scenario without adding runtime identities.</summary>
@@ -344,19 +374,26 @@ internal static class OutputFilenameSelectionMeasurement
     /// <summary>Starts one enabled measurement attempt, or returns null when disabled.</summary>
     internal static OutputFilenameSelectionAttempt Begin(OutputFilenameSelectionContext context, MediaFile file, int batchSize)
     {
-        if (!IsEnabled)
+        try
+        {
+            if (!IsEnabled)
+            {
+                return null;
+            }
+            return new OutputFilenameSelectionAttempt()
+            {
+                ID = Interlocked.Increment(ref NextMeasurementID),
+                Scenario = NormalizeScenario(Program.ServerSettings.Performance.OutputFilenameMeasurementScenario),
+                Source = context.Source,
+                BackendClaimed = context.BackendClaimed,
+                MediaCategory = GetMediaCategory(file.Type.MetaType),
+                BatchSize = batchSize
+            };
+        }
+        catch
         {
             return null;
         }
-        return new OutputFilenameSelectionAttempt()
-        {
-            ID = Interlocked.Increment(ref NextMeasurementID),
-            Scenario = NormalizeScenario(Program.ServerSettings.Performance.OutputFilenameMeasurementScenario),
-            Source = context.Source,
-            BackendClaimed = context.BackendClaimed,
-            MediaCategory = GetMediaCategory(file.Type.MetaType),
-            BatchSize = batchSize
-        };
     }
 
     /// <summary>Builds the common privacy-safe fields for one record.</summary>
@@ -398,37 +435,50 @@ or `Exception`:
 ```csharp
 internal static void EmitBypass(OutputFilenameSelectionContext context, MediaFile file, int batchSize, string reason)
 {
-    OutputFilenameSelectionAttempt attempt = Begin(context, file, batchSize);
-    if (attempt is null)
+    try
     {
-        return;
+        OutputFilenameSelectionAttempt attempt = Begin(context, file, batchSize);
+        if (attempt is null)
+        {
+            return;
+        }
+        Emit(Common(attempt, "bypass", reason));
     }
-    Emit(Common(attempt, "bypass", reason));
+    catch
+    {
+        // Temporary measurement diagnostics must not affect output behavior.
+    }
 }
 
 internal static void EmitSelection(OutputFilenameSelectionAttempt attempt, string outcome)
 {
-    if (attempt is null)
+    try
     {
-        return;
+        if (attempt is null)
+        {
+            return;
+        }
+        JObject record = Common(attempt, "selection", outcome);
+        record["folder_depth"] = attempt.FolderDepth;
+        record["folder_file_count"] = attempt.FolderFileCount;
+        record["reservation_key_count"] = attempt.ReservationKeyCount;
+        record["reservation_keys_examined"] = attempt.ReservationKeysExamined;
+        record["reservation_collision_matches"] = attempt.ReservationCollisionMatches;
+        record["candidate_probe_count"] = attempt.CandidateProbeCount;
+        record["naming_category"] = attempt.NamingCategory;
+        record["path_resolution_us"] = attempt.PathResolutionMicroseconds;
+        record["user_lock_wait_us"] = attempt.UserLockWaitMicroseconds;
+        record["user_lock_hold_us"] = attempt.UserLockHoldMicroseconds;
+        record["directory_scan_hash_us"] = attempt.DirectoryScanHashMicroseconds;
+        record["reservation_scan_us"] = attempt.ReservationScanMicroseconds;
+        record["candidate_probe_us"] = attempt.CandidateProbeMicroseconds;
+        record["synchronous_selection_us"] = attempt.SynchronousSelectionMicroseconds;
+        Emit(record);
     }
-    JObject record = Common(attempt, "selection", outcome);
-    record["folder_depth"] = attempt.FolderDepth;
-    record["folder_file_count"] = attempt.FolderFileCount;
-    record["reservation_key_count"] = attempt.ReservationKeyCount;
-    record["reservation_keys_examined"] = attempt.ReservationKeysExamined;
-    record["reservation_collision_matches"] = attempt.ReservationCollisionMatches;
-    record["candidate_probe_count"] = attempt.CandidateProbeCount;
-    record["naming_category"] = attempt.NamingCategory;
-    record["path_resolution_us"] = attempt.PathResolutionMicroseconds;
-    record["user_lock_wait_us"] = attempt.UserLockWaitMicroseconds;
-    record["user_lock_hold_us"] = attempt.UserLockHoldMicroseconds;
-    record["directory_enumeration_us"] = attempt.DirectoryEnumerationMicroseconds;
-    record["extensionless_hash_us"] = attempt.ExtensionlessHashMicroseconds;
-    record["reservation_scan_us"] = attempt.ReservationScanMicroseconds;
-    record["candidate_probe_us"] = attempt.CandidateProbeMicroseconds;
-    record["synchronous_selection_us"] = attempt.SynchronousSelectionMicroseconds;
-    Emit(record);
+    catch
+    {
+        // Temporary measurement diagnostics must not affect output behavior.
+    }
 }
 
 internal static void EmitBackground(OutputFilenameSelectionAttempt attempt, string outcome,
@@ -437,21 +487,32 @@ internal static void EmitBackground(OutputFilenameSelectionAttempt attempt, stri
     long historyIndexMicroseconds, long retentionMicroseconds,
     long totalMicroseconds)
 {
-    if (attempt is null)
+    try
     {
-        return;
+        if (attempt is null)
+        {
+            return;
+        }
+        JObject record = Common(attempt, "background", outcome);
+        record["conversion_wait_us"] = conversionWaitMicroseconds;
+        record["primary_write_us"] = primaryWriteMicroseconds;
+        record["metadata_write_us"] = metadataWriteMicroseconds;
+        record["preview_us"] = previewMicroseconds;
+        record["history_index_us"] = historyIndexMicroseconds;
+        record["retention_us"] = retentionMicroseconds;
+        record["total_us"] = totalMicroseconds;
+        Emit(record);
     }
-    JObject record = Common(attempt, "background", outcome);
-    record["conversion_wait_us"] = conversionWaitMicroseconds;
-    record["primary_write_us"] = primaryWriteMicroseconds;
-    record["metadata_write_us"] = metadataWriteMicroseconds;
-    record["preview_us"] = previewMicroseconds;
-    record["history_index_us"] = historyIndexMicroseconds;
-    record["retention_us"] = retentionMicroseconds;
-    record["total_us"] = totalMicroseconds;
-    Emit(record);
+    catch
+    {
+        // Temporary measurement diagnostics must not affect output behavior.
+    }
 }
 ```
+
+Every recorder boundary above is best-effort: enable lookup, timing, attempt
+creation and normalization/media capture, record construction, serialization,
+and logging catch their own failures without logging an exception value.
 
 - [ ] **Step 4: Run the focused GREEN and privacy assertions**
 
@@ -498,7 +559,7 @@ Run:
 ```bash
 test "$(rg -c 'public \\(string, string\\) SaveImage' src/Accounts/Session.cs)" -eq 1
 test -z "$(rg -n \
-  'OutputFilenameSelectionAttempt|OutputFilenameSelectionContext|EmitSelection|DirectoryEnumerationMicroseconds' \
+  'OutputFilenameSelectionAttempt|OutputFilenameSelectionContext|EmitSelection|DirectoryScanHashMicroseconds' \
   src/Accounts/Session.cs)"
 ```
 
@@ -578,10 +639,19 @@ internal (string, string) SaveImage(T2IEngine.ImageOutput image, int batchIndex,
     OutputFilenameSelectionAttempt measurement = null;
     if (OutputFilenameSelectionMeasurement.IsEnabled)
     {
+        int batchSize = 1;
+        try
+        {
+            batchSize = user_input.Get(T2IParamTypes.BatchSize, 1);
+        }
+        catch
+        {
+            // Temporary measurement diagnostics must not affect output behavior.
+        }
         measurement = OutputFilenameSelectionMeasurement.Begin(
             measurementContext,
             image.File,
-            user_input.Get(T2IParamTypes.BatchSize, 1));
+            batchSize);
     }
     if (!User.Settings.SaveFiles)
     {
@@ -629,18 +699,39 @@ overload to the recorder:
 ```csharp
 internal static void EmitBypass(OutputFilenameSelectionAttempt attempt, string reason)
 {
-    if (attempt is null)
+    try
     {
-        return;
+        if (attempt is null)
+        {
+            return;
+        }
+        Emit(Common(attempt, "bypass", reason));
     }
-    Emit(Common(attempt, "bypass", reason));
+    catch
+    {
+        // Temporary measurement diagnostics must not affect output behavior.
+    }
 }
 ```
 
-The context-based overload in Task 2 delegates through `Begin` to this overload.
+Replace the context-based Task 2 overload body so its complete final body is
+also guarded and delegates through `Begin` to this overload:
+
+```csharp
+try
+{
+    OutputFilenameSelectionAttempt attempt = Begin(context, file, batchSize);
+    EmitBypass(attempt, reason);
+}
+catch
+{
+    // Temporary measurement diagnostics must not affect output behavior.
+}
+```
+
 Use `EmitBypass(measurement, "user_save_files_disabled")` in `Session`.
 
-- [ ] **Step 4: Add timed path, lock, folder, hash, and probe branches**
+- [ ] **Step 4: Add timed path, lock, folder scan/hash, and probe branches**
 
 Use these exact measurement rules inside the internal route:
 
@@ -678,8 +769,19 @@ if (measurement is not null)
 {
     measurement.PathResolutionMicroseconds =
         OutputFilenameSelectionMeasurement.ElapsedMicroseconds(pathStart);
-    measurement.FolderDepth = pathFolder.Split(
-        '/', StringSplitOptions.RemoveEmptyEntries).Length;
+    int folderDepth = 0;
+    if (pathFolder.Length > 0)
+    {
+        folderDepth = 1;
+        for (int i = 0; i < pathFolder.Length; i++)
+        {
+            if (pathFolder[i] == '/')
+            {
+                folderDepth++;
+            }
+        }
+    }
+    measurement.FolderDepth = folderDepth;
 }
 
 bool saveFailed = false;
@@ -704,15 +806,16 @@ lock (User.UserLock)
         }
         else
         {
-            long enumerationStart = OutputFilenameSelectionMeasurement.Timestamp();
-            string[] folderFiles = [.. Directory.EnumerateFiles(folderRoute)];
-            measurement.DirectoryEnumerationMicroseconds =
-                OutputFilenameSelectionMeasurement.ElapsedMicroseconds(enumerationStart);
-            measurement.FolderFileCount = folderFiles.Length;
-            long hashStart = OutputFilenameSelectionMeasurement.Timestamp();
-            existingFiles = [.. folderFiles.Select(file => file.BeforeLast('.'))];
-            measurement.ExtensionlessHashMicroseconds =
-                OutputFilenameSelectionMeasurement.ElapsedMicroseconds(hashStart);
+            long directoryScanHashStart = OutputFilenameSelectionMeasurement.Timestamp();
+            int folderFileCount = 0;
+            existingFiles = [.. Directory.EnumerateFiles(folderRoute).Select(file =>
+            {
+                folderFileCount++;
+                return file.BeforeLast('.');
+            })];
+            measurement.DirectoryScanHashMicroseconds =
+                OutputFilenameSelectionMeasurement.ElapsedMicroseconds(directoryScanHashStart);
+            measurement.FolderFileCount = folderFileCount;
         }
         OutputFilenameReservation reservation = default;
         int num = 0;
@@ -803,6 +906,9 @@ Run:
 test "$(rg -F -c 'public (string, string) SaveImage' src/Accounts/Session.cs)" -eq 1
 test "$(rg -F -c 'internal (string, string) SaveImage' src/Accounts/Session.cs)" -eq 1
 test "$(rg -F -c 'Directory.EnumerateFiles' src/Accounts/Session.cs)" -eq 2
+test "$(rg -F -c 'folderFileCount++;' src/Accounts/Session.cs)" -eq 1
+test "$(rg -F -c 'folderDepth++;' src/Accounts/Session.cs)" -eq 1
+test "$(rg -F -c 'DirectoryScanHashMicroseconds' src/Accounts/Session.cs)" -eq 1
 test "$(rg -F -c 'RecentlyBlockedFilenames.Keys.Any' src/Accounts/Session.cs)" -eq 1
 test "$(rg -F -c 'ICollection<string> reservationKeys = RecentlyBlockedFilenames.Keys;' src/Accounts/Session.cs)" -eq 1
 test "$(rg -F -c 'reservationKeys.Any' src/Accounts/Session.cs)" -eq 1
@@ -819,7 +925,12 @@ git diff 30448884415c44f446136fa3e11fb06cefe375d6 -- \
 Expected:
 
 - the second directory-enumeration expression exists only in the mutually
-  exclusive enabled branch;
+  exclusive enabled branch and remains one streaming
+  `EnumerateFiles`/`Select`/`HashSet` pipeline with one inline count and no
+  intermediate O(n) materialization or second traversal;
+- folder depth uses an enabled-only explicit character loop without `Split`;
+- the measurement-only batch-size query is enabled-only, locally caught, and
+  defaults to `1`;
 - the disabled reservation branch retains the original predicate without a
   measurement closure, timestamp, or counter;
 - the enabled reservation branch acquires one `ICollection<string>` `Keys`
@@ -961,6 +1072,9 @@ OutputFilenameSelectionMeasurement.EmitBackground(
 ```
 
 Do not add an exception parameter or message to the record.
+`Timestamp`, `ElapsedMicroseconds`, and `EmitBackground` are the nonthrowing
+recorder boundaries defined in Task 2, so an incomplete background phase or
+record-construction failure cannot replace the original save result.
 
 - [ ] **Step 3: Run background GREEN/order assertions**
 
@@ -1072,10 +1186,19 @@ before tuple assignment, add:
 ```csharp
 if (OutputFilenameSelectionMeasurement.IsEnabled)
 {
+    int batchSize = 1;
+    try
+    {
+        batchSize = thisParams.Get(T2IParamTypes.BatchSize, 1);
+    }
+    catch
+    {
+        // Temporary measurement diagnostics must not affect output behavior.
+    }
     OutputFilenameSelectionMeasurement.EmitBypass(
         measurementContext,
         file,
-        thisParams.Get(T2IParamTypes.BatchSize, 1),
+        batchSize,
         intermediateNoSave ? "intermediate_policy" : "request_do_not_save");
 }
 ```
@@ -1116,11 +1239,20 @@ if (thisParams.Get(T2IParamTypes.DoNotSave, false))
 {
     if (OutputFilenameSelectionMeasurement.IsEnabled)
     {
+        int batchSize = 1;
+        try
+        {
+            batchSize = thisParams.Get(T2IParamTypes.BatchSize, 1);
+        }
+        catch
+        {
+            // Temporary measurement diagnostics must not affect output behavior.
+        }
         OutputFilenameSelectionMeasurement.EmitBypass(
             OutputFilenameSelectionContext.GridIteration(
                 image.OutputFilenameMeasurementBackendClaimed),
             image.File,
-            thisParams.Get(T2IParamTypes.BatchSize, 1),
+            batchSize,
             "grid_do_not_save");
     }
     (url, filePath) = (image.File.AsDataString(), null);
@@ -1145,10 +1277,19 @@ if (initialParams.Get(T2IParamTypes.DoNotSave, false))
 {
     if (OutputFilenameSelectionMeasurement.IsEnabled)
     {
+        int batchSize = 1;
+        try
+        {
+            batchSize = initialParams.Get(T2IParamTypes.BatchSize, 1);
+        }
+        catch
+        {
+            // Temporary measurement diagnostics must not affect output behavior.
+        }
         OutputFilenameSelectionMeasurement.EmitBypass(
             OutputFilenameSelectionContext.GridFinal,
             outImg,
-            initialParams.Get(T2IParamTypes.BatchSize, 1),
+            batchSize,
             "grid_do_not_save");
     }
     (url, filePath) = (outImg.AsDataString(), null);
@@ -1179,6 +1320,8 @@ test "$(rg -c 'GridIteration' src/BuiltinExtensions/GridGenerator/GridGeneratorE
 test "$(rg -c 'GridFinal' src/BuiltinExtensions/GridGenerator/GridGeneratorExtension.cs)" -eq 2
 test "$(rg -c 'EmitBypass' src/WebAPI/T2IAPI.cs)" -eq 1
 test "$(rg -c 'EmitBypass' src/BuiltinExtensions/GridGenerator/GridGeneratorExtension.cs)" -eq 2
+test "$(rg -F -c 'int batchSize = 1;' src/WebAPI/T2IAPI.cs)" -eq 1
+test "$(rg -F -c 'int batchSize = 1;' src/BuiltinExtensions/GridGenerator/GridGeneratorExtension.cs)" -eq 2
 test "$(rg -c 'internal bool OutputFilenameMeasurementBackendClaimed;' src/Text2Image/T2IEngine.cs)" -eq 1
 test "$(rg -c 'void handleFileOutput\\(ImageOutput img, bool backendClaimed\\)' src/Text2Image/T2IEngine.cs)" -eq 1
 test "$(rg -c 'handleFileOutput\\(new\\(\\).*false\\);' src/Text2Image/T2IEngine.cs)" -eq 1
@@ -1191,7 +1334,9 @@ Inspect every emitted record call and confirm no `UserID`, `UserRequestId`,
 prompt, filename, path, metadata, or exception is passed. Confirm the marker
 assignment is dominated by `OutputFilenameSelectionMeasurement.IsEnabled`,
 normal/Grid iteration contexts consume the marker, mini-grid/Image History/
-Grid final remain false, and no public `CreateImageTask` declaration changed.
+Grid final remain false, every diagnostic-only batch-size query is enabled-only
+and locally caught with default `1`, and no public `CreateImageTask` declaration
+changed.
 
 - [ ] **Step 6: Commit caller classification**
 
@@ -1246,11 +1391,18 @@ cmp /tmp/rank25-base-public.txt /tmp/rank25-candidate-public.txt
 rg -n 'if \\(!IsEnabled\\)|if \\(measurement is null\\)|if \\(measurement is not null\\)' \
   src/Accounts/OutputFilenameSelectionMeasurement.cs \
   src/Accounts/Session.cs \
-  src/Text2Image/T2IEngine.cs
+  src/Text2Image/T2IEngine.cs \
+  src/WebAPI/T2IAPI.cs \
+  src/BuiltinExtensions/GridGenerator/GridGeneratorExtension.cs
 ```
 
 Expected: public declarations compare byte-for-byte and every timestamp/record
-path is dominated by the enabled attempt.
+path is dominated by the enabled attempt. Numbered inspection must also show
+that `IsEnabled`, both timing methods, `Begin`, both `EmitBypass` overloads,
+`EmitSelection`, and `EmitBackground` catch all diagnostic failures and return
+false, zero, null, or no-op as appropriate. `Common` is called only inside
+guarded recorder entry points, and all four measurement-only batch-size queries
+are locally caught with default `1`.
 
 - [ ] **Step 3: Verify privacy and schema**
 
@@ -1262,9 +1414,19 @@ rg -n 'Rank25OutputFilename|\\["(schema|record|measurement_id|scenario|source|ba
 test -z "$(rg -n \
   'UserID|UserRequestId|fullPath|fullPathNoExt|folderRoute|rawImagePath|imagePath|\bmetadata\b|ReadableString|Exception' \
   src/Accounts/OutputFilenameSelectionMeasurement.cs)"
+test "$(rg -o '\["[a-z_]+"]' src/Accounts/OutputFilenameSelectionMeasurement.cs | sort -u | wc -l)" -eq 30
+test "$(sed -n '/private static JObject Common/,/^    }$/p' src/Accounts/OutputFilenameSelectionMeasurement.cs \
+  | rg -o '\["[a-z_]+"]' | sort -u | wc -l)" -eq 9
+test "$(sed -n '/internal static void EmitSelection/,/^    }$/p' src/Accounts/OutputFilenameSelectionMeasurement.cs \
+  | rg -o '\["[a-z_]+"]' | sort -u | wc -l)" -eq 14
+test "$(sed -n '/internal static void EmitBackground/,/^    }$/p' src/Accounts/OutputFilenameSelectionMeasurement.cs \
+  | rg -o '\["[a-z_]+"]' | sort -u | wc -l)" -eq 7
+test "$(rg -F -c 'record["directory_scan_hash_us"]' src/Accounts/OutputFilenameSelectionMeasurement.cs)" -eq 1
 ```
 
-Expected: one stable prefix/schema and no prohibited data-bearing parameter.
+Expected: one stable prefix/schema, exactly 30 unique keys—9 common, 14
+selection, and 7 background—one combined directory scan/hash field, bounded
+media mapping, and no prohibited data-bearing parameter.
 
 - [ ] **Step 4: Verify control-flow parity**
 
@@ -1273,7 +1435,8 @@ Use numbered source inspection to compare approved base and candidate for:
 - every bypass condition and result;
 - path/extension calculation;
 - `Directory.CreateDirectory`;
-- folder enumeration and extension stripping;
+- one streaming folder enumeration/extension-stripping pipeline with its inline
+  count and no intermediate O(n) materialization or second traversal;
 - disk collision before reservation scan;
 - reservation lock/publication/rollback;
 - `[number]` and suffix updates;
@@ -1350,7 +1513,9 @@ Ask the maintainer to:
    workload group using only storage/workload labels, for example
    `btrfs-nvme/empty/direct`;
 3. ensure the normal log level shows `Info`;
-4. never place a username, request ID, prompt, filename, or path in the label.
+4. never place a username, request ID, prompt, filename, or path in the label;
+5. keep the enable setting and scenario label stable for the entire case or
+   workload rather than changing them mid-run.
 
 - [ ] **Step 3: Run all 25 matrix cases**
 
@@ -1460,10 +1625,14 @@ For each representative group, report:
 - sample count;
 - median and upper-range synchronous selection time;
 - median and upper-range user-lock wait/hold;
-- enumeration, hash, reservation scan, and probe contributions;
+- combined directory scan/hash, reservation scan, and probe contributions;
 - folder/reservation cardinality and collision-probe scaling;
 - claimed versus non-claimed sources;
 - synchronous selection versus conversion/write/preview/index background work.
+
+Treat `candidate_probe_us` as inclusive of `reservation_scan_us` whenever a
+reservation scan runs. Synchronous/background totals and their components also
+overlap and are not additive; never sum overlapping fields into a derived total.
 
 Do not invent a universal threshold or claim causality beyond the records.
 
