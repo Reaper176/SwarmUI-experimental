@@ -18,7 +18,25 @@ internal static class SchedulerCostMeasurement
     private static long NextPassId = 0;
 
     /// <summary>Snapshot of the latest maintained scheduler signal.</summary>
-    internal readonly record struct SignalSnapshot(long Sequence, long Timestamp, string Source);
+    internal sealed class SignalSnapshot
+    {
+        /// <summary>Monotonic sequence number for this maintained signal snapshot.</summary>
+        public long Sequence { get; }
+
+        /// <summary>Monotonic timestamp at which this maintained signal was recorded.</summary>
+        public long Timestamp { get; }
+
+        /// <summary>Bounded category for this maintained signal.</summary>
+        public string Source { get; }
+
+        /// <summary>Constructs an immutable maintained scheduler signal snapshot.</summary>
+        public SignalSnapshot(long sequence, long timestamp, string source)
+        {
+            Sequence = sequence;
+            Timestamp = timestamp;
+            Source = source;
+        }
+    }
 
     /// <summary>Measurements accumulated for one scheduler loop pass.</summary>
     internal sealed class PassAttempt
@@ -89,6 +107,27 @@ internal static class SchedulerCostMeasurement
         /// <summary>Timestamp at which active scheduler processing completed, or zero until the pass waits or finishes.</summary>
         public long ActiveEndTimestamp;
 
+        /// <summary>Timestamp immediately before the existing scheduler event wait starts.</summary>
+        public long WaitStartTimestamp;
+
+        /// <summary>Timestamp immediately after the existing scheduler event wait returns or throws.</summary>
+        public long WaitEndTimestamp;
+
+        /// <summary>Bounded source category observed while this pass waited, when any.</summary>
+        public string WakeSource = "none";
+
+        /// <summary>Timestamp at which this pass endpoint was captured.</summary>
+        public long EndTimestamp;
+
+        /// <summary>Current-thread allocated bytes captured at this pass endpoint.</summary>
+        public long EndAllocation;
+
+        /// <summary>Bounded final pass outcome captured at this pass endpoint.</summary>
+        public string Outcome;
+
+        /// <summary>Completed request-search attempts whose record emission is deferred until this pass endpoint is captured.</summary>
+        public List<TryFindAttempt> TryFindAttempts = [];
+
         /// <summary>Records a cancellation before request-search work.</summary>
         public void RecordCancelled()
         {
@@ -96,26 +135,36 @@ internal static class SchedulerCostMeasurement
         }
 
         /// <summary>Records completed request-search aggregates for this pass.</summary>
-        public void RecordTryFind(TryFindAttempt attempt, string outcome)
+        public void RecordRequestState(bool claimed, bool failed)
         {
             Visits++;
-            MatcherCalls += attempt.MatcherCalls;
-            MatcherUs += attempt.MatcherUs;
-            PressureUs += attempt.PressureUs;
-            if (outcome == "failed")
+            if (claimed)
+            {
+                Claimed++;
+            }
+            else if (failed)
             {
                 Failed++;
             }
-            else if (!outcome.StartsWith("claim_"))
+            else
             {
                 Waiting++;
+            }
+        }
+
+        /// <summary>Reclassifies a previously waiting request when the existing pass-level timeout assigns its failure.</summary>
+        public void RecordWaitingFailure()
+        {
+            if (Waiting > 0)
+            {
+                Waiting--;
+                Failed++;
             }
         }
 
         /// <summary>Records the first existing successful claim in this pass.</summary>
         public void NotifyClaim()
         {
-            Claimed++;
             if (FirstClaimTimestamp == 0)
             {
                 FirstClaimTimestamp = Stopwatch.GetTimestamp();
@@ -186,10 +235,34 @@ internal static class SchedulerCostMeasurement
         /// <summary>Pressure-selection elapsed microseconds.</summary>
         public long PressureUs;
 
+        /// <summary>Bounded pressure-selection outcome propagated to this request search.</summary>
+        public string PressureOutcome;
+
+        /// <summary>Pressure compatibility matcher invocations accumulated for pass-level aggregation only.</summary>
+        public int PressureMatcherCalls;
+
+        /// <summary>Pressure compatibility matcher elapsed microseconds accumulated for pass-level aggregation only.</summary>
+        public long PressureMatcherUs;
+
+        /// <summary>Timestamp at which this request-search endpoint was captured.</summary>
+        public long EndTimestamp;
+
+        /// <summary>Current-thread allocated bytes captured at this request-search endpoint.</summary>
+        public long EndAllocation;
+
+        /// <summary>Bounded final request-search outcome captured at this endpoint.</summary>
+        public string Outcome;
+
+        /// <summary>Completed pressure attempts whose record emission is deferred until this request endpoint is captured.</summary>
+        public List<PressureAttempt> PressureAttempts = [];
+
         /// <summary>Records completed pressure-selection elapsed time.</summary>
-        public void RecordPressure(long elapsedUs)
+        public void RecordPressure(long elapsedUs, string outcome, int matcherCalls, long matcherUs)
         {
             PressureUs += elapsedUs;
+            PressureOutcome = outcome;
+            PressureMatcherCalls += matcherCalls;
+            PressureMatcherUs += matcherUs;
         }
     }
 
@@ -243,6 +316,15 @@ internal static class SchedulerCostMeasurement
 
         /// <summary>Post-selection filter elapsed microseconds.</summary>
         public long PostSelectionUs;
+
+        /// <summary>Timestamp at which this pressure-selection endpoint was captured.</summary>
+        public long EndTimestamp;
+
+        /// <summary>Current-thread allocated bytes captured at this pressure-selection endpoint.</summary>
+        public long EndAllocation;
+
+        /// <summary>Bounded final pressure-selection outcome captured at this endpoint.</summary>
+        public string Outcome;
     }
 
     /// <summary>Returns whether Rank 26 scheduler measurement is enabled without allowing settings failures to escape.</summary>
@@ -269,9 +351,10 @@ internal static class SchedulerCostMeasurement
         {
             SignalSnapshot signal = handler.CaptureSchedulerSignalSnapshot();
             long now = Stopwatch.GetTimestamp();
-            bool hasSignal = signal.Sequence > lastSignalSequence;
-            long signalCount = hasSignal ? signal.Sequence - Math.Max(lastSignalSequence, 0) : 0;
-            string source = hasSignal ? signal.Source : lastSignalSequence < 0 ? "startup" : "timeout_or_external";
+            bool firstPass = lastSignalSequence < 0;
+            bool hasSignal = !firstPass && signal.Sequence > lastSignalSequence;
+            long signalCount = hasSignal ? signal.Sequence - lastSignalSequence : 0;
+            string source = firstPass ? "startup" : hasSignal ? signal.Source : "timeout_or_external";
             long signalAgeUs = hasSignal && signal.Timestamp > 0 ? ToMicroseconds(signal.Timestamp, now) : -1;
             lastSignalSequence = signal.Sequence;
             int pressureCount = 0;
@@ -312,7 +395,7 @@ internal static class SchedulerCostMeasurement
         }
         try
         {
-            return new()
+            TryFindAttempt attempt = new()
             {
                 Pass = pass,
                 Ordinal = ordinal,
@@ -321,6 +404,8 @@ internal static class SchedulerCostMeasurement
                 StartTimestamp = Stopwatch.GetTimestamp(),
                 StartAllocation = GC.GetAllocatedBytesForCurrentThread()
             };
+            pass?.TryFindAttempts.Add(attempt);
+            return attempt;
         }
         catch
         {
@@ -337,7 +422,7 @@ internal static class SchedulerCostMeasurement
         }
         try
         {
-            return new()
+            PressureAttempt attempt = new()
             {
                 RequestAttempt = requestAttempt,
                 Scenario = GetScenario(),
@@ -347,6 +432,8 @@ internal static class SchedulerCostMeasurement
                 PossibleCount = possibleCount,
                 AvailableCount = availableCount
             };
+            requestAttempt?.PressureAttempts.Add(attempt);
+            return attempt;
         }
         catch
         {
@@ -354,48 +441,28 @@ internal static class SchedulerCostMeasurement
         }
     }
 
-    /// <summary>Completes and emits one scheduler pass record.</summary>
-    internal static void FinishPass(PassAttempt attempt, string outcome)
+    /// <summary>Captures a scheduler pass endpoint before any nested record construction or emission.</summary>
+    internal static void CompletePass(PassAttempt attempt, string outcome)
     {
         if (attempt is null)
         {
             return;
         }
+        if (attempt.EndTimestamp != 0)
+        {
+            return;
+        }
         try
         {
-            long endTimestamp = Stopwatch.GetTimestamp();
-            long endAllocation = GC.GetAllocatedBytesForCurrentThread();
-            long activeEndTimestamp = attempt.ActiveEndTimestamp == 0 ? endTimestamp : attempt.ActiveEndTimestamp;
-            long signalToClaimUs = attempt.SignalTimestamp > 0 && attempt.FirstClaimTimestamp > 0 ? ToMicroseconds(attempt.SignalTimestamp, attempt.FirstClaimTimestamp) : -1;
-            object record = new
+            attempt.EndTimestamp = Stopwatch.GetTimestamp();
+            attempt.EndAllocation = GC.GetAllocatedBytesForCurrentThread();
+            attempt.Outcome = outcome;
+            foreach (TryFindAttempt tryFindAttempt in attempt.TryFindAttempts)
             {
-                schema = Schema,
-                record = "pass",
-                pass_id = attempt.PassId,
-                scenario = attempt.Scenario,
-                outcome,
-                signal_source = attempt.SignalSource,
-                signal_count = attempt.SignalCount,
-                signal_age_us = attempt.SignalAgeUs,
-                pending_count = attempt.PendingCount,
-                backend_count = attempt.BackendCount,
-                pressure_count = attempt.PressureCount,
-                pressure_membership_count = attempt.PressureMembershipCount,
-                visits = attempt.Visits,
-                cancelled = attempt.Cancelled,
-                claimed = attempt.Claimed,
-                failed = attempt.Failed,
-                waiting = attempt.Waiting,
-                matcher_calls = attempt.MatcherCalls,
-                matcher_us = attempt.MatcherUs,
-                pressure_us = attempt.PressureUs,
-                active_us = ToMicroseconds(attempt.StartTimestamp, activeEndTimestamp),
-                wait_us = ToMicroseconds(activeEndTimestamp, endTimestamp),
-                total_us = ToMicroseconds(attempt.StartTimestamp, endTimestamp),
-                allocation_bytes = endAllocation - attempt.StartAllocation,
-                signal_to_first_claim_us = signalToClaimUs
-            };
-            Emit(record);
+                attempt.MatcherCalls += tryFindAttempt.MatcherCalls + tryFindAttempt.PressureMatcherCalls;
+                attempt.MatcherUs += tryFindAttempt.MatcherUs + tryFindAttempt.PressureMatcherUs;
+                attempt.PressureUs += tryFindAttempt.PressureUs;
+            }
         }
         catch
         {
@@ -418,8 +485,8 @@ internal static class SchedulerCostMeasurement
         }
     }
 
-    /// <summary>Completes and emits one request-search record.</summary>
-    internal static void FinishTryFind(TryFindAttempt attempt, string outcome)
+    /// <summary>Marks the exact boundaries of the existing scheduler event wait.</summary>
+    internal static void MarkPassWaitStart(PassAttempt attempt)
     {
         if (attempt is null)
         {
@@ -427,16 +494,176 @@ internal static class SchedulerCostMeasurement
         }
         try
         {
-            long endTimestamp = Stopwatch.GetTimestamp();
-            long endAllocation = GC.GetAllocatedBytesForCurrentThread();
-            attempt.Pass?.RecordTryFind(attempt, outcome);
+            attempt.WaitStartTimestamp = Stopwatch.GetTimestamp();
+        }
+        catch
+        {
+        }
+    }
+
+    /// <summary>Marks the exact boundaries of the existing scheduler event wait.</summary>
+    internal static void MarkPassWaitEnd(PassAttempt attempt)
+    {
+        if (attempt is null)
+        {
+            return;
+        }
+        try
+        {
+            attempt.WaitEndTimestamp = Stopwatch.GetTimestamp();
+        }
+        catch
+        {
+        }
+    }
+
+    /// <summary>Observes whether a maintained shutdown signal woke the current pass without creating a new pass.</summary>
+    internal static bool ObserveShutdownWake(BackendHandler handler, PassAttempt attempt, ref long lastSignalSequence)
+    {
+        if (attempt is null)
+        {
+            return false;
+        }
+        try
+        {
+            SignalSnapshot signal = handler.CaptureSchedulerSignalSnapshot();
+            if (signal.Sequence <= lastSignalSequence)
+            {
+                return false;
+            }
+            lastSignalSequence = signal.Sequence;
+            if (signal.Source != "shutdown")
+            {
+                return false;
+            }
+            attempt.SignalSource = "shutdown";
+            attempt.SignalCount = 1;
+            attempt.SignalAgeUs = 0;
+            attempt.SignalTimestamp = signal.Timestamp;
+            attempt.WakeSource = "shutdown";
+            return true;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    /// <summary>Captures a request-search endpoint before any nested record construction or emission.</summary>
+    internal static void CompleteTryFind(TryFindAttempt attempt, string outcome)
+    {
+        if (attempt is null)
+        {
+            return;
+        }
+        try
+        {
+            attempt.EndTimestamp = Stopwatch.GetTimestamp();
+            attempt.EndAllocation = GC.GetAllocatedBytesForCurrentThread();
+            attempt.Outcome = outcome;
+            if (attempt.Pass is null)
+            {
+                EmitCompletedTryFind(attempt);
+            }
+        }
+        catch
+        {
+        }
+    }
+
+    /// <summary>Completes a pressure-selection record, emitting only when it has no enclosing request search.</summary>
+    internal static void FinishPressure(PressureAttempt attempt, string outcome)
+    {
+        if (attempt is null)
+        {
+            return;
+        }
+        try
+        {
+            attempt.EndTimestamp = Stopwatch.GetTimestamp();
+            attempt.EndAllocation = GC.GetAllocatedBytesForCurrentThread();
+            attempt.Outcome = outcome;
+            int matcherCalls = attempt.CompatibilityCalls + attempt.PerfectCalls;
+            long matcherUs = attempt.CompatibilityUs + attempt.PerfectUs;
+            attempt.RequestAttempt?.RecordPressure(ToMicroseconds(attempt.StartTimestamp, attempt.EndTimestamp), outcome, matcherCalls, matcherUs);
+            if (attempt.RequestAttempt is null)
+            {
+                EmitCompletedPressure(attempt);
+            }
+        }
+        catch
+        {
+        }
+    }
+
+    /// <summary>Emits completed nested records followed by a completed pass record after all enclosing endpoints are captured.</summary>
+    internal static void EmitCompletedPass(PassAttempt attempt)
+    {
+        if (attempt is null)
+        {
+            return;
+        }
+        try
+        {
+            foreach (TryFindAttempt tryFindAttempt in attempt.TryFindAttempts)
+            {
+                EmitCompletedTryFind(tryFindAttempt);
+            }
+            long activeEndTimestamp = attempt.ActiveEndTimestamp == 0 ? attempt.EndTimestamp : attempt.ActiveEndTimestamp;
+            long waitUs = attempt.WaitStartTimestamp > 0 && attempt.WaitEndTimestamp > 0 ? ToMicroseconds(attempt.WaitStartTimestamp, attempt.WaitEndTimestamp) : 0;
+            long signalToClaimUs = attempt.SignalTimestamp > 0 && attempt.FirstClaimTimestamp > 0 ? ToMicroseconds(attempt.SignalTimestamp, attempt.FirstClaimTimestamp) : -1;
+            object record = new
+            {
+                schema = Schema,
+                record = "pass",
+                pass_id = attempt.PassId,
+                scenario = attempt.Scenario,
+                outcome = attempt.Outcome,
+                signal_source = attempt.SignalSource,
+                wake_source = attempt.WakeSource,
+                signal_count = attempt.SignalCount,
+                signal_age_us = attempt.SignalAgeUs,
+                pending_count = attempt.PendingCount,
+                backend_count = attempt.BackendCount,
+                pressure_count = attempt.PressureCount,
+                pressure_membership_count = attempt.PressureMembershipCount,
+                visits = attempt.Visits,
+                cancelled = attempt.Cancelled,
+                claimed = attempt.Claimed,
+                failed = attempt.Failed,
+                waiting = attempt.Waiting,
+                matcher_calls = attempt.MatcherCalls,
+                matcher_us = attempt.MatcherUs,
+                pressure_us = attempt.PressureUs,
+                active_us = ToMicroseconds(attempt.StartTimestamp, activeEndTimestamp),
+                wait_us = waitUs,
+                total_us = ToMicroseconds(attempt.StartTimestamp, attempt.EndTimestamp),
+                allocation_bytes = attempt.EndAllocation - attempt.StartAllocation,
+                signal_to_first_claim_us = signalToClaimUs
+            };
+            Emit(record);
+        }
+        catch
+        {
+        }
+    }
+
+    /// <summary>Emits one completed request-search record after its endpoint is captured.</summary>
+    private static void EmitCompletedTryFind(TryFindAttempt attempt)
+    {
+        try
+        {
+            foreach (PressureAttempt pressureAttempt in attempt.PressureAttempts)
+            {
+                EmitCompletedPressure(pressureAttempt);
+            }
             object record = new
             {
                 schema = Schema,
                 record = "try_find",
                 pass_id = attempt.Pass?.PassId ?? 0,
                 scenario = attempt.Pass?.Scenario ?? GetScenario(),
-                outcome,
+                outcome = attempt.Outcome,
                 ordinal = attempt.Ordinal,
                 has_model = attempt.HasModel,
                 has_filter = attempt.HasFilter,
@@ -454,8 +681,8 @@ internal static class SchedulerCostMeasurement
                 availability_sort_us = attempt.AvailabilitySortUs,
                 model_search_us = attempt.ModelSearchUs,
                 pressure_us = attempt.PressureUs,
-                total_us = ToMicroseconds(attempt.StartTimestamp, endTimestamp),
-                allocation_bytes = endAllocation - attempt.StartAllocation
+                total_us = ToMicroseconds(attempt.StartTimestamp, attempt.EndTimestamp),
+                allocation_bytes = attempt.EndAllocation - attempt.StartAllocation
             };
             Emit(record);
         }
@@ -464,26 +691,18 @@ internal static class SchedulerCostMeasurement
         }
     }
 
-    /// <summary>Completes and emits one pressure-selection record.</summary>
-    internal static void FinishPressure(PressureAttempt attempt, string outcome)
+    /// <summary>Emits one completed pressure-selection record after its endpoint is captured.</summary>
+    private static void EmitCompletedPressure(PressureAttempt attempt)
     {
-        if (attempt is null)
-        {
-            return;
-        }
         try
         {
-            long endTimestamp = Stopwatch.GetTimestamp();
-            long endAllocation = GC.GetAllocatedBytesForCurrentThread();
-            long totalUs = ToMicroseconds(attempt.StartTimestamp, endTimestamp);
-            attempt.RequestAttempt?.RecordPressure(totalUs);
             object record = new
             {
                 schema = Schema,
                 record = "pressure",
                 pass_id = attempt.PassId,
                 scenario = attempt.Scenario,
-                outcome,
+                outcome = attempt.Outcome,
                 possible_count = attempt.PossibleCount,
                 available_count = attempt.AvailableCount,
                 loader_count = attempt.LoaderCount,
@@ -495,8 +714,8 @@ internal static class SchedulerCostMeasurement
                 perfect_calls = attempt.PerfectCalls,
                 perfect_us = attempt.PerfectUs,
                 post_selection_us = attempt.PostSelectionUs,
-                total_us = totalUs,
-                allocation_bytes = endAllocation - attempt.StartAllocation
+                total_us = ToMicroseconds(attempt.StartTimestamp, attempt.EndTimestamp),
+                allocation_bytes = attempt.EndAllocation - attempt.StartAllocation
             };
             Emit(record);
         }
@@ -542,7 +761,7 @@ internal static class SchedulerCostMeasurement
     /// <summary>Normalizes a maintained scheduler signal source to the bounded schema catalog.</summary>
     internal static string NormalizeSignalSource(string source)
     {
-        return source is "shutdown" or "request" or "release" ? source : "timeout_or_external";
+        return source is "startup" or "shutdown" or "request" or "release" ? source : "timeout_or_external";
     }
 
     /// <summary>Converts a monotonic timestamp range to integer microseconds.</summary>

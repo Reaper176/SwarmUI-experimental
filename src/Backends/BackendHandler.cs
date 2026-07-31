@@ -34,16 +34,16 @@ public class BackendHandler
     /// <summary>Sequence number of the latest maintained scheduler signal for temporary Rank 26 measurement.</summary>
     private long SchedulerMeasurementSignalSequence = 0;
 
-    /// <summary>Monotonic timestamp of the latest maintained scheduler signal for temporary Rank 26 measurement.</summary>
-    private long SchedulerMeasurementSignalTimestamp = 0;
+    /// <summary>Atomic immutable timestamp and source snapshot of the latest maintained scheduler signal for temporary Rank 26 measurement.</summary>
+    private SchedulerCostMeasurement.SignalSnapshot SchedulerMeasurementSignalSnapshot = null;
 
-    /// <summary>Bounded source category of the latest maintained scheduler signal for temporary Rank 26 measurement.</summary>
-    private string SchedulerMeasurementSignalSource = "timeout_or_external";
+    /// <summary>Lazily created measurement-only lock that keeps maintained signal sequence and snapshot publication coherent.</summary>
+    private object SchedulerMeasurementSignalLock = null;
 
     /// <summary>Returns a nonblocking snapshot of the latest maintained scheduler signal.</summary>
     internal SchedulerCostMeasurement.SignalSnapshot CaptureSchedulerSignalSnapshot()
     {
-        return new(Volatile.Read(ref SchedulerMeasurementSignalSequence), Volatile.Read(ref SchedulerMeasurementSignalTimestamp), Volatile.Read(ref SchedulerMeasurementSignalSource));
+        return Volatile.Read(ref SchedulerMeasurementSignalSnapshot) ?? new(0, 0, "timeout_or_external");
     }
 
     /// <summary>Records a maintained scheduler signal when enabled, then wakes the unchanged scheduler event exactly once.</summary>
@@ -53,9 +53,18 @@ public class BackendHandler
         {
             try
             {
-                Volatile.Write(ref SchedulerMeasurementSignalSource, SchedulerCostMeasurement.NormalizeSignalSource(source));
-                Volatile.Write(ref SchedulerMeasurementSignalTimestamp, Stopwatch.GetTimestamp());
-                Interlocked.Increment(ref SchedulerMeasurementSignalSequence);
+                object signalLock = Volatile.Read(ref SchedulerMeasurementSignalLock);
+                if (signalLock is null)
+                {
+                    object candidateLock = new();
+                    signalLock = Interlocked.CompareExchange(ref SchedulerMeasurementSignalLock, candidateLock, null) ?? candidateLock;
+                }
+                lock (signalLock)
+                {
+                    long sequence = Interlocked.Increment(ref SchedulerMeasurementSignalSequence);
+                    SchedulerCostMeasurement.SignalSnapshot snapshot = new(sequence, Stopwatch.GetTimestamp(), SchedulerCostMeasurement.NormalizeSignalSource(source));
+                    Volatile.Write(ref SchedulerMeasurementSignalSnapshot, snapshot);
+                }
             }
             catch
             {
@@ -1418,20 +1427,26 @@ public class BackendHandler
                     return;
                 }
                 long modelSearchStart = Stopwatch.GetTimestamp();
-                if (Model is not null)
+                try
                 {
-                    List<T2IBackendData> correctModel = [.. available.Where(b => b.Backend.CurrentModelName == Model.Name)];
-                    if (correctModel.Any())
+                    if (Model is not null)
                     {
-                        T2IBackendData backend = correctModel.FirstOrDefault();
-                        Logs.Debug($"[BackendHandler] Backend request #{ID} found correct model on #{backend.ID}");
-                        Result = new T2IBackendAccess(backend);
-                        attempt.Pass?.NotifyClaim();
-                        outcome = "claim_loaded_model";
-                        return;
+                        List<T2IBackendData> correctModel = [.. available.Where(b => b.Backend.CurrentModelName == Model.Name)];
+                        if (correctModel.Any())
+                        {
+                            T2IBackendData backend = correctModel.FirstOrDefault();
+                            Logs.Debug($"[BackendHandler] Backend request #{ID} found correct model on #{backend.ID}");
+                            Result = new T2IBackendAccess(backend);
+                            attempt.Pass?.NotifyClaim();
+                            outcome = "claim_loaded_model";
+                            return;
+                        }
                     }
                 }
-                attempt.ModelSearchUs = SchedulerCostMeasurement.ToMicroseconds(modelSearchStart, Stopwatch.GetTimestamp());
+                finally
+                {
+                    attempt.ModelSearchUs = SchedulerCostMeasurement.ToMicroseconds(modelSearchStart, Stopwatch.GetTimestamp());
+                }
                 if (Pressure is null && Model is not null)
                 {
                     Logs.Verbose($"[BackendHandler] Backend request #{ID} is creating pressure for model {Model.Name}...");
@@ -1452,7 +1467,7 @@ public class BackendHandler
                     NotifyWillLoad();
                     NotifyWillLoad = null;
                 }
-                outcome = Pressure?.IsLoading ?? false ? "load_started" : "pressure_wait";
+                outcome = attempt.PressureOutcome ?? "pressure_wait";
             }
             catch
             {
@@ -1461,7 +1476,7 @@ public class BackendHandler
             }
             finally
             {
-                SchedulerCostMeasurement.FinishTryFind(attempt, outcome);
+                SchedulerCostMeasurement.CompleteTryFind(attempt, outcome);
             }
         }
     }
@@ -1606,6 +1621,7 @@ public class BackendHandler
                         request.Failure = ex;
                         Logs.Error($"[BackendHandler] Backend request #{request.ID} failed: {ex.ReadableString()}");
                     }
+                    passAttempt?.RecordRequestState(request.Result is not null, request.Failure is not null);
                     if (request.Result is not null || request.Failure is not null)
                     {
                         T2IBackendRequests.TryRemove(request.ID, out _);
@@ -1644,6 +1660,7 @@ public class BackendHandler
                         foreach (T2IBackendRequest request in T2IBackendRequests.Values.ToArray())
                         {
                             request.Failure = new TimeoutException($"No backend has responded in {Program.ServerSettings.Backends.MaxTimeoutMinutes} minutes.");
+                            passAttempt?.RecordWaitingFailure();
                             anyMoved = true;
                             request.CompletedEvent.Set();
                         }
@@ -1656,21 +1673,38 @@ public class BackendHandler
                     Program.TickNoGenerationsEvent?.Invoke();
                 }
                 SchedulerCostMeasurement.MarkPassActiveComplete(passAttempt);
+                bool shutdownWake = false;
                 if (empty || !anyMoved)
                 {
-                    CheckBackendsSignal.WaitAsync(TimeSpan.FromSeconds(1), Program.GlobalProgramCancel).Wait();
+                    SchedulerCostMeasurement.MarkPassWaitStart(passAttempt);
+                    try
+                    {
+                        CheckBackendsSignal.WaitAsync(TimeSpan.FromSeconds(1), Program.GlobalProgramCancel).Wait();
+                    }
+                    catch
+                    {
+                        shutdownWake = SchedulerCostMeasurement.ObserveShutdownWake(this, passAttempt, ref lastSignalSequence);
+                        throw;
+                    }
+                    finally
+                    {
+                        SchedulerCostMeasurement.MarkPassWaitEnd(passAttempt);
+                    }
+                    shutdownWake = SchedulerCostMeasurement.ObserveShutdownWake(this, passAttempt, ref lastSignalSequence);
                 }
+                SchedulerCostMeasurement.CompletePass(passAttempt, shutdownWake ? "shutdown" : startedEmpty ? "idle" : anyMoved ? "progress" : "waiting");
                 if (MonitorTimes)
                 {
                     mark("PostSignal");
                     BackendQueueTimer.Debug($"anyMoved={anyMoved}, empty={empty}");
                 }
-                SchedulerCostMeasurement.FinishPass(passAttempt, startedEmpty ? "idle" : anyMoved ? "progress" : "waiting");
+                SchedulerCostMeasurement.EmitCompletedPass(passAttempt);
                 passAttempt = null;
             }
             catch (Exception ex)
             {
-                SchedulerCostMeasurement.FinishPass(passAttempt, "error");
+                SchedulerCostMeasurement.CompletePass(passAttempt, passAttempt?.WakeSource == "shutdown" ? "shutdown" : "error");
+                SchedulerCostMeasurement.EmitCompletedPass(passAttempt);
                 Logs.Error($"Backend handler loop error: {ex.ReadableString()}");
                 if (Program.GlobalProgramCancel.IsCancellationRequested)
                 {
@@ -1812,6 +1846,7 @@ public class BackendHandler
                     {
                         Logs.Warning($"[BackendHandler] All backends failed to load the model '{highestPressure.Model.RawFilePath}'! Cannot generate anything.");
                         releasePressure();
+                        outcome = "all_refused";
                         string fixReason(string reason)
                         {
                             if (reason.Contains("ERROR: Could not detect model type of:"))
@@ -2049,7 +2084,10 @@ public class BackendHandler
         }
         catch
         {
-            outcome = "failed";
+            if (outcome != "all_refused")
+            {
+                outcome = "failed";
+            }
             throw;
         }
         finally

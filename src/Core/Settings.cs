@@ -221,9 +221,11 @@ public class Settings : AutoConfiguration
         [ConfigComment("How many models can be loaded in a model list at once.\nPast this count, the list will simply be cut off.\nUse sub-folder organization to prevent issues.")]
         public int ModelListSanityCap = 5000;
 
+        /// <summary>Whether temporary Rank 26 scheduler-cost measurement is enabled.</summary>
         [ConfigComment("Temporary Rank 26 scheduler-cost measurement switch. When enabled, emits bounded scheduler measurement records. Defaults to false.")]
         public bool SchedulerMeasurementEnabled = false;
 
+        /// <summary>Operator-supplied synthetic scenario label for temporary Rank 26 scheduler-cost measurement.</summary>
         [ConfigComment("Temporary Rank 26 scheduler-cost measurement scenario label. Use a synthetic topology/workload description. Defaults to empty.")]
         public string SchedulerMeasurementScenario = "";
     }
