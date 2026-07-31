@@ -2,7 +2,7 @@
 
 **Date:** 2026-07-31
 **Rank:** 29
-**Status:** Evidence collected with scoped `GO`; instrumentation removal pending
+**Status:** Measurement completed with scoped `GO`; instrumentation removed and final projection verified
 **Approved base:** `503fb7244375db0e20bcfa36bfc556f6d3c3d20b`
 
 ## Decision Authority
@@ -260,7 +260,35 @@ does not authorize change. `GO` permits only a separate descriptor/lazy-record
 design preserving Rank 6 durability and visibility contracts. `NO-GO` permits no
 optimization.
 
-After evidence review, remove both settings, the recorder, and every hook. The
-final `src` tree OID must exactly equal approved base
+The completed rollback removes both settings, the recorder, and every hook. The
+final `src` tree OID exactly equals approved base
 `503fb7244375db0e20bcfa36bfc556f6d3c3d20b:src`. Only this design, its plan, the
 audit disposition, and final evidence documentation may remain.
+
+### Removal and post-removal verification
+
+Removal commit `f9abc2dd547180ae8a7f78f291933dcd2b64b9c7` deletes the recorder
+and settings and restores the original inventory, lookup, locked hydration, and
+snapshot bodies. Final `src` tree OID
+`26f65adf96afc130baa8b6fedba84b437d7163dc` exactly equals approved base
+`503fb7244375db0e20bcfa36bfc556f6d3c3d20b:src`. All
+`WorkflowHydrationMeasurementEnabled`,
+`WorkflowHydrationMeasurementScenario`, `WorkflowHydrationCostMeasurement`, and
+`[Rank29WorkflowHydration]` source tokens are absent.
+
+The fresh external post-removal Release build under
+`/tmp/swarmui-rank29-post-VSZ02h` completed with 0 warnings and 0 errors;
+`SwarmUI.dll` SHA-256 is
+`c6b5305538d32df58f7a66c1c41644530f388992b2982271dbe369328e855fea`.
+The uninstrumented harness under `/tmp/rank29-post-harness-H7V11Q` compiled with
+0 errors and one `MSB3277` `DiagnosticSource` assembly-unification warning, then
+passed 38 assertions with 0 failures. Harness-source SHA-256 is
+`1af7ade5987cccdf7d8c82f6aca12ec985506eb914b2f162a15a9cc66afd0cdf`.
+It covers lazy inventory, cold/warm sorted listing, example restoration, direct
+and parameter-prompt reads, partially cold listing, missing/invalid omission,
+prepublished visibility, exact sequential/concurrent parity, and public map
+identity.
+
+Rank 29 is complete. The scoped `GO` authorizes only a separate design; no
+descriptor cache, record split, hydration, schema, lock, recovery, save/delete,
+or other production behavior change is present in the final source projection.
