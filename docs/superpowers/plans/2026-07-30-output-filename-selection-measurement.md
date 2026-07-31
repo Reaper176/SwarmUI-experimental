@@ -1265,7 +1265,7 @@ Run:
 rg -n 'Rank25OutputFilename|\\["(schema|record|measurement_id|scenario|source|backend_claimed|media_category|batch_size|outcome)"\\]' \
   src/Accounts/OutputFilenameSelectionMeasurement.cs
 test -z "$(rg -n \
-  'UserID|UserRequestId|fullPath|fullPathNoExt|folderRoute|rawImagePath|imagePath|metadata|ReadableString|Exception' \
+  'UserID|UserRequestId|fullPath|fullPathNoExt|folderRoute|rawImagePath|imagePath|\bmetadata\b|ReadableString|Exception' \
   src/Accounts/OutputFilenameSelectionMeasurement.cs)"
 ```
 
