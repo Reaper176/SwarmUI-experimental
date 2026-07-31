@@ -103,11 +103,6 @@ Run in the primary worktree:
 ```bash
 git rev-parse HEAD
 git status --short
-git diff --numstat -- \
-  src/Data/Settings.fds \
-  src/Pages/Text2Image.cshtml \
-  src/wwwroot/js/genpage/gentab/loras.js \
-  src/wwwroot/js/genpage/main.js
 ```
 
 Expected protected primary state:
@@ -118,11 +113,11 @@ Expected protected primary state:
  M src/wwwroot/js/genpage/gentab/loras.js
  M src/wwwroot/js/genpage/main.js
 ?? Data.pre-restore-2026-07-19/
-83	3	src/Data/Settings.fds
-9	2	src/Pages/Text2Image.cshtml
-2	0	src/wwwroot/js/genpage/gentab/loras.js
-0	1	src/wwwroot/js/genpage/main.js
 ```
+
+Rank 25 agents verify only status/path metadata for protected primary changes.
+Previously recorded numstats are historical evidence and are not recomputed
+because protected contents must not be read.
 
 - [ ] **Step 2: Capture the exact maintained save/caller inventory**
 
