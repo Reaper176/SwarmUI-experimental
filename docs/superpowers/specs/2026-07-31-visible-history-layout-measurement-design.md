@@ -325,11 +325,35 @@ the decision.
 
 ## Removal and Closure
 
-After source and evidence review, remove every recorder, key, timestamp, and
-hook. Confirm final `src` tree OID exactly equals approved base, run static syntax
-and token inventories, perform a fresh external-output publish and uninstrumented
-full-page browser sanity, update the audit, obtain final specification and
-quality approval, and integrate only into local `master`.
+Independent final evidence reviews returned `RANK31_FINAL_SPEC_APPROVED` and
+`RANK31_FINAL_QUALITY_APPROVED`. Removal commit
+`831949065723e29b0ce43e6324c66e59c7ddb485` removed every recorder, key,
+timestamp, and hook. Its `src` tree OID is
+`26f65adf96afc130baa8b6fedba84b437d7163dc`, exactly equal to approved base
+`b34816189c4184c5072ed2199b31f1bee2a67cd0`; `node --check` passed, every Rank
+31 instrumentation token was absent, and neither `src/bin` nor `src/obj`
+existed.
+
+The fresh external post-removal Release publish under
+`/tmp/swarmui-rank31-post-Mu95G6` completed with 0 warnings and 0 errors.
+`SwarmUI.dll` SHA-256 is
+`afd94e4dd7e44f40275c4886c28680a8c3f4f0e8557527cf7c4bd0a8707f523e` and
+the served uninstrumented `outputhistory.js` SHA-256 is
+`7925ff37427529e706c1b49945cfafc4ecb80e5302500e66596c9c27b34791b9`.
+The uninstrumented full-page browser sanity passed 16 assertions with 0
+failures while covering served-token absence, assets, exact 1,000-entry
+list/map/cache/DOM order and identity, top/middle/bottom hydration,
+invocation/coalescing/tab paths, and root fast-first/background prefix,
+chunking, and identity. It observed the same nine bounded backend-free page
+errors. Harness SHA-256 is
+`fcdeedfb215d6bf711cd9d2588bd0e03e2a0a35e0ef75901aaf537d1fbaab16a`.
+
+The maintainer's one-time override authorized these external builds, temporary
+local server, synthetic image-history output, headless Chromium collection,
+and post-removal sanity. It did not authorize repository user-data access or
+establish real-user-history, ordinary backend/generation, GPU,
+Firefox/Safari/mobile-device, network-filesystem, production-frequency/GC, or
+other-platform behavior. No production optimization was implemented.
 
 Design reviews returned `RANK31_DESIGN_SPEC_APPROVED` and
 `RANK31_DESIGN_QUALITY_APPROVED`.
