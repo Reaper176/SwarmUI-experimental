@@ -31,10 +31,10 @@ internal static class WorkflowCleanupCostMeasurement
     private static long NextMeasurementId = 0;
 
     /// <summary>Endpoint data for one timed, current-thread allocation operation.</summary>
-    internal readonly record struct OperationStart(long Timestamp, long Allocation);
+    internal readonly record struct OperationStart(long Timestamp, long Allocation, bool IsValid);
 
     /// <summary>Start data and bounded ordinal for one class scan.</summary>
-    internal readonly record struct ScanStart(int Ordinal, long Timestamp, long Allocation);
+    internal readonly record struct ScanStart(int Ordinal, long Timestamp, long Allocation, bool IsValid);
 
     /// <summary>Bounded aggregate for one stock class scan.</summary>
     internal sealed class ScanSlot
@@ -56,6 +56,9 @@ internal static class WorkflowCleanupCostMeasurement
 
         /// <summary>Current-thread allocated bytes for this scan.</summary>
         public long AllocationBytes;
+
+        /// <summary>Whether this scan's timing and current-thread allocation endpoints are valid.</summary>
+        public bool TimingAllocationValid;
     }
 
     /// <summary>Bounded measurements accumulated for one priority-200 cleanup action.</summary>
@@ -124,6 +127,9 @@ internal static class WorkflowCleanupCostMeasurement
         /// <summary>Current-thread allocated bytes for class scans beyond the bounded stock slots.</summary>
         public long ScanOverflowAllocationBytes;
 
+        /// <summary>Whether every overflow scan's timing and current-thread allocation endpoints are valid.</summary>
+        public bool ScanOverflowTimingAllocationValid = true;
+
         /// <summary>Connection-replacement calls.</summary>
         public long ReplacementCalls;
 
@@ -145,6 +151,9 @@ internal static class WorkflowCleanupCostMeasurement
         /// <summary>Aggregate connection-replacement current-thread allocated bytes.</summary>
         public long ReplacementAllocationBytes;
 
+        /// <summary>Whether every replacement timing and current-thread allocation endpoint is valid.</summary>
+        public bool ReplacementTimingAllocationValid = true;
+
         /// <summary>Fixed-point passes executed.</summary>
         public long FixedPointPasses;
 
@@ -160,6 +169,9 @@ internal static class WorkflowCleanupCostMeasurement
         /// <summary>Aggregate fixed-point-loop current-thread allocated bytes.</summary>
         public long FixedPointAllocationBytes;
 
+        /// <summary>Whether every fixed-point timing and current-thread allocation endpoint is valid.</summary>
+        public bool FixedPointTimingAllocationValid = true;
+
         /// <summary>Connectivity indexes actually rebuilt.</summary>
         public long ConnectivityRebuilds;
 
@@ -174,6 +186,9 @@ internal static class WorkflowCleanupCostMeasurement
 
         /// <summary>Aggregate connectivity-index rebuild current-thread allocated bytes.</summary>
         public long ConnectivityAllocationBytes;
+
+        /// <summary>Whether every connectivity timing and current-thread allocation endpoint is valid.</summary>
+        public bool ConnectivityTimingAllocationValid = true;
 
         /// <summary>Whether post-cleanup compact serialization was captured successfully.</summary>
         public bool SerializationValid;
@@ -196,14 +211,14 @@ internal static class WorkflowCleanupCostMeasurement
         /// <summary>Begins one bounded class-scan measurement.</summary>
         public ScanStart BeginScan()
         {
+            int ordinal = ++RunScanCount;
             try
             {
-                int ordinal = ++RunScanCount;
-                return new(ordinal, Stopwatch.GetTimestamp(), GC.GetAllocatedBytesForCurrentThread());
+                return new(ordinal, Stopwatch.GetTimestamp(), GC.GetAllocatedBytesForCurrentThread(), true);
             }
             catch
             {
-                return new(0, 0, 0);
+                return new(ordinal, 0, 0, false);
             }
         }
 
@@ -212,10 +227,23 @@ internal static class WorkflowCleanupCostMeasurement
         {
             try
             {
-                long endTimestamp = Stopwatch.GetTimestamp();
-                long endAllocation = GC.GetAllocatedBytesForCurrentThread();
-                long elapsedUs = ToMicroseconds(scan.Timestamp, endTimestamp);
-                long allocationBytes = AllocationDelta(scan.Allocation, endAllocation);
+                bool timingAllocationValid = scan.IsValid;
+                long elapsedUs = 0;
+                long allocationBytes = 0;
+                if (timingAllocationValid)
+                {
+                    try
+                    {
+                        long endTimestamp = Stopwatch.GetTimestamp();
+                        long endAllocation = GC.GetAllocatedBytesForCurrentThread();
+                        elapsedUs = ToMicroseconds(scan.Timestamp, endTimestamp);
+                        allocationBytes = AllocationDelta(scan.Allocation, endAllocation);
+                    }
+                    catch
+                    {
+                        timingAllocationValid = false;
+                    }
+                }
                 if (scan.Ordinal is >= 1 and <= ScanSlotCount)
                 {
                     ScanSlot slot = ScanSlots[scan.Ordinal - 1];
@@ -225,8 +253,9 @@ internal static class WorkflowCleanupCostMeasurement
                     slot.Callbacks = Math.Max(0, callbacks);
                     slot.ElapsedUs = elapsedUs;
                     slot.AllocationBytes = allocationBytes;
+                    slot.TimingAllocationValid = timingAllocationValid;
                 }
-                else
+                else if (scan.Ordinal > ScanSlotCount)
                 {
                     ScanOverflowCount++;
                     ScanOverflowExamined += Math.Max(0, examined);
@@ -234,6 +263,14 @@ internal static class WorkflowCleanupCostMeasurement
                     ScanOverflowCallbacks += Math.Max(0, callbacks);
                     ScanOverflowUs += elapsedUs;
                     ScanOverflowAllocationBytes += allocationBytes;
+                    if (!timingAllocationValid)
+                    {
+                        ScanOverflowTimingAllocationValid = false;
+                    }
+                }
+                else
+                {
+                    ScanOverflowTimingAllocationValid = false;
                 }
             }
             catch
@@ -246,11 +283,11 @@ internal static class WorkflowCleanupCostMeasurement
         {
             try
             {
-                return new(Stopwatch.GetTimestamp(), GC.GetAllocatedBytesForCurrentThread());
+                return new(Stopwatch.GetTimestamp(), GC.GetAllocatedBytesForCurrentThread(), true);
             }
             catch
             {
-                return new(0, 0);
+                return new(0, 0, false);
             }
         }
 
@@ -259,18 +296,24 @@ internal static class WorkflowCleanupCostMeasurement
         {
             try
             {
-                long endTimestamp = Stopwatch.GetTimestamp();
-                long endAllocation = GC.GetAllocatedBytesForCurrentThread();
                 ReplacementCalls++;
                 ReplacementNodes += Math.Max(0, nodes);
                 ReplacementDirectInputs += Math.Max(0, directInputs);
                 ReplacementMatches += Math.Max(0, matches);
                 ReplacementAssignments += Math.Max(0, assignments);
+                if (!start.IsValid)
+                {
+                    ReplacementTimingAllocationValid = false;
+                    return;
+                }
+                long endTimestamp = Stopwatch.GetTimestamp();
+                long endAllocation = GC.GetAllocatedBytesForCurrentThread();
                 ReplacementUs += ToMicroseconds(start.Timestamp, endTimestamp);
                 ReplacementAllocationBytes += AllocationDelta(start.Allocation, endAllocation);
             }
             catch
             {
+                ReplacementTimingAllocationValid = false;
             }
         }
 
@@ -279,16 +322,22 @@ internal static class WorkflowCleanupCostMeasurement
         {
             try
             {
-                long endTimestamp = Stopwatch.GetTimestamp();
-                long endAllocation = GC.GetAllocatedBytesForCurrentThread();
                 FixedPointPasses += Math.Max(0, passes);
                 FixedPointCandidates += Math.Max(0, candidates);
                 FixedPointRemovals += Math.Max(0, removals);
+                if (!start.IsValid)
+                {
+                    FixedPointTimingAllocationValid = false;
+                    return;
+                }
+                long endTimestamp = Stopwatch.GetTimestamp();
+                long endAllocation = GC.GetAllocatedBytesForCurrentThread();
                 FixedPointUs += ToMicroseconds(start.Timestamp, endTimestamp);
                 FixedPointAllocationBytes += AllocationDelta(start.Allocation, endAllocation);
             }
             catch
             {
+                FixedPointTimingAllocationValid = false;
             }
         }
 
@@ -297,16 +346,22 @@ internal static class WorkflowCleanupCostMeasurement
         {
             try
             {
-                long endTimestamp = Stopwatch.GetTimestamp();
-                long endAllocation = GC.GetAllocatedBytesForCurrentThread();
                 ConnectivityRebuilds++;
                 ConnectivityNodes += Math.Max(0, nodes);
                 ConnectivityDirectInputs += Math.Max(0, directInputs);
+                if (!start.IsValid)
+                {
+                    ConnectivityTimingAllocationValid = false;
+                    return;
+                }
+                long endTimestamp = Stopwatch.GetTimestamp();
+                long endAllocation = GC.GetAllocatedBytesForCurrentThread();
                 ConnectivityUs += ToMicroseconds(start.Timestamp, endTimestamp);
                 ConnectivityAllocationBytes += AllocationDelta(start.Allocation, endAllocation);
             }
             catch
             {
+                ConnectivityTimingAllocationValid = false;
             }
         }
     }
@@ -468,7 +523,8 @@ internal static class WorkflowCleanupCostMeasurement
                     matched = slot.Matched,
                     callbacks = slot.Callbacks,
                     elapsed_us = slot.ElapsedUs,
-                    allocation_bytes = slot.AllocationBytes
+                    allocation_bytes = slot.AllocationBytes,
+                    timing_allocation_valid = slot.TimingAllocationValid
                 });
             }
             object record = new
@@ -495,6 +551,7 @@ internal static class WorkflowCleanupCostMeasurement
                 scan_overflow_callbacks = attempt.ScanOverflowCallbacks,
                 scan_overflow_us = attempt.ScanOverflowUs,
                 scan_overflow_allocation_bytes = attempt.ScanOverflowAllocationBytes,
+                scan_overflow_timing_allocation_valid = attempt.ScanOverflowTimingAllocationValid,
                 replacement_calls = attempt.ReplacementCalls,
                 replacement_nodes = attempt.ReplacementNodes,
                 replacement_direct_inputs = attempt.ReplacementDirectInputs,
@@ -502,16 +559,19 @@ internal static class WorkflowCleanupCostMeasurement
                 replacement_assignments = attempt.ReplacementAssignments,
                 replacement_us = attempt.ReplacementUs,
                 replacement_allocation_bytes = attempt.ReplacementAllocationBytes,
+                replacement_timing_allocation_valid = attempt.ReplacementTimingAllocationValid,
                 fixed_point_passes = attempt.FixedPointPasses,
                 fixed_point_candidates = attempt.FixedPointCandidates,
                 fixed_point_removals = attempt.FixedPointRemovals,
                 fixed_point_us = attempt.FixedPointUs,
                 fixed_point_allocation_bytes = attempt.FixedPointAllocationBytes,
+                fixed_point_timing_allocation_valid = attempt.FixedPointTimingAllocationValid,
                 connectivity_rebuilds = attempt.ConnectivityRebuilds,
                 connectivity_nodes = attempt.ConnectivityNodes,
                 connectivity_direct_inputs = attempt.ConnectivityDirectInputs,
                 connectivity_us = attempt.ConnectivityUs,
                 connectivity_allocation_bytes = attempt.ConnectivityAllocationBytes,
+                connectivity_timing_allocation_valid = attempt.ConnectivityTimingAllocationValid,
                 serialization_valid = attempt.SerializationValid,
                 serialization_us = attempt.SerializationUs,
                 serialization_allocation_bytes = attempt.SerializationAllocationBytes,
