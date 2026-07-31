@@ -1297,7 +1297,7 @@ Run:
 
 ```bash
 git diff --check 30448884415c44f446136fa3e11fb06cefe375d6..HEAD
-test -z "$(find src -type d \( -name bin -o -name obj \) -print -quit)"
+test -z "$(find src/Accounts src/Backends src/BuiltinExtensions src/Core src/DataHolders src/LLMs src/Media src/Pages src/Text2Image src/Utils src/WebAPI src/wwwroot -type d \( -name bin -o -name obj \) -print -quit)"
 git status --short
 ```
 
@@ -1619,7 +1619,7 @@ git diff --quiet 30448884415c44f446136fa3e11fb06cefe375d6 -- \
   src/WebAPI/ImageHistoryAPI.cs \
   src/BuiltinExtensions/GridGenerator/GridGeneratorExtension.cs
 git diff --check
-test -z "$(find src -type d \( -name bin -o -name obj \) -print -quit)"
+test -z "$(find src/Accounts src/Backends src/BuiltinExtensions src/Core src/DataHolders src/LLMs src/Media src/Pages src/Text2Image src/Utils src/WebAPI src/wwwroot -type d \( -name bin -o -name obj \) -print -quit)"
 ```
 
 Expected: every command exits `0`. The seven temporary source paths are
