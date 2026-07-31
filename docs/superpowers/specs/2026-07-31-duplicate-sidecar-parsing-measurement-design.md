@@ -2,7 +2,7 @@
 
 **Date:** 2026-07-31
 **Rank:** 32
-**Status:** Proposed for review
+**Status:** Approved for instrumentation
 **Approved base:** `5b536e1ff2d876834419d0138d8929dae3f74909`
 
 ## Decision Authority
@@ -279,3 +279,9 @@ the log prefix. The final `src` tree OID must equal approved base exactly.
 Static syntax/token/whitespace checks, a fresh external post-removal Release
 publish, and an uninstrumented synthetic parity sanity must pass before the
 audit can close. Rank 32 implements no production optimization.
+
+Design reviews of exact head
+`af198fc4400859e6e8a42232ac51619fd9042628` returned
+`RANK32_DESIGN_SPEC_APPROVED` and `RANK32_DESIGN_QUALITY_APPROVED` with no
+remaining findings. The approved-base harness passed four behavior assertions
+and failed only its expected missing-instrumentation assertion.
