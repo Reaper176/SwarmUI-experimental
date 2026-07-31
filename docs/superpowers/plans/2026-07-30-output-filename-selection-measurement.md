@@ -79,7 +79,8 @@ Run in the Rank 25 worktree:
 ```bash
 git rev-parse HEAD
 git merge-base 30448884415c44f446136fa3e11fb06cefe375d6 HEAD
-git diff --quiet 30448884415c44f446136fa3e11fb06cefe375d6 -- src
+test "$(git rev-parse 30448884415c44f446136fa3e11fb06cefe375d6:src)" = \
+  "$(git rev-parse HEAD:src)"
 git status --short
 ```
 
@@ -89,9 +90,10 @@ Expected from `merge-base`:
 30448884415c44f446136fa3e11fb06cefe375d6
 ```
 
-`HEAD` must be the committed Rank 25 plan descendant, the source-tree
-comparison and status must both be clean, and the approved base must remain its
-merge base.
+`HEAD` must be the committed Rank 25 plan descendant, the committed `src`
+tree OID must equal the approved-base `src` tree OID, the worktree status must
+be clean, and the approved base must remain its merge base. The tree-OID
+assertion fails fast if any committed source differs.
 
 Run in the primary worktree:
 
@@ -129,14 +131,15 @@ rg -n "SaveImage\\(" \
   src/WebAPI/T2IAPI.cs \
   src/WebAPI/ImageHistoryAPI.cs \
   src/BuiltinExtensions/GridGenerator/GridGeneratorExtension.cs
-rg -n "TryReserveOutputFilename|Directory\\.EnumerateFiles|RecentlyBlockedFilenames\\.Keys|User\\.UserLock" \
+rg -n "TryReserveOutputFilename|Directory\\.EnumerateFiles|RecentlyBlockedFilenames\\.Keys\\.Any|User\\.UserLock" \
   src/Accounts/Session.cs
 ```
 
 Expected:
 
 - one public `Session.SaveImage` declaration;
-- four maintained source files containing five direct call sites;
+- five `SaveImage(` matches across four maintained source files: one public
+  declaration and four direct calls;
 - one private `TryReserveOutputFilename`;
 - one target-folder enumeration;
 - one reservation-key collision predicate;
@@ -150,7 +153,18 @@ Run:
 test ! -e src/Accounts/OutputFilenameSelectionMeasurement.cs
 test -z "$(rg -l \
   'OutputFilenameMeasurementEnabled|OutputFilenameMeasurementScenario|Rank25OutputFilename|OutputFilenameSelectionContext' \
-  src)"
+  src/Accounts \
+  src/Backends \
+  src/BuiltinExtensions \
+  src/Core \
+  src/DataHolders \
+  src/LLMs \
+  src/Media \
+  src/Pages \
+  src/Text2Image \
+  src/Utils \
+  src/WebAPI \
+  src/wwwroot)"
 ```
 
 Expected: exit `0`, proving the temporary measurement surface is absent.
@@ -1415,7 +1429,18 @@ Run:
 ```bash
 test -n "$(rg -l \
   'OutputFilenameMeasurementEnabled|OutputFilenameMeasurementScenario|Rank25OutputFilename|OutputFilenameSelectionContext' \
-  src)"
+  src/Accounts \
+  src/Backends \
+  src/BuiltinExtensions \
+  src/Core \
+  src/DataHolders \
+  src/LLMs \
+  src/Media \
+  src/Pages \
+  src/Text2Image \
+  src/Utils \
+  src/WebAPI \
+  src/wwwroot)"
 ```
 
 Expected: exit `0`, proving the temporary surface still exists.
@@ -1469,14 +1494,31 @@ Run:
 test ! -e src/Accounts/OutputFilenameSelectionMeasurement.cs
 test -z "$(rg -l \
   'OutputFilenameMeasurementEnabled|OutputFilenameMeasurementScenario|Rank25OutputFilename|OutputFilenameSelectionContext|OutputFilenameSelectionAttempt' \
-  src)"
-git diff --quiet 30448884415c44f446136fa3e11fb06cefe375d6 -- src
+  src/Accounts \
+  src/Backends \
+  src/BuiltinExtensions \
+  src/Core \
+  src/DataHolders \
+  src/LLMs \
+  src/Media \
+  src/Pages \
+  src/Text2Image \
+  src/Utils \
+  src/WebAPI \
+  src/wwwroot)"
+git diff --quiet 30448884415c44f446136fa3e11fb06cefe375d6 -- \
+  src/Accounts/OutputFilenameSelectionMeasurement.cs \
+  src/Core/Settings.cs \
+  src/Accounts/Session.cs \
+  src/WebAPI/T2IAPI.cs \
+  src/WebAPI/ImageHistoryAPI.cs \
+  src/BuiltinExtensions/GridGenerator/GridGeneratorExtension.cs
 git diff --check
 test -z "$(find src -type d \( -name bin -o -name obj \) -print -quit)"
 ```
 
-Expected: every command exits `0`. The final production tree is byte-identical
-to the approved base.
+Expected: every command exits `0`. The six temporary source paths are
+byte-identical to the approved base before the removal commit.
 
 - [ ] **Step 6: Commit removal**
 
@@ -1490,10 +1532,12 @@ git add \
   src/BuiltinExtensions/GridGenerator/GridGeneratorExtension.cs
 git diff --cached --check
 git commit -m "refactor: remove output filename measurement instrumentation"
+test "$(git rev-parse 30448884415c44f446136fa3e11fb06cefe375d6:src)" = \
+  "$(git rev-parse HEAD:src)"
 ```
 
-Expected: inverse source projection; post-commit `git diff
-30448884..HEAD -- src` is empty.
+Expected: inverse source projection; after the commit, the full committed
+`src` tree OID equals the approved-base `src` tree OID.
 
 - [ ] **Step 7: Ask the maintainer for final uninstrumented sanity**
 
@@ -1616,7 +1660,8 @@ Run:
 
 ```bash
 git status --short
-git diff --quiet 30448884415c44f446136fa3e11fb06cefe375d6 -- src
+test "$(git rev-parse 30448884415c44f446136fa3e11fb06cefe375d6:src)" = \
+  "$(git rev-parse HEAD:src)"
 git log --oneline --decorate \
   30448884415c44f446136fa3e11fb06cefe375d6..HEAD
 git diff --name-only \
