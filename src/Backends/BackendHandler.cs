@@ -10,7 +10,6 @@ using SwarmUI.Utils;
 using System.IO;
 using System.Net.Http;
 using System.Reflection;
-using System.Diagnostics;
 
 namespace SwarmUI.Backends;
 
@@ -30,57 +29,6 @@ public class BackendHandler
 
     /// <summary>Signal when any backends are available, or other reason to check backends (eg new requests came in).</summary>
     public AsyncAutoResetEvent CheckBackendsSignal = new(false);
-
-    /// <summary>Nullable immutable scheduler signal state, left null while temporary Rank 26 measurement is disabled.</summary>
-    private SchedulerCostMeasurement.SignalState SchedulerMeasurementSignalState = null;
-
-    /// <summary>Reads the immutable temporary Rank 26 scheduler signal state in one bounded, non-blocking operation.</summary>
-    internal SchedulerCostMeasurement.SignalState CaptureSchedulerSignalSnapshot()
-    {
-        return Volatile.Read(ref SchedulerMeasurementSignalState);
-    }
-
-    /// <summary>Lock-free CAS-publishes a maintained scheduler signal when enabled, then wakes the unchanged scheduler event exactly once.</summary>
-    internal void SignalScheduler(string source)
-    {
-        if (SchedulerCostMeasurement.IsEnabled())
-        {
-            try
-            {
-                string normalizedSource = SchedulerCostMeasurement.NormalizeSignalSource(source);
-                SchedulerCostMeasurement.SignalState current = Volatile.Read(ref SchedulerMeasurementSignalState);
-                while (true)
-                {
-                    long requestCount = current?.RequestCount ?? 0;
-                    long releaseCount = current?.ReleaseCount ?? 0;
-                    long shutdownCount = current?.ShutdownCount ?? 0;
-                    if (normalizedSource == "request")
-                    {
-                        requestCount++;
-                    }
-                    else if (normalizedSource == "release")
-                    {
-                        releaseCount++;
-                    }
-                    else if (normalizedSource == "shutdown")
-                    {
-                        shutdownCount++;
-                    }
-                    long timestamp = Stopwatch.GetTimestamp();
-                    SchedulerCostMeasurement.SignalState candidate = new(requestCount, releaseCount, shutdownCount, timestamp, normalizedSource);
-                    if (ReferenceEquals(Interlocked.CompareExchange(ref SchedulerMeasurementSignalState, candidate, current), current))
-                    {
-                        break;
-                    }
-                    current = Volatile.Read(ref SchedulerMeasurementSignalState);
-                }
-            }
-            catch
-            {
-            }
-        }
-        CheckBackendsSignal.Set();
-    }
 
     /// <summary>Subscribers notified after a backend has been removed from <see cref="AllBackends"/>.</summary>
     public Action<BackendData> BackendRemovedEvent;
@@ -1043,7 +991,7 @@ public class BackendHandler
         }
         HasShutdown = true;
         NewBackendInitSignal.Set();
-        SignalScheduler("shutdown");
+        CheckBackendsSignal.Set();
         BackendData[] shutdownBackends = [.. AllBackends.Values];
         List<(BackendData Backend, Task Task)> shutdownTasks = [];
         foreach (BackendData backend in shutdownBackends)
@@ -1207,24 +1155,6 @@ public class BackendHandler
 
         public void TryFind()
         {
-            TryFind(null, 0);
-        }
-
-        /// <summary>Runs one backend search with optional temporary Rank 26 scheduler measurement.</summary>
-        internal void TryFind(SchedulerCostMeasurement.PassAttempt passAttempt, int ordinal)
-        {
-            SchedulerCostMeasurement.TryFindAttempt attempt = SchedulerCostMeasurement.BeginTryFind(passAttempt, ordinal, Model is not null, Filter is not null);
-            if (attempt is null)
-            {
-                TryFindUnmeasured();
-                return;
-            }
-            TryFindMeasured(attempt);
-        }
-
-        /// <summary>Runs the original backend search path without temporary measurement work.</summary>
-        private void TryFindUnmeasured()
-        {
             if (WaitingOnScalingAttempt is not null && !WaitingOnScalingAttempt.IsCompleted)
             {
                 return;
@@ -1319,176 +1249,6 @@ public class BackendHandler
                 NotifyWillLoad = null;
             }
         }
-
-        /// <summary>Runs one backend search while collecting bounded temporary Rank 26 measurements.</summary>
-        private void TryFindMeasured(SchedulerCostMeasurement.TryFindAttempt attempt)
-        {
-            string outcome = "pressure_wait";
-            try
-            {
-                if (WaitingOnScalingAttempt is not null && !WaitingOnScalingAttempt.IsCompleted)
-                {
-                    outcome = "scaling_wait";
-                    return;
-                }
-                long gateStart = Stopwatch.GetTimestamp();
-                try
-                {
-                    foreach (Func<T2IBackendRequest, bool> func in CanTryFindNow)
-                    {
-                        attempt.GateCalls++;
-                        if (!func(this))
-                        {
-                            outcome = "gate_wait";
-                            return;
-                        }
-                    }
-                }
-                finally
-                {
-                    attempt.GateUs = SchedulerCostMeasurement.ToMicroseconds(gateStart, Stopwatch.GetTimestamp());
-                }
-                long snapshotFilterStart = Stopwatch.GetTimestamp();
-                List<T2IBackendData> currentBackends = [.. Handler.EnumerateT2IBackends];
-                List<T2IBackendData> possible = [.. currentBackends.Where(b => b.Backend.IsEnabled && !b.Backend.ShutDownReserve && b.Backend.Reservations == 0 && b.Backend.MaxUsages > 0 && b.Backend.Status == BackendStatus.RUNNING)];
-                attempt.BackendCount = currentBackends.Count;
-                attempt.PossibleCount = possible.Count;
-                attempt.MatcherAcceptedCount = possible.Count;
-                attempt.SnapshotFilterUs = SchedulerCostMeasurement.ToMicroseconds(snapshotFilterStart, Stopwatch.GetTimestamp());
-                attempt.PressureCount = Handler.ModelRequests.Count;
-                foreach (ModelRequestPressure pressure in Handler.ModelRequests.Values)
-                {
-                    attempt.PressureMembershipCount += Math.Max(0, pressure.Count);
-                }
-                Logs.Verbose($"[BackendHandler] Backend request #{ID} searching for backend... have {possible.Count}/{currentBackends.Count} possible");
-                if (!possible.Any())
-                {
-                    if (!currentBackends.Any(b => b.Backend.Status == BackendStatus.LOADING || b.Backend.Status == BackendStatus.WAITING))
-                    {
-                        if (WaitingOnScalingAttempt is null)
-                        {
-                            WaitingOnScalingAttempt = Handler.TryToScaleANewBackend(false);
-                            outcome = "scaling_wait";
-                        }
-                        else
-                        {
-                            Logs.Verbose($"[BackendHandler] count notEnabled = {currentBackends.Count(b => !b.Backend.IsEnabled)}, shutDownReserve = {currentBackends.Count(b => b.Backend.ShutDownReserve)}, directReserved = {currentBackends.Count(b => b.Backend.Reservations > 0)}, statusNotRunning = {currentBackends.Count(b => b.Backend.Status != BackendStatus.RUNNING)}");
-                            Logs.Warning("[BackendHandler] No backends are available! Cannot generate anything.");
-                            Failure = new SwarmUserErrorException("No backends available!");
-                            outcome = "no_backend";
-                        }
-                    }
-                    else
-                    {
-                        outcome = "no_backend";
-                    }
-                    return;
-                }
-                long matcherStart = Stopwatch.GetTimestamp();
-                Func<T2IBackendData, bool> filter = Filter;
-                try
-                {
-                    possible = filter is null ? possible : [.. possible.Where(b =>
-                    {
-                        attempt.MatcherCalls++;
-                        return filter(b);
-                    })];
-                }
-                finally
-                {
-                    attempt.MatcherUs = SchedulerCostMeasurement.ToMicroseconds(matcherStart, Stopwatch.GetTimestamp());
-                }
-                attempt.MatcherAcceptedCount = possible.Count;
-                if (!possible.Any())
-                {
-                    if (WaitingOnScalingAttempt is null)
-                    {
-                        WaitingOnScalingAttempt = Handler.TryToScaleANewBackend(true);
-                        outcome = "scaling_wait";
-                    }
-                    else
-                    {
-                        string reason = "";
-                        if (UserInput is not null && UserInput.RefusalReasons.Any())
-                        {
-                            reason = $" Backends refused for the following reason(s):\n{UserInput.RefusalReasons.Select(r => $"- {r}").JoinString("\n")}";
-                        }
-                        Logs.Warning($"[BackendHandler] No backends match the request! Cannot generate anything.{reason}");
-                        Failure = new SwarmUserErrorException($"No backends match the settings of the request given!{reason}");
-                        outcome = "no_match";
-                    }
-                    return;
-                }
-                long availabilityStart = Stopwatch.GetTimestamp();
-                List<T2IBackendData> available = [.. possible.Where(b => !b.CheckIsInUse).OrderBy(b => b.Usages)];
-                attempt.AvailableCount = available.Count;
-                attempt.AvailabilitySortUs = SchedulerCostMeasurement.ToMicroseconds(availabilityStart, Stopwatch.GetTimestamp());
-                if (Logs.MinimumLevel <= Logs.LogLevel.Verbose)
-                {
-                    Logs.Verbose($"Possible: {possible.Select(b => $"{b.ID}/{b.BackType.Name}").JoinString(", ")}, available {available.Select(b => $"{b.ID}/{b.BackType.Name}").JoinString(", ")}");
-                }
-                T2IBackendData firstAvail = available.FirstOrDefault();
-                if (Model is null && firstAvail is not null)
-                {
-                    Logs.Debug($"[BackendHandler] Backend request #{ID} will claim #{firstAvail.ID}");
-                    Result = new T2IBackendAccess(firstAvail);
-                    attempt.Pass?.NotifyClaim();
-                    outcome = "claim_any";
-                    return;
-                }
-                long modelSearchStart = Stopwatch.GetTimestamp();
-                try
-                {
-                    if (Model is not null)
-                    {
-                        List<T2IBackendData> correctModel = [.. available.Where(b => b.Backend.CurrentModelName == Model.Name)];
-                        if (correctModel.Any())
-                        {
-                            T2IBackendData backend = correctModel.FirstOrDefault();
-                            Logs.Debug($"[BackendHandler] Backend request #{ID} found correct model on #{backend.ID}");
-                            Result = new T2IBackendAccess(backend);
-                            attempt.Pass?.NotifyClaim();
-                            outcome = "claim_loaded_model";
-                            return;
-                        }
-                    }
-                }
-                finally
-                {
-                    attempt.ModelSearchUs = SchedulerCostMeasurement.ToMicroseconds(modelSearchStart, Stopwatch.GetTimestamp());
-                }
-                if (Pressure is null && Model is not null)
-                {
-                    Logs.Verbose($"[BackendHandler] Backend request #{ID} is creating pressure for model {Model.Name}...");
-                    Pressure = Handler.ModelRequests.GetOrCreate(Model.Name, () => new() { Model = Model });
-                    lock (Pressure.Locker)
-                    {
-                        Pressure.Count++;
-                        if (Session is not null)
-                        {
-                            Pressure.Sessions.Add(Session);
-                        }
-                        Pressure.Requests.Add(this);
-                    }
-                }
-                Handler.LoadHighestPressureNow(possible, available, () => ReleasePressure(true), Pressure, Cancel, attempt);
-                if (Pressure is not null && Pressure.IsLoading && NotifyWillLoad is not null)
-                {
-                    NotifyWillLoad();
-                    NotifyWillLoad = null;
-                }
-                outcome = attempt.PressureOutcome ?? "pressure_wait";
-            }
-            catch
-            {
-                outcome = "failed";
-                throw;
-            }
-            finally
-            {
-                SchedulerCostMeasurement.CompleteTryFind(attempt, outcome);
-            }
-        }
     }
 
     /// <summary>All currently tracked T2I backend requests.</summary>
@@ -1525,7 +1285,7 @@ public class BackendHandler
             Cancel = cancel
         };
         T2IBackendRequests[request.ID] = request;
-        SignalScheduler("request");
+        CheckBackendsSignal.Set();
         try
         {
             Logs.Debug($"[BackendHandler] Backend request #{request.ID} for model {model?.Name ?? "any"}, maxWait={maxWait}.");
@@ -1578,11 +1338,8 @@ public class BackendHandler
             }
         }
         bool wasNone = true;
-        bool hasMeasuredPass = false;
-        SchedulerCostMeasurement.SignalSequences lastObservedSignals = new(0, 0, 0);
         while (true)
         {
-            SchedulerCostMeasurement.PassAttempt passAttempt = null;
             if (MonitorTimes)
             {
                 BackendQueueTimer.Reset();
@@ -1596,19 +1353,14 @@ public class BackendHandler
                 }
                 return;
             }
-            passAttempt = SchedulerCostMeasurement.BeginPass(this, ref lastObservedSignals, ref hasMeasuredPass);
             try
             {
                 bool anyMoved = false;
                 mark("Start");
-                int ordinal = 0;
-                T2IBackendRequest[] pendingRequests = T2IBackendRequests.Values.ToArray();
-                bool startedEmpty = pendingRequests.Length == 0;
-                foreach (T2IBackendRequest request in pendingRequests)
+                foreach (T2IBackendRequest request in T2IBackendRequests.Values.ToArray())
                 {
                     if (request.Cancel.IsCancellationRequested)
                     {
-                        passAttempt?.RecordCancelled();
                         T2IBackendRequests.TryRemove(request.ID, out _);
                         anyMoved = true;
                         request.CompletedEvent.Set();
@@ -1621,7 +1373,7 @@ public class BackendHandler
                     }
                     try
                     {
-                        request.TryFind(passAttempt, ++ordinal);
+                        request.TryFind();
                     }
                     catch (Exception ex)
                     {
@@ -1632,7 +1384,6 @@ public class BackendHandler
                         request.Failure = ex;
                         Logs.Error($"[BackendHandler] Backend request #{request.ID} failed: {ex.ReadableString()}");
                     }
-                    passAttempt?.RecordRequestState(request, request.Result is not null, request.Failure is not null);
                     if (request.Result is not null || request.Failure is not null)
                     {
                         T2IBackendRequests.TryRemove(request.ID, out _);
@@ -1671,7 +1422,6 @@ public class BackendHandler
                         foreach (T2IBackendRequest request in T2IBackendRequests.Values.ToArray())
                         {
                             request.Failure = new TimeoutException($"No backend has responded in {Program.ServerSettings.Backends.MaxTimeoutMinutes} minutes.");
-                            passAttempt?.RecordWaitingFailure(request);
                             anyMoved = true;
                             request.CompletedEvent.Set();
                         }
@@ -1683,42 +1433,18 @@ public class BackendHandler
                     wasNone = true;
                     Program.TickNoGenerationsEvent?.Invoke();
                 }
-                SchedulerCostMeasurement.MarkPassActiveComplete(passAttempt);
                 if (empty || !anyMoved)
                 {
-                    SchedulerCostMeasurement.MarkPassWaitStart(passAttempt);
-                    try
-                    {
-                        CheckBackendsSignal.WaitAsync(TimeSpan.FromSeconds(1), Program.GlobalProgramCancel).Wait();
-                    }
-                    finally
-                    {
-                        SchedulerCostMeasurement.MarkPassWaitEnd(passAttempt);
-                    }
+                    CheckBackendsSignal.WaitAsync(TimeSpan.FromSeconds(1), Program.GlobalProgramCancel).Wait();
                 }
-                bool isShutdown = HasShutdown || Program.GlobalProgramCancel.IsCancellationRequested;
-                if (isShutdown)
-                {
-                    SchedulerCostMeasurement.CaptureTerminalSignal(this, passAttempt, ref lastObservedSignals);
-                }
-                SchedulerCostMeasurement.CompletePass(passAttempt, isShutdown ? "shutdown" : startedEmpty ? "idle" : anyMoved ? "progress" : "waiting");
                 if (MonitorTimes)
                 {
                     mark("PostSignal");
                     BackendQueueTimer.Debug($"anyMoved={anyMoved}, empty={empty}");
                 }
-                SchedulerCostMeasurement.EmitCompletedPass(passAttempt);
-                passAttempt = null;
             }
             catch (Exception ex)
             {
-                bool isShutdown = HasShutdown || Program.GlobalProgramCancel.IsCancellationRequested;
-                if (isShutdown)
-                {
-                    SchedulerCostMeasurement.CaptureTerminalSignal(this, passAttempt, ref lastObservedSignals);
-                }
-                SchedulerCostMeasurement.CompletePass(passAttempt, isShutdown ? "shutdown" : "error");
-                SchedulerCostMeasurement.EmitCompletedPass(passAttempt);
                 Logs.Error($"Backend handler loop error: {ex.ReadableString()}");
                 if (Program.GlobalProgramCancel.IsCancellationRequested)
                 {
@@ -1735,132 +1461,58 @@ public class BackendHandler
     /// <summary>Internal helper route for <see cref="GetNextT2IBackend"/> to trigger a backend model load.</summary>
     public void LoadHighestPressureNow(List<T2IBackendData> possible, List<T2IBackendData> available, Action releasePressure, ModelRequestPressure pressure, CancellationToken cancel)
     {
-        LoadHighestPressureNow(possible, available, releasePressure, pressure, cancel, null);
-    }
-
-    /// <summary>Internal helper route for model loading with optional temporary Rank 26 scheduler measurement.</summary>
-    internal void LoadHighestPressureNow(List<T2IBackendData> possible, List<T2IBackendData> available, Action releasePressure, ModelRequestPressure pressure, CancellationToken cancel, SchedulerCostMeasurement.TryFindAttempt requestAttempt)
-    {
-        SchedulerCostMeasurement.PressureAttempt measurement = SchedulerCostMeasurement.BeginPressure(requestAttempt, possible.Count, available.Count);
-        string outcome = "no_pressure";
-        try
+        List<T2IBackendData> availableLoaders = [.. available.Where(b => b.Backend.CanLoadModels && b.Backend.MaxUsages > 0)];
+        if (availableLoaders.IsEmpty())
         {
-            List<T2IBackendData> availableLoaders = [.. available.Where(b => b.Backend.CanLoadModels && b.Backend.MaxUsages > 0)];
-            if (measurement is not null)
+            if (pressure?.IsLoading ?? false)
             {
-                measurement.LoaderCount = availableLoaders.Count;
-            }
-            if (availableLoaders.IsEmpty())
-            {
-                if (pressure?.IsLoading ?? false)
-                {
-                    Logs.Verbose($"[BackendHandler] A backend is currently loading the model.");
-                    outcome = "already_loading";
-                }
-                else
-                {
-                    Logs.Verbose($"[BackendHandler] No current backends are able to load models.");
-                    Utilities.RunCheckedTask(() => TryToScaleANewBackend(false));
-                    outcome = "no_loader";
-                }
-                return;
-            }
-            Logs.Verbose($"[BackendHandler] Will load highest pressure model...");
-            long timeRel = Environment.TickCount64;
-            long snapshotSortStart = measurement is null ? 0 : Stopwatch.GetTimestamp();
-            List<ModelRequestPressure> pressures = [.. ModelRequests.Values.Where(p => !p.IsLoading).OrderByDescending(p => p.Heuristic(timeRel))];
-            if (measurement is not null)
-            {
-                measurement.SnapshotSortUs = SchedulerCostMeasurement.ToMicroseconds(snapshotSortStart, Stopwatch.GetTimestamp());
-                measurement.PressureCount = pressures.Count;
-                foreach (ModelRequestPressure currentPressure in pressures)
-                {
-                    measurement.PressureMembershipCount += Math.Max(0, currentPressure.Count);
-                }
-            }
-            if (pressures.IsEmpty())
-            {
-                Logs.Verbose($"[BackendHandler] No model requests, skipping load.");
-                outcome = "no_pressure";
-                return;
-            }
-            if (measurement is null)
-            {
-                pressures = [.. pressures.Where(p => p.Requests.Any(r => r.Filter is null || availableLoaders.Any(b => r.Filter(b))))];
+                Logs.Verbose($"[BackendHandler] A backend is currently loading the model.");
             }
             else
             {
-                long compatibilityStart = Stopwatch.GetTimestamp();
-                try
-                {
-                    pressures = [.. pressures.Where(p => p.Requests.Any(r => r.Filter is null || availableLoaders.Any(b =>
-                    {
-                        measurement.CompatibilityCalls++;
-                        return r.Filter(b);
-                    })))];
-                }
-                finally
-                {
-                    measurement.CompatibilityUs = SchedulerCostMeasurement.ToMicroseconds(compatibilityStart, Stopwatch.GetTimestamp());
-                }
+                Logs.Verbose($"[BackendHandler] No current backends are able to load models.");
+                Utilities.RunCheckedTask(() => TryToScaleANewBackend(false));
             }
-            if (pressures.IsEmpty())
-            {
-                Logs.Verbose($"[BackendHandler] Unable to find valid model requests that are matched to the current backend list.");
-                outcome = "no_compatible";
-                return;
-            }
-            List<ModelRequestPressure> perfect;
-            if (measurement is null)
-            {
-                perfect = [.. pressures.Where(p => p.Requests.All(r => r.Filter is null || availableLoaders.Any(b => r.Filter(b))))];
-            }
-            else
-            {
-                long perfectStart = Stopwatch.GetTimestamp();
-                try
-                {
-                    perfect = [.. pressures.Where(p => p.Requests.All(r => r.Filter is null || availableLoaders.Any(b =>
-                    {
-                        measurement.PerfectCalls++;
-                        return r.Filter(b);
-                    })))];
-                }
-                finally
-                {
-                    measurement.PerfectUs = SchedulerCostMeasurement.ToMicroseconds(perfectStart, Stopwatch.GetTimestamp());
-                }
-            }
-            if (!perfect.IsEmpty())
-            {
-                pressures = perfect;
-            }
-            ModelRequestPressure highestPressure = pressures.FirstOrDefault();
-            if (highestPressure is not null)
-            {
+            return;
+        }
+        Logs.Verbose($"[BackendHandler] Will load highest pressure model...");
+        long timeRel = Environment.TickCount64;
+        List<ModelRequestPressure> pressures = [.. ModelRequests.Values.Where(p => !p.IsLoading).OrderByDescending(p => p.Heuristic(timeRel))];
+        if (pressures.IsEmpty())
+        {
+            Logs.Verbose($"[BackendHandler] No model requests, skipping load.");
+            return;
+        }
+        pressures = [.. pressures.Where(p => p.Requests.Any(r => r.Filter is null || availableLoaders.Any(b => r.Filter(b))))];
+        if (pressures.IsEmpty())
+        {
+            Logs.Verbose($"[BackendHandler] Unable to find valid model requests that are matched to the current backend list.");
+            return;
+        }
+        List<ModelRequestPressure> perfect = [.. pressures.Where(p => p.Requests.All(r => r.Filter is null || availableLoaders.Any(b => r.Filter(b))))];
+        if (!perfect.IsEmpty())
+        {
+            pressures = perfect;
+        }
+        ModelRequestPressure highestPressure = pressures.FirstOrDefault();
+        if (highestPressure is not null)
+        {
             lock (highestPressure.Locker)
             {
                 if (highestPressure.IsLoading) // Another thread already got here, let it take control.
                 {
                     Logs.Verbose($"[BackendHandler] Cancelling highest-pressure load, another thread is handling it.");
-                    outcome = "already_loading";
                     return;
                 }
                 long timeWait = timeRel - highestPressure.TimeFirstRequest;
                 if (availableLoaders.Count == 1 || timeWait > 1500)
                 {
                     Logs.Verbose($"Selecting backends outside of refusal set: {highestPressure.BadBackends.JoinString(", ")}");
-                    long postSelectionStart = measurement is null ? 0 : Stopwatch.GetTimestamp();
                     List<T2IBackendData> valid = [.. availableLoaders.Where(b => !highestPressure.BadBackends.Contains(b.ID))];
-                    if (measurement is not null)
-                    {
-                        measurement.PostSelectionUs += SchedulerCostMeasurement.ToMicroseconds(postSelectionStart, Stopwatch.GetTimestamp());
-                    }
                     if (valid.IsEmpty())
                     {
                         Logs.Warning($"[BackendHandler] All backends failed to load the model '{highestPressure.Model.RawFilePath}'! Cannot generate anything.");
                         releasePressure();
-                        outcome = "all_refused";
                         string fixReason(string reason)
                         {
                             if (reason.Contains("ERROR: Could not detect model type of:"))
@@ -1878,24 +1530,13 @@ public class BackendHandler
                         }
                         throw new SwarmReadableErrorException($"All available backends failed to load the model '{highestPressure.Model.RawFilePath}'.\n\n{highestPressure.BackendFailReasons.Select(fixReason).JoinString("\n\n").Trim()}");
                     }
-                    postSelectionStart = measurement is null ? 0 : Stopwatch.GetTimestamp();
                     valid = [.. valid.Where(b => b.Backend.CurrentModelName != highestPressure.Model.Name)];
-                    if (measurement is not null)
-                    {
-                        measurement.PostSelectionUs += SchedulerCostMeasurement.ToMicroseconds(postSelectionStart, Stopwatch.GetTimestamp());
-                    }
                     if (valid.IsEmpty())
                     {
                         Logs.Verbose("$[BackendHandler] Cancelling highest-pressure load, model is already loaded on all available backends.");
-                        outcome = "already_loaded";
                         return;
                     }
-                    postSelectionStart = measurement is null ? 0 : Stopwatch.GetTimestamp();
                     List<T2IBackendData> unused = [.. valid.Where(a => a.Usages == 0)];
-                    if (measurement is not null)
-                    {
-                        measurement.PostSelectionUs += SchedulerCostMeasurement.ToMicroseconds(postSelectionStart, Stopwatch.GetTimestamp());
-                    }
                     valid = unused.Any() ? unused : valid;
                     string orderMode = Program.ServerSettings.Backends.ModelLoadOrderPreference;
                     T2IBackendData availableBackend;
@@ -2081,7 +1722,6 @@ public class BackendHandler
                             CancellationToken.None,
                             TaskContinuationOptions.OnlyOnCanceled | TaskContinuationOptions.ExecuteSynchronously,
                             TaskScheduler.Default);
-                        outcome = "load_started";
                     }
                     catch
                     {
@@ -2092,22 +1732,8 @@ public class BackendHandler
                 else
                 {
                     Logs.Verbose($"[BackendHandler] Nothing to load onto right now, pressure is too new.");
-                    outcome = "too_new";
                 }
             }
-            }
-        }
-        catch
-        {
-            if (outcome != "all_refused")
-            {
-                outcome = "failed";
-            }
-            throw;
-        }
-        finally
-        {
-            SchedulerCostMeasurement.FinishPressure(measurement, outcome);
         }
     }
 }
@@ -2136,7 +1762,7 @@ public class T2IBackendAccess : IDisposable
             IsDisposed = true;
             Data.UpdateLastReleaseTime();
             Interlocked.Decrement(ref Data.Usages);
-            Backend.Handler.SignalScheduler("release");
+            Backend.Handler.CheckBackendsSignal.Set();
             GC.SuppressFinalize(this);
         }
     }
