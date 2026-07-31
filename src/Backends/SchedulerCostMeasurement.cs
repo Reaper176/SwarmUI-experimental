@@ -20,8 +20,34 @@ internal static class SchedulerCostMeasurement
     /// <summary>Per-source monotonic maintained scheduler signal sequence watermark.</summary>
     internal readonly record struct SignalSequences(long Request, long Release, long Shutdown);
 
-    /// <summary>Bounded per-source maintained scheduler signal sequences and latest timestamps.</summary>
-    internal readonly record struct SignalSnapshot(SignalSequences Sequences, long RequestTimestamp, long ReleaseTimestamp, long ShutdownTimestamp);
+    /// <summary>Immutable aggregate state atomically published by lock-free scheduler signal writers.</summary>
+    internal sealed class SignalState
+    {
+        /// <summary>Cumulative count of maintained request scheduler signals.</summary>
+        public readonly long RequestCount;
+
+        /// <summary>Cumulative count of maintained release scheduler signals.</summary>
+        public readonly long ReleaseCount;
+
+        /// <summary>Cumulative count of maintained shutdown scheduler signals.</summary>
+        public readonly long ShutdownCount;
+
+        /// <summary>Latest monotonic timestamp across all maintained scheduler signals.</summary>
+        public readonly long LatestTimestamp;
+
+        /// <summary>Bounded source associated with <see cref="LatestTimestamp"/>.</summary>
+        public readonly string LatestSource;
+
+        /// <summary>Constructs one coherent immutable aggregate scheduler signal state.</summary>
+        public SignalState(long requestCount, long releaseCount, long shutdownCount, long latestTimestamp, string latestSource)
+        {
+            RequestCount = requestCount;
+            ReleaseCount = releaseCount;
+            ShutdownCount = shutdownCount;
+            LatestTimestamp = latestTimestamp;
+            LatestSource = latestSource;
+        }
+    }
 
     /// <summary>Bounded aggregate of unobserved maintained scheduler signals.</summary>
     internal readonly record struct SignalObservation(long Count, long Timestamp, string Source);
@@ -412,31 +438,22 @@ internal static class SchedulerCostMeasurement
         }
     }
 
-    /// <summary>Computes exact bounded per-source deltas and advances the supplied signal watermark.</summary>
-    private static SignalObservation ObserveSignals(SignalSnapshot snapshot, ref SignalSequences watermark)
+    /// <summary>Computes exact bounded coherent-state deltas and advances the supplied signal watermark.</summary>
+    private static SignalObservation ObserveSignals(SignalState snapshot, ref SignalSequences watermark)
     {
-        long requestDelta = Math.Max(0, snapshot.Sequences.Request - watermark.Request);
-        long releaseDelta = Math.Max(0, snapshot.Sequences.Release - watermark.Release);
-        long shutdownDelta = Math.Max(0, snapshot.Sequences.Shutdown - watermark.Shutdown);
-        watermark = new(snapshot.Sequences.Request, snapshot.Sequences.Release, snapshot.Sequences.Shutdown);
+        long requestCount = snapshot?.RequestCount ?? 0;
+        long releaseCount = snapshot?.ReleaseCount ?? 0;
+        long shutdownCount = snapshot?.ShutdownCount ?? 0;
+        long requestDelta = Math.Max(0, requestCount - watermark.Request);
+        long releaseDelta = Math.Max(0, releaseCount - watermark.Release);
+        long shutdownDelta = Math.Max(0, shutdownCount - watermark.Shutdown);
+        watermark = new(requestCount, releaseCount, shutdownCount);
         long count = requestDelta + releaseDelta + shutdownDelta;
         if (count == 0)
         {
             return new(0, 0, "timeout_or_external");
         }
-        string source = "request";
-        long timestamp = requestDelta > 0 ? snapshot.RequestTimestamp : 0;
-        if (releaseDelta > 0 && snapshot.ReleaseTimestamp >= timestamp)
-        {
-            source = "release";
-            timestamp = snapshot.ReleaseTimestamp;
-        }
-        if (shutdownDelta > 0 && snapshot.ShutdownTimestamp >= timestamp)
-        {
-            source = "shutdown";
-            timestamp = snapshot.ShutdownTimestamp;
-        }
-        return new(count, timestamp, source);
+        return new(count, snapshot?.LatestTimestamp ?? 0, snapshot?.LatestSource ?? "timeout_or_external");
     }
 
     /// <summary>Begins a request-search measurement when enabled.</summary>

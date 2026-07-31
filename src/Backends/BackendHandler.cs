@@ -31,37 +31,16 @@ public class BackendHandler
     /// <summary>Signal when any backends are available, or other reason to check backends (eg new requests came in).</summary>
     public AsyncAutoResetEvent CheckBackendsSignal = new(false);
 
-    /// <summary>Monotonic count of maintained request scheduler signals for temporary Rank 26 measurement.</summary>
-    private long SchedulerMeasurementRequestSignalSequence = 0;
+    /// <summary>Nullable immutable scheduler signal state, left null while temporary Rank 26 measurement is disabled.</summary>
+    private SchedulerCostMeasurement.SignalState SchedulerMeasurementSignalState = null;
 
-    /// <summary>Latest monotonic timestamp of maintained request scheduler signals for temporary Rank 26 measurement.</summary>
-    private long SchedulerMeasurementRequestSignalTimestamp = 0;
-
-    /// <summary>Monotonic count of maintained release scheduler signals for temporary Rank 26 measurement.</summary>
-    private long SchedulerMeasurementReleaseSignalSequence = 0;
-
-    /// <summary>Latest monotonic timestamp of maintained release scheduler signals for temporary Rank 26 measurement.</summary>
-    private long SchedulerMeasurementReleaseSignalTimestamp = 0;
-
-    /// <summary>Monotonic count of maintained shutdown scheduler signals for temporary Rank 26 measurement.</summary>
-    private long SchedulerMeasurementShutdownSignalSequence = 0;
-
-    /// <summary>Latest monotonic timestamp of maintained shutdown scheduler signals for temporary Rank 26 measurement.</summary>
-    private long SchedulerMeasurementShutdownSignalTimestamp = 0;
-
-    /// <summary>Reads bounded per-source maintained scheduler signal sequences and timestamps without blocking or spinning.</summary>
-    internal SchedulerCostMeasurement.SignalSnapshot CaptureSchedulerSignalSnapshot()
+    /// <summary>Reads the immutable temporary Rank 26 scheduler signal state in one bounded, non-blocking operation.</summary>
+    internal SchedulerCostMeasurement.SignalState CaptureSchedulerSignalSnapshot()
     {
-        long requestSequence = Volatile.Read(ref SchedulerMeasurementRequestSignalSequence);
-        long requestTimestamp = Volatile.Read(ref SchedulerMeasurementRequestSignalTimestamp);
-        long releaseSequence = Volatile.Read(ref SchedulerMeasurementReleaseSignalSequence);
-        long releaseTimestamp = Volatile.Read(ref SchedulerMeasurementReleaseSignalTimestamp);
-        long shutdownSequence = Volatile.Read(ref SchedulerMeasurementShutdownSignalSequence);
-        long shutdownTimestamp = Volatile.Read(ref SchedulerMeasurementShutdownSignalTimestamp);
-        return new(new(requestSequence, releaseSequence, shutdownSequence), requestTimestamp, releaseTimestamp, shutdownTimestamp);
+        return Volatile.Read(ref SchedulerMeasurementSignalState);
     }
 
-    /// <summary>Records a maintained scheduler signal when enabled, then wakes the unchanged scheduler event exactly once.</summary>
+    /// <summary>Lock-free CAS-publishes a maintained scheduler signal when enabled, then wakes the unchanged scheduler event exactly once.</summary>
     internal void SignalScheduler(string source)
     {
         if (SchedulerCostMeasurement.IsEnabled())
@@ -70,20 +49,37 @@ public class BackendHandler
             {
                 long timestamp = Stopwatch.GetTimestamp();
                 string normalizedSource = SchedulerCostMeasurement.NormalizeSignalSource(source);
-                if (normalizedSource == "request")
+                SchedulerCostMeasurement.SignalState current = Volatile.Read(ref SchedulerMeasurementSignalState);
+                while (true)
                 {
-                    Volatile.Write(ref SchedulerMeasurementRequestSignalTimestamp, timestamp);
-                    Interlocked.Increment(ref SchedulerMeasurementRequestSignalSequence);
-                }
-                else if (normalizedSource == "release")
-                {
-                    Volatile.Write(ref SchedulerMeasurementReleaseSignalTimestamp, timestamp);
-                    Interlocked.Increment(ref SchedulerMeasurementReleaseSignalSequence);
-                }
-                else if (normalizedSource == "shutdown")
-                {
-                    Volatile.Write(ref SchedulerMeasurementShutdownSignalTimestamp, timestamp);
-                    Interlocked.Increment(ref SchedulerMeasurementShutdownSignalSequence);
+                    long requestCount = current?.RequestCount ?? 0;
+                    long releaseCount = current?.ReleaseCount ?? 0;
+                    long shutdownCount = current?.ShutdownCount ?? 0;
+                    if (normalizedSource == "request")
+                    {
+                        requestCount++;
+                    }
+                    else if (normalizedSource == "release")
+                    {
+                        releaseCount++;
+                    }
+                    else if (normalizedSource == "shutdown")
+                    {
+                        shutdownCount++;
+                    }
+                    long latestTimestamp = current?.LatestTimestamp ?? 0;
+                    string latestSource = current?.LatestSource ?? "timeout_or_external";
+                    if (timestamp > latestTimestamp)
+                    {
+                        latestTimestamp = timestamp;
+                        latestSource = normalizedSource;
+                    }
+                    SchedulerCostMeasurement.SignalState candidate = new(requestCount, releaseCount, shutdownCount, latestTimestamp, latestSource);
+                    if (ReferenceEquals(Interlocked.CompareExchange(ref SchedulerMeasurementSignalState, candidate, current), current))
+                    {
+                        break;
+                    }
+                    current = Volatile.Read(ref SchedulerMeasurementSignalState);
                 }
             }
             catch
