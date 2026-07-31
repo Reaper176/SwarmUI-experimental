@@ -1,6 +1,6 @@
 # Facade-Preserving Workflow Graph Editor Design
 
-**Status:** Implemented; partially validated under a one-time maintainer-authorized agent override (24 passed, 0 failed, 18 unrun)
+**Status:** Implemented; validation closed by maintainer disposition (24 passed, 0 failed, 18 deliberately unrun)
 
 **Date:** 2026-07-28
 
@@ -751,6 +751,9 @@ unchanged external fixture demonstrates only the exercised ABI/public-state
 surface; unknown external extensions remain unvalidated.
 
 Because cases 25–42 remain unrun, this is not full 42-case validation and is not
-described as completely maintainer-validated. Rank 24 remains the unresolved
-Recommended Next Project until the missing representative workflow matrix is
-run or separately dispositioned.
+described as completely maintainer-validated. On 2026-07-30, maintainer
+Reaper176 supplied the exact instruction `mark as unrun and continue with the
+refactor.` That instruction separately dispositions the 18 cases as deliberately
+unrun and closes the Rank 24 validation cycle without treating any case as
+passed, failed, executed, inferred, or waived evidence. Rank 24 is no longer the
+Recommended Next Project; Rank 25 is the next bounded measurement project.
