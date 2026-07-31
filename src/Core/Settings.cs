@@ -220,14 +220,6 @@ public class Settings : AutoConfiguration
 
         [ConfigComment("How many models can be loaded in a model list at once.\nPast this count, the list will simply be cut off.\nUse sub-folder organization to prevent issues.")]
         public int ModelListSanityCap = 5000;
-
-        /// <summary>Whether temporary Rank 32 model-sidecar measurement is enabled.</summary>
-        [ConfigComment("Temporary Rank 32 measurement control. Defaults to false and must be removed after collection.")]
-        public bool ModelSidecarMeasurementEnabled = false;
-
-        /// <summary>Allowlisted scenario label for temporary Rank 32 model-sidecar measurement.</summary>
-        [ConfigComment("Temporary Rank 32 privacy-safe workload label. Defaults to empty and must be removed after collection.")]
-        public string ModelSidecarMeasurementScenario = "";
     }
 
     /// <summary>Settings related to local Krita integration.</summary>
