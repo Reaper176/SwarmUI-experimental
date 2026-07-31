@@ -368,14 +368,14 @@ public static class T2IAPI
         List<int> discard = [];
         object discardLock = new();
         int batchSizeExpected = user_input.Get(T2IParamTypes.BatchSize, 1);
-        void saveImage(T2IEngine.ImageOutput image, int actualIndex, T2IParamInput thisParams, string metadata)
+        void saveImage(T2IEngine.ImageOutput image, int actualIndex, T2IParamInput thisParams, string metadata,
+            OutputFilenameSelectionContext measurementContext)
         {
             Logs.Verbose($"T2IAPI received save request for index {actualIndex} for gen request id {thisParams.UserRequestId}, isreal={image.IsReal}");
-            bool noSave = thisParams.Get(T2IParamTypes.DoNotSave, false);
-            if (!image.IsReal && thisParams.Get(T2IParamTypes.DoNotSaveIntermediates, false))
-            {
-                noSave = true;
-            }
+            bool requestNoSave = thisParams.Get(T2IParamTypes.DoNotSave, false);
+            bool intermediateNoSave = !image.IsReal
+                && thisParams.Get(T2IParamTypes.DoNotSaveIntermediates, false);
+            bool noSave = requestNoSave || intermediateNoSave;
             string url, filePath;
             if (noSave)
             {
@@ -384,11 +384,20 @@ public static class T2IAPI
                 {
                     file = image.ActualFileTask.Result;
                 }
+                if (OutputFilenameSelectionMeasurement.IsEnabled)
+                {
+                    OutputFilenameSelectionMeasurement.EmitBypass(
+                        measurementContext,
+                        file,
+                        thisParams.Get(T2IParamTypes.BatchSize, 1),
+                        intermediateNoSave ? "intermediate_policy" : "request_do_not_save");
+                }
                 (url, filePath) = (file.AsDataString(), null);
             }
             else
             {
-                (url, filePath) = session.SaveImage(image, actualIndex, thisParams, metadata);
+                (url, filePath) = session.SaveImage(
+                    image, actualIndex, thisParams, metadata, measurementContext);
             }
             if (url == "ERROR")
             {
@@ -464,7 +473,12 @@ public static class T2IAPI
                     {
                         actualIndex = -10 - Interlocked.Increment(ref data.NumNonReal);
                     }
-                    saveImage(image, actualIndex, thisParams, metadata);
+                    saveImage(
+                        image,
+                        actualIndex,
+                        thisParams,
+                        metadata,
+                        OutputFilenameSelectionContext.NormalGeneration);
                 })));
             if (Program.Backends.QueuedRequests < Program.ServerSettings.Backends.MaxRequestsForcedOrder)
             {
@@ -511,7 +525,12 @@ public static class T2IAPI
             finalInput.ExtraMeta["generation_time"] = $"{genTime / 1000.0:0.00} total seconds (average {(finalTime - timeStart) / griddables.Length / 1000.0:0.00} seconds per image)";
             (Task<MediaFile> gridFileTask, string metadata) = finalInput.SourceSession.ApplyMetadata(gridImg, finalInput, imgs.Length);
             T2IEngine.ImageOutput gridOutput = new() { File = gridImg, ActualFileTask = gridFileTask, GenTimeMS = genTime };
-            saveImage(gridOutput, -1, finalInput, metadata);
+            saveImage(
+                gridOutput,
+                -1,
+                finalInput,
+                metadata,
+                OutputFilenameSelectionContext.NormalMiniGrid);
         }
         T2IEngine.PostBatchEvent?.Invoke(new(user_input, [.. griddables]));
         List<int> discardFinal;
