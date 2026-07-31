@@ -6,122 +6,6 @@ let IMAGE_HISTORY_SAVED_REFRESH_MAX_ATTEMPTS = 8;
 let IMAGE_HISTORY_UNLOAD_ROW_BUFFER = 10;
 let IMAGE_HISTORY_MIN_MEDIA_ROWS_TO_UNLOAD = 2;
 
-/** Temporarily records opt-in visible-history layout costs for Rank 31. */
-class ImageHistoryLayoutMeasurement {
-    /** Creates the exact applicable scenario allowlist. */
-    constructor() {
-        this.scenarios = new Set([
-            'desktop_128_thumbs_still_dehydrated_build_top',
-            'desktop_128_thumbs_still_stable_scroll_top',
-            'desktop_128_thumbs_still_stable_scroll_middle',
-            'desktop_128_thumbs_still_stable_scroll_bottom',
-            'desktop_512_thumbs_still_stable_scroll_top',
-            'desktop_512_thumbs_still_stable_scroll_middle',
-            'desktop_512_thumbs_still_stable_scroll_bottom',
-            'desktop_1000_thumbs_still_stable_scroll_top',
-            'desktop_1000_thumbs_still_stable_scroll_middle',
-            'desktop_1000_thumbs_still_stable_scroll_bottom',
-            'mobile_1000_thumbs_still_stable_scroll_top',
-            'mobile_1000_thumbs_still_stable_scroll_middle',
-            'mobile_1000_thumbs_still_stable_scroll_bottom',
-            'desktop_1000_details_still_stable_scroll_top',
-            'desktop_1000_details_still_stable_scroll_middle',
-            'desktop_1000_details_still_stable_scroll_bottom',
-            'desktop_1000_thumbs_animated_dehydrated_scroll_top',
-            'desktop_1000_thumbs_animated_dehydrated_scroll_middle',
-            'desktop_1000_thumbs_animated_dehydrated_scroll_bottom',
-            'desktop_1000_thumbs_still_stable_resize_alternate',
-            'mobile_1000_thumbs_still_stable_resize_alternate',
-            'desktop_1000_thumbs_still_stable_tab_show_top',
-            'desktop_129_thumbs_still_dehydrated_background_top'
-        ]);
-    }
-
-    /** Starts one enabled fixed-label measurement, or returns null. */
-    start() {
-        try {
-            if (localStorage.getItem('image_history_layout_measurement_enabled') != 'true') {
-                return null;
-            }
-            let scenario = `${localStorage.getItem('image_history_layout_measurement_scenario') || ''}`;
-            if (!this.scenarios.has(scenario)) {
-                scenario = 'unspecified';
-            }
-            let trigger = scenario == 'unspecified' ? 'unspecified' : (scenario.includes('_tab_show_') ? 'tab_show' : scenario.split('_').at(-2));
-            return { scenario, trigger, start: performance.now(), valid: true };
-        }
-        catch (e) {
-            return null;
-        }
-    }
-
-    /** Reads the monotonic timer without exposing failure to production flow. */
-    now(measurement) {
-        if (!measurement || !measurement.valid) {
-            return 0;
-        }
-        try {
-            return performance.now();
-        }
-        catch (e) {
-            measurement.valid = false;
-            return 0;
-        }
-    }
-
-    /** Schedules one fixed-shape record after the following frame. */
-    record(measurement, data) {
-        if (!measurement?.valid) {
-            return;
-        }
-        try {
-            let publish = () => {
-                try {
-                    setTimeout(() => {
-                        try {
-                            let record = {
-                                schema: 1,
-                                scenario: measurement.scenario,
-                                trigger: measurement.trigger,
-                                entry_count: data.entryCount,
-                                row_count: data.rowCount,
-                                scroll_top: data.scrollTop,
-                                client_height: data.clientHeight,
-                                visible_row_count: data.visibleRowCount,
-                                kept_row_count: data.keptRowCount,
-                                update_start_ms: measurement.start,
-                                update_end_ms: data.end,
-                                entries_ms: data.entriesEnd - measurement.start,
-                                rows_ms: data.rowsEnd - data.entriesEnd,
-                                boundary_ms: data.boundaryEnd - data.rowsEnd,
-                                media_ms: data.end - data.boundaryEnd,
-                                total_ms: data.end - measurement.start,
-                                long_task_candidate: data.end - measurement.start >= 50
-                            };
-                            console.log(`[Rank31ImageHistoryLayout] ${JSON.stringify(record)}`);
-                        }
-                        catch (e) {
-                        }
-                    }, 0);
-                }
-                catch (e) {
-                }
-            };
-            if (window.requestAnimationFrame) {
-                requestAnimationFrame(publish);
-            }
-            else {
-                setTimeout(publish, 16);
-            }
-        }
-        catch (e) {
-            // Measurement must never affect visible-history behavior.
-        }
-    }
-}
-
-let imageHistoryLayoutMeasurement = new ImageHistoryLayoutMeasurement();
-
 class ImageHistoryWindowManager {
     constructor() {
         this.content = null;
@@ -218,20 +102,16 @@ class ImageHistoryWindowManager {
         if (!this.content || !this.content.isConnected) {
             return;
         }
-        let measurement = imageHistoryLayoutMeasurement.start();
         let entries = this.getEntries();
         if (entries.length == 0) {
             return;
         }
-        let entriesEnd = measurement ? imageHistoryLayoutMeasurement.now(measurement) : 0;
         let rows = this.buildRows(entries);
         if (rows.length == 0) {
             return;
         }
-        let rowsEnd = measurement ? imageHistoryLayoutMeasurement.now(measurement) : 0;
         let scrollTop = this.content.scrollTop;
-        let clientHeight = this.content.clientHeight;
-        let scrollBottom = scrollTop + clientHeight;
+        let scrollBottom = scrollTop + this.content.clientHeight;
         let visibleStart = 0;
         let visibleEnd = rows.length - 1;
         for (let i = 0; i < rows.length; i++) {
@@ -248,7 +128,6 @@ class ImageHistoryWindowManager {
         }
         let keepStart = Math.max(0, visibleStart - IMAGE_HISTORY_UNLOAD_ROW_BUFFER);
         let keepEnd = Math.min(rows.length - 1, visibleEnd + IMAGE_HISTORY_UNLOAD_ROW_BUFFER);
-        let boundaryEnd = measurement ? imageHistoryLayoutMeasurement.now(measurement) : 0;
         let hydrateQueued = false;
         for (let i = 0; i < rows.length; i++) {
             let row = rows[i];
@@ -261,23 +140,6 @@ class ImageHistoryWindowManager {
                 for (let entry of row.entries) {
                     this.dehydrateEntry(entry);
                 }
-            }
-        }
-        if (measurement) {
-            let end = imageHistoryLayoutMeasurement.now(measurement);
-            if (measurement.valid) {
-                imageHistoryLayoutMeasurement.record(measurement, {
-                    entryCount: entries.length,
-                    rowCount: rows.length,
-                    scrollTop,
-                    clientHeight,
-                    visibleRowCount: visibleEnd - visibleStart + 1,
-                    keptRowCount: keepEnd - keepStart + 1,
-                    entriesEnd,
-                    rowsEnd,
-                    boundaryEnd,
-                    end
-                });
             }
         }
         return hydrateQueued;
