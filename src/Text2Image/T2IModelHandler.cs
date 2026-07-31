@@ -50,6 +50,9 @@ public class T2IModelHandler
     /// <summary>Path to the report listing model files and folders with characters that may cause parsing issues.</summary>
     public static string SpecialCharacterReportPath => $"{Program.DataDir}/Temp/model_special_character_paths.txt";
 
+    /// <summary>Temporary Rank 32 deterministic contract hook after sidecar fingerprint capture.</summary>
+    private static Action Rank32AfterFingerprintHook = null;
+
     public record class ModelDatabase(string Folder, T2IModelHandler Handler, LiteDatabase Database, ILiteCollection<ModelMetadataStore> Metadata)
     {
         public volatile int Errors = 0;
@@ -517,36 +520,81 @@ public class T2IModelHandler
             Logs.Debug($"Not loading metadata for {model.Name} as it is already loaded.");
             return;
         }
+        using ModelSidecarCostMeasurement.Operation measurement = ModelSidecarCostMeasurement.Begin();
+        bool recomputed = false;
         string folder = model.RawFilePath.Replace('\\', '/').BeforeAndAfterLast('/', out string fileName);
         long modified = new DateTimeOffset(File.GetLastWriteTimeUtc(model.RawFilePath)).ToUnixTimeMilliseconds();
         string altModelPrefix = $"{model.OriginatingFolderPath}/{model.Name.BeforeLast('.')}";
-        string sidecarFingerprint = GetModelSidecarFingerprint(altModelPrefix);
+        ModelSidecarCostMeasurement.PhaseToken phase = default;
+        string sidecarFingerprint;
+        if (measurement is null)
+        {
+            sidecarFingerprint = GetModelSidecarFingerprint(altModelPrefix);
+        }
+        else
+        {
+            phase = ModelSidecarCostMeasurement.BeginPhase(measurement, "fingerprint");
+            sidecarFingerprint = GetModelSidecarFingerprint(altModelPrefix);
+            ModelSidecarCostMeasurement.EndPhase(measurement, phase, "fingerprint");
+            ModelSidecarCostMeasurement.NoteFingerprint(measurement, AltModelMetadataJsonFileSuffixes.Length);
+            ModelSidecarCostMeasurement.RunAfterFingerprintHook(measurement, Rank32AfterFingerprintHook);
+        }
         bool perFolder = Program.ServerSettings.Metadata.ModelMetadataPerFolder;
         ModelDatabase cache = GetCacheForFolder(perFolder ? folder : Program.DataDir);
         if (cache is null)
         {
+            if (measurement is not null)
+            {
+                ModelSidecarCostMeasurement.MarkCacheUnavailable(measurement);
+            }
             return;
         }
         ModelMetadataStore metadata;
         string modelCacheId = perFolder ? fileName : model.RawFilePath;
+        bool cacheLookupFailed = false;
+        if (measurement is not null)
+        {
+            phase = ModelSidecarCostMeasurement.BeginPhase(measurement, "cache_lookup");
+        }
         lock (MetadataLock)
         {
             try
             {
                 metadata = cache.Metadata.FindById(modelCacheId);
+                if (measurement is not null)
+                {
+                    ModelSidecarCostMeasurement.EndPhase(measurement, phase, "cache_lookup");
+                }
             }
             catch (Exception ex)
             {
+                if (measurement is not null)
+                {
+                    ModelSidecarCostMeasurement.EndPhase(measurement, phase, "cache_lookup");
+                    ModelSidecarCostMeasurement.NoteCaught(measurement, "cache_lookup_caught");
+                }
+                cacheLookupFailed = true;
                 Logs.Debug($"Failed to load metadata for {model.Name} from cache:\n{ex.ReadableString()}");
                 metadata = null;
             }
         }
-        if (metadata is not null && metadata.TextEncoders is null && VariableTextEncModelClasses.Contains(metadata.ModelClassType))
+        bool legacyTextEncoders = metadata is not null && metadata.TextEncoders is null && VariableTextEncModelClasses.Contains(metadata.ModelClassType);
+        if (legacyTextEncoders)
         {
             metadata = null;
         }
         if (metadata is null || metadata.ModelFileVersion != modified || metadata.ModelSidecarFingerprint != sidecarFingerprint)
         {
+            recomputed = true;
+            string invalidation = cacheLookupFailed ? "cache_lookup_fault"
+                : legacyTextEncoders ? "legacy_text_encoders"
+                : metadata is null ? "cache_missing"
+                : metadata.ModelFileVersion != modified ? "model_mtime"
+                : "sidecar_fingerprint";
+            if (measurement is not null)
+            {
+                ModelSidecarCostMeasurement.BeginRecompute(measurement, invalidation);
+            }
             string autoImg = GetAutoFormatImage(model);
             if (autoImg is not null)
             {
@@ -557,6 +605,10 @@ public class T2IModelHandler
             string textEncs = null;
             if (model.Name.EndsWith(".safetensors") || model.Name.EndsWith(".sft") || model.Name.EndsWith(".gguf"))
             {
+                if (measurement is not null)
+                {
+                    phase = ModelSidecarCostMeasurement.BeginPhase(measurement, "embedded_header");
+                }
                 try
                 {
                     headerData = T2IModel.GetMetadataHeaderFrom(model.RawFilePath);
@@ -570,21 +622,62 @@ public class T2IModelHandler
                         if (keys.Any(k => k.StartsWith("text_encoders.t5xxl."))) { textEncs += "t5xxl,"; }
                         textEncs = textEncs.TrimEnd(',');
                     }
+                    if (measurement is not null)
+                    {
+                        ModelSidecarCostMeasurement.EndPhase(measurement, phase, "embedded_header");
+                    }
                 }
                 catch (Exception ex)
                 {
+                    if (measurement is not null)
+                    {
+                        ModelSidecarCostMeasurement.EndPhase(measurement, phase, "embedded_header");
+                        ModelSidecarCostMeasurement.NoteCaught(measurement, "embedded_header_caught");
+                    }
                     Logs.Warning($"Failed to load embedded metadata header for {model.Name}, continuing with sidecar metadata only:\n{ex.ReadableString()}");
                 }
             }
-            foreach (string altSuffix in AltModelMetadataJsonFileSuffixes)
+            if (measurement is null)
             {
-                if (File.Exists(altModelPrefix + altSuffix))
+                foreach (string altSuffix in AltModelMetadataJsonFileSuffixes)
                 {
-                    JObject altMetadata = File.ReadAllText(altModelPrefix + altSuffix).ParseToJson();
-                    foreach (JProperty prop in altMetadata.Properties())
+                    if (File.Exists(altModelPrefix + altSuffix))
                     {
-                        metaHeader[prop.Name] = prop.Value;
-                        headerData[prop.Name] = prop.Value;
+                        JObject altMetadata = File.ReadAllText(altModelPrefix + altSuffix).ParseToJson();
+                        foreach (JProperty prop in altMetadata.Properties())
+                        {
+                            metaHeader[prop.Name] = prop.Value;
+                            headerData[prop.Name] = prop.Value;
+                        }
+                    }
+                }
+            }
+            else
+            {
+                foreach (string altSuffix in AltModelMetadataJsonFileSuffixes)
+                {
+                    string altPath = altModelPrefix + altSuffix;
+                    phase = ModelSidecarCostMeasurement.BeginPhase(measurement, "first_exists");
+                    bool exists = File.Exists(altPath);
+                    ModelSidecarCostMeasurement.EndPhase(measurement, phase, "first_exists");
+                    ModelSidecarCostMeasurement.NoteExists(measurement, true, exists);
+                    if (exists)
+                    {
+                        phase = ModelSidecarCostMeasurement.BeginPhase(measurement, "first_read");
+                        string rawMetadata = File.ReadAllText(altPath);
+                        ModelSidecarCostMeasurement.EndPhase(measurement, phase, "first_read");
+                        ModelSidecarCostMeasurement.NoteRead(measurement, true, rawMetadata.Length);
+                        phase = ModelSidecarCostMeasurement.BeginPhase(measurement, "first_parse");
+                        JObject altMetadata = rawMetadata.ParseToJson();
+                        ModelSidecarCostMeasurement.EndPhase(measurement, phase, "first_parse");
+                        ModelSidecarCostMeasurement.NoteParse(measurement, true, altMetadata.Count);
+                        phase = ModelSidecarCostMeasurement.BeginPhase(measurement, "first_merge");
+                        foreach (JProperty prop in altMetadata.Properties())
+                        {
+                            metaHeader[prop.Name] = prop.Value;
+                            headerData[prop.Name] = prop.Value;
+                        }
+                        ModelSidecarCostMeasurement.EndPhase(measurement, phase, "first_merge");
                     }
                 }
             }
@@ -659,14 +752,55 @@ public class T2IModelHandler
                     triggerPhrases.Add(actTok.Value<string>());
                 }
             }
-            procAltHeader(metaHeader);
-            foreach (string altSuffix in AltModelMetadataJsonFileSuffixes)
+            if (measurement is null)
             {
-                if (File.Exists(altModelPrefix + altSuffix))
+                procAltHeader(metaHeader);
+            }
+            else
+            {
+                phase = ModelSidecarCostMeasurement.BeginPhase(measurement, "meta_extract");
+                procAltHeader(metaHeader);
+                ModelSidecarCostMeasurement.EndPhase(measurement, phase, "meta_extract");
+            }
+            if (measurement is null)
+            {
+                foreach (string altSuffix in AltModelMetadataJsonFileSuffixes)
                 {
-                    JObject altMetadata = File.ReadAllText(altModelPrefix + altSuffix).ParseToJson();
-                    procAltHeader(altMetadata);
+                    if (File.Exists(altModelPrefix + altSuffix))
+                    {
+                        JObject altMetadata = File.ReadAllText(altModelPrefix + altSuffix).ParseToJson();
+                        procAltHeader(altMetadata);
+                    }
                 }
+            }
+            else
+            {
+                foreach (string altSuffix in AltModelMetadataJsonFileSuffixes)
+                {
+                    string altPath = altModelPrefix + altSuffix;
+                    phase = ModelSidecarCostMeasurement.BeginPhase(measurement, "second_exists");
+                    bool exists = File.Exists(altPath);
+                    ModelSidecarCostMeasurement.EndPhase(measurement, phase, "second_exists");
+                    ModelSidecarCostMeasurement.NoteExists(measurement, false, exists);
+                    if (exists)
+                    {
+                        phase = ModelSidecarCostMeasurement.BeginPhase(measurement, "second_read");
+                        string rawMetadata = File.ReadAllText(altPath);
+                        ModelSidecarCostMeasurement.EndPhase(measurement, phase, "second_read");
+                        ModelSidecarCostMeasurement.NoteRead(measurement, false, rawMetadata.Length);
+                        phase = ModelSidecarCostMeasurement.BeginPhase(measurement, "second_parse");
+                        JObject altMetadata = rawMetadata.ParseToJson();
+                        ModelSidecarCostMeasurement.EndPhase(measurement, phase, "second_parse");
+                        ModelSidecarCostMeasurement.NoteParse(measurement, false, altMetadata.Count);
+                        phase = ModelSidecarCostMeasurement.BeginPhase(measurement, "second_proc");
+                        procAltHeader(altMetadata);
+                        ModelSidecarCostMeasurement.EndPhase(measurement, phase, "second_proc");
+                    }
+                }
+            }
+            if (measurement is not null)
+            {
+                ModelSidecarCostMeasurement.SetStage(measurement, "record_construction");
             }
             string altTriggerPhrase = triggerPhrases.JoinString(", ");
             T2IModelClass clazz = T2IModelClassSorter.IdentifyClassFor(model, headerData, ModelType);
@@ -819,17 +953,45 @@ public class T2IModelHandler
                 TextEncoders = textEncs,
                 SpecialFormat = limitLength(pickBest(metaHeader?.Value<string>("modelspec.special_format"), metaHeader?.Value<string>("special_format"), specialFormat), basicLimit)
             };
+            if (measurement is not null)
+            {
+                measurement.RecordConstructed = true;
+            }
+            if (measurement is not null)
+            {
+                ModelSidecarCostMeasurement.SetStage(measurement, "none");
+            }
             lock (MetadataLock)
             {
                 try
                 {
+                    if (measurement is not null)
+                    {
+                        measurement.UpsertAttempted = true;
+                    }
+                    if (measurement is not null)
+                    {
+                        ModelSidecarCostMeasurement.SetStage(measurement, "upsert_caught");
+                    }
                     cache.Metadata.Upsert(metadata);
+                    if (measurement is not null)
+                    {
+                        ModelSidecarCostMeasurement.SetStage(measurement, "none");
+                    }
                 }
                 catch (Exception ex)
                 {
+                    if (measurement is not null)
+                    {
+                        ModelSidecarCostMeasurement.NoteCaught(measurement, "upsert_caught");
+                    }
                     Logs.Warning($"Error handling metadata database for model {model.RawFilePath}: {ex.ReadableString()}");
                     cache.HadNewError();
                 }
+            }
+            if (measurement is not null)
+            {
+                ModelSidecarCostMeasurement.EndRecompute(measurement);
             }
         }
         if (!string.IsNullOrWhiteSpace(metadata.ModelClassType))
@@ -841,6 +1003,10 @@ public class T2IModelHandler
             metadata.TimeModified = modified;
             metadata.TimeCreated = modified;
         }
+        if (measurement is not null)
+        {
+            ModelSidecarCostMeasurement.SetStage(measurement, "publication");
+        }
         lock (ModificationLock)
         {
             model.Title = metadata.Title;
@@ -850,6 +1016,14 @@ public class T2IModelHandler
             model.StandardWidth = metadata.StandardWidth;
             model.StandardHeight = metadata.StandardHeight;
             model.Metadata = metadata;
+        }
+        if (measurement is not null)
+        {
+            measurement.Published = true;
+        }
+        if (measurement is not null)
+        {
+            ModelSidecarCostMeasurement.MarkCompleted(measurement, recomputed);
         }
     }
 
