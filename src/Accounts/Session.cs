@@ -622,27 +622,82 @@ public class Session : IEquatable<Session>
                     StillSavingFiles[fullPath] = pendingTask;
                     _ = Utilities.RunCheckedTask(async () =>
                     {
+                        long backgroundStart = measurement is null ? 0 : OutputFilenameSelectionMeasurement.Timestamp();
+                        long conversionWaitMicroseconds = 0;
+                        long primaryWriteMicroseconds = 0;
+                        long metadataWriteMicroseconds = 0;
+                        long previewMicroseconds = 0;
+                        long historyIndexMicroseconds = 0;
+                        long retentionMicroseconds = 0;
+                        string backgroundOutcome = "error";
                         bool saveSucceeded = false;
                         try
                         {
+                            long phaseStart = measurement is null ? 0 : OutputFilenameSelectionMeasurement.Timestamp();
                             MediaFile actualFile = image.ActualFileTask is null ? image.File : await image.ActualFileTask;
-                            File.WriteAllBytes(fullPath, actualFile.RawData);
-                            if ((User.Settings.FileFormat.SaveTextFileMetadata || extension == "webp" || !OutputMetadataTracker.ExtensionsWithMetadata.Contains(extension)) && !string.IsNullOrWhiteSpace(metadata))
+                            if (measurement is not null)
                             {
-                                if (extension == "webp" && actualFile is ImageFile imageFile && imageFile.ToIS.Frames.Count == 1)
+                                conversionWaitMicroseconds =
+                                    OutputFilenameSelectionMeasurement.ElapsedMicroseconds(phaseStart);
+                            }
+
+                            phaseStart = measurement is null ? 0 : OutputFilenameSelectionMeasurement.Timestamp();
+                            File.WriteAllBytes(fullPath, actualFile.RawData);
+                            if (measurement is not null)
+                            {
+                                primaryWriteMicroseconds =
+                                    OutputFilenameSelectionMeasurement.ElapsedMicroseconds(phaseStart);
+                            }
+
+                            phaseStart = measurement is null ? 0 : OutputFilenameSelectionMeasurement.Timestamp();
+                            if ((User.Settings.FileFormat.SaveTextFileMetadata || extension == "webp"
+                                || !OutputMetadataTracker.ExtensionsWithMetadata.Contains(extension))
+                                && !string.IsNullOrWhiteSpace(metadata))
+                            {
+                                if (extension == "webp" && actualFile is ImageFile imageFile
+                                    && imageFile.ToIS.Frames.Count == 1)
                                 {
                                     // no .json write for still-image webps
                                 }
                                 else
                                 {
-                                    File.WriteAllBytes(fullPathNoExt + ".swarm.json", metadata.EncodeUTF8());
+                                    File.WriteAllBytes(
+                                        fullPathNoExt + ".swarm.json", metadata.EncodeUTF8());
                                 }
                             }
+                            if (measurement is not null)
+                            {
+                                metadataWriteMicroseconds =
+                                    OutputFilenameSelectionMeasurement.ElapsedMicroseconds(phaseStart);
+                            }
+
+                            phaseStart = measurement is null ? 0 : OutputFilenameSelectionMeasurement.Timestamp();
                             OutputMetadataTracker.GetOrCreatePreviewFor(fullPath.Replace('\\', '/'));
-                            OutputMetadataTracker.UpsertHistoryIndexForFile(fullPath.Replace('\\', '/'), root, User.Settings.StarNoFolders);
+                            if (measurement is not null)
+                            {
+                                previewMicroseconds =
+                                    OutputFilenameSelectionMeasurement.ElapsedMicroseconds(phaseStart);
+                            }
+
+                            phaseStart = measurement is null ? 0 : OutputFilenameSelectionMeasurement.Timestamp();
+                            OutputMetadataTracker.UpsertHistoryIndexForFile(
+                                fullPath.Replace('\\', '/'), root, User.Settings.StarNoFolders);
+                            if (measurement is not null)
+                            {
+                                historyIndexMicroseconds =
+                                    OutputFilenameSelectionMeasurement.ElapsedMicroseconds(phaseStart);
+                            }
+
                             Logs.Debug($"Saved an output file as '{fullPath}'");
+                            phaseStart = measurement is null ? 0 : OutputFilenameSelectionMeasurement.Timestamp();
                             await Task.Delay(TimeSpan.FromSeconds(10)); // (Give time for WebServer to read data from cache rather than having to reload from file for first read)
+                            if (measurement is not null)
+                            {
+                                retentionMicroseconds =
+                                    OutputFilenameSelectionMeasurement.ElapsedMicroseconds(phaseStart);
+                            }
                             saveSucceeded = true;
+                            backgroundOutcome = "success";
                         }
                         finally
                         {
@@ -655,6 +710,18 @@ public class Session : IEquatable<Session>
                             {
                                 ReleaseOutputFilenameReservationAfterDelay(reservation);
                             }
+                            OutputFilenameSelectionMeasurement.EmitBackground(
+                                measurement,
+                                backgroundOutcome,
+                                conversionWaitMicroseconds,
+                                primaryWriteMicroseconds,
+                                metadataWriteMicroseconds,
+                                previewMicroseconds,
+                                historyIndexMicroseconds,
+                                retentionMicroseconds,
+                                measurement is null
+                                    ? 0
+                                    : OutputFilenameSelectionMeasurement.ElapsedMicroseconds(backgroundStart));
                         }
                     }, "output file save");
                 }
