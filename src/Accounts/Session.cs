@@ -244,12 +244,34 @@ public class Session : IEquatable<Session>
     }
 
     /// <summary>Attempts to reserve a persisted output path without colliding with any extensionless public reservation.</summary>
-    private static bool TryReserveOutputFilename(string fullPath, out OutputFilenameReservation reservation)
+    private static bool TryReserveOutputFilename(string fullPath,
+        out OutputFilenameReservation reservation,
+        OutputFilenameSelectionAttempt measurement)
     {
         lock (OutputFilenameReservationLock)
         {
             string fullPathNoExt = fullPath.BeforeLast('.');
-            if (RecentlyBlockedFilenames.Keys.Any(path => path.BeforeLast('.') == fullPathNoExt))
+            int examined = 0;
+            long scanStart = measurement is null ? 0 : OutputFilenameSelectionMeasurement.Timestamp();
+            bool hasCollision = RecentlyBlockedFilenames.Keys.Any(path =>
+            {
+                if (measurement is not null)
+                {
+                    examined++;
+                }
+                return path.BeforeLast('.') == fullPathNoExt;
+            });
+            if (measurement is not null)
+            {
+                measurement.ReservationKeyCount = Math.Max(measurement.ReservationKeyCount, RecentlyBlockedFilenames.Count);
+                measurement.ReservationKeysExamined += examined;
+                measurement.ReservationScanMicroseconds += OutputFilenameSelectionMeasurement.ElapsedMicroseconds(scanStart);
+                if (hasCollision)
+                {
+                    measurement.ReservationCollisionMatches++;
+                }
+            }
+            if (hasCollision)
             {
                 reservation = default;
                 return false;
@@ -457,10 +479,30 @@ public class Session : IEquatable<Session>
     /// <returns>(User-Visible-WebPath, Local-FilePath)</returns>
     public (string, string) SaveImage(T2IEngine.ImageOutput image, int batchIndex, T2IParamInput user_input, string metadata)
     {
+        return SaveImage(image, batchIndex, user_input, metadata, OutputFilenameSelectionContext.Direct);
+    }
+
+    /// <summary>Internal save route carrying only temporary privacy-safe measurement context.</summary>
+    internal (string, string) SaveImage(T2IEngine.ImageOutput image, int batchIndex,
+        T2IParamInput user_input, string metadata,
+        OutputFilenameSelectionContext measurementContext)
+    {
+        OutputFilenameSelectionAttempt measurement = null;
+        if (OutputFilenameSelectionMeasurement.IsEnabled)
+        {
+            measurement = OutputFilenameSelectionMeasurement.Begin(
+                measurementContext,
+                image.File,
+                user_input.Get(T2IParamTypes.BatchSize, 1));
+        }
         if (!User.Settings.SaveFiles)
         {
+            OutputFilenameSelectionMeasurement.EmitBypass(
+                measurement, "user_save_files_disabled");
             return (image.File.AsDataString(), null);
         }
+        long synchronousStart = measurement is null ? 0 : OutputFilenameSelectionMeasurement.Timestamp();
+        long pathStart = measurement is null ? 0 : OutputFilenameSelectionMeasurement.Timestamp();
         string rawImagePath = User.BuildImageOutputPath(user_input, batchIndex);
         string imagePath = rawImagePath.Replace("[number]", "1");
         string format = user_input.Get(T2IParamTypes.ImageFormat, User.Settings.FileFormat.ImageFormat);
@@ -484,20 +526,88 @@ public class Session : IEquatable<Session>
         string folderRoute = Path.GetFullPath(UserImageHistoryHelper.GetRealPathFor(User, $"{User.OutputDirectory}/{pathFolder}"));
         string fullPath = $"{fullPathNoExt}.{extension}";
         string root = Utilities.CombinePathWithAbsolute(Environment.CurrentDirectory, User.OutputDirectory);
+        if (measurement is not null)
+        {
+            measurement.PathResolutionMicroseconds =
+                OutputFilenameSelectionMeasurement.ElapsedMicroseconds(pathStart);
+            measurement.FolderDepth = pathFolder.Split(
+                '/', StringSplitOptions.RemoveEmptyEntries).Length;
+        }
+
+        bool saveFailed = false;
+        long lockWaitStart = measurement is null ? 0 : OutputFilenameSelectionMeasurement.Timestamp();
         lock (User.UserLock)
         {
+            long lockHoldStart = 0;
+            if (measurement is not null)
+            {
+                measurement.UserLockWaitMicroseconds =
+                    OutputFilenameSelectionMeasurement.ElapsedMicroseconds(lockWaitStart);
+                lockHoldStart = OutputFilenameSelectionMeasurement.Timestamp();
+            }
             try
             {
                 Directory.CreateDirectory(folderRoute);
-                HashSet<string> existingFiles = [.. Directory.EnumerateFiles(folderRoute).Select(f => f.BeforeLast('.'))];
+                HashSet<string> existingFiles;
+                if (measurement is null)
+                {
+                    existingFiles = [.. Directory.EnumerateFiles(folderRoute)
+                        .Select(file => file.BeforeLast('.'))];
+                }
+                else
+                {
+                    long enumerationStart = OutputFilenameSelectionMeasurement.Timestamp();
+                    string[] folderFiles = [.. Directory.EnumerateFiles(folderRoute)];
+                    measurement.DirectoryEnumerationMicroseconds =
+                        OutputFilenameSelectionMeasurement.ElapsedMicroseconds(enumerationStart);
+                    measurement.FolderFileCount = folderFiles.Length;
+                    long hashStart = OutputFilenameSelectionMeasurement.Timestamp();
+                    existingFiles = [.. folderFiles.Select(file => file.BeforeLast('.'))];
+                    measurement.ExtensionlessHashMicroseconds =
+                        OutputFilenameSelectionMeasurement.ElapsedMicroseconds(hashStart);
+                }
                 OutputFilenameReservation reservation = default;
                 int num = 0;
-                while (existingFiles.Contains(fullPathNoExt) || !TryReserveOutputFilename(fullPath, out reservation))
+                if (measurement is null)
                 {
-                    num++;
-                    imagePath = rawImagePath.Contains("[number]") ? rawImagePath.Replace("[number]", $"{num}") : $"{rawImagePath}-{num}";
-                    fullPathNoExt = Path.GetFullPath(UserImageHistoryHelper.GetRealPathFor(User, $"{User.OutputDirectory}/{imagePath}"));
-                    fullPath = $"{fullPathNoExt}.{extension}";
+                    while (existingFiles.Contains(fullPathNoExt)
+                        || !TryReserveOutputFilename(fullPath, out reservation, null))
+                    {
+                        num++;
+                        imagePath = rawImagePath.Contains("[number]")
+                            ? rawImagePath.Replace("[number]", $"{num}")
+                            : $"{rawImagePath}-{num}";
+                        fullPathNoExt = Path.GetFullPath(UserImageHistoryHelper.GetRealPathFor(
+                            User, $"{User.OutputDirectory}/{imagePath}"));
+                        fullPath = $"{fullPathNoExt}.{extension}";
+                    }
+                }
+                else
+                {
+                    while (true)
+                    {
+                        measurement.CandidateProbeCount++;
+                        long probeStart = OutputFilenameSelectionMeasurement.Timestamp();
+                        bool diskCollision = existingFiles.Contains(fullPathNoExt);
+                        bool reserved = !diskCollision
+                            && TryReserveOutputFilename(fullPath, out reservation, measurement);
+                        measurement.CandidateProbeMicroseconds +=
+                            OutputFilenameSelectionMeasurement.ElapsedMicroseconds(probeStart);
+                        if (reserved)
+                        {
+                            break;
+                        }
+                        num++;
+                        imagePath = rawImagePath.Contains("[number]")
+                            ? rawImagePath.Replace("[number]", $"{num}")
+                            : $"{rawImagePath}-{num}";
+                        fullPathNoExt = Path.GetFullPath(UserImageHistoryHelper.GetRealPathFor(
+                            User, $"{User.OutputDirectory}/{imagePath}"));
+                        fullPath = $"{fullPathNoExt}.{extension}";
+                    }
+                    measurement.NamingCategory = num == 0
+                        ? "direct"
+                        : rawImagePath.Contains("[number]") ? "number_token" : "suffix";
                 }
                 Task<byte[]> pendingTask = null;
                 try
@@ -555,8 +665,27 @@ public class Session : IEquatable<Session>
             catch (Exception ex)
             {
                 Logs.Error($"Could not save user '{User.UserID}' image (to '{fullPath}'): error '{ex.Message}'");
-                return ("ERROR", null);
+                saveFailed = true;
             }
+            finally
+            {
+                if (measurement is not null)
+                {
+                    measurement.UserLockHoldMicroseconds =
+                        OutputFilenameSelectionMeasurement.ElapsedMicroseconds(lockHoldStart);
+                }
+            }
+        }
+        if (measurement is not null)
+        {
+            measurement.SynchronousSelectionMicroseconds =
+                OutputFilenameSelectionMeasurement.ElapsedMicroseconds(synchronousStart);
+            OutputFilenameSelectionMeasurement.EmitSelection(
+                measurement, saveFailed ? "error" : "scheduled");
+        }
+        if (saveFailed)
+        {
+            return ("ERROR", null);
         }
         string prefix = Program.ServerSettings.Paths.AppendUserNameToOutputPath ? $"View/{User.UserID}/" : "Output/";
         return ($"{prefix}{imagePath}.{extension}", fullPath);

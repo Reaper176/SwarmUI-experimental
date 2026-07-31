@@ -169,14 +169,19 @@ internal static class OutputFilenameSelectionMeasurement
         }
     }
 
-    internal static void EmitBypass(OutputFilenameSelectionContext context, MediaFile file, int batchSize, string reason)
+    internal static void EmitBypass(OutputFilenameSelectionAttempt attempt, string reason)
     {
-        OutputFilenameSelectionAttempt attempt = Begin(context, file, batchSize);
         if (attempt is null)
         {
             return;
         }
         Emit(Common(attempt, "bypass", reason));
+    }
+
+    internal static void EmitBypass(OutputFilenameSelectionContext context, MediaFile file, int batchSize, string reason)
+    {
+        OutputFilenameSelectionAttempt attempt = Begin(context, file, batchSize);
+        EmitBypass(attempt, reason);
     }
 
     internal static void EmitSelection(OutputFilenameSelectionAttempt attempt, string outcome)
