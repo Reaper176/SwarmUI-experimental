@@ -2,7 +2,7 @@
 
 **Date:** 2026-07-31
 **Rank:** 32
-**Status:** Approved for instrumentation
+**Status:** Evidence collected; removal pending
 **Approved base:** `5b536e1ff2d876834419d0138d8929dae3f74909`
 
 ## Decision Authority
@@ -285,3 +285,63 @@ Design reviews of exact head
 `RANK32_DESIGN_SPEC_APPROVED` and `RANK32_DESIGN_QUALITY_APPROVED` with no
 remaining findings. The approved-base harness passed four behavior assertions
 and failed only its expected missing-instrumentation assertion.
+
+## Collected Evidence and Decision
+
+The temporary source was collected at exact instrumented head
+`1863f4ba8b7e04ca2845d08ebc0e92da6a3b1c8e`. Independent source reviews of
+that exact head returned `RANK32_SOURCE_SPEC_APPROVED` and
+`RANK32_SOURCE_QUALITY_APPROVED` with no remaining findings. A fresh external
+Release publish under `/tmp/swarmui-rank32-instrumented-4WuAQ3/app` completed
+with 0 warnings and 0 errors; its `SwarmUI.dll` SHA-256 is
+`2a81f1302c26a45df98e7e9f341c78c35f8dd9fe49a8078dffe8510f616da4be`.
+
+Under Reaper176's one-time self-testing override, the authoritative synthetic
+matrix ran on Garuda Linux (Arch-based), Linux `7.1.4-1-cachyos`, x86-64,
+.NET SDK `10.0.110`, and an AMD Ryzen 7 7800X3D. Repository source was on
+Btrfs; all fixtures, databases, build products, harness files, and evidence
+were isolated to `/tmp`, which was tmpfs. No repository user data, model
+library, network filesystem, GPU data, or external service was read.
+
+The external harness passed 73,341 assertions with zero failures and emitted
+10,326 complete privacy-safe schema-1 records. The raw JSONL contains no
+synthetic-root string, sentinel content, or model filename. Artifacts are:
+
+- summary: `/tmp/rank32-summary.json`, 18,501 bytes, SHA-256
+  `3388fccdcd5e31735319d7dc92ee57aee83aebb4e68219760317d55b2b560561`;
+- raw records: `/tmp/rank32-records.jsonl`, 15,619,873 bytes, SHA-256
+  `0992b2a5255859e46c84e9f4035be5e1c72d126db30cb5d199952876e08b663a`;
+- harness source: `/tmp/rank32-harness/Program.cs`, 33,197 bytes, SHA-256
+  `2ff9d32625c35a2e2ffd9f470f5f6f4dcc3e5c2b74c5d7d038838817bac8f486`;
+  and
+- harness assembly: `/tmp/rank32-harness/bin/Release/net8.0/Rank32Harness.dll`,
+  34,304 bytes, SHA-256
+  `a9887f5528c4b0f7a3d95d4c7a11cbe654b578b17b7d4e0e22462ba320e0a7b0`.
+
+Nearest-rank order statistics produce a **GO** through the independently
+authorizing direct-allocation gate. For central-cache `single_64k_4`, the
+second-pass allocation p95 is 3,780,360 bytes in both chronological halves;
+recomputation allocation p95 is 7,615,464 and 7,612,648 bytes. The per-half
+ratios are 49.6406% and 49.6589%, above the frozen 20% threshold, while both
+second-pass values exceed 1 MiB. The stability ratios are 0 for second-pass
+allocation and 0.000370 for recomputation allocation, both below 0.25. The
+direct time gate does not qualify: second-pass p95 is 1,658 us and 1,976 us,
+below 5 ms. Neither batch group independently satisfies every frozen
+threshold and stability condition, so neither contributes to the decision.
+
+This is a design-only `GO`: a later, separately reviewed design may consider
+reusing parsed sidecar objects while preserving both logical passes and every
+Rank 22 contract. Rank 32 implements and authorizes no production optimization.
+The measurements are synthetic, single-host, current-thread-allocation and
+phase-attribution evidence; they do not establish production frequency,
+retained-memory cost, another runtime/platform/filesystem, network-storage
+behavior, or benefit from a proposed implementation.
+
+Two non-authoritative harness attempts preceded the accepted collection. The
+first compile found only a missing Frenetic extension namespace. The first full
+run then exposed two harness-fixture assertions: a sidecar architecture hint
+does not itself seed the historical `ModelClassType` needed for the legacy
+`TextEncoders` cache case. The external fixture was corrected to seed that
+exact cache record directly and to assert its bounded invalidation category;
+no repository or instrumented source changed. The complete corrected rerun is
+the sole evidence set reported above.
