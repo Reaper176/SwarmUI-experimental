@@ -259,7 +259,8 @@ public class GridGeneratorExtension : Extension
                             if (OutputFilenameSelectionMeasurement.IsEnabled)
                             {
                                 OutputFilenameSelectionMeasurement.EmitBypass(
-                                    OutputFilenameSelectionContext.GridIteration,
+                                    OutputFilenameSelectionContext.GridIteration(
+                                        image.OutputFilenameMeasurementBackendClaimed),
                                     image.File,
                                     thisParams.Get(T2IParamTypes.BatchSize, 1),
                                     "grid_do_not_save");
@@ -273,7 +274,8 @@ public class GridGeneratorExtension : Extension
                                 iteration,
                                 thisParams,
                                 metadata,
-                                OutputFilenameSelectionContext.GridIteration);
+                                OutputFilenameSelectionContext.GridIteration(
+                                    image.OutputFilenameMeasurementBackendClaimed));
                         }
                         if (url == "ERROR")
                         {

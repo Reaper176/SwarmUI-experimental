@@ -38,6 +38,8 @@ Temporary instrumentation phase:
 - Modify `src/Accounts/Session.cs`: user no-save record, path/lock/folder/hash/
   reservation/probe timing, background phase timing, and unchanged public
   facade.
+- Modify `src/Text2Image/T2IEngine.cs`: temporary dynamically observed
+  backend-claim marker on accepted output callbacks.
 - Modify `src/WebAPI/T2IAPI.cs`: normal-generation/mini-grid context and
   request/intermediate bypass records.
 - Modify `src/WebAPI/ImageHistoryAPI.cs`: Image History source context.
@@ -67,6 +69,7 @@ from approved base `30448884415c44f446136fa3e11fb06cefe375d6`.
 - Read: `docs/superpowers/audits/2026-07-21-maintainability-architecture-refresh.md`
 - Read: `src/Accounts/Session.cs`
 - Read: `src/Core/Settings.cs`
+- Read: `src/Text2Image/T2IEngine.cs`
 - Read: `src/WebAPI/T2IAPI.cs`
 - Read: `src/WebAPI/ImageHistoryAPI.cs`
 - Read:
@@ -152,7 +155,7 @@ Run:
 ```bash
 test ! -e src/Accounts/OutputFilenameSelectionMeasurement.cs
 test -z "$(rg -l \
-  'OutputFilenameMeasurementEnabled|OutputFilenameMeasurementScenario|Rank25OutputFilename|OutputFilenameSelectionContext' \
+  'OutputFilenameMeasurementEnabled|OutputFilenameMeasurementScenario|OutputFilenameMeasurementBackendClaimed|Rank25OutputFilename|OutputFilenameSelectionContext' \
   src/Accounts \
   src/Backends \
   src/BuiltinExtensions \
@@ -235,8 +238,8 @@ internal readonly record struct OutputFilenameSelectionContext(string Source, bo
     /// <summary>Fallback context for the unchanged public save facade.</summary>
     internal static OutputFilenameSelectionContext Direct => new("direct", false);
 
-    /// <summary>Normal generated output while the selected backend remains claimed.</summary>
-    internal static OutputFilenameSelectionContext NormalGeneration => new("normal_generation", true);
+    /// <summary>Normal generated output with its dynamically observed backend-claim state.</summary>
+    internal static OutputFilenameSelectionContext NormalGeneration(bool backendClaimed) => new("normal_generation", backendClaimed);
 
     /// <summary>Normal post-batch mini-grid outside the engine backend claim.</summary>
     internal static OutputFilenameSelectionContext NormalMiniGrid => new("normal_mini_grid", false);
@@ -244,8 +247,8 @@ internal readonly record struct OutputFilenameSelectionContext(string Source, bo
     /// <summary>Image History add request.</summary>
     internal static OutputFilenameSelectionContext ImageHistoryAdd => new("image_history_add", false);
 
-    /// <summary>Grid Generator iteration output.</summary>
-    internal static OutputFilenameSelectionContext GridIteration => new("grid_iteration", false);
+    /// <summary>Grid Generator iteration output with its dynamically observed backend-claim state.</summary>
+    internal static OutputFilenameSelectionContext GridIteration(bool backendClaimed) => new("grid_iteration", backendClaimed);
 
     /// <summary>Grid Generator final output.</summary>
     internal static OutputFilenameSelectionContext GridFinal => new("grid_final", false);
@@ -1004,6 +1007,8 @@ Expected: one-file commit.
 ### Task 5: Classify Maintained Callers and Bypasses
 
 **Files:**
+- Modify: `src/Text2Image/T2IEngine.cs:45-69`
+- Modify: `src/Text2Image/T2IEngine.cs:209-321`
 - Modify: `src/WebAPI/T2IAPI.cs:370-392`
 - Modify: `src/WebAPI/T2IAPI.cs:451-468`
 - Modify: `src/WebAPI/T2IAPI.cs:507-515`
@@ -1028,6 +1033,31 @@ test -z "$(rg -n \
 Expected: exit `0`.
 
 - [ ] **Step 2: Classify normal generation and mini-grid without changing save policy**
+
+Add this documented internal field to `T2IEngine.ImageOutput`:
+
+```csharp
+/// <summary>Whether temporary Rank 25 measurement observed this output callback under a selected backend claim.</summary>
+internal bool OutputFilenameMeasurementBackendClaimed;
+```
+
+Change the local `handleFileOutput(ImageOutput img)` signature to
+`handleFileOutput(ImageOutput img, bool backendClaimed)`. Immediately before
+`ApplyMetadata` and `saveImages` in the accepted-output branch, assign the
+temporary marker only while measurement is enabled:
+
+```csharp
+if (OutputFilenameSelectionMeasurement.IsEnabled)
+{
+    img.OutputFilenameMeasurementBackendClaimed = backendClaimed;
+}
+```
+
+Pass `false` from the object-tool early-output call before backend acquisition.
+Pass `true` from both `GenerateLive` callback cases lexically inside
+`using (backend)`. Account for all three `handleFileOutput` call sites without
+changing either public `CreateImageTask` signature or its save callback
+signature.
 
 Change the local `saveImage` signature to accept
 `OutputFilenameSelectionContext measurementContext`.
@@ -1062,8 +1092,10 @@ In the persisted branch call:
     image, actualIndex, thisParams, metadata, measurementContext);
 ```
 
-Pass `OutputFilenameSelectionContext.NormalGeneration` from the
-`CreateImageTask` callback and
+Pass
+`OutputFilenameSelectionContext.NormalGeneration(
+    image.OutputFilenameMeasurementBackendClaimed)` from the `CreateImageTask`
+callback and
 `OutputFilenameSelectionContext.NormalMiniGrid` from the post-batch mini-grid.
 
 - [ ] **Step 3: Classify Image History add**
@@ -1090,7 +1122,8 @@ if (thisParams.Get(T2IParamTypes.DoNotSave, false))
     if (OutputFilenameSelectionMeasurement.IsEnabled)
     {
         OutputFilenameSelectionMeasurement.EmitBypass(
-            OutputFilenameSelectionContext.GridIteration,
+            OutputFilenameSelectionContext.GridIteration(
+                image.OutputFilenameMeasurementBackendClaimed),
             image.File,
             thisParams.Get(T2IParamTypes.BatchSize, 1),
             "grid_do_not_save");
@@ -1104,7 +1137,8 @@ else
         iteration,
         thisParams,
         metadata,
-        OutputFilenameSelectionContext.GridIteration);
+        OutputFilenameSelectionContext.GridIteration(
+            image.OutputFilenameMeasurementBackendClaimed));
 }
 ```
 
@@ -1150,16 +1184,25 @@ test "$(rg -c 'GridIteration' src/BuiltinExtensions/GridGenerator/GridGeneratorE
 test "$(rg -c 'GridFinal' src/BuiltinExtensions/GridGenerator/GridGeneratorExtension.cs)" -eq 2
 test "$(rg -c 'EmitBypass' src/WebAPI/T2IAPI.cs)" -eq 1
 test "$(rg -c 'EmitBypass' src/BuiltinExtensions/GridGenerator/GridGeneratorExtension.cs)" -eq 2
+test "$(rg -c 'internal bool OutputFilenameMeasurementBackendClaimed;' src/Text2Image/T2IEngine.cs)" -eq 1
+test "$(rg -c 'void handleFileOutput\\(ImageOutput img, bool backendClaimed\\)' src/Text2Image/T2IEngine.cs)" -eq 1
+test "$(rg -c 'handleFileOutput\\(new\\(\\).*false\\);' src/Text2Image/T2IEngine.cs)" -eq 1
+test "$(rg -c 'handleFileOutput\\(.*true\\);' src/Text2Image/T2IEngine.cs)" -eq 2
+test -z "$(rg -n 'handleFileOutput\\([^,;]+\\);' src/Text2Image/T2IEngine.cs)"
 git diff --check
 ```
 
 Inspect every emitted record call and confirm no `UserID`, `UserRequestId`,
-prompt, filename, path, metadata, or exception is passed.
+prompt, filename, path, metadata, or exception is passed. Confirm the marker
+assignment is dominated by `OutputFilenameSelectionMeasurement.IsEnabled`,
+normal/Grid iteration contexts consume the marker, mini-grid/Image History/
+Grid final remain false, and no public `CreateImageTask` declaration changed.
 
 - [ ] **Step 6: Commit caller classification**
 
 ```bash
 git add \
+  src/Text2Image/T2IEngine.cs \
   src/WebAPI/T2IAPI.cs \
   src/WebAPI/ImageHistoryAPI.cs \
   src/BuiltinExtensions/GridGenerator/GridGeneratorExtension.cs
@@ -1167,12 +1210,12 @@ git diff --cached --check
 git commit -m "measure: classify output save contexts"
 ```
 
-Expected: exact three-file commit.
+Expected: exact four-file commit.
 
 ### Task 6: Complete Static Review Before Maintainer Collection
 
 **Files:**
-- Review all six temporary source files.
+- Review all seven temporary source files.
 - Do not modify source unless a review finding requires correction.
 
 - [ ] **Step 1: Verify exact temporary source projection**
@@ -1190,6 +1233,7 @@ src/Accounts/OutputFilenameSelectionMeasurement.cs
 src/Accounts/Session.cs
 src/BuiltinExtensions/GridGenerator/GridGeneratorExtension.cs
 src/Core/Settings.cs
+src/Text2Image/T2IEngine.cs
 src/WebAPI/ImageHistoryAPI.cs
 src/WebAPI/T2IAPI.cs
 ```
@@ -1205,7 +1249,9 @@ rg '^    public \\(string, string\\) SaveImage' src/Accounts/Session.cs \
   > /tmp/rank25-candidate-public.txt
 cmp /tmp/rank25-base-public.txt /tmp/rank25-candidate-public.txt
 rg -n 'if \\(!IsEnabled\\)|if \\(measurement is null\\)|if \\(measurement is not null\\)' \
-  src/Accounts/OutputFilenameSelectionMeasurement.cs src/Accounts/Session.cs
+  src/Accounts/OutputFilenameSelectionMeasurement.cs \
+  src/Accounts/Session.cs \
+  src/Text2Image/T2IEngine.cs
 ```
 
 Expected: public declarations compare byte-for-byte and every timestamp/record
@@ -1472,6 +1518,7 @@ Do not yet call Rank 25 complete.
 - Delete: `src/Accounts/OutputFilenameSelectionMeasurement.cs`
 - Restore Rank-25 edits in: `src/Core/Settings.cs`
 - Restore Rank-25 edits in: `src/Accounts/Session.cs`
+- Restore Rank-25 edits in: `src/Text2Image/T2IEngine.cs`
 - Restore Rank-25 edits in: `src/WebAPI/T2IAPI.cs`
 - Restore Rank-25 edits in: `src/WebAPI/ImageHistoryAPI.cs`
 - Restore Rank-25 edits in:
@@ -1483,7 +1530,7 @@ Run:
 
 ```bash
 test -n "$(rg -l \
-  'OutputFilenameMeasurementEnabled|OutputFilenameMeasurementScenario|Rank25OutputFilename|OutputFilenameSelectionContext' \
+  'OutputFilenameMeasurementEnabled|OutputFilenameMeasurementScenario|OutputFilenameMeasurementBackendClaimed|Rank25OutputFilename|OutputFilenameSelectionContext' \
   src/Accounts \
   src/Backends \
   src/BuiltinExtensions \
@@ -1537,9 +1584,11 @@ git show 30448884415c44f446136fa3e11fb06cefe375d6:src/Accounts/Session.cs
 - [ ] **Step 4: Restore every maintained caller**
 
 With `apply_patch`, restore the exact approved-base call/bypass expressions in
-T2IAPI, ImageHistoryAPI, and GridGenerator. Preserve unrelated changes only if
+T2IAPI, ImageHistoryAPI, and GridGenerator. Remove the temporary `ImageOutput`
+marker and restore the original one-parameter `handleFileOutput` signature and
+all three one-argument calls in `T2IEngine`. Preserve unrelated changes only if
 they were explicitly added after the approved base outside Rank 25; otherwise
-the six temporary source paths must equal the approved base.
+the seven temporary source paths must equal the approved base.
 
 - [ ] **Step 5: Run the removal GREEN and exact-tree gate**
 
@@ -1548,7 +1597,7 @@ Run:
 ```bash
 test ! -e src/Accounts/OutputFilenameSelectionMeasurement.cs
 test -z "$(rg -l \
-  'OutputFilenameMeasurementEnabled|OutputFilenameMeasurementScenario|Rank25OutputFilename|OutputFilenameSelectionContext|OutputFilenameSelectionAttempt' \
+  'OutputFilenameMeasurementEnabled|OutputFilenameMeasurementScenario|OutputFilenameMeasurementBackendClaimed|Rank25OutputFilename|OutputFilenameSelectionContext|OutputFilenameSelectionAttempt' \
   src/Accounts \
   src/Backends \
   src/BuiltinExtensions \
@@ -1565,6 +1614,7 @@ git diff --quiet 30448884415c44f446136fa3e11fb06cefe375d6 -- \
   src/Accounts/OutputFilenameSelectionMeasurement.cs \
   src/Core/Settings.cs \
   src/Accounts/Session.cs \
+  src/Text2Image/T2IEngine.cs \
   src/WebAPI/T2IAPI.cs \
   src/WebAPI/ImageHistoryAPI.cs \
   src/BuiltinExtensions/GridGenerator/GridGeneratorExtension.cs
@@ -1572,7 +1622,7 @@ git diff --check
 test -z "$(find src -type d \( -name bin -o -name obj \) -print -quit)"
 ```
 
-Expected: every command exits `0`. The six temporary source paths are
+Expected: every command exits `0`. The seven temporary source paths are
 byte-identical to the approved base before the removal commit.
 
 - [ ] **Step 6: Commit removal**
@@ -1582,6 +1632,7 @@ git add \
   src/Accounts/OutputFilenameSelectionMeasurement.cs \
   src/Core/Settings.cs \
   src/Accounts/Session.cs \
+  src/Text2Image/T2IEngine.cs \
   src/WebAPI/T2IAPI.cs \
   src/WebAPI/ImageHistoryAPI.cs \
   src/BuiltinExtensions/GridGenerator/GridGeneratorExtension.cs
@@ -1624,7 +1675,7 @@ Record:
 - plan commit;
 - each temporary instrumentation commit;
 - removal commit;
-- temporary six-file source projection;
+- temporary seven-file source projection;
 - final empty source projection relative to `30448884`;
 - static review tokens;
 - maintainer collection/removal messages and normalized counts;

@@ -17,10 +17,12 @@ algorithm refactor.
 The current path synchronously resolves the output path, waits for
 `User.UserLock`, enumerates the target folder, builds an extensionless filename
 set, scans process-lifetime reservation keys, and probes candidate names before
-publishing a reservation. Normal generated outputs perform that work while the
-selected backend remains claimed. Image History add and Grid Generator share
-the same save path, while request, intermediate-output, Grid, and user-setting
-bypasses can return data URLs without running the scans.
+publishing a reservation. Normal generated-output and Grid iteration callbacks
+may perform that work while a selected backend remains claimed, while the
+object-tool early-output path reaches the same normal callback before backend
+acquisition. Image History add and Grid Generator share the same save path,
+while request, intermediate-output, Grid, and user-setting bypasses can return
+data URLs without running the scans.
 
 Static inspection confirms the repeated mechanisms but cannot establish their
 materiality. Rank 25 therefore adds opt-in, privacy-safe structured diagnostic
@@ -69,11 +71,18 @@ pending bytes for ten seconds, and releases or expires the exact reservation.
 
 The maintained consumers are:
 
-- normal T2I output callbacks, while `T2IEngine.CreateImageTask` holds the
-  selected backend claim;
-- the later normal mini-grid, outside that engine backend claim;
-- Image History add;
-- Grid Generator iteration and final-grid output.
+- normal T2I output callbacks, with dynamically observed backend-claim state;
+- the later normal mini-grid, with backend-claim state false;
+- Image History add, with backend-claim state false;
+- Grid Generator iteration output, with dynamically observed backend-claim
+  state;
+- Grid Generator final-grid output, with backend-claim state false.
+
+The normal callback is reached both from `GenerateLive` lexically inside
+`using (backend)` and from the object-tool early-output path before backend
+acquisition. Grid iteration callbacks are reached inside `GenerateLive`.
+Rank 25 records the actual lexical state rather than assigning one static value
+to every output in either source category.
 
 The maintained bypasses are:
 
@@ -89,7 +98,7 @@ Rank 25 must distinguish these paths without changing their order or results.
 - Measure the synchronous filename-selection components and their scaling
   inputs for persisted outputs.
 - Identify whether and where selection materially extends output publication
-  or a normal generation backend claim.
+  or any selected backend claim.
 - Keep background conversion, storage, preview, index, and retention work
   separate from synchronous selection.
 - Record every data-URL bypass category so bypassed outputs are not counted as
@@ -166,9 +175,14 @@ internal context route identifies:
 - Grid Generator final output;
 - an otherwise direct/unknown caller.
 
-The context also states whether synchronous selection runs while a backend
-claim is known to be held. It contains no user, request, filename, or path
-identity.
+The context also states whether synchronous selection runs while a selected
+backend claim is known to be held. `T2IEngine.handleFileOutput` receives the
+actual lexical claim state and, only while measurement is enabled, stores it in
+one temporary internal `ImageOutput` marker before invoking the unchanged
+public save callback. Normal and Grid iteration callers consume that dynamic
+bit; mini-grid, Image History, Grid final, and direct contexts remain false.
+No public `CreateImageTask` or callback signature changes. The context contains
+no user, request, filename, or path identity.
 
 Existing maintained callers use the internal route only when necessary to
 classify the record. The public method preserves its current behavior and
@@ -337,10 +351,11 @@ The matrix covers:
 14. concurrent saves to the same target folder;
 15. concurrent saves to different user/folder scopes;
 16. delete then regenerate;
-17. normal generated output under a backend claim;
+17. normal generated output with dynamically observed backend-claim state;
 18. normal mini-grid outside the engine backend claim;
 19. Image History add;
-20. Grid Generator iteration output;
+20. Grid Generator iteration output with dynamically observed backend-claim
+    state;
 21. Grid Generator final output;
 22. representative single-output generation;
 23. representative batch generation;
@@ -375,7 +390,10 @@ Static verification must prove:
 - no raw identity/path/request/exception-message field in the record schema;
 - no log formatting or emission while `User.UserLock` is held;
 - disabled guards dominate every measurement-only timestamp, ID, allocation,
-  and record;
+  record, and temporary backend-claim marker mutation;
+- exactly one internal marker is set at `handleFileOutput`, with one pre-claim
+  `false` call and two in-claim `true` calls, and no public callback signature
+  change;
 - exact temporary file scope;
 - clean whitespace and no unrelated source changes.
 
@@ -412,7 +430,8 @@ After the evidence and decision are recorded:
 1. remove both temporary performance settings;
 2. remove the internal recorder and record types;
 3. remove every caller context and bypass hook;
-4. restore the untimed direct `Session.SaveImage` flow;
+4. remove the temporary output marker, restore `handleFileOutput` and its calls,
+   and restore the untimed direct `Session.SaveImage` flow;
 5. statically verify that no Rank 25 symbol or log prefix remains;
 6. record the final source projection and decision in the audit.
 

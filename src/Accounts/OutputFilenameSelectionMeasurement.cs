@@ -13,8 +13,8 @@ internal readonly record struct OutputFilenameSelectionContext(string Source, bo
     /// <summary>Fallback context for the unchanged public save facade.</summary>
     internal static OutputFilenameSelectionContext Direct => new("direct", false);
 
-    /// <summary>Normal generated output while the selected backend remains claimed.</summary>
-    internal static OutputFilenameSelectionContext NormalGeneration => new("normal_generation", true);
+    /// <summary>Normal generated output with its dynamically observed backend-claim state.</summary>
+    internal static OutputFilenameSelectionContext NormalGeneration(bool backendClaimed) => new("normal_generation", backendClaimed);
 
     /// <summary>Normal post-batch mini-grid outside the engine backend claim.</summary>
     internal static OutputFilenameSelectionContext NormalMiniGrid => new("normal_mini_grid", false);
@@ -22,8 +22,8 @@ internal readonly record struct OutputFilenameSelectionContext(string Source, bo
     /// <summary>Image History add request.</summary>
     internal static OutputFilenameSelectionContext ImageHistoryAdd => new("image_history_add", false);
 
-    /// <summary>Grid Generator iteration output.</summary>
-    internal static OutputFilenameSelectionContext GridIteration => new("grid_iteration", false);
+    /// <summary>Grid Generator iteration output with its dynamically observed backend-claim state.</summary>
+    internal static OutputFilenameSelectionContext GridIteration(bool backendClaimed) => new("grid_iteration", backendClaimed);
 
     /// <summary>Grid Generator final output.</summary>
     internal static OutputFilenameSelectionContext GridFinal => new("grid_final", false);

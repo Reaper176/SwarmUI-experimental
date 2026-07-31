@@ -478,7 +478,8 @@ public static class T2IAPI
                         actualIndex,
                         thisParams,
                         metadata,
-                        OutputFilenameSelectionContext.NormalGeneration);
+                        OutputFilenameSelectionContext.NormalGeneration(
+                            image.OutputFilenameMeasurementBackendClaimed));
                 })));
             if (Program.Backends.QueuedRequests < Program.ServerSettings.Backends.MaxRequestsForcedOrder)
             {

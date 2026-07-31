@@ -58,6 +58,9 @@ namespace SwarmUI.Text2Image
             /// <summary>An async task to get the actual final filedata meant to be saved to file.</summary>
             public Task<MediaFile> ActualFileTask;
 
+            /// <summary>Whether temporary Rank 25 measurement observed this output callback under a selected backend claim.</summary>
+            internal bool OutputFilenameMeasurementBackendClaimed;
+
             /// <summary>The time in milliseconds it took to generate, or -1 if unknown.</summary>
             public long GenTimeMS = -1;
 
@@ -206,7 +209,7 @@ namespace SwarmUI.Text2Image
             int numImagesGenned = 0;
             long lastGenTime = Environment.TickCount64;
             string genTimeReport = "? failed!";
-            void handleFileOutput(ImageOutput img)
+            void handleFileOutput(ImageOutput img, bool backendClaimed)
             {
                 lastGenTime = Environment.TickCount64;
                 if (img.GenTimeMS < 0)
@@ -235,6 +238,10 @@ namespace SwarmUI.Text2Image
                 }
                 else
                 {
+                    if (OutputFilenameSelectionMeasurement.IsEnabled)
+                    {
+                        img.OutputFilenameMeasurementBackendClaimed = backendClaimed;
+                    }
                     (Task<MediaFile> imgTask, string metadata) = copyInput.SourceSession.ApplyMetadata(img.File, copyInput, numImagesGenned, true);
                     img.ActualFileTask = imgTask;
                     saveImages(img, metadata);
@@ -254,7 +261,7 @@ namespace SwarmUI.Text2Image
                         double cleanup = user_input.Get(T2IParamTypes.RegionalObjectCleanupFactor, 0);
                         if (cleanup == 0)
                         {
-                            handleFileOutput(new() { File = multiImg, IsReal = true, GenTimeMS = -1, RefuseImage = null });
+                            handleFileOutput(new() { File = multiImg, IsReal = true, GenTimeMS = -1, RefuseImage = null }, false);
                             return;
                         }
                         user_input.Set(T2IParamTypes.InitImageCreativity, cleanup);
@@ -311,11 +318,11 @@ namespace SwarmUI.Text2Image
                     {
                         if (obj is MediaFile file)
                         {
-                            handleFileOutput(new() { File = file });
+                            handleFileOutput(new() { File = file }, true);
                         }
                         else if (obj is ImageOutput imgOut)
                         {
-                            handleFileOutput(imgOut);
+                            handleFileOutput(imgOut, true);
                         }
                         else
                         {
