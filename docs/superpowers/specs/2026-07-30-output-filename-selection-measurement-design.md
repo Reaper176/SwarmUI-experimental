@@ -19,10 +19,11 @@ The current path synchronously resolves the output path, waits for
 set, scans process-lifetime reservation keys, and probes candidate names before
 publishing a reservation. Normal generated-output and Grid iteration callbacks
 may perform that work while a selected backend remains claimed, while the
-object-tool early-output path reaches the same normal callback before backend
-acquisition. Image History add and Grid Generator share the same save path,
-while request, intermediate-output, Grid, and user-setting bypasses can return
-data URLs without running the scans.
+object-tool early-output path can reach either source callback before backend
+acquisition because both pass their save callback to the same public
+`CreateImageTask`. Image History add and Grid Generator share the same save
+path, while request, intermediate-output, Grid, and user-setting bypasses can
+return data URLs without running the scans.
 
 Static inspection confirms the repeated mechanisms but cannot establish their
 materiality. Rank 25 therefore adds opt-in, privacy-safe structured diagnostic
@@ -78,11 +79,11 @@ The maintained consumers are:
   state;
 - Grid Generator final-grid output, with backend-claim state false.
 
-The normal callback is reached both from `GenerateLive` lexically inside
-`using (backend)` and from the object-tool early-output path before backend
-acquisition. Grid iteration callbacks are reached inside `GenerateLive`.
-Rank 25 records the actual lexical state rather than assigning one static value
-to every output in either source category.
+Both normal and Grid iteration callbacks can be reached from `GenerateLive`
+lexically inside `using (backend)` or from the object-tool early-output path
+before backend acquisition because both pass their save callback to the same
+public `CreateImageTask`. Rank 25 records the actual lexical state rather than
+assigning one static value to every output in either source category.
 
 The maintained bypasses are:
 
