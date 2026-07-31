@@ -60,6 +60,15 @@ internal static class WorkflowHydrationCostMeasurement
         /// <summary>Null record count observed after lock acquisition.</summary>
         internal long EntryNullCount;
 
+        /// <summary>Dictionary entry count observed immediately before releasing the store lock.</summary>
+        internal long ExitCount;
+
+        /// <summary>Null record count observed immediately before releasing the store lock.</summary>
+        internal long ExitNullCount;
+
+        /// <summary>Inventory-completion timestamp observed by a snapshot under the store lock.</summary>
+        internal long ObservedInventoryTimestamp;
+
         /// <summary>Discovered custom JSON files for inventory operations.</summary>
         internal long InventoryFiles;
 
@@ -95,6 +104,9 @@ internal static class WorkflowHydrationCostMeasurement
 
         /// <summary>Whether the operation has reached an endpoint.</summary>
         internal bool IsComplete;
+
+        /// <summary>Completed hydration attempts deferred until the parent operation leaves the store lock.</summary>
+        internal readonly List<HydrationAttempt> CompletedHydrations = [];
     }
 
     /// <summary>One measured null-record hydration attempt.</summary>
@@ -115,6 +127,9 @@ internal static class WorkflowHydrationCostMeasurement
         /// <summary>Current stage start timestamp.</summary>
         internal long StageTimestamp;
 
+        /// <summary>Active timing stage.</summary>
+        internal string Stage;
+
         /// <summary>File existence and read elapsed microseconds.</summary>
         internal long ReadUs;
 
@@ -132,6 +147,15 @@ internal static class WorkflowHydrationCostMeasurement
 
         /// <summary>Whether the attempt has reached an endpoint.</summary>
         internal bool IsComplete;
+
+        /// <summary>Bounded hydration outcome.</summary>
+        internal string Outcome;
+
+        /// <summary>Hydration endpoint timestamp.</summary>
+        internal long EndTimestamp;
+
+        /// <summary>Hydration endpoint current-thread allocation.</summary>
+        internal long EndAllocation;
     }
 
     /// <summary>Returns whether Rank 29 measurement is enabled without allowing settings failures to escape.</summary>
@@ -157,15 +181,6 @@ internal static class WorkflowHydrationCostMeasurement
         try
         {
             string boundedKind = kind is "inventory" or "snapshot" or "lookup" ? kind : "other";
-            long refreshAgeUs = 0;
-            if (boundedKind == "snapshot")
-            {
-                long inventoryTimestamp = Interlocked.Exchange(ref LatestInventoryTimestamp, 0);
-                if (inventoryTimestamp > 0)
-                {
-                    refreshAgeUs = ToMicroseconds(inventoryTimestamp, Stopwatch.GetTimestamp());
-                }
-            }
             Operation operation = new()
             {
                 Parent = GetActiveOperation(),
@@ -173,8 +188,7 @@ internal static class WorkflowHydrationCostMeasurement
                 Kind = boundedKind,
                 Scenario = GetScenario(),
                 StartTimestamp = Stopwatch.GetTimestamp(),
-                StartAllocation = GC.GetAllocatedBytesForCurrentThread(),
-                RefreshAgeUs = refreshAgeUs
+                StartAllocation = GC.GetAllocatedBytesForCurrentThread()
             };
             CurrentOperation.Value = operation;
             return operation;
@@ -192,10 +206,60 @@ internal static class WorkflowHydrationCostMeasurement
         {
             return;
         }
-        lock (operation)
+        try
         {
-            operation.EntryCount = Math.Max(0, entries);
-            operation.EntryNullCount = Math.Max(0, nullEntries);
+            lock (operation)
+            {
+                operation.EntryCount = Math.Max(0, entries);
+                operation.EntryNullCount = Math.Max(0, nullEntries);
+                if (operation.Kind == "snapshot")
+                {
+                    operation.ObservedInventoryTimestamp = Volatile.Read(ref LatestInventoryTimestamp);
+                }
+            }
+        }
+        catch
+        {
+        }
+    }
+
+    /// <summary>Records the dictionary state immediately before releasing the store lock.</summary>
+    internal static void NoteExit(Operation operation, long entries, long nullEntries)
+    {
+        if (operation is null)
+        {
+            return;
+        }
+        try
+        {
+            lock (operation)
+            {
+                operation.ExitCount = Math.Max(0, entries);
+                operation.ExitNullCount = Math.Max(0, nullEntries);
+            }
+        }
+        catch
+        {
+        }
+    }
+
+    /// <summary>Consumes the observed inventory timestamp after a snapshot has completed successfully under the store lock.</summary>
+    internal static void CommitSnapshotRefresh(Operation operation)
+    {
+        if (operation is null || operation.Kind != "snapshot" || operation.ObservedInventoryTimestamp <= 0)
+        {
+            return;
+        }
+        try
+        {
+            long observed = operation.ObservedInventoryTimestamp;
+            if (Interlocked.CompareExchange(ref LatestInventoryTimestamp, 0, observed) == observed)
+            {
+                operation.RefreshAgeUs = ToMicroseconds(observed, Stopwatch.GetTimestamp());
+            }
+        }
+        catch
+        {
         }
     }
 
@@ -206,29 +270,41 @@ internal static class WorkflowHydrationCostMeasurement
         {
             return;
         }
-        lock (operation)
+        try
         {
-            operation.InventoryFiles = Math.Max(0, files);
-            operation.ExampleFiles = Math.Max(0, examples);
-            operation.CopiedExamples = Math.Max(0, copiedExamples);
-            operation.PublishedNullRecords = Math.Max(0, publishedNullRecords);
+            lock (operation)
+            {
+                operation.InventoryFiles = Math.Max(0, files);
+                operation.ExampleFiles = Math.Max(0, examples);
+                operation.CopiedExamples = Math.Max(0, copiedExamples);
+                operation.PublishedNullRecords = Math.Max(0, publishedNullRecords);
+            }
+        }
+        catch
+        {
         }
     }
 
     /// <summary>Notes one already hydrated record.</summary>
     internal static void NoteCached()
     {
-        Operation operation = GetActiveOperation();
-        if (operation is null)
+        try
         {
-            return;
-        }
-        lock (operation)
-        {
-            if (!operation.IsComplete)
+            Operation operation = GetActiveOperation();
+            if (operation is null)
             {
-                operation.CachedRecords++;
+                return;
             }
+            lock (operation)
+            {
+                if (!operation.IsComplete)
+                {
+                    operation.CachedRecords++;
+                }
+            }
+        }
+        catch
+        {
         }
     }
 
@@ -244,7 +320,8 @@ internal static class WorkflowHydrationCostMeasurement
                 IsExample = isExample,
                 StartTimestamp = timestamp,
                 StartAllocation = GC.GetAllocatedBytesForCurrentThread(),
-                StageTimestamp = timestamp
+                StageTimestamp = timestamp,
+                Stage = "read"
             };
         }
         catch
@@ -260,10 +337,17 @@ internal static class WorkflowHydrationCostMeasurement
         {
             return;
         }
-        long now = Stopwatch.GetTimestamp();
-        attempt.ReadUs = ToMicroseconds(attempt.StageTimestamp, now);
-        attempt.StageTimestamp = now;
-        attempt.SourceBytes = Math.Max(0, sourceBytes);
+        try
+        {
+            long now = Stopwatch.GetTimestamp();
+            attempt.ReadUs = ToMicroseconds(attempt.StageTimestamp, now);
+            attempt.StageTimestamp = now;
+            attempt.Stage = "parse";
+            attempt.SourceBytes = Math.Max(0, sourceBytes);
+        }
+        catch
+        {
+        }
     }
 
     /// <summary>Completes the parse/extract stage.</summary>
@@ -273,10 +357,17 @@ internal static class WorkflowHydrationCostMeasurement
         {
             return;
         }
-        long now = Stopwatch.GetTimestamp();
-        attempt.ParseUs = ToMicroseconds(attempt.StageTimestamp, now);
-        attempt.StageTimestamp = now;
-        attempt.RetainedCharacters = Math.Max(0, retainedCharacters);
+        try
+        {
+            long now = Stopwatch.GetTimestamp();
+            attempt.ParseUs = ToMicroseconds(attempt.StageTimestamp, now);
+            attempt.StageTimestamp = now;
+            attempt.Stage = "publication";
+            attempt.RetainedCharacters = Math.Max(0, retainedCharacters);
+        }
+        catch
+        {
+        }
     }
 
     /// <summary>Completes the record construction/publication stage and successful attempt.</summary>
@@ -286,9 +377,15 @@ internal static class WorkflowHydrationCostMeasurement
         {
             return;
         }
-        long now = Stopwatch.GetTimestamp();
-        attempt.PublicationUs = ToMicroseconds(attempt.StageTimestamp, now);
-        CompleteHydration(attempt, "completed", now);
+        try
+        {
+            long now = Stopwatch.GetTimestamp();
+            attempt.PublicationUs = ToMicroseconds(attempt.StageTimestamp, now);
+            CompleteHydration(attempt, "completed", now);
+        }
+        catch
+        {
+        }
     }
 
     /// <summary>Completes a missing-file hydration attempt.</summary>
@@ -298,9 +395,15 @@ internal static class WorkflowHydrationCostMeasurement
         {
             return;
         }
-        long now = Stopwatch.GetTimestamp();
-        attempt.ReadUs = ToMicroseconds(attempt.StageTimestamp, now);
-        CompleteHydration(attempt, "missing", now);
+        try
+        {
+            long now = Stopwatch.GetTimestamp();
+            attempt.ReadUs = ToMicroseconds(attempt.StageTimestamp, now);
+            CompleteHydration(attempt, "missing", now);
+        }
+        catch
+        {
+        }
     }
 
     /// <summary>Completes an invalid-file hydration attempt.</summary>
@@ -310,7 +413,26 @@ internal static class WorkflowHydrationCostMeasurement
         {
             return;
         }
-        CompleteHydration(attempt, "invalid", Stopwatch.GetTimestamp());
+        try
+        {
+            long now = Stopwatch.GetTimestamp();
+            if (attempt.Stage == "read")
+            {
+                attempt.ReadUs += ToMicroseconds(attempt.StageTimestamp, now);
+            }
+            else if (attempt.Stage == "parse")
+            {
+                attempt.ParseUs += ToMicroseconds(attempt.StageTimestamp, now);
+            }
+            else if (attempt.Stage == "publication")
+            {
+                attempt.PublicationUs += ToMicroseconds(attempt.StageTimestamp, now);
+            }
+            CompleteHydration(attempt, "invalid", now);
+        }
+        catch
+        {
+        }
     }
 
     /// <summary>Completes and emits one hydration record.</summary>
@@ -320,6 +442,9 @@ internal static class WorkflowHydrationCostMeasurement
         {
             attempt.IsComplete = true;
             long endAllocation = GC.GetAllocatedBytesForCurrentThread();
+            attempt.Outcome = outcome;
+            attempt.EndTimestamp = endTimestamp;
+            attempt.EndAllocation = endAllocation;
             Operation owner = attempt.Owner;
             if (owner is not null)
             {
@@ -346,26 +471,13 @@ internal static class WorkflowHydrationCostMeasurement
                             owner.InvalidRecords++;
                         }
                     }
+                    owner.CompletedHydrations.Add(attempt);
                 }
             }
-            Emit(new
+            if (owner is null)
             {
-                schema = Schema,
-                record = "hydration",
-                id = Interlocked.Increment(ref NextRecordId),
-                operation_id = owner?.Id ?? 0,
-                scenario = GetScenario(),
-                source = "file",
-                outcome,
-                example = attempt.IsExample,
-                source_bytes = attempt.SourceBytes,
-                retained_characters = attempt.RetainedCharacters,
-                read_us = attempt.ReadUs,
-                parse_us = attempt.ParseUs,
-                publication_us = attempt.PublicationUs,
-                total_us = ToMicroseconds(attempt.StartTimestamp, endTimestamp),
-                allocation_bytes = AllocationDelta(attempt.StartAllocation, endAllocation)
-            });
+                EmitHydration(attempt);
+            }
         }
         catch
         {
@@ -383,13 +495,19 @@ internal static class WorkflowHydrationCostMeasurement
         {
             long endTimestamp = Stopwatch.GetTimestamp();
             long endAllocation = GC.GetAllocatedBytesForCurrentThread();
+            List<HydrationAttempt> completedHydrations;
             lock (operation)
             {
                 operation.IsComplete = true;
+                completedHydrations = [.. operation.CompletedHydrations];
             }
             if (operation.Kind == "inventory" && outcome == "completed")
             {
                 Interlocked.Exchange(ref LatestInventoryTimestamp, endTimestamp);
+            }
+            foreach (HydrationAttempt hydration in completedHydrations)
+            {
+                EmitHydration(hydration);
             }
             Emit(new
             {
@@ -401,6 +519,8 @@ internal static class WorkflowHydrationCostMeasurement
                 outcome = outcome is "completed" ? "completed" : "failed",
                 entry_count = operation.EntryCount,
                 entry_null_count = operation.EntryNullCount,
+                exit_count = operation.ExitCount,
+                exit_null_count = operation.ExitNullCount,
                 inventory_files = operation.InventoryFiles,
                 example_files = operation.ExampleFiles,
                 copied_examples = operation.CopiedExamples,
@@ -427,6 +547,29 @@ internal static class WorkflowHydrationCostMeasurement
                 CurrentOperation.Value = operation.Parent;
             }
         }
+    }
+
+    /// <summary>Constructs and emits one completed hydration record after its parent operation has left the store lock.</summary>
+    private static void EmitHydration(HydrationAttempt attempt)
+    {
+        Emit(new
+        {
+            schema = Schema,
+            record = "hydration",
+            id = Interlocked.Increment(ref NextRecordId),
+            operation_id = attempt.Owner?.Id ?? 0,
+            scenario = attempt.Owner?.Scenario ?? GetScenario(),
+            source = "file",
+            outcome = attempt.Outcome,
+            example = attempt.IsExample,
+            source_bytes = attempt.SourceBytes,
+            retained_characters = attempt.RetainedCharacters,
+            read_us = attempt.ReadUs,
+            parse_us = attempt.ParseUs,
+            publication_us = attempt.PublicationUs,
+            total_us = ToMicroseconds(attempt.StartTimestamp, attempt.EndTimestamp),
+            allocation_bytes = AllocationDelta(attempt.StartAllocation, attempt.EndAllocation)
+        });
     }
 
     /// <summary>Returns the active noncompleted operation for this context.</summary>

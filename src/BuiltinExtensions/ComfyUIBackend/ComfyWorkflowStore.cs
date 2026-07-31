@@ -1150,6 +1150,8 @@ public static class ComfyWorkflowStore
         {
             lock (WorkflowLock)
             {
+                WorkflowHydrationCostMeasurement.NoteEntry(measurement, ComfyUIBackendExtension.CustomWorkflows.Count,
+                    ComfyUIBackendExtension.CustomWorkflows.Values.Count(workflow => workflow is null));
                 MarkRecoveryRequiredLocked();
                 try
                 {
@@ -1185,10 +1187,11 @@ public static class ComfyWorkflowStore
                     {
                         ComfyUIBackendExtension.CustomWorkflows.TryAdd(workflow.Key, workflow.Value);
                     }
-                    WorkflowHydrationCostMeasurement.NoteEntry(measurement, ComfyUIBackendExtension.CustomWorkflows.Count, refreshedWorkflows.Count);
                     WorkflowHydrationCostMeasurement.NoteInventory(measurement, customFlows.Count(f => f.EndsWith(".json")),
                         exampleWorkflowNames.Count(f => f.EndsWith(".json")), copiedExamples, refreshedWorkflows.Count);
                     RecoveryRequired = false;
+                    WorkflowHydrationCostMeasurement.NoteExit(measurement, ComfyUIBackendExtension.CustomWorkflows.Count,
+                        ComfyUIBackendExtension.CustomWorkflows.Values.Count(workflow => workflow is null));
                 }
                 catch
                 {
@@ -1223,9 +1226,11 @@ public static class ComfyWorkflowStore
             lock (WorkflowLock)
             {
                 EnsureRecoveryReadyLocked();
-                bool isNull = ComfyUIBackendExtension.CustomWorkflows.TryGetValue(name, out ComfyUIBackendExtension.ComfyCustomWorkflow entry) && entry is null;
-                WorkflowHydrationCostMeasurement.NoteEntry(measurement, ComfyUIBackendExtension.CustomWorkflows.Count, isNull ? 1 : 0);
+                WorkflowHydrationCostMeasurement.NoteEntry(measurement, ComfyUIBackendExtension.CustomWorkflows.Count,
+                    ComfyUIBackendExtension.CustomWorkflows.Values.Count(workflow => workflow is null));
                 result = GetWorkflowByNameLockedMeasured(name);
+                WorkflowHydrationCostMeasurement.NoteExit(measurement, ComfyUIBackendExtension.CustomWorkflows.Count,
+                    ComfyUIBackendExtension.CustomWorkflows.Values.Count(workflow => workflow is null));
             }
             WorkflowHydrationCostMeasurement.CompleteOperation(measurement, "completed");
             return result;
@@ -1396,6 +1401,9 @@ public static class ComfyWorkflowStore
                         workflows.Add(workflow);
                     }
                 }
+                WorkflowHydrationCostMeasurement.NoteExit(measurement, ComfyUIBackendExtension.CustomWorkflows.Count,
+                    ComfyUIBackendExtension.CustomWorkflows.Values.Count(workflow => workflow is null));
+                WorkflowHydrationCostMeasurement.CommitSnapshotRefresh(measurement);
             }
             WorkflowHydrationCostMeasurement.CompleteOperation(measurement, "completed");
             return workflows;
