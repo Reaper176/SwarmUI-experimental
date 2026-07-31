@@ -1,6 +1,6 @@
 # Persisted-Output Filename-Selection Measurement Design
 
-**Status:** Approved; implementation planning
+**Status:** Measurement completed; NO-GO; instrumentation removed
 
 **Date:** 2026-07-30
 
@@ -41,11 +41,13 @@ as deliberately unrun and closes the Rank 24 validation cycle without treating
 any unrun case as passed, failed, executed, inferred, waived evidence, or full
 maintainer validation.
 
-Rank 24 is no longer the Recommended Next Project. Rank 25 becomes the sole
-formal Recommended Next Project as a bounded measurement prerequisite. This
-status change does not weaken any Rank 24 caveat concerning representative
-models, workflow families, services/backends, optional dependencies, external
-extensions, concurrency, platforms, filesystems, or performance.
+At the approved pre-collection boundary, Rank 24 was no longer the Recommended
+Next Project and Rank 25 became the sole formal Recommended Next Project as a
+bounded measurement prerequisite. That historical status change did not weaken
+any Rank 24 caveat concerning representative models, workflow families,
+services/backends, optional dependencies, external extensions, concurrency,
+platforms, filesystems, or performance. The final Rank 25 disposition and Rank
+26 handoff are recorded below.
 
 ## Current Boundary
 
@@ -438,27 +440,131 @@ No fixed numeric threshold is invented. The decision compares the measured
 component distribution, scaling behavior, lock contention, source context, and
 the operator-observed workflow impact.
 
-A `GO` decision does not authorize a cache or allocator. It authorizes a new
-brainstorming/design cycle that must preserve external-file reconciliation,
-cross-extension collisions, `[number]` and suffix semantics, multiple users,
-unsafe-path policy, deletion races, all bypasses, and rollback to direct
-enumeration.
+## Collection Evidence and Decision
+
+The governing design commit is
+`30448884415c44f446136fa3e11fb06cefe375d6`, and the plan commit is
+`b90e5727ba7db1d8e1f7e50dafb34df32628e561`. The reviewed temporary source
+range is
+`30448884415c44f446136fa3e11fb06cefe375d6..42e8c3a127315e321f8845a92fc4235972880152`.
+Its source projection is exactly:
+
+- `src/Accounts/OutputFilenameSelectionMeasurement.cs`;
+- `src/Accounts/Session.cs`;
+- `src/BuiltinExtensions/GridGenerator/GridGeneratorExtension.cs`;
+- `src/Core/Settings.cs`;
+- `src/Text2Image/T2IEngine.cs`;
+- `src/WebAPI/ImageHistoryAPI.cs`;
+- `src/WebAPI/T2IAPI.cs`.
+
+The path-filtered temporary instrumentation sequence is
+`ad9c200ba075d716c8ce64f6fe62001454c714ef`,
+`9940f6b6c2941a3f7ee30908490482c0150b0651`,
+`b6aebaab9d8e09db44e039068e34507aab98ec9a`,
+`0a65f7f1e154b6de41303a918a1f67c68a04757b`,
+`e88cc1d93837dd3fe51cd695eb18ce70f885d1f1`,
+`5d54370195e1fd6df9e8b17e1de605a555d43290`,
+`63ecfe50e330bb9c99c19bc64e6835a2f39830e2`, and
+`42e8c3a127315e321f8845a92fc4235972880152`.
+
+Static review returned `RANK25_STATIC_SOURCE_GATE_PASSED`,
+`RANK25_SOURCE_SPEC_APPROVED`, and `RANK25_SOURCE_QUALITY_APPROVED`. Under
+maintainer Reaper176's exact one-time override, `user is authorizing you to do
+these tests as a one time over ride of the repository rules.`, the agent built
+the exact reviewed head outside the repository with zero warnings and zero
+errors and ran the isolated collection. This is maintainer-authorized agent-run
+evidence, not a maintainer-run result. The exact completion record is:
+
+```text
+Environment: Garuda Linux (Arch-based), Btrfs, storage classification named in the scenario labels
+Cases: 23 passed, 0 failed, 2 unrun
+RANK25_COLLECTION_COMPLETE
+```
+
+Case 3, intermediate-output no-save policy, was unrun because no known fixture
+in the isolated one-model backend was proven to emit a non-real intermediate
+output. Case 15, concurrent different user/folder scopes, was unrun because the
+isolated authorization-disabled session could not establish a second real user
+scope without expanding the collection boundary. Those cases are not inferred,
+waived, or counted as passing. The disabled control produced a normal persisted
+URL, a data URL for `DoNotSave`, and zero Rank 25 log records. Every other run
+case preserved its expected URL/data-URL, collision, concurrency,
+delete/regenerate, Grid, sidecar, preview, and history-index behavior.
+
+The external privacy-reviewed evidence contains 73 schema-1 records: 34
+selection records, their 34 correlated background records, and 5 bypass
+records, spanning 39 unique measurement IDs. The external JSONL SHA-256 is
+`7a9d23d7238a226e334e40baabb975716e414b975ea504a879dd1cfb9d839ccd`.
+The field-name and string-value review found no raw username, request ID,
+prompt, filename, filesystem path, or output-root value. The evidence remains
+outside repository user-data and source paths.
+
+All p50 and p95 values below use nearest-rank order statistics; for an even
+sample count, p50 selects the `ceiling(0.50 * count)` ordered observation rather
+than averaging the two middle observations. Across the 34 persisted selections,
+synchronous selection had a 124 us p50, 2,157 us p95, and 2,667 us maximum.
+`UserLock` wait had a 0 us p50, 116 us p95, and 210 us maximum; hold time had an
+84 us p50, 1,357 us p95, and 2,128 us maximum. Directory scan/hash had a 26 us
+p50, 102 us p95, and 2,019 us maximum; reservation scan had a 5 us p50, 24 us
+p95, and 86 us maximum; candidate probe had a 10 us p50, 91 us p95, and
+1,103 us maximum.
+The probe interval includes reservation scanning when it runs, and neither
+those components nor synchronous/background totals are additive.
+
+The representative 25-file folder selected in 188 us, including 102 us for
+directory scan/hash. The 5,000-file flat folder selected in 2,157 us, dominated
+by its single 2,019 us directory scan/hash. Eight concurrent same-folder saves
+returned eight unique URLs; their synchronous p50 was 84 us and maximum was
+360 us, with lock-wait maximum 210 us and candidate-probe maximum 53 us.
+Repeated suffix probes increased from one to five without exceeding 104 us in
+that five-sample workload. Nine backend-claimed selections had a 158 us p50
+and 381 us maximum. Twenty-five non-claimed selections had a 104 us p50;
+their 2,667 us maximum includes the one-time empty-folder warm-up, while their
+2,157 us upper-range sample is the 5,000-file scan.
+
+For the 34 background records, conversion wait had a 28 us p50 and 28,097 us
+p95, primary write had an 80 us p50 and 413 us p95, preview work had a
+7,351 us p50 and 55,256 us p95, and history-index work had a 513 us p50
+and 12,826 us p95. The maintained ten-second retention interval dominates the
+background total by design and is reported separately rather than attributed to
+filename selection.
+
+The Rank 25 decision is `NO-GO`. Filename selection scaled with the 5,000-file
+cardinality and identified directory scan/hash as a bounded dominant component,
+but it was not repeatedly material: claimed paths remained below 0.4 ms in this
+collection, the representative ordinary p50 was near 0.1 ms, and even the
+large flat folder was about 2.2 ms while conversion, preview, and index work
+regularly occupied larger ranges. No filename allocator, directory cache, or
+other optimization is authorized by this result. Rank 25 completed with a
+NO-GO decision and no optimization is authorized. Rank 26 becomes the sole
+Recommended Next Project as the next bounded measurement prerequisite.
 
 ## Instrumentation Removal
 
-After the evidence and decision are recorded:
+Removal commit `ee4888f263d649d5888676610bc562ff6104d969`
+deleted the recorder and restored every temporary setting, context, caller
+hook, output marker, and timed `Session.SaveImage` branch. The complete
+committed `src` tree at that removal commit has object ID
+`26f65adf96afc130baa8b6fedba84b437d7163dc`, exactly matching the governing
+design commit, so the final source projection relative to
+`30448884415c44f446136fa3e11fb06cefe375d6` is empty.
 
-1. remove both temporary performance settings;
-2. remove the internal recorder and record types;
-3. remove every caller context and bypass hook;
-4. remove the temporary output marker, restore `handleFileOutput` and its calls,
-   and restore the untimed direct `Session.SaveImage` flow;
-5. statically verify that no Rank 25 symbol or log prefix remains;
-6. record the final source projection and decision in the audit.
+The removal sequence returned `RANK25_REMOVAL_RED_CONFIRMED` before deletion and
+`RANK25_INSTRUMENTATION_REMOVAL_STATIC_GATE_PASSED` after deletion. Under the
+same exact one-time maintainer override, the agent then built the uninstrumented
+removal commit outside the repository with zero warnings and zero errors. On
+Garuda Linux (Arch-based), Btrfs, the isolated runtime identified commit
+`ee4888f2`, returned one persisted PNG and one `DoNotSave` data URL, and emitted
+no `Rank25OutputFilename` or `OutputFilenameMeasurement` record. The resulting
+token was `RANK25_INSTRUMENTATION_REMOVAL_PASSED`; this remains
+maintainer-authorized agent-run evidence rather than a maintainer-run result.
+Startup also logged failed rebuild attempts for existing external extensions
+against the external build-output layout, but those extensions are outside the
+Rank 25 maintained-source projection and the maintained server/backend completed
+both sanity calls.
 
 The final Rank 25 state retains documentation evidence but no production
-measurement surface. If the result is `INSUFFICIENT`, a later collection attempt
-requires a new bounded instrumentation plan rather than leaving dormant code.
+measurement surface.
 
 ## Rollback
 
