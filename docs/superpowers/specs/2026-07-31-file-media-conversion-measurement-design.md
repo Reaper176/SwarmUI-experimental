@@ -164,54 +164,58 @@ systems remain static-only and are recorded as limitations rather than inferred.
 
 ### Provenance
 
-Temporary source head `1c038fa8f8a9c3240d8393ce7869630228375b38`
+Temporary source head `a2b1c0a6165d18dcfd1fce86b179b846928a79dd`
 received `RANK28_SOURCE_SPEC_APPROVED` and
 `RANK28_SOURCE_QUALITY_APPROVED`. Its external Release build under
 `/tmp/swarmui-rank28-build-ulyW6O` completed with 0 warnings and 0 errors;
 `SwarmUI.dll` SHA-256 is
-`6ca66771a0386b0526f14cd8bff83f573e4737ee5dd3e882d64ae8c13acf8129`.
+`0d5c3b84bd05230d26e4e795bab7914960f053f26abf64efd383e9608a70e920`.
 
 The corrected synthetic harness under `/tmp/rank28-harness-qjyiYq` passed 201
 assertions with 0 failures. Harness-source SHA-256 is
-`45d8f8819488151235b90ad50b8ee8f8a1f27ca4ea02bb44d6676220e6eda8cf`.
+`07034374de6a754910e5475092764ab597e3c0e3fa4dcd78660be51f7a9a2f53`.
 The preserved `/tmp/rank28-final-records.jsonl` evidence file contains 105
-records (92 file-call and 13 scope), 105 lines, and 30,354 bytes; SHA-256 is
-`22ccd66b67e5537543492efa7f0d919e0f7e2d9b2e35d0f2820f5f9d4d921964`.
+records (92 file-call and 13 scope), 105 lines, and 30,339 bytes; SHA-256 is
+`71ec7a687dbf255caf48419827a98259a5fe6885ae6f9a8b3ee0e130d2a67be2`.
 Preserved `/tmp/rank28-final-summary.json` SHA-256 is
-`06c02e7a44eef72467fba363f6c6f1d68690c558f82cbf5d90be0ec51b2263e6`.
+`3d61133cc03ffea5713b798cd381efeca99946a8c15f2fa4a02737632eabb1ec`.
 The environment is user-identified Garuda Linux (Arch-based) on Btrfs; the
 collection reported Linux 7.1.4-1-cachyos x86_64 and .NET 8.0.29.
 
 ### Results
 
 Nearest-rank `x[ceil(pN)]` without interpolation gives 75 measured completed
-file calls overall at p50/p95/max 1,083/7,511/31,629 microseconds and
+file calls overall at p50/p95/max 1,423/7,132/31,305 microseconds and
 6,642,008/6,642,216/53,129,120 current-thread allocated bytes. The exact
 three-repetition disk scale was:
 
-- 1 KiB: p50/max 72/80 microseconds;
-- 1 MiB: p50/max 2,309/2,365 microseconds; and
-- 8 MiB: p50/max 7,901/8,201 microseconds.
+- 1 KiB: p50/max 68/79 microseconds;
+- 1 MiB: p50/max 1,864/2,151 microseconds; and
+- 8 MiB: p50/max 7,200/7,552 microseconds.
 
 Three measured late `<param[Init Image]:...>` applications of the same synthetic
 authorized 1 MiB PNG retained one opaque path ID. File resolution/read/encoding
-was p50/p95/max 2,101/2,506/2,506 microseconds with 6,642,064 allocated bytes;
-the inclusive late scope was p50/p95/max 9,920/10,152/10,152 microseconds. The
+was p50/p95/max 1,963/2,615/2,615 microseconds with 6,642,064 allocated bytes;
+the inclusive late scope was p50/p95/max 10,353/10,519/10,519 microseconds. The
 inclusive figure also contains media parsing and nested instrumentation and
 must not be attributed wholly to file conversion.
 
-A delayed pending-save task produced 31,558 microseconds of recorded synchronous
+A delayed pending-save task produced 31,259 microseconds of recorded synchronous
 wait. Completed pending bytes won over different disk bytes exactly as before.
 Data-URL and raw-base64 request values produced bypass items and no file calls.
 The original path-backed `IMAGE_LIST` behavior converted the first path to a
 data URL and then rejected that result in list validation; disabled and enabled
-exception type/message matched. Rank 28 records this baseline edge case but does
-not authorize changing it.
+exception type/message matched. The corrected scope counts that one processed
+item once (`media_items = 1`, `file_calls = 1`, `invalid_items = 1`) and does not
+infer processing of the untouched second item. Rank 28 records this baseline
+edge case but does not authorize changing it.
 
-The 1 MiB direct control over 40 post-warm calls was mean 1,899.875 microseconds
-and 6,642,091 bytes disabled versus 1,795.825 microseconds and 6,645,857 bytes
-enabled. The negative elapsed difference (-104.05 microseconds) is run-order and
-measurement noise, not a speedup; the allocation difference is 3,766 bytes.
+The 1 MiB direct control over 40 post-warm calls was mean 1,164.05 microseconds
+and 6,642,132 bytes disabled versus 1,868.0 microseconds and 6,645,836 bytes
+enabled. The elapsed difference is 703.95 microseconds and the allocation
+difference is 3,704 bytes; run order, filesystem cache state, asynchronous
+delivery, and measurement work make this a contamination/noise bound rather
+than subtractable stock cost.
 File-call endpoints exclude record construction and asynchronous log delivery,
 while inclusive parent scopes can include nested record construction/queueing.
 
