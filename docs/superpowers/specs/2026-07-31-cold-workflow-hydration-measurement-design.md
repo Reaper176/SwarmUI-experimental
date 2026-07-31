@@ -2,7 +2,7 @@
 
 **Date:** 2026-07-31
 **Rank:** 29
-**Status:** Design approved for temporary measurement
+**Status:** Evidence collected with scoped `GO`; instrumentation removal pending
 **Approved base:** `503fb7244375db0e20bcfa36bfc556f6d3c3d20b`
 
 ## Decision Authority
@@ -162,6 +162,91 @@ path component, JSON sentinel, and content fragment.
 Live APIs/server, repository workflows, real presets, standard generation,
 backend acquisition/submission, browser, network, GPU, network filesystems,
 other platforms/filesystems, and production workload/GC remain explicitly unrun.
+
+## Collected Evidence and Decision
+
+### Provenance
+
+Corrected temporary source head
+`f8547e94` received `RANK29_SOURCE_SPEC_APPROVED`,
+`RANK29_SOURCE_QUALITY_APPROVED`, and
+`RANK29_FINAL_SOURCE_QUALITY_APPROVED`. Its fresh external Release build under
+`/tmp/swarmui-rank29-build-final-csJZOB` completed with 0 warnings and 0 errors;
+`SwarmUI.dll` SHA-256 is
+`7b171ef4af28f654f4c70dbe4e49071c8b2c39efe76bc718a3dce535d104a8d0`.
+
+The final synthetic harness under `/tmp/rank29-harness-BReemg` compiled with 0
+errors and one `MSB3277` `DiagnosticSource` assembly-unification warning, then
+passed 10,409 assertions with 0 failures. Harness-source SHA-256 is
+`c2cf9bbbfc9dd4d8a5523b82ddb8a9ed7fa3eac44035b74a99102a005a56b2ce`.
+The preserved `/tmp/rank29-final-records.jsonl` contains 1,265 schema-1 records
+(134 operation and 1,131 hydration), 1,265 lines, and 381,798 bytes; SHA-256 is
+`37dc1dcc0d67420c40639d693763502bae49086c9e22076b338c72f7515f6b3e`.
+Preserved `/tmp/rank29-final-summary.json` SHA-256 is
+`a0761f23549409e4bbb407147982cf294189c057500f6f44e4eef4084d4ac808`.
+The environment is user-identified Garuda Linux (Arch-based) on Btrfs; the
+collection reported Linux 7.1.4-1-cachyos x86_64. The harness targeted .NET 8;
+the invoking SDK reported 10.0.110.
+
+### Results
+
+The 15 measured cold snapshots across five groups have nearest-rank
+p50/p95/max 4,789/13,559/13,559 microseconds and
+3,779,424/38,748,992/38,748,992 current-thread allocated bytes. The matching 15
+warm snapshots were 20/224/224 microseconds and 1,008/5,560/5,560 bytes. Because
+these groups intentionally mix counts and payload sizes, the group results are
+the primary scaling evidence:
+
+- 1 small workflow: cold p50/max 75/87 microseconds;
+- 16 small workflows: 642/669 microseconds;
+- 128 small workflows: 4,789/5,673 microseconds;
+- 16 larger workflows: 7,506/13,559 microseconds; and
+- 1 approximately 2.1 MiB serialized workflow: 8,738/11,592 microseconds.
+
+Across 486 measured successful file hydrations, total p50/p95/max was
+36/473/11,564 microseconds, read was 11/96/2,479 microseconds, parse/extract was
+25/349/9,894 microseconds, and current-thread allocation was
+29,336/2,421,432/37,840,128 bytes. Parse/extract rather than read dominates the
+large-file maximum in this synthetic local-filesystem matrix.
+
+The forced-GC 64-workflow retained-memory probe observed an 8,473,512-byte
+increase after cold listing. That process-wide value includes GC/runtime noise
+and is directional rather than an exact object-size measurement. The 20-call
+direct control averaged 2,502 microseconds and 10,540,783 bytes disabled versus
+2,673 microseconds and 10,547,637 bytes enabled, a 171-microsecond and 6,854-byte
+difference. Run order, cache state, counters, and deferred emission make that a
+contamination/noise bound rather than subtractable stock cost; the one-file small
+group is therefore not independently material evidence.
+
+Direct-first lookup hydrated exactly one of eight null records; the following
+snapshot hydrated seven and reused one. Missing-after-inventory removal changed
+entry/exit counts from 3/3 null to 2/1, while the invalid record stayed null and
+was retried/omitted on the warm snapshot with parse-stage time recorded. Two
+bundled examples were copied, classified, and hydrated. A prepublished complete
+record listed with one cache hit and no hydration. Concurrent lookup/snapshot
+results matched the sequential synthetic baseline, and a 25 ms delayed first
+snapshot recorded a 25,325-microsecond refresh age. Every record passed schema,
+bounded-category, uniqueness, conservation, nonnegative-metric, and privacy
+checks; synthetic roots, names, descriptions, and content sentinels were absent.
+
+### Boundary and decision
+
+The executed evidence covers synthetic local inventory, cold/warm listing,
+count/payload scaling, direct-first and partially cold access, missing and invalid
+omission, bundled examples, refresh age, prepublished visibility, concurrent
+maintained readers, retention direction, and disabled/enabled contamination. It
+does not exercise repository or real user workflows, a live API/server, real
+presets, standard generation, backend acquisition/submission, browser/network,
+GPU, network filesystems, another platform/filesystem, or production frequency/GC.
+
+Complete-record hydration scales with file count and payload, allocates tens of
+megabytes for the larger synthetic groups, and retains graph/prompt/custom data
+that the list response does not return. Rank 29 therefore records a scoped `GO`:
+a separate design may evaluate metadata descriptors for list fields plus lazy
+complete-record hydration while preserving Rank 6 durability, recovery, public
+dictionary identity, immediate save visibility, invalid omission, and direct
+read/generation behavior. This decision does not authorize that design or any
+production/cache/schema/locking change in this branch.
 
 ## Decision Gate and Rollback
 
