@@ -79,8 +79,11 @@ object with prefix
 - whether total duration reached 50 ms.
 
 Timing uses `performance.now()`. The total ends before record construction,
-serialization, and console output. Measurement adds no extra per-entry work to
-the timed loop. A browser harness independently observes hydrated/dehydrated
+serialization, and console output. Publication is deferred until the following
+animation frame and then a zero-delay task so it cannot enlarge the joined next
+frame interval. Timer, scheduling, construction, serialization, and output
+failures are suppressed and invalidate or omit the sample without changing the
+production return. Measurement adds no extra per-entry work to the timed loop. A browser harness independently observes hydrated/dehydrated
 state and uses Chrome DevTools `Performance.getMetrics` immediately around each
 action to record deltas for `LayoutCount`, `LayoutDuration`,
 `RecalcStyleCount`, `RecalcStyleDuration`, and task duration. A
@@ -129,7 +132,7 @@ mobile-device performance.
 Each performance group receives five warmups and thirty enabled and thirty
 disabled measured actions in counterbalanced `ABBA` blocks of fifteen. Enabled
 and disabled actions use the identical harness fence: capture the pre-action
-DevTools/frame state, trigger, await two animation frames followed by one
+DevTools/frame state, trigger, await three animation frames followed by one
 zero-delay task, drain performance observers, then capture the post-action state.
 External elapsed means trigger through that completed fence; record arrival is
 never the completion signal. Fresh pages bound retained fixture state. The
