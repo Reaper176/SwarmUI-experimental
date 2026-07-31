@@ -220,6 +220,12 @@ public class Settings : AutoConfiguration
 
         [ConfigComment("How many models can be loaded in a model list at once.\nPast this count, the list will simply be cut off.\nUse sub-folder organization to prevent issues.")]
         public int ModelListSanityCap = 5000;
+
+        [ConfigComment("Temporary Rank 26 scheduler-cost measurement switch. When enabled, emits bounded scheduler measurement records. Defaults to false.")]
+        public bool SchedulerMeasurementEnabled = false;
+
+        [ConfigComment("Temporary Rank 26 scheduler-cost measurement scenario label. Use a synthetic topology/workload description. Defaults to empty.")]
+        public string SchedulerMeasurementScenario = "";
     }
 
     /// <summary>Settings related to local Krita integration.</summary>
