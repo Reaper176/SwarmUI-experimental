@@ -3,6 +3,8 @@ using SwarmUI.Core;
 using SwarmUI.Utils;
 using System.Collections.Concurrent;
 using System.Diagnostics;
+using System.Security.Cryptography;
+using System.Text;
 using System.Threading;
 
 namespace SwarmUI.Text2Image;
@@ -31,7 +33,13 @@ internal static class FileMediaConversionMeasurement
     /// <summary>Tracks the last observed enable state so path identifiers are cleared on disable.</summary>
     private static int WasEnabled;
 
-    /// <summary>Opaque process-local identifiers for authorized normalized paths.</summary>
+    /// <summary>Serializes measurement enable transitions and path identity assignment.</summary>
+    private static readonly object PathIdentityLock = new();
+
+    /// <summary>Process-random key used to avoid retaining normalized paths in the identity map.</summary>
+    private static readonly byte[] PathIdentityKey = RandomNumberGenerator.GetBytes(32);
+
+    /// <summary>Opaque process-local identifiers keyed by nonreversible salted path fingerprints.</summary>
     private static readonly ConcurrentDictionary<string, long> PathIds = new();
 
     /// <summary>Current nested measurement scope for this execution context.</summary>
@@ -109,14 +117,18 @@ internal static class FileMediaConversionMeasurement
     {
         try
         {
-            bool enabled = Program.ServerSettings?.Performance?.FileMediaConversionMeasurementEnabled ?? false;
-            if (enabled)
+            bool enabled = ReadEnabledSetting();
+            lock (PathIdentityLock)
             {
-                Interlocked.Exchange(ref WasEnabled, 1);
-            }
-            else if (Interlocked.Exchange(ref WasEnabled, 0) == 1)
-            {
-                PathIds.Clear();
+                if (enabled)
+                {
+                    WasEnabled = 1;
+                }
+                else if (WasEnabled == 1)
+                {
+                    PathIds.Clear();
+                    WasEnabled = 0;
+                }
             }
             return enabled;
         }
@@ -137,12 +149,13 @@ internal static class FileMediaConversionMeasurement
         {
             string normalizedPhase = NormalizePhase(phase);
             string context = ClassifyContext(normalizedPhase);
+            Scope parent = GetActiveScope();
             Scope scope = new()
             {
-                Parent = CurrentScope.Value,
+                Parent = parent,
                 Phase = normalizedPhase,
                 Context = context,
-                ClaimHeld = ContextHoldsClaim(context) || CurrentScope.Value?.ClaimHeld == true,
+                ClaimHeld = ContextHoldsClaim(context) || parent?.ClaimHeld == true,
                 StartTimestamp = Stopwatch.GetTimestamp(),
                 StartAllocation = GC.GetAllocatedBytesForCurrentThread()
             };
@@ -164,7 +177,7 @@ internal static class FileMediaConversionMeasurement
         }
         try
         {
-            return new(Stopwatch.GetTimestamp(), GC.GetAllocatedBytesForCurrentThread(), CurrentScope.Value?.Context ?? "other", true);
+            return new(Stopwatch.GetTimestamp(), GC.GetAllocatedBytesForCurrentThread(), GetActiveScope()?.Context ?? "other", true);
         }
         catch
         {
@@ -182,7 +195,7 @@ internal static class FileMediaConversionMeasurement
         try
         {
             string bounded = NormalizeBypass(category);
-            for (Scope scope = CurrentScope.Value; scope is not null; scope = scope.Parent)
+            for (Scope scope = GetActiveScope(); scope is not null; scope = scope.Parent)
             {
                 lock (scope)
                 {
@@ -238,16 +251,27 @@ internal static class FileMediaConversionMeasurement
         }
         try
         {
-            if (!IsEnabled())
-            {
-                return;
-            }
             long endTimestamp = Stopwatch.GetTimestamp();
             long endAllocation = GC.GetAllocatedBytesForCurrentThread();
-            long pathId = normalizedPath is null ? 0 : PathIds.GetOrAdd(normalizedPath, _ => Interlocked.Increment(ref NextPathId));
+            long pathId = 0;
+            lock (PathIdentityLock)
+            {
+                if (!ReadEnabledSetting())
+                {
+                    PathIds.Clear();
+                    WasEnabled = 0;
+                    return;
+                }
+                WasEnabled = 1;
+                if (normalizedPath is not null)
+                {
+                    string fingerprint = Convert.ToHexString(HMACSHA256.HashData(PathIdentityKey, Encoding.UTF8.GetBytes(normalizedPath)));
+                    pathId = PathIds.GetOrAdd(fingerprint, _ => Interlocked.Increment(ref NextPathId));
+                }
+            }
             string boundedSource = NormalizeSource(source);
             long boundedBytes = Math.Max(0, sourceBytes);
-            for (Scope scope = CurrentScope.Value; scope is not null; scope = scope.Parent)
+            for (Scope scope = GetActiveScope(); scope is not null; scope = scope.Parent)
             {
                 lock (scope)
                 {
@@ -317,7 +341,7 @@ internal static class FileMediaConversionMeasurement
                 scope.IsComplete = true;
                 if (ReferenceEquals(CurrentScope.Value, scope))
                 {
-                    CurrentScope.Value = scope.Parent;
+                    CurrentScope.Value = GetFirstActive(scope.Parent);
                 }
                 object record = new
                 {
@@ -351,7 +375,7 @@ internal static class FileMediaConversionMeasurement
             {
                 if (ReferenceEquals(CurrentScope.Value, scope))
                 {
-                    CurrentScope.Value = scope.Parent;
+                    CurrentScope.Value = GetFirstActive(scope.Parent);
                 }
             }
             catch
@@ -410,6 +434,37 @@ internal static class FileMediaConversionMeasurement
         return "other";
     }
 
+    /// <summary>Returns the current noncompleted scope and prunes flowed completed scopes.</summary>
+    private static Scope GetActiveScope()
+    {
+        Scope current = CurrentScope.Value;
+        Scope active = GetFirstActive(current);
+        if (!ReferenceEquals(current, active))
+        {
+            CurrentScope.Value = active;
+        }
+        return active;
+    }
+
+    /// <summary>Returns the first noncompleted scope in a parent chain.</summary>
+    private static Scope GetFirstActive(Scope scope)
+    {
+        while (scope is not null)
+        {
+            Scope parent;
+            lock (scope)
+            {
+                if (!scope.IsComplete)
+                {
+                    return scope;
+                }
+                parent = scope.Parent;
+            }
+            scope = parent;
+        }
+        return null;
+    }
+
     /// <summary>Returns whether a maintained context is known to hold a generation claim.</summary>
     private static bool ContextHoldsClaim(string context)
     {
@@ -421,10 +476,33 @@ internal static class FileMediaConversionMeasurement
     {
         try
         {
-            Logs.Info($"{Prefix}{JsonConvert.SerializeObject(record, Formatting.None)}");
+            string message = $"{Prefix}{JsonConvert.SerializeObject(record, Formatting.None)}";
+            ThreadPool.UnsafeQueueUserWorkItem(static state =>
+            {
+                try
+                {
+                    Logs.Info(state);
+                }
+                catch
+                {
+                }
+            }, message, false);
         }
         catch
         {
+        }
+    }
+
+    /// <summary>Reads the temporary enable setting without mutating recorder state.</summary>
+    private static bool ReadEnabledSetting()
+    {
+        try
+        {
+            return Program.ServerSettings?.Performance?.FileMediaConversionMeasurementEnabled ?? false;
+        }
+        catch
+        {
+            return false;
         }
     }
 
