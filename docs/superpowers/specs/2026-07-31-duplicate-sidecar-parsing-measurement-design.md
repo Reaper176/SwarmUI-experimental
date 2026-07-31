@@ -123,7 +123,7 @@ Each record contains only:
   reached.
 
 The result category is exactly one of `cache_hit`, `recomputed`,
-`cache_unavailable`, `failed`, or `early_guard`. Failure stage is exactly one of
+`cache_unavailable` or `failed`. Failure stage is exactly one of
 `none`, `fingerprint`, `cache_lookup_caught`, `embedded_header_caught`,
 `first_exists`, `first_read`, `first_parse`, `first_merge`, `meta_extract`,
 `second_exists`, `second_read`, `second_parse`, `second_proc`,
@@ -140,9 +140,10 @@ return or exception, and the original exception still propagates unchanged.
 
 ## Instrumentation Placement
 
-One call-local measurement scope begins after the existing null/already-loaded
-guards. The guards receive at most an `early_guard` record without evaluating
-model identity. The scope observes:
+One call-local measurement scope begins only after the existing null and
+already-loaded guards. No setting lookup, timer, allocation read, recorder
+construction, or record emission occurs before or within either guard. The
+scope observes:
 
 1. fingerprint capture;
 2. cache lookup and the existing legacy/cache predicates;
@@ -169,10 +170,13 @@ the original two compound read/parse expressions.
 
 ## Synthetic Matrix
 
-All fixtures live under fresh `/tmp` roots and use minimal synthetic `.engine`
-model files so embedded model-header parsing does not contaminate sidecar cost.
-JSON contains deterministic, non-secret fields exercising title, description,
-nested model name, tags, resolution, activation text, and trained words.
+All ordinary and performance fixtures live under fresh `/tmp` roots and use
+minimal synthetic `.engine` model files so embedded model-header parsing does
+not contaminate sidecar cost. The `header_fault` contract alone uses a malformed
+synthetic `.safetensors` file to enter the production caught embedded-header
+failure and prove sidecar continuation. JSON contains deterministic, non-secret
+fields exercising title, description, nested model name, tags, resolution,
+activation text, and trained words.
 
 Required contract cases:
 
@@ -202,10 +206,13 @@ Required contract cases:
 
 Performance groups use payloads of approximately 1 KiB, 64 KiB, and 1 MiB,
 with one and four sidecars. Batch groups use 16 and 128 models at 4 KiB and 64
-KiB per sidecar. Only `single_64k_4`, `batch128_4k_4`, and
-`batch128_64k_1` are gate-eligible. The 1 KiB, 16-model, and 1 MiB groups are
-scaling/control or stress disclosure only and cannot authorize a `GO`. Each
-group receives five warmups and thirty
+KiB per sidecar. The first two gates apply only to direct one-model
+`single_64k_4` in central-cache mode. The batch gate applies only to production
+`Refresh()` groups `batch128_4k_4` and `batch128_64k_1`, also in central-cache
+mode. Per-folder mode is contract/parity evidence only. No gate combines cache
+modes, scenarios, or direct and batch records. The 1 KiB, 16-model, and 1 MiB
+groups are scaling/control or stress disclosure only and cannot authorize a
+`GO`. Each group receives five warmups and thirty
 enabled plus thirty disabled samples in counterbalanced `ABBA` blocks. A fresh
 model object and deliberate recomputation precondition are established for each
 sample. Enabled and disabled outcomes are compared exactly before using timing.
@@ -213,7 +220,8 @@ sample. Enabled and disabled outcomes are compared exactly before using timing.
 Batch samples call production `Refresh()`, including its existing parallel
 discovery/load behavior. The harness records one external monotonic wall
 interval per complete refresh iteration. Every per-model record carries the
-fixed scenario/iteration label; an iteration is usable only with the exact
+fixed scenario/iteration label; the aggregation key is exactly scenario base,
+fixed `central` cache mode, and numeric iteration. An iteration is usable only with the exact
 expected record count and passing parity. Summed per-call phase durations are
 reported as overlapping CPU-work, never wall time. For 128 models, first form
 one wall value and one summed phase-work value per iteration, then calculate
@@ -231,13 +239,16 @@ recorder overhead from production phase values.
 ## Decision Gate
 
 A `GO` requires exact parity, zero privacy/schema failures, complete required
-coverage, and at least one of the three frozen gate-eligible groups meeting one
-of these thresholds independently in each chronological half:
+coverage, and at least one frozen gate mapping meeting its threshold
+independently in each chronological half:
 
-- duplicate second-pass p95 is at least 5 ms and at least 20% of recomputation;
-- duplicate second-pass current-thread allocation p95 is at least 1 MiB and at
-  least 20% of recomputation allocation; or
-- a 128-model batch's aggregate duplicate second-pass CPU-work p95 is at least
+- for central-cache direct `single_64k_4`, duplicate second-pass p95 is at least
+  5 ms and at least 20% of recomputation;
+- for central-cache direct `single_64k_4`, duplicate second-pass current-thread
+  allocation p95 is at least 1 MiB and at least 20% of recomputation allocation;
+  or
+- for either central-cache `batch128_4k_4` or `batch128_64k_1`, aggregate
+  duplicate second-pass CPU-work p95 is at least
   25 ms and at least 15% of aggregate whole-call CPU-work p95.
 
 For the qualifying gate, every participating p95 metric is independently

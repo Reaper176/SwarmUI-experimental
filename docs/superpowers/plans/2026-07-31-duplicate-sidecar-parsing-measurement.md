@@ -23,6 +23,8 @@ all instrumentation, and close the final numbered roadmap prerequisite.
 - Initialize `Program.DataDir`, settings, logging, and model metadata caches only
   under fresh `/tmp` roots.
 - Generate deterministic `.engine` models and supported JSON sidecars.
+- Use one malformed contract-only `.safetensors` fixture for the caught
+  embedded-header continuation case; keep it out of performance groups.
 - First prove the uninstrumented behavior for suffix precedence,
   `procAltHeader`, cache hit, every invalidation family, invalid/corrected JSON,
   conservative concurrent change, cache-unavailable and caught lookup/header/
@@ -65,8 +67,9 @@ all instrumentation, and close the final numbered roadmap prerequisite.
 
 - Compute nearest-rank p50/p95/max and chronological-half p95 values.
 - Apply the exact 25%-of-larger stability formula independently to every gate
-  numerator and denominator; only the three frozen gate-eligible groups may
-  authorize `GO`.
+  numerator and denominator. Only central-cache direct `single_64k_4` may use
+  the time/allocation gates; only central-cache `batch128_4k_4` and
+  `batch128_64k_1` may use the per-iteration aggregate batch gate.
 - Report first pass, second pass, combined sidecar, recomputation, whole-call,
   allocation, and batch aggregates without subtracting overhead.
 - Apply only the frozen gate and record `GO`, scoped `GO`, `NO-GO`, or
