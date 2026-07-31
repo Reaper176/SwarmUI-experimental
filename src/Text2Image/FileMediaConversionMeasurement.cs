@@ -28,6 +28,9 @@ internal static class FileMediaConversionMeasurement
     /// <summary>Process-local source for opaque authorized-path identifiers.</summary>
     private static long NextPathId;
 
+    /// <summary>Tracks the last observed enable state so path identifiers are cleared on disable.</summary>
+    private static int WasEnabled;
+
     /// <summary>Opaque process-local identifiers for authorized normalized paths.</summary>
     private static readonly ConcurrentDictionary<string, long> PathIds = new();
 
@@ -79,6 +82,9 @@ internal static class FileMediaConversionMeasurement
         /// <summary>Number of empty bypass items.</summary>
         internal long EmptyItems;
 
+        /// <summary>Number of invalid media items.</summary>
+        internal long InvalidItems;
+
         /// <summary>Total source bytes observed by file calls.</summary>
         internal long SourceBytes;
 
@@ -103,7 +109,16 @@ internal static class FileMediaConversionMeasurement
     {
         try
         {
-            return Program.ServerSettings?.Performance?.FileMediaConversionMeasurementEnabled ?? false;
+            bool enabled = Program.ServerSettings?.Performance?.FileMediaConversionMeasurementEnabled ?? false;
+            if (enabled)
+            {
+                Interlocked.Exchange(ref WasEnabled, 1);
+            }
+            else if (Interlocked.Exchange(ref WasEnabled, 0) == 1)
+            {
+                PathIds.Clear();
+            }
+            return enabled;
         }
         catch
         {
@@ -127,7 +142,7 @@ internal static class FileMediaConversionMeasurement
                 Parent = CurrentScope.Value,
                 Phase = normalizedPhase,
                 Context = context,
-                ClaimHeld = ContextHoldsClaim(context),
+                ClaimHeld = ContextHoldsClaim(context) || CurrentScope.Value?.ClaimHeld == true,
                 StartTimestamp = Stopwatch.GetTimestamp(),
                 StartAllocation = GC.GetAllocatedBytesForCurrentThread()
             };
@@ -158,7 +173,7 @@ internal static class FileMediaConversionMeasurement
     }
 
     /// <summary>Notes one media item that bypasses file conversion.</summary>
-    internal static void NoteBypass(string category)
+    internal static void NoteMediaItem(string category)
     {
         if (!IsEnabled())
         {
@@ -169,18 +184,29 @@ internal static class FileMediaConversionMeasurement
             string bounded = NormalizeBypass(category);
             for (Scope scope = CurrentScope.Value; scope is not null; scope = scope.Parent)
             {
-                scope.MediaItems++;
-                if (bounded == "data_url")
+                lock (scope)
                 {
-                    scope.DataUrlItems++;
-                }
-                else if (bounded == "raw_base64")
-                {
-                    scope.RawBase64Items++;
-                }
-                else if (bounded == "empty")
-                {
-                    scope.EmptyItems++;
+                    if (scope.IsComplete)
+                    {
+                        continue;
+                    }
+                    scope.MediaItems++;
+                    if (bounded == "data_url")
+                    {
+                        scope.DataUrlItems++;
+                    }
+                    else if (bounded == "raw_base64")
+                    {
+                        scope.RawBase64Items++;
+                    }
+                    else if (bounded == "empty")
+                    {
+                        scope.EmptyItems++;
+                    }
+                    else if (bounded == "invalid")
+                    {
+                        scope.InvalidItems++;
+                    }
                 }
             }
         }
@@ -212,6 +238,10 @@ internal static class FileMediaConversionMeasurement
         }
         try
         {
+            if (!IsEnabled())
+            {
+                return;
+            }
             long endTimestamp = Stopwatch.GetTimestamp();
             long endAllocation = GC.GetAllocatedBytesForCurrentThread();
             long pathId = normalizedPath is null ? 0 : PathIds.GetOrAdd(normalizedPath, _ => Interlocked.Increment(ref NextPathId));
@@ -219,20 +249,27 @@ internal static class FileMediaConversionMeasurement
             long boundedBytes = Math.Max(0, sourceBytes);
             for (Scope scope = CurrentScope.Value; scope is not null; scope = scope.Parent)
             {
-                scope.MediaItems++;
-                scope.FileCalls++;
-                scope.SourceBytes += boundedBytes;
-                if (boundedSource == "pending")
+                lock (scope)
                 {
-                    scope.PendingCalls++;
-                }
-                else if (boundedSource == "disk")
-                {
-                    scope.DiskCalls++;
-                }
-                if (pathId > 0 && !scope.UniquePathIds.Add(pathId))
-                {
-                    scope.RepeatedPathCalls++;
+                    if (scope.IsComplete)
+                    {
+                        continue;
+                    }
+                    scope.MediaItems++;
+                    scope.FileCalls++;
+                    scope.SourceBytes += boundedBytes;
+                    if (boundedSource is "pending" or "pending_then_disk")
+                    {
+                        scope.PendingCalls++;
+                    }
+                    if (boundedSource is "disk" or "pending_then_disk")
+                    {
+                        scope.DiskCalls++;
+                    }
+                    if (pathId > 0 && !scope.UniquePathIds.Add(pathId))
+                    {
+                        scope.RepeatedPathCalls++;
+                    }
                 }
             }
             object record = new
@@ -263,42 +300,50 @@ internal static class FileMediaConversionMeasurement
     /// <summary>Completes and emits one nested inclusive scope.</summary>
     private static void CompleteScope(Scope scope)
     {
-        if (scope is null || scope.IsComplete)
+        if (scope is null)
         {
             return;
         }
         try
         {
-            long endTimestamp = Stopwatch.GetTimestamp();
-            long endAllocation = GC.GetAllocatedBytesForCurrentThread();
-            scope.IsComplete = true;
-            if (ReferenceEquals(CurrentScope.Value, scope))
+            lock (scope)
             {
-                CurrentScope.Value = scope.Parent;
+                if (scope.IsComplete)
+                {
+                    return;
+                }
+                long endTimestamp = Stopwatch.GetTimestamp();
+                long endAllocation = GC.GetAllocatedBytesForCurrentThread();
+                scope.IsComplete = true;
+                if (ReferenceEquals(CurrentScope.Value, scope))
+                {
+                    CurrentScope.Value = scope.Parent;
+                }
+                object record = new
+                {
+                    schema = Schema,
+                    record = "scope",
+                    record_id = Interlocked.Increment(ref NextRecordId),
+                    scenario = GetScenario(),
+                    phase = NormalizePhase(scope.Phase),
+                    context = NormalizeContext(scope.Context),
+                    claim_held = scope.ClaimHeld,
+                    media_items = Math.Max(0, scope.MediaItems),
+                    file_calls = Math.Max(0, scope.FileCalls),
+                    unique_paths = scope.UniquePathIds.Count,
+                    repeated_path_calls = Math.Max(0, scope.RepeatedPathCalls),
+                    pending_calls = Math.Max(0, scope.PendingCalls),
+                    disk_calls = Math.Max(0, scope.DiskCalls),
+                    data_url_items = Math.Max(0, scope.DataUrlItems),
+                    raw_base64_items = Math.Max(0, scope.RawBase64Items),
+                    empty_items = Math.Max(0, scope.EmptyItems),
+                    invalid_items = Math.Max(0, scope.InvalidItems),
+                    source_bytes = Math.Max(0, scope.SourceBytes),
+                    inclusive_us = ToMicroseconds(scope.StartTimestamp, endTimestamp),
+                    allocation_bytes = AllocationDelta(scope.StartAllocation, endAllocation)
+                };
+                Emit(record);
             }
-            object record = new
-            {
-                schema = Schema,
-                record = "scope",
-                record_id = Interlocked.Increment(ref NextRecordId),
-                scenario = GetScenario(),
-                phase = NormalizePhase(scope.Phase),
-                context = NormalizeContext(scope.Context),
-                claim_held = scope.ClaimHeld,
-                media_items = Math.Max(0, scope.MediaItems),
-                file_calls = Math.Max(0, scope.FileCalls),
-                unique_paths = scope.UniquePathIds.Count,
-                repeated_path_calls = Math.Max(0, scope.RepeatedPathCalls),
-                pending_calls = Math.Max(0, scope.PendingCalls),
-                disk_calls = Math.Max(0, scope.DiskCalls),
-                data_url_items = Math.Max(0, scope.DataUrlItems),
-                raw_base64_items = Math.Max(0, scope.RawBase64Items),
-                empty_items = Math.Max(0, scope.EmptyItems),
-                source_bytes = Math.Max(0, scope.SourceBytes),
-                inclusive_us = ToMicroseconds(scope.StartTimestamp, endTimestamp),
-                allocation_bytes = AllocationDelta(scope.StartAllocation, endAllocation)
-            };
-            Emit(record);
         }
         catch
         {
@@ -325,15 +370,15 @@ internal static class FileMediaConversionMeasurement
             {
                 string type = frames[i].GetMethod()?.DeclaringType?.FullName ?? "";
                 string method = frames[i].GetMethod()?.Name ?? "";
-                if (type.EndsWith("T2IAPI") && method == "GenT2I_Internal")
+                if (type.Contains("T2IAPI") && (method == "GenT2I_Internal" || type.Contains("<GenT2I_Internal>")))
                 {
                     return "core_generation";
                 }
-                if (type.EndsWith("ImageHistoryAPI"))
+                if (type.Contains("ImageHistoryAPI"))
                 {
                     return "image_history";
                 }
-                if (type.EndsWith("ComfyUIWebAPI"))
+                if (type.Contains("ComfyUIWebAPI"))
                 {
                     return "workflow_preview";
                 }
@@ -345,15 +390,15 @@ internal static class FileMediaConversionMeasurement
                 {
                     return "image_batch";
                 }
-                if (type.EndsWith("ModelsAPI") && method == "TestPromptFill")
+                if (type.Contains("ModelsAPI") && (method == "TestPromptFill" || type.Contains("<TestPromptFill>")))
                 {
                     return "prompt_fill";
                 }
-                if (type.EndsWith("T2IPromptHandling"))
+                if (type.Contains("T2IPromptHandling"))
                 {
                     return "late_tag";
                 }
-                if (type.EndsWith("T2IEngine"))
+                if (type.Contains("T2IEngine"))
                 {
                     return "engine_task";
                 }
@@ -429,13 +474,13 @@ internal static class FileMediaConversionMeasurement
     /// <summary>Normalizes media bypass categories.</summary>
     private static string NormalizeBypass(string category)
     {
-        return category is "data_url" or "raw_base64" or "empty" ? category : "raw_base64";
+        return category is "data_url" or "raw_base64" or "empty" or "invalid" ? category : "invalid";
     }
 
     /// <summary>Normalizes file content source categories.</summary>
     private static string NormalizeSource(string source)
     {
-        return source is "pending" or "disk" or "none" ? source : "none";
+        return source is "pending" or "disk" or "pending_then_disk" or "none" ? source : "none";
     }
 
     /// <summary>Converts a monotonic timestamp range to nonnegative integer microseconds.</summary>

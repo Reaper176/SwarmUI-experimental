@@ -1160,7 +1160,6 @@ public class T2IParamTypes
                 if (val.StartsWith("data:"))
                 {
                     wasSingleDataUrl = true;
-                    FileMediaConversionMeasurement.NoteBypass("data_url");
                     val = val.After(',');
                 }
                 if (val.StartsWith("inputs/") || val.StartsWith("raw/") || val.StartsWith("Starred/"))
@@ -1169,17 +1168,22 @@ public class T2IParamTypes
                 }
                 if (string.IsNullOrWhiteSpace(val))
                 {
-                    FileMediaConversionMeasurement.NoteBypass("empty");
+                    FileMediaConversionMeasurement.NoteMediaItem(wasSingleDataUrl ? "data_url" : "empty");
                     return "";
                 }
                 if (!ValidBase64Matcher.IsOnlyMatches(val) || val.Length < 10)
                 {
+                    FileMediaConversionMeasurement.NoteMediaItem("invalid");
                     string shortText = val.Length > 10 ? val[..10] + "..." : val;
                     throw new SwarmUserErrorException($"Invalid {type.Type} value for param {type.Name} - '{origVal}' - must be a valid base64 string - got '{shortText}'");
                 }
                 if (!wasSingleDataUrl)
                 {
-                    FileMediaConversionMeasurement.NoteBypass("raw_base64");
+                    FileMediaConversionMeasurement.NoteMediaItem("raw_base64");
+                }
+                else
+                {
+                    FileMediaConversionMeasurement.NoteMediaItem("data_url");
                 }
                 return origVal;
             case T2IParamDataType.IMAGE_LIST:
@@ -1194,7 +1198,6 @@ public class T2IParamTypes
                         if (partVal.StartsWith("data:"))
                         {
                             wasDataUrl = true;
-                            FileMediaConversionMeasurement.NoteBypass("data_url");
                             partVal = partVal.After(',');
                         }
                         if (partVal.StartsWith("inputs/") || partVal.StartsWith("raw/") || partVal.StartsWith("Starred/"))
@@ -1205,12 +1208,17 @@ public class T2IParamTypes
                         }
                         if (!ValidBase64Matcher.IsOnlyMatches(partVal) || partVal.Length < 10)
                         {
+                            FileMediaConversionMeasurement.NoteMediaItem("invalid");
                             string shortText = partVal.Length > 10 ? partVal[..10] + "..." : partVal;
                             throw new SwarmUserErrorException($"Invalid image-list value for param {type.Name} - '{origVal}' - must be a valid base64 string - got '{shortText}'");
                         }
                         if (!wasDataUrl && !wasPath)
                         {
-                            FileMediaConversionMeasurement.NoteBypass("raw_base64");
+                            FileMediaConversionMeasurement.NoteMediaItem("raw_base64");
+                        }
+                        else if (wasDataUrl && !wasPath)
+                        {
+                            FileMediaConversionMeasurement.NoteMediaItem("data_url");
                         }
                     }
                     return rawSplit.JoinString(splitter);
@@ -1264,36 +1272,65 @@ public class T2IParamTypes
         long encodeUs = 0;
         try
         {
+            string measuredRoot;
+            string measuredPath;
+            string measuredContentType;
             long authorizationStart = Stopwatch.GetTimestamp();
-            string measuredRoot = Utilities.CombinePathWithAbsolute(Environment.CurrentDirectory, session.User.OutputDirectory);
-            (string measuredPath, string measuredConsoleError, string measuredUserError) = WebServer.CheckFilePath(measuredRoot, filePath);
-            if (measuredConsoleError is not null)
+            try
             {
-                Logs.Error(measuredConsoleError);
-                throw new SwarmUserErrorException($"Invalid file path {errorContext} - '{filePath}' - {measuredUserError}");
+                measuredRoot = Utilities.CombinePathWithAbsolute(Environment.CurrentDirectory, session.User.OutputDirectory);
+                (string checkedPath, string measuredConsoleError, string measuredUserError) = WebServer.CheckFilePath(measuredRoot, filePath);
+                measuredPath = checkedPath;
+                if (measuredConsoleError is not null)
+                {
+                    Logs.Error(measuredConsoleError);
+                    throw new SwarmUserErrorException($"Invalid file path {errorContext} - '{filePath}' - {measuredUserError}");
+                }
+                measuredPath = UserImageHistoryHelper.GetRealPathFor(session.User, measuredPath, root: measuredRoot);
+                measuredContentType = Utilities.GuessContentType(measuredPath);
+                pathNorm = Path.GetFullPath(measuredPath);
             }
-            measuredPath = UserImageHistoryHelper.GetRealPathFor(session.User, measuredPath, root: measuredRoot);
+            finally
+            {
+                authorizationUs = FileMediaConversionMeasurement.ToMicroseconds(authorizationStart, Stopwatch.GetTimestamp());
+            }
             byte[] measuredData = null;
-            string measuredContentType = Utilities.GuessContentType(measuredPath);
-            pathNorm = Path.GetFullPath(measuredPath);
-            authorizationUs = FileMediaConversionMeasurement.ToMicroseconds(authorizationStart, Stopwatch.GetTimestamp());
             if (Session.StillSavingFiles.TryGetValue(pathNorm, out Task<byte[]> measuredCacheData))
             {
                 source = "pending";
                 long waitStart = Stopwatch.GetTimestamp();
-                measuredData = measuredCacheData.Result;
-                waitUs = FileMediaConversionMeasurement.ToMicroseconds(waitStart, Stopwatch.GetTimestamp());
+                try
+                {
+                    measuredData = measuredCacheData.Result;
+                }
+                finally
+                {
+                    waitUs = FileMediaConversionMeasurement.ToMicroseconds(waitStart, Stopwatch.GetTimestamp());
+                }
             }
             if (measuredData is null)
             {
-                source = "disk";
+                source = source == "pending" ? "pending_then_disk" : "disk";
                 long readStart = Stopwatch.GetTimestamp();
-                measuredData = File.ReadAllBytes(measuredPath);
-                readUs = FileMediaConversionMeasurement.ToMicroseconds(readStart, Stopwatch.GetTimestamp());
+                try
+                {
+                    measuredData = File.ReadAllBytes(measuredPath);
+                }
+                finally
+                {
+                    readUs = FileMediaConversionMeasurement.ToMicroseconds(readStart, Stopwatch.GetTimestamp());
+                }
             }
             long encodeStart = Stopwatch.GetTimestamp();
-            string result = $"data:{measuredContentType};base64,{Convert.ToBase64String(measuredData)}";
-            encodeUs = FileMediaConversionMeasurement.ToMicroseconds(encodeStart, Stopwatch.GetTimestamp());
+            string result;
+            try
+            {
+                result = $"data:{measuredContentType};base64,{Convert.ToBase64String(measuredData)}";
+            }
+            finally
+            {
+                encodeUs = FileMediaConversionMeasurement.ToMicroseconds(encodeStart, Stopwatch.GetTimestamp());
+            }
             FileMediaConversionMeasurement.CompleteFileCall(call, pathNorm, source, measuredData.LongLength, authorizationUs, waitUs, readUs, encodeUs);
             return result;
         }
