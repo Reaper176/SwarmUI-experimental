@@ -2,7 +2,7 @@
 
 **Date:** 2026-07-31
 **Rank:** 28
-**Status:** Evidence collected; scoped `GO`; instrumentation removal pending
+**Status:** Measurement completed with scoped `GO`; instrumentation removed and final projection verified
 **Approved base:** `bdbce25dc023e0661d50fe1b66094741128c8271`
 
 ## Decision Authority
@@ -246,7 +246,34 @@ alone does not authorize caching. `GO` authorizes only a separate design for a
 request/claim-scoped, authorization-preserving content-resolution strategy;
 `NO-GO` authorizes no optimization.
 
-After the decision, remove both settings, the recorder, and all hooks. The final
-`src` tree OID must exactly equal approved base
+The completed rollback removes both settings, the recorder, and all hooks. The
+final `src` tree OID must exactly equal approved base
 `bdbce25dc023e0661d50fe1b66094741128c8271:src`. Only this design, the plan, the
 audit disposition, and final evidence documentation may remain.
+
+### Removal and post-removal verification
+
+Removal commit `ef64d64948d64f26bbf5a64ab48045c28d98a996` deletes the
+recorder and both settings and restores every conversion, request, preset, late,
+and engine body. Final `src` tree OID
+`26f65adf96afc130baa8b6fedba84b437d7163dc` exactly equals approved base
+`bdbce25dc023e0661d50fe1b66094741128c8271:src`. All
+`FileMediaConversionMeasurementEnabled`,
+`FileMediaConversionMeasurementScenario`, `FileMediaConversionMeasurement`,
+and `[Rank28FileMedia]` source tokens are absent.
+
+The fresh external post-removal Release build under
+`/tmp/swarmui-rank28-post-ZXZBaO` completed with 0 warnings and 0 errors;
+`SwarmUI.dll` SHA-256 is
+`f1f8c369c09ad5076d5de517c8a1f03f562ef557e67ac142598d84dad21f21a7`.
+The uninstrumented harness under `/tmp/rank28-post-harness-GFowAW` compiled
+with 0 errors and one `MSB3277` `DiagnosticSource` assembly-unification warning,
+then passed 18 assertions with 0 failures. Harness-source SHA-256 is
+`305bc15231ba756d19249cde768b87936069e9e2d8f3ee05825e69df33799d6c`.
+It covers disk and repeated reads, completed/delayed pending-save precedence,
+missing-file determinism, request path/data-URL/raw/empty values, retained
+path-backed image-list rejection, and repeated late-param/clone behavior.
+
+Rank 28 is complete. The scoped `GO` authorizes only a separate design; no
+production cache, pre-resolution, freshness, authorization, async, media-list,
+or other behavior change is present in the final source projection.
