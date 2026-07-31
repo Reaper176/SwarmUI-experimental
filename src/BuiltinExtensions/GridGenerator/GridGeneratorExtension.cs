@@ -253,39 +253,7 @@ public class GridGeneratorExtension : Extension
                     }
                     else
                     {
-                        string url, filePath;
-                        if (thisParams.Get(T2IParamTypes.DoNotSave, false))
-                        {
-                            if (OutputFilenameSelectionMeasurement.IsEnabled)
-                            {
-                                int batchSize = 1;
-                                try
-                                {
-                                    batchSize = thisParams.Get(T2IParamTypes.BatchSize, 1);
-                                }
-                                catch
-                                {
-                                    // Temporary measurement diagnostics must not affect output behavior.
-                                }
-                                OutputFilenameSelectionMeasurement.EmitBypass(
-                                    OutputFilenameSelectionContext.GridIteration(
-                                        image.OutputFilenameMeasurementBackendClaimed),
-                                    image.File,
-                                    batchSize,
-                                    "grid_do_not_save");
-                            }
-                            (url, filePath) = (image.File.AsDataString(), null);
-                        }
-                        else
-                        {
-                            (url, filePath) = data.Session.SaveImage(
-                                image,
-                                iteration,
-                                thisParams,
-                                metadata,
-                                OutputFilenameSelectionContext.GridIteration(
-                                    image.OutputFilenameMeasurementBackendClaimed));
-                        }
+                        (string url, string filePath) = thisParams.Get(T2IParamTypes.DoNotSave, false) ? (image.File.AsDataString(), null) : data.Session.SaveImage(image, iteration, thisParams, metadata);
                         if (url == "ERROR")
                         {
                             setError($"Server failed to save an image.");
@@ -701,37 +669,7 @@ public class GridGeneratorExtension : Extension
                 (Task<MediaFile> imgTask, string metadata) = session.ApplyMetadata(outImg, initialParams, batchId);
                 T2IEngine.ImageOutput imageOut = new() { File = outImg, ActualFileTask = imgTask };
                 Logs.Verbose("Metadata applied, save to file...");
-                string url, filePath;
-                if (initialParams.Get(T2IParamTypes.DoNotSave, false))
-                {
-                    if (OutputFilenameSelectionMeasurement.IsEnabled)
-                    {
-                        int batchSize = 1;
-                        try
-                        {
-                            batchSize = initialParams.Get(T2IParamTypes.BatchSize, 1);
-                        }
-                        catch
-                        {
-                            // Temporary measurement diagnostics must not affect output behavior.
-                        }
-                        OutputFilenameSelectionMeasurement.EmitBypass(
-                            OutputFilenameSelectionContext.GridFinal,
-                            outImg,
-                            batchSize,
-                            "grid_do_not_save");
-                    }
-                    (url, filePath) = (outImg.AsDataString(), null);
-                }
-                else
-                {
-                    (url, filePath) = data.Session.SaveImage(
-                        imageOut,
-                        batchId,
-                        initialParams,
-                        metadata,
-                        OutputFilenameSelectionContext.GridFinal);
-                }
+                (string url, string filePath) = initialParams.Get(T2IParamTypes.DoNotSave, false) ? (outImg.AsDataString(), null) : data.Session.SaveImage(imageOut, batchId, initialParams, metadata);
                 if (url == "ERROR")
                 {
                     data.ErrorOut = new JObject() { ["error"] = $"Server failed to save an image." };

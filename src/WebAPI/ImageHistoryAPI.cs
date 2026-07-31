@@ -51,12 +51,7 @@ public static class ImageHistoryAPI
         Logs.Info($"User {session.User.UserID} stored an image to history.");
         (Task<MediaFile> imgTask, string metadata) = user_input.SourceSession.ApplyMetadata(img, user_input, 1);
         T2IEngine.ImageOutput outputImage = new() { File = img as Image, ActualFileTask = imgTask };
-        (string path, _) = session.SaveImage(
-            outputImage,
-            0,
-            user_input,
-            metadata,
-            OutputFilenameSelectionContext.ImageHistoryAdd);
+        (string path, _) = session.SaveImage(outputImage, 0, user_input, metadata);
         return new() { ["images"] = new JArray() { new JObject() { ["image"] = path, ["batch_index"] = "0", ["request_id"] = $"{user_input.UserRequestId}", ["metadata"] = metadata } } };
     }
 

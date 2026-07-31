@@ -244,40 +244,12 @@ public class Session : IEquatable<Session>
     }
 
     /// <summary>Attempts to reserve a persisted output path without colliding with any extensionless public reservation.</summary>
-    private static bool TryReserveOutputFilename(string fullPath,
-        out OutputFilenameReservation reservation,
-        OutputFilenameSelectionAttempt measurement)
+    private static bool TryReserveOutputFilename(string fullPath, out OutputFilenameReservation reservation)
     {
         lock (OutputFilenameReservationLock)
         {
             string fullPathNoExt = fullPath.BeforeLast('.');
-            bool hasCollision;
-            if (measurement is null)
-            {
-                hasCollision = RecentlyBlockedFilenames.Keys.Any(
-                    path => path.BeforeLast('.') == fullPathNoExt);
-            }
-            else
-            {
-                int examined = 0;
-                long scanStart = OutputFilenameSelectionMeasurement.Timestamp();
-                ICollection<string> reservationKeys = RecentlyBlockedFilenames.Keys;
-                hasCollision = reservationKeys.Any(path =>
-                {
-                    examined++;
-                    return path.BeforeLast('.') == fullPathNoExt;
-                });
-                measurement.ReservationScanMicroseconds +=
-                    OutputFilenameSelectionMeasurement.ElapsedMicroseconds(scanStart);
-                measurement.ReservationKeyCount = Math.Max(
-                    measurement.ReservationKeyCount, reservationKeys.Count);
-                measurement.ReservationKeysExamined += examined;
-                if (hasCollision)
-                {
-                    measurement.ReservationCollisionMatches++;
-                }
-            }
-            if (hasCollision)
+            if (RecentlyBlockedFilenames.Keys.Any(path => path.BeforeLast('.') == fullPathNoExt))
             {
                 reservation = default;
                 return false;
@@ -485,39 +457,10 @@ public class Session : IEquatable<Session>
     /// <returns>(User-Visible-WebPath, Local-FilePath)</returns>
     public (string, string) SaveImage(T2IEngine.ImageOutput image, int batchIndex, T2IParamInput user_input, string metadata)
     {
-        return SaveImage(image, batchIndex, user_input, metadata, OutputFilenameSelectionContext.Direct);
-    }
-
-    /// <summary>Internal save route carrying only temporary privacy-safe measurement context.</summary>
-    internal (string, string) SaveImage(T2IEngine.ImageOutput image, int batchIndex,
-        T2IParamInput user_input, string metadata,
-        OutputFilenameSelectionContext measurementContext)
-    {
-        OutputFilenameSelectionAttempt measurement = null;
-        if (OutputFilenameSelectionMeasurement.IsEnabled)
-        {
-            int batchSize = 1;
-            try
-            {
-                batchSize = user_input.Get(T2IParamTypes.BatchSize, 1);
-            }
-            catch
-            {
-                // Temporary measurement diagnostics must not affect output behavior.
-            }
-            measurement = OutputFilenameSelectionMeasurement.Begin(
-                measurementContext,
-                image.File,
-                batchSize);
-        }
         if (!User.Settings.SaveFiles)
         {
-            OutputFilenameSelectionMeasurement.EmitBypass(
-                measurement, "user_save_files_disabled");
             return (image.File.AsDataString(), null);
         }
-        long synchronousStart = measurement is null ? 0 : OutputFilenameSelectionMeasurement.Timestamp();
-        long pathStart = measurement is null ? 0 : OutputFilenameSelectionMeasurement.Timestamp();
         string rawImagePath = User.BuildImageOutputPath(user_input, batchIndex);
         string imagePath = rawImagePath.Replace("[number]", "1");
         string format = user_input.Get(T2IParamTypes.ImageFormat, User.Settings.FileFormat.ImageFormat);
@@ -541,100 +484,20 @@ public class Session : IEquatable<Session>
         string folderRoute = Path.GetFullPath(UserImageHistoryHelper.GetRealPathFor(User, $"{User.OutputDirectory}/{pathFolder}"));
         string fullPath = $"{fullPathNoExt}.{extension}";
         string root = Utilities.CombinePathWithAbsolute(Environment.CurrentDirectory, User.OutputDirectory);
-        if (measurement is not null)
-        {
-            measurement.PathResolutionMicroseconds =
-                OutputFilenameSelectionMeasurement.ElapsedMicroseconds(pathStart);
-            int folderDepth = 0;
-            if (pathFolder.Length > 0)
-            {
-                folderDepth = 1;
-                for (int i = 0; i < pathFolder.Length; i++)
-                {
-                    if (pathFolder[i] == '/')
-                    {
-                        folderDepth++;
-                    }
-                }
-            }
-            measurement.FolderDepth = folderDepth;
-        }
-
-        bool saveFailed = false;
-        long lockWaitStart = measurement is null ? 0 : OutputFilenameSelectionMeasurement.Timestamp();
         lock (User.UserLock)
         {
-            long lockHoldStart = 0;
-            if (measurement is not null)
-            {
-                measurement.UserLockWaitMicroseconds =
-                    OutputFilenameSelectionMeasurement.ElapsedMicroseconds(lockWaitStart);
-                lockHoldStart = OutputFilenameSelectionMeasurement.Timestamp();
-            }
             try
             {
                 Directory.CreateDirectory(folderRoute);
-                HashSet<string> existingFiles;
-                if (measurement is null)
-                {
-                    existingFiles = [.. Directory.EnumerateFiles(folderRoute)
-                        .Select(file => file.BeforeLast('.'))];
-                }
-                else
-                {
-                    long directoryScanHashStart = OutputFilenameSelectionMeasurement.Timestamp();
-                    int folderFileCount = 0;
-                    existingFiles = [.. Directory.EnumerateFiles(folderRoute).Select(file =>
-                    {
-                        folderFileCount++;
-                        return file.BeforeLast('.');
-                    })];
-                    measurement.DirectoryScanHashMicroseconds =
-                        OutputFilenameSelectionMeasurement.ElapsedMicroseconds(directoryScanHashStart);
-                    measurement.FolderFileCount = folderFileCount;
-                }
+                HashSet<string> existingFiles = [.. Directory.EnumerateFiles(folderRoute).Select(f => f.BeforeLast('.'))];
                 OutputFilenameReservation reservation = default;
                 int num = 0;
-                if (measurement is null)
+                while (existingFiles.Contains(fullPathNoExt) || !TryReserveOutputFilename(fullPath, out reservation))
                 {
-                    while (existingFiles.Contains(fullPathNoExt)
-                        || !TryReserveOutputFilename(fullPath, out reservation, null))
-                    {
-                        num++;
-                        imagePath = rawImagePath.Contains("[number]")
-                            ? rawImagePath.Replace("[number]", $"{num}")
-                            : $"{rawImagePath}-{num}";
-                        fullPathNoExt = Path.GetFullPath(UserImageHistoryHelper.GetRealPathFor(
-                            User, $"{User.OutputDirectory}/{imagePath}"));
-                        fullPath = $"{fullPathNoExt}.{extension}";
-                    }
-                }
-                else
-                {
-                    while (true)
-                    {
-                        measurement.CandidateProbeCount++;
-                        long probeStart = OutputFilenameSelectionMeasurement.Timestamp();
-                        bool diskCollision = existingFiles.Contains(fullPathNoExt);
-                        bool reserved = !diskCollision
-                            && TryReserveOutputFilename(fullPath, out reservation, measurement);
-                        measurement.CandidateProbeMicroseconds +=
-                            OutputFilenameSelectionMeasurement.ElapsedMicroseconds(probeStart);
-                        if (reserved)
-                        {
-                            break;
-                        }
-                        num++;
-                        imagePath = rawImagePath.Contains("[number]")
-                            ? rawImagePath.Replace("[number]", $"{num}")
-                            : $"{rawImagePath}-{num}";
-                        fullPathNoExt = Path.GetFullPath(UserImageHistoryHelper.GetRealPathFor(
-                            User, $"{User.OutputDirectory}/{imagePath}"));
-                        fullPath = $"{fullPathNoExt}.{extension}";
-                    }
-                    measurement.NamingCategory = num == 0
-                        ? "direct"
-                        : rawImagePath.Contains("[number]") ? "number_token" : "suffix";
+                    num++;
+                    imagePath = rawImagePath.Contains("[number]") ? rawImagePath.Replace("[number]", $"{num}") : $"{rawImagePath}-{num}";
+                    fullPathNoExt = Path.GetFullPath(UserImageHistoryHelper.GetRealPathFor(User, $"{User.OutputDirectory}/{imagePath}"));
+                    fullPath = $"{fullPathNoExt}.{extension}";
                 }
                 Task<byte[]> pendingTask = null;
                 try
@@ -643,82 +506,27 @@ public class Session : IEquatable<Session>
                     StillSavingFiles[fullPath] = pendingTask;
                     _ = Utilities.RunCheckedTask(async () =>
                     {
-                        long backgroundStart = measurement is null ? 0 : OutputFilenameSelectionMeasurement.Timestamp();
-                        long conversionWaitMicroseconds = 0;
-                        long primaryWriteMicroseconds = 0;
-                        long metadataWriteMicroseconds = 0;
-                        long previewMicroseconds = 0;
-                        long historyIndexMicroseconds = 0;
-                        long retentionMicroseconds = 0;
-                        string backgroundOutcome = "error";
                         bool saveSucceeded = false;
                         try
                         {
-                            long phaseStart = measurement is null ? 0 : OutputFilenameSelectionMeasurement.Timestamp();
                             MediaFile actualFile = image.ActualFileTask is null ? image.File : await image.ActualFileTask;
-                            if (measurement is not null)
-                            {
-                                conversionWaitMicroseconds =
-                                    OutputFilenameSelectionMeasurement.ElapsedMicroseconds(phaseStart);
-                            }
-
-                            phaseStart = measurement is null ? 0 : OutputFilenameSelectionMeasurement.Timestamp();
                             File.WriteAllBytes(fullPath, actualFile.RawData);
-                            if (measurement is not null)
+                            if ((User.Settings.FileFormat.SaveTextFileMetadata || extension == "webp" || !OutputMetadataTracker.ExtensionsWithMetadata.Contains(extension)) && !string.IsNullOrWhiteSpace(metadata))
                             {
-                                primaryWriteMicroseconds =
-                                    OutputFilenameSelectionMeasurement.ElapsedMicroseconds(phaseStart);
-                            }
-
-                            phaseStart = measurement is null ? 0 : OutputFilenameSelectionMeasurement.Timestamp();
-                            if ((User.Settings.FileFormat.SaveTextFileMetadata || extension == "webp"
-                                || !OutputMetadataTracker.ExtensionsWithMetadata.Contains(extension))
-                                && !string.IsNullOrWhiteSpace(metadata))
-                            {
-                                if (extension == "webp" && actualFile is ImageFile imageFile
-                                    && imageFile.ToIS.Frames.Count == 1)
+                                if (extension == "webp" && actualFile is ImageFile imageFile && imageFile.ToIS.Frames.Count == 1)
                                 {
                                     // no .json write for still-image webps
                                 }
                                 else
                                 {
-                                    File.WriteAllBytes(
-                                        fullPathNoExt + ".swarm.json", metadata.EncodeUTF8());
+                                    File.WriteAllBytes(fullPathNoExt + ".swarm.json", metadata.EncodeUTF8());
                                 }
                             }
-                            if (measurement is not null)
-                            {
-                                metadataWriteMicroseconds =
-                                    OutputFilenameSelectionMeasurement.ElapsedMicroseconds(phaseStart);
-                            }
-
-                            phaseStart = measurement is null ? 0 : OutputFilenameSelectionMeasurement.Timestamp();
                             OutputMetadataTracker.GetOrCreatePreviewFor(fullPath.Replace('\\', '/'));
-                            if (measurement is not null)
-                            {
-                                previewMicroseconds =
-                                    OutputFilenameSelectionMeasurement.ElapsedMicroseconds(phaseStart);
-                            }
-
-                            phaseStart = measurement is null ? 0 : OutputFilenameSelectionMeasurement.Timestamp();
-                            OutputMetadataTracker.UpsertHistoryIndexForFile(
-                                fullPath.Replace('\\', '/'), root, User.Settings.StarNoFolders);
-                            if (measurement is not null)
-                            {
-                                historyIndexMicroseconds =
-                                    OutputFilenameSelectionMeasurement.ElapsedMicroseconds(phaseStart);
-                            }
-
+                            OutputMetadataTracker.UpsertHistoryIndexForFile(fullPath.Replace('\\', '/'), root, User.Settings.StarNoFolders);
                             Logs.Debug($"Saved an output file as '{fullPath}'");
-                            phaseStart = measurement is null ? 0 : OutputFilenameSelectionMeasurement.Timestamp();
                             await Task.Delay(TimeSpan.FromSeconds(10)); // (Give time for WebServer to read data from cache rather than having to reload from file for first read)
-                            if (measurement is not null)
-                            {
-                                retentionMicroseconds =
-                                    OutputFilenameSelectionMeasurement.ElapsedMicroseconds(phaseStart);
-                            }
                             saveSucceeded = true;
-                            backgroundOutcome = "success";
                         }
                         finally
                         {
@@ -731,18 +539,6 @@ public class Session : IEquatable<Session>
                             {
                                 ReleaseOutputFilenameReservationAfterDelay(reservation);
                             }
-                            OutputFilenameSelectionMeasurement.EmitBackground(
-                                measurement,
-                                backgroundOutcome,
-                                conversionWaitMicroseconds,
-                                primaryWriteMicroseconds,
-                                metadataWriteMicroseconds,
-                                previewMicroseconds,
-                                historyIndexMicroseconds,
-                                retentionMicroseconds,
-                                measurement is null
-                                    ? 0
-                                    : OutputFilenameSelectionMeasurement.ElapsedMicroseconds(backgroundStart));
                         }
                     }, "output file save");
                 }
@@ -759,27 +555,8 @@ public class Session : IEquatable<Session>
             catch (Exception ex)
             {
                 Logs.Error($"Could not save user '{User.UserID}' image (to '{fullPath}'): error '{ex.Message}'");
-                saveFailed = true;
+                return ("ERROR", null);
             }
-            finally
-            {
-                if (measurement is not null)
-                {
-                    measurement.UserLockHoldMicroseconds =
-                        OutputFilenameSelectionMeasurement.ElapsedMicroseconds(lockHoldStart);
-                }
-            }
-        }
-        if (measurement is not null)
-        {
-            measurement.SynchronousSelectionMicroseconds =
-                OutputFilenameSelectionMeasurement.ElapsedMicroseconds(synchronousStart);
-            OutputFilenameSelectionMeasurement.EmitSelection(
-                measurement, saveFailed ? "error" : "scheduled");
-        }
-        if (saveFailed)
-        {
-            return ("ERROR", null);
         }
         string prefix = Program.ServerSettings.Paths.AppendUserNameToOutputPath ? $"View/{User.UserID}/" : "Output/";
         return ($"{prefix}{imagePath}.{extension}", fullPath);
