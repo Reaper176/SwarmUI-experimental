@@ -2,7 +2,7 @@
 
 **Date:** 2026-07-31
 **Rank:** 27
-**Status:** Evidence collected; `NO-GO`; instrumentation removal and post-removal verification pending
+**Status:** Measurement completed with `NO-GO`; instrumentation removed and final projection verified
 **Approved base:** `020f619ce54918e074892da2e9756822807cefca`
 
 ## Decision Authority
@@ -360,10 +360,39 @@ totals and diagnostic serialization must not be presented as stock cost.
 Repeated stock cleanup remained sub-millisecond throughout the exercised
 synthetic matrix, including the largest graph and deepest cascade. The scoped
 decision is therefore `NO-GO`: Rank 27 authorizes no scan combination, graph
-index/cache, fixed-point rewrite, or other cleanup optimization. Rank 28 may be
-recorded as the sole Recommended Next Project, but is neither designed nor
-implemented and must not begin until Rank 27 instrumentation removal and
-post-removal projection/build/sanity verification close.
+index/cache, fixed-point rewrite, or other cleanup optimization. Rank 28 is the
+sole Recommended Next Project, but is neither designed nor implemented.
+
+### Removal and post-removal verification
+
+Removal commit `d631e5559e1de37f9abc422bddf10820ec63efc6`
+deletes the recorder and both settings and restores the generator/editor bodies.
+Final `src` tree OID
+`26f65adf96afc130baa8b6fedba84b437d7163dc` exactly equals approved base
+`020f619ce54918e074892da2e9756822807cefca:src`. All
+`WorkflowCleanupMeasurementEnabled`, `WorkflowCleanupMeasurementScenario`,
+`WorkflowCleanupCostMeasurement`, and `[Rank27WorkflowCleanup]` source tokens
+are absent.
+
+The external post-removal Release build under
+`/tmp/swarmui-rank27-post-LR0xtv` completed with 0 warnings and 0 errors. Its
+`SwarmUI.dll` SHA-256 is
+`135af51e23d2ac214501fe87b046293632ef3ac94f97d8a696c55f93d5297313`.
+The separate post-removal harness under `/tmp/rank27-post-harness-NscY5u`
+compiled with 0 errors and one `MSB3277` `DiagnosticSource` assembly-unification
+warning, then passed 19 assertions with 0 failures across five `Generate()`
+invocations. Harness-source SHA-256 is
+`4bcd3930b739bea890558e2eddebe17aae7178c2489c2eae140dafa7ff43e2df`.
+
+Post-removal coverage includes sampler snapshot/removal and parent-aware
+replacement behavior, a depth-12 fixed-point cascade with unrelated-node
+preservation, the distinct audio-only topology, and two deterministic malformed
+runs comparing exception and partial graph/cache state. The initial `/tmp`
+harness alone expected a retained connectivity cache after the cascade. Static
+tracing showed the original final no-candidate pass invalidates `UsedInputs` and
+performs no lookup, so terminal `null` is correct. Correcting that harness-only
+expectation produced the passing result; it exposed no production issue and
+caused no repository source change.
 
 ## Static and Runtime Validation
 
@@ -408,6 +437,6 @@ Rank 27 prefixes. The final committed `src` tree must be byte-for-byte and tree-
 OID identical to approved base `020f619ce54918e074892da2e9756822807cefca`.
 
 Only this design, its implementation plan, the audit status, and final
-evidence/decision documentation may remain. This intermediate evidence commit
-records Rank 28 as Recommended Next but does not authorize Rank 28 work until
-Rank 27 removal and final projection validation close.
+evidence/decision documentation remain. Rank 27 is complete with `NO-GO` and
+authorizes no cleanup optimization. Rank 28 is the sole Recommended Next
+Project, but is neither designed nor implemented.
