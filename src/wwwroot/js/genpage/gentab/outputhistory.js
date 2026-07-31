@@ -169,7 +169,7 @@ class ImageHistoryCostMeasurement {
             return pattern.test(scenario) ? scenario : 'unspecified';
         }
         catch (e) {
-            return 'unavailable';
+            return 'unspecified';
         }
     }
 
@@ -185,8 +185,7 @@ class ImageHistoryCostMeasurement {
             if (!this.isEnabled()) {
                 return;
             }
-            let handlerEnd = performance.now();
-            let handlerMs = handlerEnd - data.handlerStart;
+            let handlerMs = data.handlerEnd - data.handlerStart;
             let perf = data.serverPerf || {};
             let record = {
                 schema: 1,
@@ -206,7 +205,7 @@ class ImageHistoryCostMeasurement {
                 map_ms: data.mapMs,
                 render_ms: data.renderMs,
                 handler_start_ms: data.handlerStart,
-                handler_end_ms: handlerEnd,
+                handler_end_ms: data.handlerEnd,
                 handler_ms: handlerMs,
                 long_task_candidate: handlerMs >= 50,
                 server_total_ms: Number(perf.total_ms || 0),
@@ -1271,11 +1270,14 @@ class ImageHistoryController {
             request.fastFirstLimit = IMAGE_HISTORY_FAST_FIRST_LIMIT;
         }
         this.setRequestStatus(isRetryLoad ? 'retrying' : 'loading', isRetryLoad ? 'Retrying history load...' : 'Loading history...');
+        let measurementRequestStart = performance.now();
         genericRequest('ListImages', request, data => {
             if (loadToken != this.loadToken) {
                 return;
             }
-            let responseMs = performance.now() - requestStart;
+            let measurementResponseStart = performance.now();
+            let responseMs = measurementResponseStart - requestStart;
+            let measurementRequestMs = measurementResponseStart - measurementRequestStart;
             let mapStart = performance.now();
             let handlerStart = mapStart;
             this.clearAutoRetry();
@@ -1293,13 +1295,15 @@ class ImageHistoryController {
                 this.backgroundRetryCount = 0;
                 this.backgroundRequestKey = this.getRequestKey(path, depth, sortBy, reverse, showHidden, hideGrids);
                 this.queueFullLoad(path, depth, sortBy, reverse, showHidden, hideGrids);
-                imageHistoryCostMeasurement.recordResponse({ flow: 'foreground', refresh: isRefresh, fastFirst: useFastFirst, depth, sortBy, reverse, hasFilter: !!filter, hideGrids, folderCount: folders.length, rawFileCount: data.files.length, mappedFileCount: mapped.length, requestMs: responseMs, mapMs, renderMs, handlerStart, serverPerf: data.perf });
+                let handlerEnd = performance.now();
+                imageHistoryCostMeasurement.recordResponse({ flow: 'foreground', refresh: isRefresh, fastFirst: useFastFirst, depth, sortBy, reverse, hasFilter: !!filter, hideGrids, folderCount: folders.length, rawFileCount: data.files.length, mappedFileCount: mapped.length, requestMs: measurementRequestMs, mapMs, renderMs, handlerStart, handlerEnd, serverPerf: data.perf });
                 return;
             }
             this.startupStage = 'complete';
             this.clearBackgroundWatchdog();
             this.setRequestStatus('idle');
-            imageHistoryCostMeasurement.recordResponse({ flow: 'foreground', refresh: isRefresh, fastFirst: useFastFirst, depth, sortBy, reverse, hasFilter: !!filter, hideGrids, folderCount: folders.length, rawFileCount: data.files.length, mappedFileCount: mapped.length, requestMs: responseMs, mapMs, renderMs, handlerStart, serverPerf: data.perf });
+            let handlerEnd = performance.now();
+            imageHistoryCostMeasurement.recordResponse({ flow: 'foreground', refresh: isRefresh, fastFirst: useFastFirst, depth, sortBy, reverse, hasFilter: !!filter, hideGrids, folderCount: folders.length, rawFileCount: data.files.length, mappedFileCount: mapped.length, requestMs: measurementRequestMs, mapMs, renderMs, handlerStart, handlerEnd, serverPerf: data.perf });
         }, 0, error => {
             if (loadToken != this.loadToken) {
                 return;
@@ -1329,11 +1333,14 @@ class ImageHistoryController {
         this.scheduleBackgroundWatchdog(path, depth, sortBy, reverse, showHidden, hideGrids, requestKey, backgroundToken);
         setTimeout(() => {
             let requestStart = performance.now();
+            let measurementRequestStart = performance.now();
             genericRequest('ListImages', { 'path': path, 'depth': depth, 'sortBy': serverSortBy, 'sortReverse': serverReverse, 'includeHidden': showHidden }, data => {
                 if (!this.isBackgroundRequestRelevant(path, requestKey, backgroundToken)) {
                     return;
                 }
-                let responseMs = performance.now() - requestStart;
+                let measurementResponseStart = performance.now();
+                let responseMs = measurementResponseStart - requestStart;
+                let measurementRequestMs = measurementResponseStart - measurementRequestStart;
                 let mapStart = performance.now();
                 let handlerStart = mapStart;
                 this.backgroundRequestInFlight = false;
@@ -1349,7 +1356,8 @@ class ImageHistoryController {
                 let renderMs = performance.now() - renderStart;
                 console.debug(`History background load: path='${path || '/'}', folders=${folders.length}, files=${mapped.length}, request=${responseMs.toFixed(1)}ms, map=${mapMs.toFixed(1)}ms, render=${renderMs.toFixed(1)}ms${this.perfText(data.perf)}`);
                 this.setRequestStatus('idle');
-                imageHistoryCostMeasurement.recordResponse({ flow: 'background', refresh: false, fastFirst: false, depth, sortBy, reverse, hasFilter: false, hideGrids, folderCount: folders.length, rawFileCount: data.files.length, mappedFileCount: mapped.length, requestMs: responseMs, mapMs, renderMs, handlerStart, serverPerf: data.perf });
+                let handlerEnd = performance.now();
+                imageHistoryCostMeasurement.recordResponse({ flow: 'background', refresh: false, fastFirst: false, depth, sortBy, reverse, hasFilter: false, hideGrids, folderCount: folders.length, rawFileCount: data.files.length, mappedFileCount: mapped.length, requestMs: measurementRequestMs, mapMs, renderMs, handlerStart, handlerEnd, serverPerf: data.perf });
             }, 0, error => {
                 if (!this.isBackgroundRequestRelevant(path, requestKey, backgroundToken)) {
                     return;
