@@ -298,34 +298,47 @@ with 0 warnings and 0 errors; its `SwarmUI.dll` SHA-256 is
 
 Under Reaper176's one-time self-testing override, the authoritative synthetic
 matrix ran on Garuda Linux (Arch-based), Linux `7.1.4-1-cachyos`, x86-64,
-.NET SDK `10.0.110`, and an AMD Ryzen 7 7800X3D. Repository source was on
-Btrfs; all fixtures, databases, build products, harness files, and evidence
-were isolated to `/tmp`, which was tmpfs. No repository user data, model
-library, network filesystem, GPU data, or external service was read.
+.NET SDK `10.0.110`, .NET runtime `Microsoft.NETCore.App 8.0.29`, and an AMD
+Ryzen 7 7800X3D. Repository source was on Btrfs; all fixtures, databases,
+build products, harness files, and evidence were isolated to `/tmp`, which was
+tmpfs. No repository user data, model library, network filesystem, GPU data,
+or external service was read.
 
-The external harness passed 73,341 assertions with zero failures and emitted
-10,326 complete privacy-safe schema-1 records. The raw JSONL contains no
-synthetic-root string, sentinel content, or model filename. Artifacts are:
+The external harness passed 74,272 assertions with zero failures and emitted
+10,335 complete privacy-safe schema-1 records. It covered every required
+extraction shape, suffix add/edit/delete, legacy/cache/concurrent-change case,
+the host-supported unreadable changed-sidecar failure and corrected recovery,
+and exact same-input full metadata/stable-public-field parity across disabled
+and enabled warmups and measured samples. Every performance summary contains
+full and chronological-half nearest-rank distributions for first, second,
+combined-sidecar, recomputation, whole-call, and allocation fields; batch
+values are per-iteration aggregates. Raw external enabled/disabled wall and
+current-thread-allocation samples and their paired enabled-minus-disabled
+deltas are retained. The raw JSONL contains no synthetic-root string, sentinel
+content, or model filename. Artifacts are:
 
-- summary: `/tmp/rank32-summary.json`, 18,501 bytes, SHA-256
-  `3388fccdcd5e31735319d7dc92ee57aee83aebb4e68219760317d55b2b560561`;
-- raw records: `/tmp/rank32-records.jsonl`, 15,619,873 bytes, SHA-256
-  `0992b2a5255859e46c84e9f4035be5e1c72d126db30cb5d199952876e08b663a`;
-- harness source: `/tmp/rank32-harness/Program.cs`, 33,197 bytes, SHA-256
-  `2ff9d32625c35a2e2ffd9f470f5f6f4dcc3e5c2b74c5d7d038838817bac8f486`;
+- summary: `/tmp/rank32-summary.json`, 96,234 bytes, SHA-256
+  `ba60814e00c6d2ff374ad6cb95896077a847c61befc3584619edd36f140fb77c`;
+- raw records: `/tmp/rank32-records.jsonl`, 15,633,784 bytes, SHA-256
+  `8667e78132552f2369f7f7b10cf5109a4a7219ada0fb01d0cf1db25b92f6dd9b`;
+- harness source: `/tmp/rank32-harness/Program.cs`, 37,783 bytes, SHA-256
+  `6ee732caa358b37e361d67fee29b5d31dd10b2fbcf19e0afc946043d2ecf2d2a`;
   and
 - harness assembly: `/tmp/rank32-harness/bin/Release/net8.0/Rank32Harness.dll`,
-  34,304 bytes, SHA-256
-  `a9887f5528c4b0f7a3d95d4c7a11cbe654b578b17b7d4e0e22462ba320e0a7b0`.
+  38,912 bytes, SHA-256
+  `ecde12f3191f563ee1b1a983424be9d57344ec3e8620c02c72ab5939713c9f13`.
 
 Nearest-rank order statistics produce a **GO** through the independently
 authorizing direct-allocation gate. For central-cache `single_64k_4`, the
-second-pass allocation p95 is 3,780,360 bytes in both chronological halves;
-recomputation allocation p95 is 7,615,464 and 7,612,648 bytes. The per-half
-ratios are 49.6406% and 49.6589%, above the frozen 20% threshold, while both
-second-pass values exceed 1 MiB. The stability ratios are 0 for second-pass
-allocation and 0.000370 for recomputation allocation, both below 0.25. The
-direct time gate does not qualify: second-pass p95 is 1,658 us and 1,976 us,
+second-pass allocation p95 is 3,782,568 and 3,774,624 bytes in the two
+chronological halves; recomputation allocation p95 is 7,622,224 and 7,620,576
+bytes. The per-half ratios are 49.6255% and 49.5320%, above the frozen 20%
+threshold, while both second-pass values exceed 1 MiB. The stability ratios
+are 0.002100 for second-pass allocation and 0.000216 for recomputation
+allocation, both below 0.25. Whole-call external allocation p95 is 7,767,528
+bytes enabled and 7,766,960 bytes disabled; the paired enabled-minus-disabled
+allocation p95 is only 6,832 bytes, separately bounding recorder contamination.
+The direct time gate does not qualify: second-pass p95 is 1,827 us and 1,705 us,
 below 5 ms. Neither batch group independently satisfies every frozen
 threshold and stability condition, so neither contributes to the decision.
 
@@ -337,11 +350,16 @@ phase-attribution evidence; they do not establish production frequency,
 retained-memory cost, another runtime/platform/filesystem, network-storage
 behavior, or benefit from a proposed implementation.
 
-Two non-authoritative harness attempts preceded the accepted collection. The
-first compile found only a missing Frenetic extension namespace. The first full
-run then exposed two harness-fixture assertions: a sidecar architecture hint
+Several non-authoritative harness attempts preceded the accepted collection.
+The first compile found only a missing Frenetic extension namespace. The first
+full run exposed two harness-fixture assertions: a sidecar architecture hint
 does not itself seed the historical `ModelClassType` needed for the legacy
-`TextEncoders` cache case. The external fixture was corrected to seed that
-exact cache record directly and to assert its bounded invalidation category;
-no repository or instrumented source changed. The complete corrected rerun is
-the sole evidence set reported above.
+`TextEncoders` cache case. A later passing run was rejected by independent
+review because the summary omitted external allocation controls and required
+phase/half distributions, exact enabled/disabled parity was under-specified,
+some extraction shapes were absent, and the permission case and runtime
+identity were not recorded. The external harness alone was corrected. A
+subsequent passing run was deliberately superseded after self-review expanded
+the exact parity snapshot to every stable public model field. No repository or
+instrumented source changed during any harness correction. Only the final
+complete rerun and hashes above are authoritative.
