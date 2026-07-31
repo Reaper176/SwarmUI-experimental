@@ -285,6 +285,22 @@ internal static class WorkflowHydrationCostMeasurement
         }
     }
 
+    /// <summary>Publishes the successful inventory-completion timestamp before releasing the store lock.</summary>
+    internal static void CommitInventory(Operation operation)
+    {
+        if (operation is null || operation.Kind != "inventory")
+        {
+            return;
+        }
+        try
+        {
+            Interlocked.Exchange(ref LatestInventoryTimestamp, Stopwatch.GetTimestamp());
+        }
+        catch
+        {
+        }
+    }
+
     /// <summary>Notes one already hydrated record.</summary>
     internal static void NoteCached()
     {
@@ -500,10 +516,6 @@ internal static class WorkflowHydrationCostMeasurement
             {
                 operation.IsComplete = true;
                 completedHydrations = [.. operation.CompletedHydrations];
-            }
-            if (operation.Kind == "inventory" && outcome == "completed")
-            {
-                Interlocked.Exchange(ref LatestInventoryTimestamp, endTimestamp);
             }
             foreach (HydrationAttempt hydration in completedHydrations)
             {

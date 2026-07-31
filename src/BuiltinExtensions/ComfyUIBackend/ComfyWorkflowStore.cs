@@ -1192,6 +1192,7 @@ public static class ComfyWorkflowStore
                     RecoveryRequired = false;
                     WorkflowHydrationCostMeasurement.NoteExit(measurement, ComfyUIBackendExtension.CustomWorkflows.Count,
                         ComfyUIBackendExtension.CustomWorkflows.Values.Count(workflow => workflow is null));
+                    WorkflowHydrationCostMeasurement.CommitInventory(measurement);
                 }
                 catch
                 {
