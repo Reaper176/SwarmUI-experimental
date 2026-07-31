@@ -1,6 +1,6 @@
 # Persisted-Output Filename-Selection Measurement Design
 
-**Status:** Conversational design approved; written-spec review pending
+**Status:** Approved; implementation planning
 
 **Date:** 2026-07-30
 
