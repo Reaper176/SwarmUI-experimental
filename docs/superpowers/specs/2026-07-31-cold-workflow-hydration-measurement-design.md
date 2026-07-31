@@ -212,7 +212,7 @@ large-file maximum in this synthetic local-filesystem matrix.
 The forced-GC 64-workflow retained-memory probe observed an 8,473,512-byte
 increase after cold listing. That process-wide value includes GC/runtime noise
 and is directional rather than an exact object-size measurement. The 20-call
-The 20-call direct control averaged 2,229 microseconds and 10,540,783 bytes
+direct control averaged 2,229 microseconds and 10,540,783 bytes
 disabled versus 2,591 microseconds and 10,548,045 bytes enabled, a
 362-microsecond and 7,262-byte difference. Run order, cache state, counters, and
 deferred emission make that a
