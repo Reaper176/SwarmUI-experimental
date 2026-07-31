@@ -225,25 +225,26 @@ errors. `SwarmUI.dll` SHA-256 is
 served instrumented `outputhistory.js` SHA-256 is
 `7bac11f1df75c179b96b7e89189a5ba4815cb003a8ef4ac955229cb38d3588fb`.
 
-The separate contract harness passed 30 assertions with 0 failures and emitted
+The separate contract harness passed 51 assertions with 0 failures and emitted
 two expected privacy/gating records. Its SHA-256 is
-`d6ffab06f3572949e2edcdd33035ffd5422c05aa05ce15b1b6551a986c4b6600`.
+`921783c42380741aef2f1af760afa2bcaef54e099f0f60b4903a56d2c5ac7e7f`.
 The final full-page matrix used Chrome 148.0.7778.97 on Linux
 7.1.4-1-cachyos x64. Across 23 exact groups it ran five warmups per group and
 1,380 measured actions in fifteen-action `ABBA` blocks. All 24,540 matrix
-assertions passed, and the 690 enabled actions emitted exactly 690 schema-1
-records; the 690 disabled actions emitted none.
+assertions passed. The 690 enabled actions emitted 720 schema-1 records: 690
+selected primary records plus 30 expected fast-first companion records in the
+background group. The 690 disabled actions emitted none.
 
 Evidence artifacts are:
 
-- `/tmp/rank31-records.jsonl`: 1,380 lines, 1,841,826 bytes, SHA-256
-  `83c9df37e7e3b2df91b5a877a22552c86bffcf36be941504e7086e1a700ad723`;
-- `/tmp/rank31-summary.json`: 61,754 bytes, SHA-256
-  `0ddc73f10768646488282f6ed8d832c5fe7bd53044954472c33b7919d9b53133`;
+- `/tmp/rank31-records.jsonl`: 1,380 lines, 1,840,046 bytes, SHA-256
+  `2cad8a857879143150c45bb82b889f238817d7512d7ae6a9391e14b26f6ec9f5`;
+- `/tmp/rank31-summary.json`: 72,687 bytes, SHA-256
+  `bb6235ba707e00435b4512274ecc449b12317a32486f679e840d6fd7d01a54a7`;
 - matrix harness: SHA-256
-  `68be6166a3fd3ae31a31c220027e4b0800e4f3489d2c87a4bb26fee24f6850e6`;
+  `7e710142e1d7ca8678a48134c493b463a99efcba73e100cade82911ad23e7893`;
 - contract harness: SHA-256
-  `d6ffab06f3572949e2edcdd33035ffd5422c05aa05ce15b1b6551a986c4b6600`;
+  `921783c42380741aef2f1af760afa2bcaef54e099f0f60b4903a56d2c5ac7e7f`;
   and
 - animated-fixture generator: SHA-256
   `11c06d96c7f3879101d8b135b7eab440f93e379bd5f6c38627faf6dff6a74758`.
@@ -260,23 +261,27 @@ filename-sort scan limit is applied before extension filtering and otherwise
 counts those database files. This is workload control, not a production fix or
 a Rank 31 conclusion.
 
-Five stable representative groups met one or more approved gates:
+Nine representative groups met one or more approved gates in both
+chronological halves with the gated metrics stable to the approved 25% bound:
 
+- desktop 1,000-entry thumbnail middle scroll met the row/layout gate;
 - desktop 1,000-entry thumbnail bottom scroll: total/row/joined-frame p95
-  15.3/9.5/49.9 ms, meeting update-plus-frame, row/layout, and 1,000-to-128
+  17.2/10.4/50.1 ms, meeting update-plus-frame, row/layout, and 1,000-to-128
   growth gates;
-- mobile-sized 1,000-entry thumbnail middle scroll: 9.7/5.6/16.7 ms, meeting
-  the row/layout gate;
-- mobile-sized 1,000-entry thumbnail bottom scroll: 17.2/10.7/50.0 ms, meeting
+- mobile-sized 1,000-entry thumbnail middle and bottom scroll groups met the
+  update-plus-frame and row/layout gates;
+- desktop 1,000-entry Details List middle scroll met the row/layout gate;
+- desktop 1,000-entry Details List bottom scroll: 22.9/16.2/66.7 ms, meeting
   the frame-budget, update-plus-frame, and row/layout gates;
-- desktop 1,000-entry Details List middle scroll: 13.8/9.7/33.4 ms, meeting
-  update-plus-frame and row/layout gates; and
-- desktop 1,000-entry Details List bottom scroll: 27.2/19.0/99.9 ms, meeting
-  the frame-budget, update-plus-frame, and row/layout gates.
+- desktop 1,000-entry animated/dehydrated top scroll met the frame-budget gate;
+  and
+- desktop 1,000-entry animated/dehydrated middle and bottom scroll groups met
+  the update-plus-frame gate.
 
-Every listed group's chronological fifteen-sample halves differed by at most
-25% of the larger half. The strongest group, Details List bottom, had half p95
-totals of 23.0 and 28.0 ms. The `GO` does not rely on a long-task gate. Resize
+The strongest row/layout group, Details List bottom, had half p95 totals of
+23.5 and 22.9 ms and half row/layout p95 values of 16.7 and 16.2 ms. The
+mobile-sized bottom group's half total p95 values were 16.6 and 17.5 ms, so it
+does not claim the frame-budget gate. The `GO` does not rely on a long-task gate. Resize
 and tab-show externally joined intervals were large while the recorded manager
 update stayed below the synchronous gates; DevTools counters and external time
 remain disclosed process/action observations and are not added to manager time.
@@ -296,6 +301,18 @@ groups are responsive desktop Chromium, not mobile-device performance. No real
 user history, ordinary generation/backend work, GPU, Firefox/Safari, mobile
 device, network filesystem, other platform/filesystem, paint/decode, retained
 memory, or production-frequency conclusion is claimed.
+
+The final protocol correction computes every scroll target before a last
+three-animation-frame-plus-task quiescence fence and passes only the scalar
+target into the measured dispatch, so the trigger performs no harness layout
+read. Build and background checks compare exact rendered prefixes against the
+production list and assert explicit selection/current/checkbox outcomes rather
+than exempting replacement flows. Eight resize actions recorded
+`focus_preserved=false`: DevTools viewport emulation itself blurred the input.
+This is disclosed as protocol-side behavior and is not attributed to the window
+manager; the contract harness separately proves that a direct manager update
+preserves the production filter input's focus and selection. Initial background
+load correctly begins without an invented user-focus prestate.
 
 ## Evidence Provenance
 
