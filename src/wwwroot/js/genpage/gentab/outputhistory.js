@@ -14,9 +14,12 @@ class ImageHistoryWindowManager {
         this.boundResize = this.queueUpdate.bind(this);
     }
 
-    attach(content) {
+    /** Attaches the visible-window manager to content and optionally queues an update. */
+    attach(content, queueUpdate = true) {
         if (this.content == content) {
-            this.queueUpdate();
+            if (queueUpdate) {
+                this.queueUpdate();
+            }
             return;
         }
         if (this.content) {
@@ -28,7 +31,9 @@ class ImageHistoryWindowManager {
         }
         window.removeEventListener('resize', this.boundResize);
         window.addEventListener('resize', this.boundResize);
-        this.queueUpdate();
+        if (queueUpdate) {
+            this.queueUpdate();
+        }
     }
 
     getEntries() {
@@ -1601,8 +1606,14 @@ class ImageHistoryController {
         let historyContent = document.getElementById('imagehistorybrowser-content');
         if (historyContent) {
             browserUtil.queueMakeVisible(historyContent);
-            this.windowManager.attach(historyContent);
-            this.windowManager.queueUpdate();
+            this.windowManager.attach(historyContent, false);
+            let queueUpdate = () => this.windowManager.queueUpdate();
+            if (window.requestAnimationFrame) {
+                requestAnimationFrame(queueUpdate);
+            }
+            else {
+                setTimeout(queueUpdate, 16);
+            }
         }
     }
 }
