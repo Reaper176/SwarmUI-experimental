@@ -259,7 +259,7 @@ def _qwen35_2b_required_text_keys():
 
 
 def _validate_qwen35_quantized_weight(state_dict, weight_key):
-    """Validate native Comfy quantization metadata for one potentially packed weight."""
+    """Validate native Comfy quantization metadata and report whether storage is packed."""
     layer_prefix = weight_key.removesuffix("weight")
     quant_key = f"{layer_prefix}comfy_quant"
     if quant_key not in state_dict:
@@ -289,6 +289,7 @@ def _validate_qwen35_quantized_weight(state_dict, weight_key):
         "float8_e5m2": (),
         "mxfp8": ("weight_scale",),
         "nvfp4": ("weight_scale", "weight_scale_2"),
+        "int8_tensorwise": ("weight_scale",),
     }
     if quant_format not in required_auxiliary_keys:
         raise ValueError(
@@ -305,7 +306,7 @@ def _validate_qwen35_quantized_weight(state_dict, weight_key):
             f"Qwen3.5-2B weight '{weight_key}' uses {quant_format} but is missing "
             f"required quantization tensors: {', '.join(missing_auxiliary_keys)}."
         )
-    return True
+    return quant_format in ("mxfp8", "nvfp4")
 
 
 def _validate_qwen35_2b_state_dict(state_dict):
