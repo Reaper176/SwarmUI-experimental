@@ -213,23 +213,62 @@ def _normalize_qwen35_state_dict(state_dict):
     )
 
 
+def _qwen35_2b_required_text_keys():
+    """Build the complete mandatory native Qwen3.5-2B text-model key set."""
+    required_keys = [
+        "model.embed_tokens.weight",
+        "model.norm.weight",
+    ]
+    common_layer_keys = (
+        "input_layernorm.weight",
+        "post_attention_layernorm.weight",
+        "mlp.gate_proj.weight",
+        "mlp.up_proj.weight",
+        "mlp.down_proj.weight",
+    )
+    linear_attention_keys = (
+        "linear_attn.in_proj_qkv.weight",
+        "linear_attn.in_proj_z.weight",
+        "linear_attn.in_proj_b.weight",
+        "linear_attn.in_proj_a.weight",
+        "linear_attn.out_proj.weight",
+        "linear_attn.dt_bias",
+        "linear_attn.A_log",
+        "linear_attn.conv1d.weight",
+        "linear_attn.norm.weight",
+    )
+    full_attention_keys = (
+        "self_attn.q_proj.weight",
+        "self_attn.k_proj.weight",
+        "self_attn.v_proj.weight",
+        "self_attn.o_proj.weight",
+        "self_attn.q_norm.weight",
+        "self_attn.k_norm.weight",
+    )
+    for layer_index in range(24):
+        layer_prefix = f"model.layers.{layer_index}."
+        required_keys.extend(layer_prefix + key for key in common_layer_keys)
+        attention_keys = (
+            full_attention_keys
+            if (layer_index + 1) % 4 == 0
+            else linear_attention_keys
+        )
+        required_keys.extend(layer_prefix + key for key in attention_keys)
+    return required_keys
+
+
 def _validate_qwen35_2b_state_dict(state_dict):
     """Reject weights that are not the native 2048-wide Qwen3.5-2B layout."""
-    required_keys = (
-        "model.embed_tokens.weight",
-        "model.layers.0.input_layernorm.weight",
-        "model.layers.0.linear_attn.A_log",
-        "model.layers.0.linear_attn.in_proj_qkv.weight",
-        "model.layers.3.self_attn.k_proj.weight",
-        "model.layers.23.self_attn.q_proj.weight",
-        "model.norm.weight",
-    )
+    required_keys = _qwen35_2b_required_text_keys()
     missing_keys = [key for key in required_keys if key not in state_dict]
     if missing_keys:
+        missing_sample = ", ".join(missing_keys[:10])
+        remaining_count = len(missing_keys) - 10
+        remaining_message = f"; plus {remaining_count} more" if remaining_count > 0 else ""
         raise ValueError(
             "Selected text encoder is incomplete or is not the native 24-layer "
-            "Qwen3.5-2B layout. Missing architecture-defining weights: "
-            f"{', '.join(missing_keys)}."
+            f"Qwen3.5-2B layout. Missing {len(missing_keys)} mandatory text-model "
+            f"weights: {missing_sample}{remaining_message}."
         )
 
     expected_shapes = {
@@ -279,29 +318,10 @@ def load_anima_qwen35_clip(
         target,
         embedding_directory=embedding_directory,
         parameters=comfy.utils.calculate_parameters(state_dict),
-        state_dict=[],
+        state_dict=[state_dict],
         model_options=model_options,
         disable_dynamic=disable_dynamic,
     )
-    missing, unexpected = clip.load_sd(state_dict)
-    missing_text_weights = [
-        key for key in missing
-        if not key.startswith("visual.") and not key.startswith("model.lm_head.")
-    ]
-    unexpected_weights = [
-        key for key in unexpected
-        if not key.startswith("model.lm_head.")
-    ]
-    if missing_text_weights:
-        raise ValueError(
-            "Selected Qwen3.5-2B encoder is incomplete; required text-model "
-            f"weights were not found: {', '.join(missing_text_weights)}."
-        )
-    if unexpected_weights:
-        raise ValueError(
-            "Selected Qwen3.5-2B encoder contains unsupported weights after "
-            f"normalization: {', '.join(unexpected_weights)}."
-        )
     clip.patcher.cached_patcher_init = (
         load_anima_qwen35_clip_model_patcher,
         (clip_path, embedding_directory, model_options),
