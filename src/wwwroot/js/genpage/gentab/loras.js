@@ -1,4 +1,6 @@
 
+let featureSetChangedCallbacks = [];
+
 class SelectedLora {
     constructor(name, weight, confinement, schedule, model) {
         this.name = name;
