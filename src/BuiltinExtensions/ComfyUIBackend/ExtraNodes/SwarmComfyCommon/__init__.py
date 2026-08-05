@@ -1,11 +1,12 @@
 import os, folder_paths, traceback
 
-from . import SwarmAnimaLLLite, SwarmAttentionCouple, SwarmBlending, SwarmImages, SwarmInternalUtil, SwarmKSampler, SwarmLoadImageB64, SwarmLoraLoader, SwarmMasks, SwarmSaveImageWS, SwarmTiling, SwarmExtractLora, SwarmUnsampler, SwarmLatents, SwarmInputNodes, SwarmTextHandling, SwarmReference, SwarmMath, SwarmSam2, SwarmSam3, SwarmAudio, SwarmVideo, SwarmModels
+from . import SwarmAnimaLLLite, SwarmAnimaQwen35, SwarmAttentionCouple, SwarmBlending, SwarmImages, SwarmInternalUtil, SwarmKSampler, SwarmLoadImageB64, SwarmLoraLoader, SwarmMasks, SwarmSaveImageWS, SwarmTiling, SwarmExtractLora, SwarmUnsampler, SwarmLatents, SwarmInputNodes, SwarmTextHandling, SwarmReference, SwarmMath, SwarmSam2, SwarmSam3, SwarmAudio, SwarmVideo, SwarmModels
 
 WEB_DIRECTORY = "./web"
 
 NODE_CLASS_MAPPINGS = (
     SwarmAnimaLLLite.NODE_CLASS_MAPPINGS
+    | SwarmAnimaQwen35.NODE_CLASS_MAPPINGS
     | SwarmAttentionCouple.NODE_CLASS_MAPPINGS
     | SwarmBlending.NODE_CLASS_MAPPINGS
     | SwarmImages.NODE_CLASS_MAPPINGS
@@ -32,6 +33,7 @@ NODE_CLASS_MAPPINGS = (
 
 NODE_DISPLAY_NAME_MAPPINGS = (
     SwarmAnimaLLLite.NODE_DISPLAY_NAME_MAPPINGS
+    | SwarmAnimaQwen35.NODE_DISPLAY_NAME_MAPPINGS
 )
 
 try:
