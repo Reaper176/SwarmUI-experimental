@@ -13,10 +13,19 @@ import comfy.model_detection
 import comfy.sd
 import comfy.text_encoders.anima
 import comfy.text_encoders.hunyuan_video
-import comfy.text_encoders.qwen35
 import comfy.utils
 import folder_paths
 from comfy.supported_models_base import ClipTarget
+
+try:
+    import comfy.text_encoders.qwen35 as comfy_qwen35
+except ModuleNotFoundError as error:
+    if error.name != "comfy.text_encoders.qwen35":
+        raise
+    comfy_qwen35 = None
+    _QWEN35_IMPORT_ERROR = error
+else:
+    _QWEN35_IMPORT_ERROR = None
 
 
 logger = logging.getLogger(__name__)
@@ -25,6 +34,16 @@ _SOURCE_PROJECTION_CONFIG_KEY = "swarm_anima_source_projection_shape"
 _SOURCE_PROJECTION_WEIGHT_SUFFIX = "llm_adapter.source_proj.weight"
 _ADAPTER_KEY_PROJECTION_SUFFIX = "llm_adapter.blocks.0.cross_attn.k_proj.weight"
 _PATCH_SENTINEL = "_swarm_anima_qwen35_projection_patch"
+
+
+def _require_qwen35_support():
+    """Require ComfyUI's native Qwen3.5 implementation for this loader."""
+    if comfy_qwen35 is not None:
+        return
+    raise RuntimeError(
+        "Anima Qwen3.5-2B loading requires native Qwen3.5 support; update ComfyUI "
+        "to a version that provides comfy.text_encoders.qwen35."
+    ) from _QWEN35_IMPORT_ERROR
 
 
 def _add_source_projection_config(config, state_dict, key_prefix):
@@ -138,16 +157,23 @@ class SwarmAnimaQwen35Tokenizer:
     """Tokenize one raw prompt for Qwen3.5-2B and Anima's T5 target IDs."""
 
     def __init__(self, embedding_directory=None, tokenizer_data={}):
-        self.qwen35_2b = comfy.text_encoders.qwen35.Qwen35Tokenizer(
-            embedding_directory=embedding_directory,
-            tokenizer_data=tokenizer_data,
-            embedding_size=2048,
-            embedding_key="qwen35_2b",
-        )
-        self.t5xxl = comfy.text_encoders.anima.T5XXLTokenizer(
-            embedding_directory=embedding_directory,
-            tokenizer_data=tokenizer_data,
-        )
+        _require_qwen35_support()
+        try:
+            self.qwen35_2b = comfy_qwen35.Qwen35Tokenizer(
+                embedding_directory=embedding_directory,
+                tokenizer_data=tokenizer_data,
+                embedding_size=2048,
+                embedding_key="qwen35_2b",
+            )
+            self.t5xxl = comfy.text_encoders.anima.T5XXLTokenizer(
+                embedding_directory=embedding_directory,
+                tokenizer_data=tokenizer_data,
+            )
+        except Exception as error:
+            raise RuntimeError(
+                "Failed to initialize Anima Qwen3.5-2B tokenizer resources; "
+                "verify the Qwen3.5 and T5 tokenizer files in the ComfyUI installation."
+            ) from error
 
     def tokenize_with_weights(self, text, return_word_ids=False, **kwargs):
         qwen_tokens = self.qwen35_2b.tokenize_with_weights(
@@ -177,10 +203,14 @@ class SwarmAnimaQwen35Tokenizer:
         return self.qwen35_2b.decode(token_ids, **kwargs)
 
 
-class SwarmAnimaQwen35TEModel(comfy.text_encoders.qwen35.Qwen35TEModel):
+_QWEN35_TE_BASE = comfy_qwen35.Qwen35TEModel if comfy_qwen35 is not None else torch.nn.Module
+
+
+class SwarmAnimaQwen35TEModel(_QWEN35_TE_BASE):
     """Qwen3.5-2B text encoder that adds Anima LLM-adapter metadata."""
 
     def __init__(self, device="cpu", dtype=None, model_options={}):
+        _require_qwen35_support()
         super().__init__(
             device=device,
             dtype=dtype,
@@ -202,6 +232,8 @@ class SwarmAnimaQwen35TEModel(comfy.text_encoders.qwen35.Qwen35TEModel):
 
 def _anima_qwen35_te(dtype_llama=None, llama_quantization_metadata=None):
     """Create the CLIP model class with detected dtype and quantization metadata."""
+    _require_qwen35_support()
+
     class SwarmAnimaQwen35TEModel_(SwarmAnimaQwen35TEModel):
         def __init__(self, device="cpu", dtype=None, model_options={}):
             if dtype_llama is not None:
@@ -226,53 +258,105 @@ def _normalize_qwen35_state_dict(state_dict):
     )
 
 
-def _qwen35_2b_required_text_keys():
-    """Build the complete mandatory native Qwen3.5-2B text-model key set."""
-    required_keys = [
-        "model.embed_tokens.weight",
-        "model.norm.weight",
-    ]
-    common_layer_keys = (
-        "input_layernorm.weight",
-        "post_attention_layernorm.weight",
-        "mlp.gate_proj.weight",
-        "mlp.up_proj.weight",
-        "mlp.down_proj.weight",
-    )
-    linear_attention_keys = (
-        "linear_attn.in_proj_qkv.weight",
-        "linear_attn.in_proj_z.weight",
-        "linear_attn.in_proj_b.weight",
-        "linear_attn.in_proj_a.weight",
-        "linear_attn.out_proj.weight",
-        "linear_attn.dt_bias",
-        "linear_attn.A_log",
-        "linear_attn.conv1d.weight",
-        "linear_attn.norm.weight",
-    )
-    full_attention_keys = (
-        "self_attn.q_proj.weight",
-        "self_attn.k_proj.weight",
-        "self_attn.v_proj.weight",
-        "self_attn.o_proj.weight",
-        "self_attn.q_norm.weight",
-        "self_attn.k_norm.weight",
-    )
+def _qwen35_2b_expected_shapes():
+    """Build exact logical shapes for all 320 mandatory Qwen3.5-2B tensors."""
+    expected_shapes = {
+        "model.embed_tokens.weight": (248320, 2048),
+        "model.norm.weight": (2048,),
+    }
+    common_layer_shapes = {
+        "input_layernorm.weight": (2048,),
+        "post_attention_layernorm.weight": (2048,),
+        "mlp.gate_proj.weight": (6144, 2048),
+        "mlp.up_proj.weight": (6144, 2048),
+        "mlp.down_proj.weight": (2048, 6144),
+    }
+    linear_attention_shapes = {
+        "linear_attn.in_proj_qkv.weight": (6144, 2048),
+        "linear_attn.in_proj_z.weight": (2048, 2048),
+        "linear_attn.in_proj_b.weight": (16, 2048),
+        "linear_attn.in_proj_a.weight": (16, 2048),
+        "linear_attn.out_proj.weight": (2048, 2048),
+        "linear_attn.dt_bias": (16,),
+        "linear_attn.A_log": (16,),
+        "linear_attn.conv1d.weight": (6144, 1, 4),
+        "linear_attn.norm.weight": (128,),
+    }
+    full_attention_shapes = {
+        "self_attn.q_proj.weight": (4096, 2048),
+        "self_attn.k_proj.weight": (512, 2048),
+        "self_attn.v_proj.weight": (512, 2048),
+        "self_attn.o_proj.weight": (2048, 2048),
+        "self_attn.q_norm.weight": (256,),
+        "self_attn.k_norm.weight": (256,),
+    }
     for layer_index in range(24):
         layer_prefix = f"model.layers.{layer_index}."
-        required_keys.extend(layer_prefix + key for key in common_layer_keys)
-        attention_keys = (
-            full_attention_keys
-            if (layer_index + 1) % 4 == 0
-            else linear_attention_keys
+        expected_shapes.update(
+            {layer_prefix + key: shape for key, shape in common_layer_shapes.items()}
         )
-        required_keys.extend(layer_prefix + key for key in attention_keys)
-    return required_keys
+        attention_shapes = (
+            full_attention_shapes
+            if (layer_index + 1) % 4 == 0
+            else linear_attention_shapes
+        )
+        expected_shapes.update(
+            {layer_prefix + key: shape for key, shape in attention_shapes.items()}
+        )
+    return expected_shapes
 
 
-def _validate_qwen35_quantized_weight(state_dict, weight_key):
-    """Validate native Comfy quantization metadata and report whether storage is packed."""
-    layer_prefix = weight_key.removesuffix("weight")
+def _round_up(value, multiple):
+    """Round a positive tensor dimension up to a packing multiple."""
+    return ((value + multiple - 1) // multiple) * multiple
+
+
+def _validate_single_element_quant_tensor(state_dict, tensor_key, weight_key, quant_format):
+    """Validate a scalar quantization tensor, including singleton exporter layouts."""
+    tensor = state_dict[tensor_key]
+    if not isinstance(tensor, torch.Tensor):
+        raise ValueError(
+            f"Qwen3.5-2B weight '{weight_key}' uses {quant_format}, but quantization "
+            f"value '{tensor_key}' is not a tensor."
+        )
+    if tensor.numel() != 1:
+        raise ValueError(
+            f"Qwen3.5-2B weight '{weight_key}' uses {quant_format}, but quantization "
+            f"tensor '{tensor_key}' must be scalar or contain exactly one element; "
+            f"got shape {tuple(tensor.shape)}."
+        )
+
+
+def _validate_quant_tensor_shape(
+    state_dict,
+    tensor_key,
+    expected_shape,
+    weight_key,
+    quant_format,
+):
+    """Validate one blocked quantization auxiliary tensor shape."""
+    tensor = state_dict[tensor_key]
+    if not isinstance(tensor, torch.Tensor):
+        raise ValueError(
+            f"Qwen3.5-2B weight '{weight_key}' uses {quant_format}, but quantization "
+            f"value '{tensor_key}' is not a tensor."
+        )
+    actual_shape = tuple(tensor.shape)
+    if actual_shape != expected_shape:
+        raise ValueError(
+            f"Qwen3.5-2B weight '{weight_key}' uses {quant_format}, but quantization "
+            f"tensor '{tensor_key}' has shape {actual_shape}; required shape is "
+            f"{expected_shape}."
+        )
+
+
+def _validate_qwen35_quantized_weight(state_dict, weight_key, logical_shape):
+    """Validate native Comfy quantization metadata and packed storage shapes."""
+    layer_prefix = (
+        weight_key.removesuffix("weight")
+        if weight_key.endswith(".weight")
+        else f"{weight_key}."
+    )
     quant_key = f"{layer_prefix}comfy_quant"
     if quant_key not in state_dict:
         return False
@@ -296,18 +380,40 @@ def _validate_qwen35_quantized_weight(state_dict, weight_key):
             f"Qwen3.5-2B quantization metadata '{quant_key}' must contain a JSON object."
         )
     quant_format = quant_config.get("format")
-    required_auxiliary_keys = {
-        "float8_e4m3fn": (),
-        "float8_e5m2": (),
-        "mxfp8": ("weight_scale",),
-        "nvfp4": ("weight_scale", "weight_scale_2"),
-        "int8_tensorwise": ("weight_scale",),
-    }
-    if quant_format not in required_auxiliary_keys:
+    supported_formats = (
+        "float8_e4m3fn",
+        "float8_e5m2",
+        "int8_tensorwise",
+        "mxfp8",
+        "nvfp4",
+    )
+    if quant_format not in supported_formats:
         raise ValueError(
             f"Qwen3.5-2B weight '{weight_key}' uses unsupported Comfy quantization "
             f"format '{quant_format}'."
         )
+    if not weight_key.endswith(".weight") or len(logical_shape) != 2:
+        raise ValueError(
+            f"Qwen3.5-2B quantization marker '{quant_key}' targets '{weight_key}' "
+            f"with logical shape {logical_shape}; Comfy quantization is only supported "
+            "for 2D weight tensors."
+        )
+    if weight_key == "model.embed_tokens.weight" and quant_format not in (
+        "float8_e4m3fn",
+        "float8_e5m2",
+    ):
+        raise ValueError(
+            f"Qwen3.5-2B embedding weight '{weight_key}' uses unsupported format "
+            f"'{quant_format}'; Comfy Embedding supports only FP8 e4m3fn or e5m2."
+        )
+
+    required_auxiliary_keys = {
+        "float8_e4m3fn": (),
+        "float8_e5m2": (),
+        "int8_tensorwise": ("weight_scale",),
+        "mxfp8": ("weight_scale",),
+        "nvfp4": ("weight_scale", "weight_scale_2"),
+    }
     missing_auxiliary_keys = [
         f"{layer_prefix}{key}"
         for key in required_auxiliary_keys[quant_format]
@@ -318,13 +424,80 @@ def _validate_qwen35_quantized_weight(state_dict, weight_key):
             f"Qwen3.5-2B weight '{weight_key}' uses {quant_format} but is missing "
             f"required quantization tensors: {', '.join(missing_auxiliary_keys)}."
         )
-    return quant_format in ("mxfp8", "nvfp4")
+
+    rows, columns = logical_shape
+    if quant_format in ("float8_e4m3fn", "float8_e5m2", "int8_tensorwise"):
+        expected_storage_shape = logical_shape
+    elif quant_format == "mxfp8":
+        expected_storage_shape = (_round_up(rows, 32), _round_up(columns, 32))
+    else:
+        expected_storage_shape = (
+            _round_up(rows, 16),
+            _round_up(columns, 16) // 2,
+        )
+    actual_storage_shape = tuple(state_dict[weight_key].shape)
+    if actual_storage_shape != expected_storage_shape:
+        raise ValueError(
+            f"Qwen3.5-2B quantized weight '{weight_key}' uses {quant_format} storage "
+            f"shape {actual_storage_shape}; logical shape {logical_shape} requires "
+            f"storage shape {expected_storage_shape}."
+        )
+
+    weight_scale_key = f"{layer_prefix}weight_scale"
+    if quant_format in ("float8_e4m3fn", "float8_e5m2"):
+        if weight_scale_key in state_dict:
+            _validate_single_element_quant_tensor(
+                state_dict,
+                weight_scale_key,
+                weight_key,
+                quant_format,
+            )
+    elif quant_format == "int8_tensorwise":
+        _validate_single_element_quant_tensor(
+            state_dict,
+            weight_scale_key,
+            weight_key,
+            quant_format,
+        )
+    elif quant_format == "mxfp8":
+        expected_scale_shape = (
+            ((rows + 127) // 128) * ((columns + 127) // 128),
+            32,
+            16,
+        )
+        _validate_quant_tensor_shape(
+            state_dict,
+            weight_scale_key,
+            expected_scale_shape,
+            weight_key,
+            quant_format,
+        )
+    else:
+        expected_scale_shape = (
+            ((rows + 127) // 128) * ((columns + 63) // 64),
+            32,
+            16,
+        )
+        _validate_quant_tensor_shape(
+            state_dict,
+            weight_scale_key,
+            expected_scale_shape,
+            weight_key,
+            quant_format,
+        )
+        _validate_single_element_quant_tensor(
+            state_dict,
+            f"{layer_prefix}weight_scale_2",
+            weight_key,
+            quant_format,
+        )
+    return True
 
 
 def _validate_qwen35_2b_state_dict(state_dict):
     """Reject weights that are not the native 2048-wide Qwen3.5-2B layout."""
-    required_keys = _qwen35_2b_required_text_keys()
-    missing_keys = [key for key in required_keys if key not in state_dict]
+    expected_shapes = _qwen35_2b_expected_shapes()
+    missing_keys = [key for key in expected_shapes if key not in state_dict]
     if missing_keys:
         missing_sample = ", ".join(missing_keys[:10])
         remaining_count = len(missing_keys) - 10
@@ -335,27 +508,8 @@ def _validate_qwen35_2b_state_dict(state_dict):
             f"weights: {missing_sample}{remaining_message}."
         )
 
-    exact_shapes = {
-        "model.embed_tokens.weight": (248320, 2048),
-        "model.layers.0.input_layernorm.weight": (2048,),
-        "model.layers.0.linear_attn.A_log": (16,),
-        "model.norm.weight": (2048,),
-    }
-    for key, expected_shape in exact_shapes.items():
-        actual_shape = tuple(state_dict[key].shape)
-        if actual_shape != expected_shape:
-            raise ValueError(
-                f"Selected text encoder weight '{key}' has shape {actual_shape}; "
-                f"the native Qwen3.5-2B architecture requires {expected_shape}."
-            )
-
-    representative_weight_shapes = {
-        "model.layers.0.linear_attn.in_proj_qkv.weight": (6144, 2048),
-        "model.layers.3.self_attn.k_proj.weight": (512, 2048),
-        "model.layers.23.self_attn.q_proj.weight": (4096, 2048),
-    }
-    for key, expected_shape in representative_weight_shapes.items():
-        if _validate_qwen35_quantized_weight(state_dict, key):
+    for key, expected_shape in expected_shapes.items():
+        if _validate_qwen35_quantized_weight(state_dict, key, expected_shape):
             continue
         actual_shape = tuple(state_dict[key].shape)
         if actual_shape != expected_shape:
@@ -372,6 +526,7 @@ def load_anima_qwen35_clip(
     disable_dynamic=False,
 ):
     """Load one Qwen3.5-2B encoder without ComfyUI's generic CLIP fallback."""
+    _require_qwen35_support()
     state_dict, metadata = comfy.utils.load_torch_file(
         clip_path,
         safe_load=True,
@@ -444,6 +599,7 @@ class SwarmLoadAnimaQwen35Clip:
     )
 
     def load_clip(self, clip_name, device="default"):
+        _require_qwen35_support()
         clip_path = folder_paths.get_full_path_or_raise("text_encoders", clip_name)
         model_options = {}
         if device == "cpu":
