@@ -5,8 +5,17 @@ from __future__ import annotations
 import functools
 import logging
 
+import torch
+
 import comfy.ldm.anima.model
 import comfy.model_detection
+import comfy.sd
+import comfy.text_encoders.anima
+import comfy.text_encoders.hunyuan_video
+import comfy.text_encoders.qwen35
+import comfy.utils
+import folder_paths
+from comfy.supported_models_base import ClipTarget
 
 
 logger = logging.getLogger(__name__)
@@ -110,3 +119,214 @@ def install_anima_source_projection_compatibility():
 
 
 install_anima_source_projection_compatibility()
+
+
+class SwarmAnimaQwen35Tokenizer:
+    """Tokenize one raw prompt for Qwen3.5-2B and Anima's T5 target IDs."""
+
+    def __init__(self, embedding_directory=None, tokenizer_data={}):
+        self.qwen35_2b = comfy.text_encoders.qwen35.Qwen35Tokenizer(
+            embedding_directory=embedding_directory,
+            tokenizer_data=tokenizer_data,
+            embedding_size=2048,
+            embedding_key="qwen35_2b",
+        )
+        self.t5xxl = comfy.text_encoders.anima.T5XXLTokenizer(
+            embedding_directory=embedding_directory,
+            tokenizer_data=tokenizer_data,
+        )
+
+    def tokenize_with_weights(self, text, return_word_ids=False, **kwargs):
+        qwen_tokens = self.qwen35_2b.tokenize_with_weights(
+            text,
+            return_word_ids,
+            **kwargs,
+        )
+        qwen_tokens = [
+            [
+                (token[0], 1.0, token[2]) if return_word_ids else (token[0], 1.0)
+                for token in chunk
+            ]
+            for chunk in qwen_tokens
+        ]
+        return {
+            "qwen35_2b": qwen_tokens,
+            "t5xxl": self.t5xxl.tokenize_with_weights(text, return_word_ids, **kwargs),
+        }
+
+    def untokenize(self, token_weight_pair):
+        return self.qwen35_2b.untokenize(token_weight_pair)
+
+    def state_dict(self):
+        return {}
+
+    def decode(self, token_ids, **kwargs):
+        return self.qwen35_2b.decode(token_ids, **kwargs)
+
+
+class SwarmAnimaQwen35TEModel(comfy.text_encoders.qwen35.Qwen35TEModel):
+    """Qwen3.5-2B text encoder that adds Anima LLM-adapter metadata."""
+
+    def __init__(self, device="cpu", dtype=None, model_options={}):
+        super().__init__(
+            device=device,
+            dtype=dtype,
+            model_options=model_options,
+            model_type="qwen35_2b",
+        )
+
+    def encode_token_weights(self, token_weight_pairs):
+        output = super().encode_token_weights(token_weight_pairs)
+        output[2]["t5xxl_ids"] = torch.tensor(
+            [token[0] for token in token_weight_pairs["t5xxl"][0]],
+            dtype=torch.int,
+        )
+        output[2]["t5xxl_weights"] = torch.tensor(
+            [token[1] for token in token_weight_pairs["t5xxl"][0]],
+        )
+        return output
+
+
+def _anima_qwen35_te(dtype_llama=None, llama_quantization_metadata=None):
+    """Create the CLIP model class with detected dtype and quantization metadata."""
+    class SwarmAnimaQwen35TEModel_(SwarmAnimaQwen35TEModel):
+        def __init__(self, device="cpu", dtype=None, model_options={}):
+            if dtype_llama is not None:
+                dtype = dtype_llama
+            if llama_quantization_metadata is not None:
+                model_options = model_options.copy()
+                model_options["quantization_metadata"] = llama_quantization_metadata
+            super().__init__(device=device, dtype=dtype, model_options=model_options)
+
+    return SwarmAnimaQwen35TEModel_
+
+
+def _normalize_qwen35_state_dict(state_dict):
+    """Normalize Hugging Face Qwen3.5 prefixes to ComfyUI's internal layout."""
+    return comfy.utils.state_dict_prefix_replace(
+        state_dict,
+        {
+            "model.language_model.": "model.",
+            "model.visual.": "visual.",
+            "lm_head.": "model.lm_head.",
+        },
+    )
+
+
+def _validate_qwen35_2b_state_dict(state_dict):
+    """Reject weights that are not the native 2048-wide Qwen3.5-2B layout."""
+    layer_key = "model.layers.0.linear_attn.A_log"
+    norm_key = "model.layers.0.input_layernorm.weight"
+    if layer_key not in state_dict or norm_key not in state_dict:
+        raise ValueError(
+            "Selected text encoder is not a supported Qwen3.5 model: required "
+            f"weights '{layer_key}' and '{norm_key}' were not found."
+        )
+    hidden_width = state_dict[norm_key].shape[0]
+    if hidden_width != 2048:
+        raise ValueError(
+            f"Selected Qwen3.5 encoder has hidden width {hidden_width}; "
+            "this Anima loader requires Qwen3.5-2B with width 2048."
+        )
+
+
+def load_anima_qwen35_clip(
+    clip_path,
+    embedding_directory=None,
+    model_options={},
+    disable_dynamic=False,
+):
+    """Load one Qwen3.5-2B encoder without ComfyUI's generic CLIP fallback."""
+    state_dict, metadata = comfy.utils.load_torch_file(
+        clip_path,
+        safe_load=True,
+        return_metadata=True,
+    )
+    if model_options.get("custom_operations") is None:
+        state_dict, metadata = comfy.utils.convert_old_quants(
+            state_dict,
+            model_prefix="",
+            metadata=metadata,
+        )
+    state_dict = _normalize_qwen35_state_dict(state_dict)
+    _validate_qwen35_2b_state_dict(state_dict)
+    detect_options = comfy.text_encoders.hunyuan_video.llama_detect(state_dict)
+    target = ClipTarget(
+        SwarmAnimaQwen35Tokenizer,
+        _anima_qwen35_te(**detect_options),
+    )
+    clip = comfy.sd.CLIP(
+        target,
+        embedding_directory=embedding_directory,
+        parameters=comfy.utils.calculate_parameters(state_dict),
+        state_dict=state_dict,
+        model_options=model_options,
+        disable_dynamic=disable_dynamic,
+    )
+    clip.patcher.cached_patcher_init = (
+        load_anima_qwen35_clip_model_patcher,
+        (clip_path, embedding_directory, model_options),
+    )
+    return clip
+
+
+def load_anima_qwen35_clip_model_patcher(
+    clip_path,
+    embedding_directory=None,
+    model_options={},
+    disable_dynamic=False,
+):
+    """Recreate this loader's patcher for ComfyUI's non-dynamic fallback."""
+    clip = load_anima_qwen35_clip(
+        clip_path,
+        embedding_directory=embedding_directory,
+        model_options=model_options,
+        disable_dynamic=disable_dynamic,
+    )
+    return clip.patcher
+
+
+class SwarmLoadAnimaQwen35Clip:
+    """Load raw-prompt Qwen3.5-2B conditioning for projection-enabled Anima."""
+
+    @classmethod
+    def INPUT_TYPES(cls):
+        return {
+            "required": {
+                "clip_name": (folder_paths.get_filename_list("text_encoders"),),
+            },
+            "optional": {
+                "device": (["default", "cpu"], {"advanced": True}),
+            },
+        }
+
+    RETURN_TYPES = ("CLIP",)
+    FUNCTION = "load_clip"
+    CATEGORY = "SwarmUI/loaders"
+    DESCRIPTION = (
+        "Loads raw-prompt Qwen3.5-2B conditioning for an Anima checkpoint "
+        "containing llm_adapter.source_proj.weight."
+    )
+
+    def load_clip(self, clip_name, device="default"):
+        clip_path = folder_paths.get_full_path_or_raise("text_encoders", clip_name)
+        model_options = {}
+        if device == "cpu":
+            cpu_device = torch.device("cpu")
+            model_options["load_device"] = cpu_device
+            model_options["offload_device"] = cpu_device
+        clip = load_anima_qwen35_clip(
+            clip_path,
+            embedding_directory=folder_paths.get_folder_paths("embeddings"),
+            model_options=model_options,
+        )
+        return (clip,)
+
+
+NODE_CLASS_MAPPINGS = {
+    "SwarmLoadAnimaQwen35Clip": SwarmLoadAnimaQwen35Clip,
+}
+
+NODE_DISPLAY_NAME_MAPPINGS = {
+    "SwarmLoadAnimaQwen35Clip": "Swarm Load Anima Qwen3.5-2B CLIP",
+}
