@@ -1164,23 +1164,24 @@ public class WorkflowGeneratorSteps
                         g.CurrentModel = g.CurrentModel.WithPath([diffsynthNode, 0]);
                         continue;
                     }
-                    if (g.IsAnima())
+                    if (controlModel.ModelClass?.CompatClass?.ID == T2IModelClassSorter.CompatAnima.ID)
                     {
+                        string modelPatchLoader = g.CreateNode("ModelPatchLoader", new JObject()
+                        {
+                            ["name"] = controlModel.ToString(g.ModelFolderFormat)
+                        });
                         JObject animaInputs = new()
                         {
-                            [ComfyNodeInputNames.AnimaLLLite.Model] = g.CurrentModel.Path,
-                            [ComfyNodeInputNames.AnimaLLLite.LLLiteName] = controlModel.ToString(g.ModelFolderFormat),
-                            [ComfyNodeInputNames.AnimaLLLite.Image] = imageNodeActual.Path,
-                            [ComfyNodeInputNames.AnimaLLLite.Strength] = controlStrength,
-                            [ComfyNodeInputNames.AnimaLLLite.StartPercent] = g.UserInput.Get(controlnetParams.Start, 0),
-                            [ComfyNodeInputNames.AnimaLLLite.EndPercent] = g.UserInput.Get(controlnetParams.End, 1)
+                            ["model"] = g.CurrentModel.Path,
+                            ["model_patch"] = NodePath(modelPatchLoader, 0),
+                            ["image"] = imageNodeActual.Path,
+                            ["mask"] = g.FinalMask,
+                            ["strength"] = controlStrength,
+                            ["start_percent"] = g.UserInput.Get(controlnetParams.Start, 0),
+                            ["end_percent"] = g.UserInput.Get(controlnetParams.End, 1)
                         };
-                        if (g.FinalMask is not null)
-                        {
-                            animaInputs[ComfyNodeInputNames.AnimaLLLite.Mask] = g.FinalMask;
-                        }
-                        string animaControlNode = g.CreateNode(ComfyNodeNames.AnimaLLLite, animaInputs);
-                        g.CurrentModel = g.CurrentModel.WithPath([animaControlNode, 0]);
+                        string animaApplyNode = g.CreateNode("AnimaLLLiteApply", animaInputs);
+                        g.CurrentModel = g.CurrentModel.WithPath([animaApplyNode, 0]);
                         continue;
                     }
                     string controlModelNode = g.CreateNode("ControlNetLoader", new JObject()
@@ -1268,9 +1269,20 @@ public class WorkflowGeneratorSteps
                 g.CurrentMedia = new WGNodeData([vaceNode, 2], g, WGNodeData.DT_LATENT_VIDEO, g.CurrentCompat()) { Width = width, Height = height, Frames = frames };
                 g.FinalTrimLatent = [vaceNode, 3];
             }
-            if (g.IsLTXV2() && g.UserInput.TryGet(T2IParamTypes.VideoAudioReference, out AudioFile audio))
+            AudioFile ltxReferenceAudio = null;
+            string ltxReferenceAudioParam = "${promptaudios.0}";
+            if (g.UserInput.TryGet(T2IParamTypes.PromptAudios, out List<AudioFile> ltxAudios) && ltxAudios.Count > 0)
             {
-                string audioNode = g.CreateAudioLoadNode(audio, "${videoaudioinput}");
+                ltxReferenceAudio = ltxAudios[0];
+            }
+            else
+            {
+                g.UserInput.TryGet(T2IParamTypes.VideoAudioReference, out ltxReferenceAudio);
+                ltxReferenceAudioParam = "${videoaudioinput}";
+            }
+            if (g.IsLTXV2() && ltxReferenceAudio is not null)
+            {
+                string audioNode = g.CreateAudioLoadNode(ltxReferenceAudio, ltxReferenceAudioParam);
                 string refNode = g.CreateNode("LTXVReferenceAudio", new JObject()
                 {
                     ["model"] = g.CurrentModel.Path,
@@ -1673,7 +1685,7 @@ public class WorkflowGeneratorSteps
                         g.CurrentMedia = decoded;
                         return;
                     }
-                    g.CurrentMedia = decoded.EncodeToLatent(g.CurrentVae, "25");
+                    g.CurrentMedia = decoded.WithMaskedAudio(g.CurrentAudioVae).EncodeToLatent(g.CurrentVae, "25");
                 }
                 else if (modelMustReencode || doPixelUpscale || doSave || g.MaskShrunkInfo.BoundsNode is not null)
                 {
@@ -1729,7 +1741,7 @@ public class WorkflowGeneratorSteps
                     }
                     if (modelMustReencode || doPixelUpscale)
                     {
-                        g.CurrentMedia = decoded.EncodeToLatent(g.CurrentVae, "25");
+                        g.CurrentMedia = decoded.WithMaskedAudio(g.CurrentAudioVae).EncodeToLatent(g.CurrentVae, "25");
                     }
                 }
                 if (doUpscale && upscaleMethod.StartsWith("latent-"))

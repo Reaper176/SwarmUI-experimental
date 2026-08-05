@@ -678,6 +678,12 @@ public partial class WorkflowGenerator
         return LoadImage(img, param, resize, nodeId, width, height).Path[0].ToString();
     }
 
+    /// <summary>Creates a new node to load a video.</summary>
+    public WGNodeData LoadVideo(VideoFile vid, string param, bool resize, string nodeId = null, int? width = null, int? height = null)
+    {
+        return LoadImage(new ImageFile() { RawData = vid.RawData, Type = vid.Type, SourceFilePath = vid.SourceFilePath }, param, resize, nodeId, width, height);
+    }
+
     /// <summary>Creates a new node to load an image.</summary>
     public WGNodeData LoadImage(ImageFile img, string param, bool resize, string nodeId = null, int? width = null, int? height = null)
     {
@@ -1019,9 +1025,9 @@ public partial class WorkflowGenerator
     public (JArray, JArray, JArray, JArray) BuildInputImageHandling(List<JArray> images, JArray pos, JArray neg, JArray latent)
     {
         JArray imgNeg = null;
-        if (IsKontext() || IsOmniGen() || IsQwenImage() || IsAnyFlux2() || IsBoogu())
+        if (IsKontext() || IsOmniGen() || IsQwenImage() || IsAnyFlux2() || IsBoogu() || IsMageFlow())
         {
-            if (IsOmniGen() || IsQwenImageEditPlus() || IsBoogu())
+            if (IsOmniGen() || IsQwenImageEditPlus() || IsBoogu() || IsMageFlow())
             {
                 imgNeg = neg;
             }
@@ -1053,7 +1059,7 @@ public partial class WorkflowGenerator
             }
             if (img is not null)
             {
-                if (IsQwenImageEditPlus() || IsBoogu())
+                if (IsQwenImageEditPlus() || IsBoogu() || IsMageFlow())
                 {
                     neg = imgNeg;
                 }
@@ -1176,6 +1182,11 @@ public partial class WorkflowGenerator
             defsampler ??= "res_multistep";
             defscheduler ??= "karras";
         }
+        else if (IsMiniMaxH3())
+        {
+            defsampler ??= "res_multistep";
+            defscheduler ??= "simple";
+        }
         else if (IsAnima())
         {
             defsampler ??= "er_sde";
@@ -1225,7 +1236,7 @@ public partial class WorkflowGenerator
             defscheduler ??= "simple";
         }
         // TODO: Registry of model default preferences instead of this
-        else if (IsFlux() || IsWanVideo() || IsWanVideo22() || IsOmniGen() || IsQwenImage() || IsZImage() || IsZetaChroma() || IsErnie() || IsHiDreamO1() || IsLens() || IsPixelDiT() || IsKrea2())
+        else if (IsFlux() || IsWanVideo() || IsWanVideo22() || IsOmniGen() || IsQwenImage() || IsZImage() || IsZetaChroma() || IsErnie() || IsHiDreamO1() || IsLens() || IsPixelDiT() || IsKrea2() || IsMageFlow())
         {
             defscheduler ??= "simple";
         }
@@ -1584,7 +1595,7 @@ public partial class WorkflowGenerator
                     doesFit = false;
                 }
             }
-            else if ((IsBoogu() || IsQwenImageEditPlus()) && promptSize)
+            else if ((IsBoogu() || IsQwenImageEditPlus() || IsMageFlow()) && promptSize)
             {
                 target = 384;
                 doesFit = false;
@@ -1749,7 +1760,7 @@ public partial class WorkflowGenerator
         public int BatchIndex = -1;
         public int BatchLen = -1;
         public bool HasMatchedModelData = false;
-        public WGNodeData Model, Vae;
+        public WGNodeData Model, Vae, Clip;
         public JArray PosCond, NegCond;
         public string DefaultSampler = null, DefaultScheduler = null;
         public double DefaultCFG = 7;
@@ -1770,7 +1781,7 @@ public partial class WorkflowGenerator
             {
                 ["image"] = Generator.CurrentMedia.Path,
                 ["batch_index"] = 0,
-                ["length"] = Frames
+                ["length"] = 1
             });
             Generator.CurrentMedia = Generator.CurrentMedia.WithPath([frameLimited, 0]);
             return Generator.CurrentMedia;
@@ -1780,13 +1791,29 @@ public partial class WorkflowGenerator
         {
             g.FinalLoadedModel = VideoModel;
             (VideoModel, Model, WGNodeData clip, Vae) = g.CreateModelLoader(VideoModel, "image2video", null, true, sectionId: ContextID);
+            Clip = clip;
             string promptText = Prompt;
             if (VideoModel.ModelClass?.ID == "hunyuan-video-i2v" || VideoModel.ModelClass?.ID == "hunyuan-video-i2v-v2")
             {
                 g.CurrentMedia = g.CurrentMedia.AsRawImage(g.CurrentVae);
                 promptText = $"<image:{g.CurrentMedia.Path[0]},{g.CurrentMedia.Path[1]}>{Prompt}";
             }
-            PosCond = g.CreateConditioning(promptText, clip.Path, VideoModel, true, isVideo: true);
+            JArray attachImages = null;
+            if (VideoModel.ModelClass?.CompatClass?.ID == T2IModelClassSorter.CompatMiniMaxH3.ID)
+            {
+                attachImages = Generator.CurrentMedia.Path;
+                if (VideoEndFrame is not null)
+                {
+                    WGNodeData endFrame = g.LoadImage(VideoEndFrame, "${videoendframe}", false);
+                    string batched = g.CreateNode("BatchImagesNode", new JObject()
+                    {
+                        ["images.image0"] = attachImages,
+                        ["images.image1"] = endFrame.Path
+                    });
+                    attachImages = [batched, 0];
+                }
+            }
+            PosCond = g.CreateConditioning(promptText, clip.Path, VideoModel, true, isVideo: true, attachImages: attachImages);
             NegCond = g.CreateConditioning(NegativePrompt, clip.Path, VideoModel, false, isVideo: true);
         }
 
@@ -1896,9 +1923,20 @@ public partial class WorkflowGenerator
                     });
                     g.CurrentMedia = g.CurrentMedia.WithPath([addedGuide, 2], WGNodeData.DT_LATENT_VIDEO, Model.Compat);
                 }
-                if (g.UserInput.TryGet(T2IParamTypes.VideoAudioReference, out AudioFile audio))
+                AudioFile referenceAudio = null;
+                string referenceAudioParam = "${promptaudios.0}";
+                if (g.UserInput.TryGet(T2IParamTypes.PromptAudios, out List<AudioFile> audios) && audios.Count > 0)
                 {
-                    string audioNode = g.CreateAudioLoadNode(audio, "${videoaudioinput}");
+                    referenceAudio = audios[0];
+                }
+                else
+                {
+                    g.UserInput.TryGet(T2IParamTypes.VideoAudioReference, out referenceAudio);
+                    referenceAudioParam = "${videoaudioinput}";
+                }
+                if (referenceAudio is not null)
+                {
+                    string audioNode = g.CreateAudioLoadNode(referenceAudio, referenceAudioParam);
                     string refNode = g.CreateNode("LTXVReferenceAudio", new JObject()
                     {
                         ["model"] = Model.Path,
@@ -1918,6 +1956,34 @@ public partial class WorkflowGenerator
                 HadSpecialCond = true;
                 DefaultSampler = "euler";
                 DefaultScheduler = "normal";
+            }
+            else if (VideoModel.ModelClass?.CompatClass?.ID == T2IModelClassSorter.CompatMiniMaxH3.ID)
+            {
+                VideoFPS ??= 24;
+                Frames = MiniMaxH3AlignFrames(Frames ?? 124);
+                origSrcImg = FixMediaLen();
+                JArray endFramePath = null;
+                if (VideoEndFrame is not null)
+                {
+                    endFramePath = g.LoadImage(VideoEndFrame, "${videoendframe}", false).Path;
+                }
+                string emptyAV = g.CreateNode("EmptyMiniMaxH3LatentAV", new JObject()
+                {
+                    ["length"] = Frames,
+                    ["height"] = Height,
+                    ["width"] = Width
+                });
+                g.CurrentMedia = new([emptyAV, 0], g, WGNodeData.DT_LATENT_AUDIOVIDEO, Model.Compat) { Frames = Frames, FPS = VideoFPS };
+                string keyframesNode = g.CreateNode("SwarmMiniMaxH3AddKeyframes", new JObject()
+                {
+                    ["vae"] = Vae.Path,
+                    ["latent"] = g.CurrentMedia.Path,
+                    ["conditioning"] = PosCond,
+                    ["first_frame"] = origSrcImg.Path,
+                    ["last_frame"] = endFramePath
+                });
+                PosCond = [keyframesNode, 0];
+                DefaultCFG = 1;
             }
             else if (VideoModel.ModelClass?.CompatClass?.ID == "nvidia-cosmos-1")
             {
@@ -2583,11 +2649,11 @@ public partial class WorkflowGenerator
     }
 
     /// <summary>Creates a "CLIPTextEncode" or equivalent node for the given input.</summary>
-    public JArray CreateConditioningDirect(string prompt, JArray clip, T2IModel model, bool isPositive, string id = null)
+    public JArray CreateConditioningDirect(string prompt, JArray clip, T2IModel model, bool isPositive, string id = null, JArray attachImages = null)
     {
         string tokenNormalization = UserInput.Get(T2IParamTypes.PromptTokenNormalization, "none");
         string weightInterpretation = UserInput.Get(T2IParamTypes.PromptWeightInterpretation, "comfy");
-        string trackerId = $"__cond_direct____{clip[0]}_{clip[1]}_{isPositive}_{tokenNormalization}_{weightInterpretation}____{prompt}";
+        string trackerId = $"__cond_direct____{clip[0]}_{clip[1]}_{isPositive}_{tokenNormalization}_{weightInterpretation}____{prompt}_{attachImages}";
         if (id is null && NodeHelpers.TryGetValue(trackerId, out string nodeId))
         {
             return [nodeId, 0];
@@ -2603,8 +2669,59 @@ public partial class WorkflowGenerator
         {
             defaultGuidance = 1;
         }
-        bool wantsSwarmCustom = Features.Contains("variation_seed") && (tokenNormalization != "none" || weightInterpretation != "comfy" || needsAdvancedEncode || (UserInput.TryGet(T2IParamTypes.FluxGuidanceScale, out _) && HasFluxGuidance()) || IsHunyuanVideoSkyreels());
+        bool wantsSwarmCustom = Features.Contains("variation_seed") && (tokenNormalization != "none" || weightInterpretation != "comfy" || needsAdvancedEncode || (UserInput.TryGet(T2IParamTypes.FluxGuidanceScale, out _) && HasFluxGuidance()) || IsHunyuanVideoSkyreels() || attachImages is not null);
         JArray qwenImage;
+        if (attachImages is null && isPositive && IsMiniMaxH3())
+        {
+            // TODO: Compatible with SwarmCustom. Maybe a "ref items" passable unit of some form.
+            JObject refData = new()
+            {
+                ["clip"] = clip,
+                ["vae"] = CurrentVae.Path,
+                ["audio_vae"] = CurrentAudioVae.Path,
+                ["prompt"] = prompt,
+                ["width"] = width,
+                ["height"] = height,
+                ["length"] = UserInput.Get(T2IParamTypes.Text2VideoFrames, 124),
+            };
+            bool hasAny = false;
+            // TODO: Warn or error if max inputs exceeded
+            for (int i = 0; i < 9; i++)
+            {
+                JArray img = GetPromptImage(false, true, i);
+                if (img is null)
+                {
+                    break;
+                }
+                hasAny = true;
+                refData[$"ref_images.ref_image_{i}"] = img;
+            }
+            if (UserInput.TryGet(T2IParamTypes.PromptAudios, out List<AudioFile> audio))
+            {
+                for (int i = 0; i < audio.Count && i < 3; i++)
+                {
+                    hasAny = true;
+                    string audioNode = CreateAudioLoadNode(audio[i], "${promptaudios." + i + "}");
+                    refData[$"ref_audios.ref_audio_{i}"] = NodePath(audioNode, 0);
+                }
+            }
+            // TODO: Handle videos with embedded audio properly
+            if (UserInput.TryGet(T2IParamTypes.PromptVideos, out List<VideoFile> video))
+            {
+                for (int i = 0; i < video.Count && i < 3; i++)
+                {
+                    hasAny = true;
+                    WGNodeData videoNode = LoadVideo(video[i], "${promptvideos." + i + "}", false);
+                    refData[$"ref_videos.ref_video_{i}"] = videoNode.Path;
+                }
+            }
+            if (hasAny)
+            {
+                node = CreateNode("MiniMaxH3ReferenceToVideo", refData);
+                NodeHelpers[trackerId] = node;
+                return [node, 0];
+            }
+        }
         if (IsAceStep15())
         {
             node = CreateNode("TextEncodeAceStepAudio1.5", new JObject()
@@ -2635,7 +2752,7 @@ public partial class WorkflowGenerator
                 ["text"] = prompt
             }, id);
         }
-        else if (IsIdeogram4() || IsKrea2() || (IsBoogu() && isPositive))
+        else if (IsIdeogram4() || IsKrea2() || (IsBoogu() && isPositive) || IsMageFlow())
         {
             JArray imageNode = GetPromptImage(true, true, 0);
             for (int i = 1; i < 10; i++)
@@ -2787,7 +2904,8 @@ public partial class WorkflowGenerator
                 [ComfyNodeInputNames.ClipTextEncodeAdvanced.TargetHeight] = height,
                 [ComfyNodeInputNames.ClipTextEncodeAdvanced.Guidance] = UserInput.Get(T2IParamTypes.FluxGuidanceScale, defaultGuidance),
                 [ComfyNodeInputNames.ClipTextEncodeAdvanced.TokenNormalization] = tokenNormalization,
-                [ComfyNodeInputNames.ClipTextEncodeAdvanced.WeightInterpretation] = weightInterpretation
+                [ComfyNodeInputNames.ClipTextEncodeAdvanced.WeightInterpretation] = weightInterpretation,
+                [ComfyNodeInputNames.ClipTextEncodeAdvanced.Images] = attachImages
             }, id);
         }
         else if (model is not null && model.ModelClass is not null && model.ModelClass.ID == "stable-diffusion-xl-v1-base")
@@ -2813,27 +2931,35 @@ public partial class WorkflowGenerator
                 ["text"] = prompt
             }, id);
         }
+        if (UserInput.TryGet(isPositive ? T2IParamTypes.ConditioningMultiplier : T2IParamTypes.NegativeConditioningMultiplier, out double condMultiplier) && condMultiplier != 1)
+        {
+            node = CreateNode("ConditioningMultiply", new JObject()
+            {
+                ["conditioning"] = NodePath(node, 0),
+                ["multiplier"] = condMultiplier
+            });
+        }
         NodeHelpers[trackerId] = node;
         return [node, 0];
     }
 
     /// <summary>Creates a "CLIPTextEncode" or equivalent node for the given input, with support for '&lt;break&gt;' syntax.</summary>
-    public JArray CreateConditioningLine(string prompt, JArray clip, T2IModel model, bool isPositive, string id = null)
+    public JArray CreateConditioningLine(string prompt, JArray clip, T2IModel model, bool isPositive, string id = null, JArray attachImages = null)
     {
         if (Features.Contains("variation_seed"))
         {
-            return CreateConditioningDirect(prompt, clip, model, isPositive, id);
+            return CreateConditioningDirect(prompt, clip, model, isPositive, id, attachImages);
         }
         // Backup to at least process "<break>" for if Swarm nodes are missing
         string[] breaks = prompt.Split("<break>", StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries);
         if (breaks.Length <= 1)
         {
-            return CreateConditioningDirect(prompt, clip, model, isPositive, id);
+            return CreateConditioningDirect(prompt, clip, model, isPositive, id, attachImages: attachImages);
         }
-        JArray first = CreateConditioningDirect(breaks[0], clip, model, isPositive);
+        JArray first = CreateConditioningDirect(breaks[0], clip, model, isPositive, attachImages: attachImages);
         for (int i = 1; i < breaks.Length; i++)
         {
-            JArray second = CreateConditioningDirect(breaks[i], clip, model, isPositive);
+            JArray second = CreateConditioningDirect(breaks[i], clip, model, isPositive, attachImages: attachImages);
             string concatted = CreateNode("ConditioningConcat", new JObject()
             {
                 ["conditioning_to"] = first,
@@ -3134,7 +3260,7 @@ public partial class WorkflowGenerator
     }
 
     /// <summary>Creates a "CLIPTextEncode" or equivalent node for the given input, applying prompt-given conditioning modifiers as relevant.</summary>
-    public JArray CreateConditioning(string prompt, JArray clip, T2IModel model, bool isPositive, string firstId = null, bool isRefiner = false, bool isVideo = false, bool isVideoSwap = false, bool isPixelDecoder = false)
+    public JArray CreateConditioning(string prompt, JArray clip, T2IModel model, bool isPositive, string firstId = null, bool isRefiner = false, bool isVideo = false, bool isVideoSwap = false, bool isPixelDecoder = false, JArray attachImages = null)
     {
         PromptRegion regionalizer = new(prompt);
         string globalPromptText = regionalizer.GlobalPrompt;
@@ -3158,7 +3284,7 @@ public partial class WorkflowGenerator
         {
             globalPromptText = $"{globalPromptText} {regionalizer.BasePrompt}";
         }
-        JArray globalCond = CreateConditioningLine(globalPromptText.Trim(), clip, model, isPositive, firstId);
+        JArray globalCond = CreateConditioningLine(globalPromptText.Trim(), clip, model, isPositive, firstId, attachImages: attachImages);
         if (!isPositive && string.IsNullOrWhiteSpace(prompt) && ShouldZeroNegative())
         {
             string zeroed = CreateNode("ConditioningZeroOut", new JObject()
@@ -3214,7 +3340,7 @@ public partial class WorkflowGenerator
         foreach (PromptRegion.Part part in parts)
         {
             JArray subClip = part.ContextID <= 1 ? clip : CreateHookLorasForConfinement(part.ContextID, clip);
-            JArray partCond = CreateConditioningLine(part.Prompt, subClip, model, isPositive);
+            JArray partCond = CreateConditioningLine(part.Prompt, subClip, model, isPositive, attachImages: attachImages);
             RegionHelper region = new(partCond, CreateRegionalPromptMask(part));
             regions.Add(region);
             if (lastMergedMask is null)
@@ -3245,7 +3371,7 @@ public partial class WorkflowGenerator
             [ComfyNodeInputNames.ExcludeFromMask.ExcludeMask] = lastMergedMask
         });
         string backgroundPrompt = string.IsNullOrWhiteSpace(regionalizer.BackgroundPrompt) ? regionalizer.GlobalPrompt : regionalizer.BackgroundPrompt;
-        JArray backgroundCond = CreateConditioningLine(backgroundPrompt, clip, model, isPositive);
+        JArray backgroundCond = CreateConditioningLine(backgroundPrompt, clip, model, isPositive, attachImages: attachImages);
         string mainConditioning = CreateNode("ConditioningSetMask", new JObject()
         {
             ["conditioning"] = backgroundCond,
