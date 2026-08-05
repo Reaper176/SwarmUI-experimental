@@ -45,8 +45,20 @@ def _add_source_projection_config(config, state_dict, key_prefix):
         raise ValueError(
             f"Anima source projection is present, but adapter weight '{adapter_key}' is missing."
         )
-    adapter_source_width = state_dict[adapter_key].shape[1]
+    adapter_weight = state_dict[adapter_key]
+    if adapter_weight.ndim != 2:
+        raise ValueError(
+            f"Anima adapter weight '{adapter_key}' must be a 2D linear weight, "
+            f"got shape {tuple(adapter_weight.shape)}."
+        )
+    adapter_source_width = adapter_weight.shape[1]
     projection_output_width, projection_input_width = projection_weight.shape
+    if projection_input_width != 2048:
+        raise ValueError(
+            "Anima source projection input width is incompatible with Qwen3.5-2B: "
+            f"'{projection_key}' maps {projection_input_width}->{projection_output_width}, "
+            "but Qwen3.5-2B requires input width 2048."
+        )
     if projection_output_width != adapter_source_width:
         raise ValueError(
             "Anima source projection output width does not match the LLM adapter: "
