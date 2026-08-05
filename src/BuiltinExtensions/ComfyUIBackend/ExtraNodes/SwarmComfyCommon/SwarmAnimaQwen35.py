@@ -350,6 +350,29 @@ def _validate_quant_tensor_shape(
         )
 
 
+def _validate_int8_weight_scale(state_dict, tensor_key, weight_key, rows, convrot):
+    """Validate tensorwise or rowwise INT8 scale serialization."""
+    tensor = state_dict[tensor_key]
+    if not isinstance(tensor, torch.Tensor):
+        raise ValueError(
+            f"Qwen3.5-2B INT8 weight '{weight_key}' has non-tensor scale "
+            f"'{tensor_key}'."
+        )
+    actual_shape = tuple(tensor.shape)
+    rowwise_shape = (rows, 1)
+    valid_shape = actual_shape == rowwise_shape or (not convrot and tensor.numel() == 1)
+    if not valid_shape:
+        required_shape = (
+            f"exactly {rowwise_shape} for ConvRot"
+            if convrot
+            else f"scalar/singleton or exactly {rowwise_shape}"
+        )
+        raise ValueError(
+            f"Qwen3.5-2B INT8 weight '{weight_key}' scale '{tensor_key}' has "
+            f"shape {actual_shape}; required shape is {required_shape}."
+        )
+
+
 def _validate_qwen35_quantized_weight(state_dict, weight_key, logical_shape):
     """Validate native Comfy metadata, packed weights, and 2D blocked scales."""
     layer_prefix = (
@@ -407,16 +430,17 @@ def _validate_qwen35_quantized_weight(state_dict, weight_key, logical_shape):
             f"'{quant_format}'; Comfy Embedding supports only FP8 e4m3fn or e5m2."
         )
 
-    required_auxiliary_keys = {
-        "float8_e4m3fn": (),
-        "float8_e5m2": (),
-        "int8_tensorwise": ("weight_scale",),
-        "mxfp8": ("weight_scale",),
-        "nvfp4": ("weight_scale", "weight_scale_2"),
-    }
+    if quant_format in ("float8_e4m3fn", "float8_e5m2"):
+        required_auxiliary_keys = (
+            () if weight_key == "model.embed_tokens.weight" else ("weight_scale",)
+        )
+    elif quant_format in ("int8_tensorwise", "mxfp8"):
+        required_auxiliary_keys = ("weight_scale",)
+    else:
+        required_auxiliary_keys = ("weight_scale", "weight_scale_2")
     missing_auxiliary_keys = [
         f"{layer_prefix}{key}"
-        for key in required_auxiliary_keys[quant_format]
+        for key in required_auxiliary_keys
         if f"{layer_prefix}{key}" not in state_dict
     ]
     if missing_auxiliary_keys:
@@ -453,11 +477,41 @@ def _validate_qwen35_quantized_weight(state_dict, weight_key, logical_shape):
                 quant_format,
             )
     elif quant_format == "int8_tensorwise":
-        _validate_single_element_quant_tensor(
+        params_config = quant_config.get("params", {})
+        if not isinstance(params_config, dict):
+            params_config = {}
+        convrot = quant_config.get("convrot", params_config.get("convrot", False))
+        if convrot:
+            raw_group_size = quant_config.get(
+                "convrot_groupsize",
+                params_config.get("convrot_groupsize", 256),
+            )
+            try:
+                group_size = int(raw_group_size)
+            except (TypeError, ValueError) as error:
+                raise ValueError(
+                    f"Qwen3.5-2B INT8 weight '{weight_key}' metadata '{quant_key}' "
+                    f"has invalid convrot_groupsize {raw_group_size!r}; it must be "
+                    "convertible to an integer."
+                ) from error
+            is_power_of_four = (
+                group_size >= 4
+                and (group_size & (group_size - 1)) == 0
+                and (group_size.bit_length() - 1) % 2 == 0
+            )
+            if not is_power_of_four or columns % group_size != 0:
+                raise ValueError(
+                    f"Qwen3.5-2B INT8 weight '{weight_key}' metadata '{quant_key}' "
+                    f"has convrot_groupsize {group_size}; it must be an integer at "
+                    "least 4, a power of 4, and divide the logical input width "
+                    f"{columns}."
+                )
+        _validate_int8_weight_scale(
             state_dict,
             weight_scale_key,
             weight_key,
-            quant_format,
+            rows,
+            bool(convrot),
         )
     elif quant_format == "mxfp8":
         expected_scale_shape = (
