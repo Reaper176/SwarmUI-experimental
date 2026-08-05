@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import functools
+import json
 import logging
 
 import torch
@@ -257,6 +258,56 @@ def _qwen35_2b_required_text_keys():
     return required_keys
 
 
+def _validate_qwen35_quantized_weight(state_dict, weight_key):
+    """Validate native Comfy quantization metadata for one potentially packed weight."""
+    layer_prefix = weight_key.removesuffix("weight")
+    quant_key = f"{layer_prefix}comfy_quant"
+    if quant_key not in state_dict:
+        return False
+    quant_metadata = state_dict[quant_key]
+    if (
+        not isinstance(quant_metadata, torch.Tensor)
+        or quant_metadata.ndim != 1
+        or quant_metadata.dtype != torch.uint8
+    ):
+        raise ValueError(
+            f"Qwen3.5-2B quantization metadata '{quant_key}' must be a 1D byte tensor."
+        )
+    try:
+        quant_config = json.loads(bytes(quant_metadata.tolist()))
+    except (TypeError, ValueError, UnicodeDecodeError) as error:
+        raise ValueError(
+            f"Qwen3.5-2B quantization metadata '{quant_key}' is not valid JSON."
+        ) from error
+    if not isinstance(quant_config, dict):
+        raise ValueError(
+            f"Qwen3.5-2B quantization metadata '{quant_key}' must contain a JSON object."
+        )
+    quant_format = quant_config.get("format")
+    required_auxiliary_keys = {
+        "float8_e4m3fn": (),
+        "float8_e5m2": (),
+        "mxfp8": ("weight_scale",),
+        "nvfp4": ("weight_scale", "weight_scale_2"),
+    }
+    if quant_format not in required_auxiliary_keys:
+        raise ValueError(
+            f"Qwen3.5-2B weight '{weight_key}' uses unsupported Comfy quantization "
+            f"format '{quant_format}'."
+        )
+    missing_auxiliary_keys = [
+        f"{layer_prefix}{key}"
+        for key in required_auxiliary_keys[quant_format]
+        if f"{layer_prefix}{key}" not in state_dict
+    ]
+    if missing_auxiliary_keys:
+        raise ValueError(
+            f"Qwen3.5-2B weight '{weight_key}' uses {quant_format} but is missing "
+            f"required quantization tensors: {', '.join(missing_auxiliary_keys)}."
+        )
+    return True
+
+
 def _validate_qwen35_2b_state_dict(state_dict):
     """Reject weights that are not the native 2048-wide Qwen3.5-2B layout."""
     required_keys = _qwen35_2b_required_text_keys()
@@ -271,16 +322,28 @@ def _validate_qwen35_2b_state_dict(state_dict):
             f"weights: {missing_sample}{remaining_message}."
         )
 
-    expected_shapes = {
+    exact_shapes = {
         "model.embed_tokens.weight": (248320, 2048),
         "model.layers.0.input_layernorm.weight": (2048,),
         "model.layers.0.linear_attn.A_log": (16,),
+        "model.norm.weight": (2048,),
+    }
+    for key, expected_shape in exact_shapes.items():
+        actual_shape = tuple(state_dict[key].shape)
+        if actual_shape != expected_shape:
+            raise ValueError(
+                f"Selected text encoder weight '{key}' has shape {actual_shape}; "
+                f"the native Qwen3.5-2B architecture requires {expected_shape}."
+            )
+
+    representative_weight_shapes = {
         "model.layers.0.linear_attn.in_proj_qkv.weight": (6144, 2048),
         "model.layers.3.self_attn.k_proj.weight": (512, 2048),
         "model.layers.23.self_attn.q_proj.weight": (4096, 2048),
-        "model.norm.weight": (2048,),
     }
-    for key, expected_shape in expected_shapes.items():
+    for key, expected_shape in representative_weight_shapes.items():
+        if _validate_qwen35_quantized_weight(state_dict, key):
+            continue
         actual_shape = tuple(state_dict[key].shape)
         if actual_shape != expected_shape:
             raise ValueError(
