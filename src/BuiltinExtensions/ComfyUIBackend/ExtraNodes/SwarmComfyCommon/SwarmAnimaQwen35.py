@@ -233,6 +233,7 @@ def _validate_qwen35_2b_state_dict(state_dict):
         )
 
     expected_shapes = {
+        "model.embed_tokens.weight": (248320, 2048),
         "model.layers.0.input_layernorm.weight": (2048,),
         "model.layers.0.linear_attn.A_log": (16,),
         "model.layers.0.linear_attn.in_proj_qkv.weight": (6144, 2048),
@@ -247,14 +248,6 @@ def _validate_qwen35_2b_state_dict(state_dict):
                 f"Selected text encoder weight '{key}' has shape {actual_shape}; "
                 f"the native Qwen3.5-2B architecture requires {expected_shape}."
             )
-
-    embedding_shape = tuple(state_dict["model.embed_tokens.weight"].shape)
-    if len(embedding_shape) != 2 or embedding_shape[1] != 2048:
-        raise ValueError(
-            "Selected text encoder token embedding "
-            f"'model.embed_tokens.weight' has shape {embedding_shape}; the native "
-            "Qwen3.5-2B architecture requires a 2D embedding with hidden width 2048."
-        )
 
 
 def load_anima_qwen35_clip(
@@ -286,10 +279,29 @@ def load_anima_qwen35_clip(
         target,
         embedding_directory=embedding_directory,
         parameters=comfy.utils.calculate_parameters(state_dict),
-        state_dict=[state_dict],
+        state_dict=[],
         model_options=model_options,
         disable_dynamic=disable_dynamic,
     )
+    missing, unexpected = clip.load_sd(state_dict)
+    missing_text_weights = [
+        key for key in missing
+        if not key.startswith("visual.") and not key.startswith("model.lm_head.")
+    ]
+    unexpected_weights = [
+        key for key in unexpected
+        if not key.startswith("model.lm_head.")
+    ]
+    if missing_text_weights:
+        raise ValueError(
+            "Selected Qwen3.5-2B encoder is incomplete; required text-model "
+            f"weights were not found: {', '.join(missing_text_weights)}."
+        )
+    if unexpected_weights:
+        raise ValueError(
+            "Selected Qwen3.5-2B encoder contains unsupported weights after "
+            f"normalization: {', '.join(unexpected_weights)}."
+        )
     clip.patcher.cached_patcher_init = (
         load_anima_qwen35_clip_model_patcher,
         (clip_path, embedding_directory, model_options),
