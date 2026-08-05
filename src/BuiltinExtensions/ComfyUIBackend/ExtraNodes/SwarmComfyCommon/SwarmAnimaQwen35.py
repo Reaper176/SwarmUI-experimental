@@ -334,7 +334,7 @@ def _validate_quant_tensor_shape(
     weight_key,
     quant_format,
 ):
-    """Validate one blocked quantization auxiliary tensor shape."""
+    """Validate one 2D swizzled blocked quantization tensor shape."""
     tensor = state_dict[tensor_key]
     if not isinstance(tensor, torch.Tensor):
         raise ValueError(
@@ -351,7 +351,7 @@ def _validate_quant_tensor_shape(
 
 
 def _validate_qwen35_quantized_weight(state_dict, weight_key, logical_shape):
-    """Validate native Comfy quantization metadata and packed storage shapes."""
+    """Validate native Comfy metadata, packed weights, and 2D blocked scales."""
     layer_prefix = (
         weight_key.removesuffix("weight")
         if weight_key.endswith(".weight")
@@ -461,9 +461,8 @@ def _validate_qwen35_quantized_weight(state_dict, weight_key, logical_shape):
         )
     elif quant_format == "mxfp8":
         expected_scale_shape = (
-            ((rows + 127) // 128) * ((columns + 127) // 128),
-            32,
-            16,
+            _round_up(rows, 128),
+            _round_up(_round_up(columns, 32) // 32, 4),
         )
         _validate_quant_tensor_shape(
             state_dict,
@@ -474,9 +473,8 @@ def _validate_qwen35_quantized_weight(state_dict, weight_key, logical_shape):
         )
     else:
         expected_scale_shape = (
-            ((rows + 127) // 128) * ((columns + 63) // 64),
-            32,
-            16,
+            _round_up(rows, 128),
+            _round_up(_round_up(columns, 16) // 16, 4),
         )
         _validate_quant_tensor_shape(
             state_dict,
@@ -488,6 +486,16 @@ def _validate_qwen35_quantized_weight(state_dict, weight_key, logical_shape):
         _validate_single_element_quant_tensor(
             state_dict,
             f"{layer_prefix}weight_scale_2",
+            weight_key,
+            quant_format,
+        )
+    # Input scale is optional. MXFP8 ignores it during quantization, but malformed
+    # serialized auxiliary data should still fail validation.
+    input_scale_key = f"{layer_prefix}input_scale"
+    if quant_format != "int8_tensorwise" and input_scale_key in state_dict:
+        _validate_single_element_quant_tensor(
+            state_dict,
+            input_scale_key,
             weight_key,
             quant_format,
         )
