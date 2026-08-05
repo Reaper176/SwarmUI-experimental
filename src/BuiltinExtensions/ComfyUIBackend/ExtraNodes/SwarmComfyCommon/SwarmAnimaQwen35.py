@@ -215,18 +215,45 @@ def _normalize_qwen35_state_dict(state_dict):
 
 def _validate_qwen35_2b_state_dict(state_dict):
     """Reject weights that are not the native 2048-wide Qwen3.5-2B layout."""
-    layer_key = "model.layers.0.linear_attn.A_log"
-    norm_key = "model.layers.0.input_layernorm.weight"
-    if layer_key not in state_dict or norm_key not in state_dict:
+    required_keys = (
+        "model.embed_tokens.weight",
+        "model.layers.0.input_layernorm.weight",
+        "model.layers.0.linear_attn.A_log",
+        "model.layers.0.linear_attn.in_proj_qkv.weight",
+        "model.layers.3.self_attn.k_proj.weight",
+        "model.layers.23.self_attn.q_proj.weight",
+        "model.norm.weight",
+    )
+    missing_keys = [key for key in required_keys if key not in state_dict]
+    if missing_keys:
         raise ValueError(
-            "Selected text encoder is not a supported Qwen3.5 model: required "
-            f"weights '{layer_key}' and '{norm_key}' were not found."
+            "Selected text encoder is incomplete or is not the native 24-layer "
+            "Qwen3.5-2B layout. Missing architecture-defining weights: "
+            f"{', '.join(missing_keys)}."
         )
-    hidden_width = state_dict[norm_key].shape[0]
-    if hidden_width != 2048:
+
+    expected_shapes = {
+        "model.layers.0.input_layernorm.weight": (2048,),
+        "model.layers.0.linear_attn.A_log": (16,),
+        "model.layers.0.linear_attn.in_proj_qkv.weight": (6144, 2048),
+        "model.layers.3.self_attn.k_proj.weight": (512, 2048),
+        "model.layers.23.self_attn.q_proj.weight": (4096, 2048),
+        "model.norm.weight": (2048,),
+    }
+    for key, expected_shape in expected_shapes.items():
+        actual_shape = tuple(state_dict[key].shape)
+        if actual_shape != expected_shape:
+            raise ValueError(
+                f"Selected text encoder weight '{key}' has shape {actual_shape}; "
+                f"the native Qwen3.5-2B architecture requires {expected_shape}."
+            )
+
+    embedding_shape = tuple(state_dict["model.embed_tokens.weight"].shape)
+    if len(embedding_shape) != 2 or embedding_shape[1] != 2048:
         raise ValueError(
-            f"Selected Qwen3.5 encoder has hidden width {hidden_width}; "
-            "this Anima loader requires Qwen3.5-2B with width 2048."
+            "Selected text encoder token embedding "
+            f"'model.embed_tokens.weight' has shape {embedding_shape}; the native "
+            "Qwen3.5-2B architecture requires a 2D embedding with hidden width 2048."
         )
 
 
@@ -259,7 +286,7 @@ def load_anima_qwen35_clip(
         target,
         embedding_directory=embedding_directory,
         parameters=comfy.utils.calculate_parameters(state_dict),
-        state_dict=state_dict,
+        state_dict=[state_dict],
         model_options=model_options,
         disable_dynamic=disable_dynamic,
     )
