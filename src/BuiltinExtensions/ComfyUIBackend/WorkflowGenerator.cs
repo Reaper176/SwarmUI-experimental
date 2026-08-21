@@ -1762,7 +1762,15 @@ public partial class WorkflowGenerator
         public double DefaultCFG = 7;
         public bool HadSpecialCond = false;
         public int ContextID = T2IParamInput.SectionID_Video;
-        public Image VideoEndImage = null;
+        /// <summary>Optional final-frame image for video models that support end-frame guidance.</summary>
+        public Image VideoEndFrame = null;
+
+        /// <summary>Gets or sets the optional final-frame image using the current parameter naming.</summary>
+        public Image VideoEndImage
+        {
+            get => VideoEndFrame;
+            set => VideoEndFrame = value;
+        }
         public JArray DoFirstFrameLatentSwap = null;
         public bool HasFixedMediaLen = false;
 
