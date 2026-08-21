@@ -3,6 +3,7 @@ class Permissions {
     constructor() {
         this.permissions = {};
         this.permissionedDivs = [];
+        this.applyCallbacks = [];
         this.hasLoaded = false;
         setTimeout(() => {
             this.gather();
@@ -24,6 +25,13 @@ class Permissions {
         this.apply();
     }
 
+    /** Registers a callback to run after each loaded permission set is applied. */
+    registerApplyCallback(callback) {
+        if (!this.applyCallbacks.includes(callback)) {
+            this.applyCallbacks.push(callback);
+        }
+    }
+
     apply() {
         if (!this.hasLoaded) {
             return;
@@ -36,6 +44,9 @@ class Permissions {
             else {
                 div.style.display = '';
             }
+        }
+        for (let callback of this.applyCallbacks) {
+            callback();
         }
     }
 

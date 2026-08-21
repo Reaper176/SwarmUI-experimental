@@ -1231,12 +1231,8 @@ public partial class WorkflowGenerator
             defsampler ??= "lcm";
             defscheduler ??= "simple";
         }
-        else if (IsBoogu())
-        {
-            defscheduler ??= "simple";
-        }
         // TODO: Registry of model default preferences instead of this
-        else if (IsFlux() || IsWanVideo() || IsWanVideo22() || IsOmniGen() || IsQwenImage() || IsZImage() || IsZetaChroma() || IsErnie() || IsHiDreamO1() || IsLens() || IsPixelDiT() || IsKrea2() || IsMageFlow())
+        else if (IsFlux() || IsWanVideo() || IsWanVideo22() || IsOmniGen() || IsQwenImage() || IsZImage() || IsZetaChroma() || IsErnie() || IsHiDreamO1() || IsLens() || IsPixelDiT() || IsKrea2() || IsBoogu() || IsMageFlow() || IsMiniMaxMusic3() || IsSeedVR2())
         {
             defscheduler ??= "simple";
         }
@@ -1766,7 +1762,7 @@ public partial class WorkflowGenerator
         public double DefaultCFG = 7;
         public bool HadSpecialCond = false;
         public int ContextID = T2IParamInput.SectionID_Video;
-        public Image VideoEndFrame = null;
+        public Image VideoEndImage = null;
         public JArray DoFirstFrameLatentSwap = null;
         public bool HasFixedMediaLen = false;
 
@@ -1802,9 +1798,9 @@ public partial class WorkflowGenerator
             if (VideoModel.ModelClass?.CompatClass?.ID == T2IModelClassSorter.CompatMiniMaxH3.ID)
             {
                 attachImages = Generator.CurrentMedia.Path;
-                if (VideoEndFrame is not null)
+                if (VideoEndImage is not null)
                 {
-                    WGNodeData endFrame = g.LoadImage(VideoEndFrame, "${videoendframe}", false);
+                    WGNodeData endFrame = g.LoadImage(VideoEndImage, "${videoendframe}", false);
                     string batched = g.CreateNode("BatchImagesNode", new JObject()
                     {
                         ["images.image0"] = attachImages,
@@ -1849,9 +1845,9 @@ public partial class WorkflowGenerator
                 });
                 PosCond = [ltxvcond, 0];
                 NegCond = [ltxvcond, 1];
-                if (VideoEndFrame is not null)
+                if (VideoEndImage is not null)
                 {
-                    WGNodeData endFrame = g.LoadImage(VideoEndFrame, "${videoendframe}", false);
+                    WGNodeData endFrame = g.LoadImage(VideoEndImage, "${videoendframe}", false);
                     string addedGuide = g.CreateNode("LTXVAddGuide", new JObject()
                     {
                         ["positive"] = PosCond,
@@ -1907,9 +1903,9 @@ public partial class WorkflowGenerator
                 });
                 PosCond = [ltxvcond, 0];
                 NegCond = [ltxvcond, 1];
-                if (VideoEndFrame is not null)
+                if (VideoEndImage is not null)
                 {
-                    WGNodeData endFrame = g.LoadImage(VideoEndFrame, "${videoendframe}", false);
+                    WGNodeData endFrame = g.LoadImage(VideoEndImage, "${videoendframe}", false);
                     // TODO: Is this even correct for LTX-2? It works as intended, but it's kinda weird.
                     string addedGuide = g.CreateNode("LTXVAddGuide", new JObject()
                     {
@@ -1963,15 +1959,16 @@ public partial class WorkflowGenerator
                 Frames = MiniMaxH3AlignFrames(Frames ?? 124);
                 origSrcImg = FixMediaLen();
                 JArray endFramePath = null;
-                if (VideoEndFrame is not null)
+                if (VideoEndImage is not null)
                 {
-                    endFramePath = g.LoadImage(VideoEndFrame, "${videoendframe}", false).Path;
+                    endFramePath = g.LoadImage(VideoEndImage, "${videoendframe}", false).Path;
                 }
-                string emptyAV = g.CreateNode("EmptyMiniMaxH3LatentAV", new JObject()
+                string emptyAV = g.CreateNode(ComfyNodeNames.EmptyMiniMaxH3LatentAV, new JObject()
                 {
-                    ["length"] = Frames,
-                    ["height"] = Height,
-                    ["width"] = Width
+                    [ComfyNodeInputNames.EmptyMiniMaxH3LatentAV.Length] = Frames,
+                    [ComfyNodeInputNames.EmptyMiniMaxH3LatentAV.Height] = Height,
+                    [ComfyNodeInputNames.EmptyMiniMaxH3LatentAV.Width] = Width,
+                    [ComfyNodeInputNames.EmptyMiniMaxH3LatentAV.BatchSize] = g.UserInput.Get(T2IParamTypes.BatchSize, 1)
                 });
                 g.CurrentMedia = new([emptyAV, 0], g, WGNodeData.DT_LATENT_AUDIOVIDEO, Model.Compat) { Frames = Frames, FPS = VideoFPS };
                 string keyframesNode = g.CreateNode("SwarmMiniMaxH3AddKeyframes", new JObject()
@@ -1990,7 +1987,7 @@ public partial class WorkflowGenerator
                 VideoFPS ??= 24;
                 Frames ??= 121;
                 origSrcImg = FixMediaLen();
-                if (VideoEndFrame is not null)
+                if (VideoEndImage is not null)
                 {
                     throw new SwarmReadableErrorException("Cosmos end-frame is TODO");
                 }
@@ -2145,9 +2142,9 @@ public partial class WorkflowGenerator
                     });
                     imageIn = [fromBatch, 0];
                 }
-                if (VideoEndFrame is not null)
+                if (VideoEndImage is not null)
                 {
-                    WGNodeData endFrame = g.LoadImage(VideoEndFrame, "${videoendframe}", false);
+                    WGNodeData endFrame = g.LoadImage(VideoEndImage, "${videoendframe}", false);
                     string scaled = g.CreateNode("ImageScale", new JObject()
                     {
                         ["image"] = endFrame.Path,
@@ -2236,9 +2233,9 @@ public partial class WorkflowGenerator
                     ["image"] = encodeIn,
                     ["crop"] = "center"
                 });
-                if (VideoEndFrame is not null)
+                if (VideoEndImage is not null)
                 {
-                    WGNodeData endFrame = g.LoadImage(VideoEndFrame, "${videoendframe}", false);
+                    WGNodeData endFrame = g.LoadImage(VideoEndImage, "${videoendframe}", false);
                     string scaled = g.CreateNode("ImageScale", new JObject()
                     {
                         ["image"] = endFrame.Path,
@@ -2412,8 +2409,13 @@ public partial class WorkflowGenerator
             ["upscale_method"] = "lanczos",
             ["crop"] = "disabled"
         });
-        // TODO: Update width/height properly
         CurrentMedia = CurrentMedia.WithPath([scaled, 0]);
+        // TODO: Update width/height properly
+        if (genInfo.Width?.Type == JTokenType.Integer && genInfo.Height?.Type == JTokenType.Integer)
+        {
+            CurrentMedia.Width = (int)genInfo.Width;
+            CurrentMedia.Height = (int)genInfo.Height;
+        }
         foreach (Action<ImageToVideoGenInfo> altHandler in AltImageToVideoPreHandlers)
         {
             altHandler(genInfo);
@@ -2744,6 +2746,20 @@ public partial class WorkflowGenerator
                 ["min_p"] = 0
             }, id);
         }
+        else if (IsMiniMaxMusic3())
+        {
+            node = CreateNode("MiniMaxMusic3TextEncode", new JObject()
+            {
+                ["clip"] = clip,
+                ["caption"] = UserInput.Get(T2IParamTypes.Text2AudioStyle, ""),
+                ["lyrics"] = prompt,
+                ["seed"] = UserInput.Get(T2IParamTypes.Seed, 0),
+                ["max_duration"] = Math.Clamp(UserInput.Get(T2IParamTypes.Text2AudioDuration, 120), 0.04, 360),
+                // TODO: Parameters for these?
+                ["cfg_scale"] = 1.5,
+                ["top_k"] = 50
+            }, id);
+        }
         else if (IsSana())
         {
             node = CreateNode("SanaTextEncode", new JObject()
@@ -2987,7 +3003,7 @@ public partial class WorkflowGenerator
         }
         if (UserInput.Get(T2IParamTypes.ModelSpecificEnhancements, true))
         {
-            if (IsAceStep15())
+            if (IsAceStep15() || IsMiniMaxMusic3())
             {
                 return true;
             }
@@ -3257,6 +3273,194 @@ public partial class WorkflowGenerator
         CurrentTextEnc = priorTextEnc;
         CurrentVae = priorVae;
         return result;
+    }
+
+    /// <summary>Creates a SeedVR2 restoration stage: converts to a SeedVR2-space latent and samples the restored image from it.</summary>
+    public WGNodeData CreateSeedVR2Restore(T2IModel seedVrModel, WGNodeData media, WGNodeData decodeVae, long seed, bool isRefiner = false)
+    {
+        if (!Features.Contains("seedvr2"))
+        {
+            throw new SwarmReadableErrorException("SeedVR2 restoration requires a newer ComfyUI backend with native SeedVR2 nodes.");
+        }
+        WGNodeData raw = media.AsRawImage(decodeVae);
+        JArray resized = raw.Path;
+        string preprocessed = CreateNode(ComfyNodeNames.SeedVR2Preprocess, new JObject()
+        {
+            [ComfyNodeInputNames.SeedVR2Preprocess.ResizedImages] = resized
+        });
+        T2IModel priorFinalModel = FinalLoadedModel;
+        List<T2IModel> priorFinalModelList = FinalLoadedModelList;
+        WGNodeData priorModel = CurrentModel, priorTextEnc = CurrentTextEnc, priorVae = CurrentVae;
+        bool priorNoVae = NoVAEOverride;
+        int sectionId = isRefiner ? T2IParamInput.SectionID_Refiner : T2IParamInput.SectionID_SeedVR;
+        FinalLoadedModel = seedVrModel;
+        FinalLoadedModelList = [seedVrModel];
+        NoVAEOverride = true;
+        (FinalLoadedModel, CurrentModel, CurrentTextEnc, CurrentVae) = CreateModelLoader(seedVrModel, "SeedVR2", sectionId: sectionId);
+        NoVAEOverride = priorNoVae;
+        WGNodeData encoded = raw.WithPath([preprocessed, 0]).EncodeToLatent(CurrentVae);
+        JArray latent = encoded.Path;
+        JArray chunkOverlap = null;
+        bool splitLatent = UserInput.Get(ComfyUIBackendExtension.SeedVRSplitLatent, false);
+        if (splitLatent && !Features.Contains("seedvr2_temporal_chunking"))
+        {
+            throw new SwarmReadableErrorException("SeedVR2 temporal chunking requires a newer ComfyUI backend with native SeedVR2 chunk and merge nodes.");
+        }
+        if (splitLatent)
+        {
+            int overlap = UserInput.Get(ComfyUIBackendExtension.SeedVRTemporalVideoOverlap, 0);
+            string chunked = CreateNode(ComfyNodeNames.SeedVR2TemporalChunk, new JObject()
+            {
+                [ComfyNodeInputNames.SeedVR2TemporalChunk.Latent] = latent,
+                [ComfyNodeInputNames.SeedVR2TemporalChunk.TemporalOverlap] = overlap,
+                [ComfyNodeInputNames.SeedVR2TemporalChunk.ChunkingMode] = "auto"
+            });
+            latent = [chunked, 0];
+            chunkOverlap = [chunked, 1];
+        }
+        string cond = CreateNode(ComfyNodeNames.SeedVR2Conditioning, new JObject()
+        {
+            [ComfyNodeInputNames.SeedVR2Conditioning.Model] = CurrentModel.Path,
+            [ComfyNodeInputNames.SeedVR2Conditioning.VAEConditioning] = latent
+        });
+        int steps = UserInput.GetNullable(T2IParamTypes.Steps, sectionId, false) ?? (isRefiner ? UserInput.GetNullable(T2IParamTypes.RefinerSteps) : null) ?? 1;
+        double cfg = UserInput.GetNullable(T2IParamTypes.CFGScale, sectionId, false) ?? (isRefiner ? UserInput.GetNullable(T2IParamTypes.RefinerCFGScale) : null) ?? 1;
+        string explicitSampler = UserInput.Get(ComfyUIBackendExtension.SamplerParam, null, sectionId: sectionId, includeBase: false) ?? (isRefiner ? UserInput.Get(ComfyUIBackendExtension.RefinerSamplerParam, null) : null);
+        string explicitScheduler = UserInput.Get(ComfyUIBackendExtension.SchedulerParam, null, sectionId: sectionId, includeBase: false) ?? (isRefiner ? UserInput.Get(ComfyUIBackendExtension.RefinerSchedulerParam, null) : null);
+        int startStep = isRefiner ? (int)Math.Round(steps * (1 - UserInput.Get(T2IParamTypes.RefinerControl, 1))) : 0;
+        string sampled = CreateKSampler(CurrentModel.Path, [cond, 0], [cond, 1], latent, cfg, steps, startStep, 10000, seed, false, true, explicitSampler: explicitSampler ?? "euler", explicitScheduler: explicitScheduler ?? "simple", sectionId: sectionId);
+        JArray sampledLatent = [sampled, 0];
+        if (chunkOverlap is not null)
+        {
+            string merged = CreateNode(ComfyNodeNames.SeedVR2TemporalMerge, new JObject()
+            {
+                [ComfyNodeInputNames.SeedVR2TemporalMerge.Latents] = sampledLatent,
+                [ComfyNodeInputNames.SeedVR2TemporalMerge.TemporalOverlap] = chunkOverlap
+            });
+            sampledLatent = [merged, 0];
+        }
+        WGNodeData decoded = encoded.WithPath(sampledLatent).DecodeLatents(CurrentVae, false);
+        string post = CreateNode(ComfyNodeNames.SeedVR2PostProcessing, new JObject()
+        {
+            [ComfyNodeInputNames.SeedVR2PostProcessing.Images] = decoded.Path,
+            [ComfyNodeInputNames.SeedVR2PostProcessing.OriginalResizedImages] = resized,
+            [ComfyNodeInputNames.SeedVR2PostProcessing.ColorCorrectionMethod] = UserInput.Get(ComfyUIBackendExtension.SeedVRColorCorrectionBehavior, "lab")
+        });
+        WGNodeData result = raw.WithPath([post, 0]);
+        result.Width = raw.Width;
+        result.Height = raw.Height;
+        FinalLoadedModel = priorFinalModel;
+        FinalLoadedModelList = priorFinalModelList;
+        CurrentModel = priorModel;
+        CurrentTextEnc = priorTextEnc;
+        CurrentVae = priorVae;
+        return result;
+    }
+
+    /// <summary>Runs the SeedVR group's restoration pass over the current media.</summary>
+    public void RunSeedVR2Stage(WGNodeData vaeOverride = null)
+    {
+        if (!UserInput.TryGet(ComfyUIBackendExtension.SeedVRModel, out T2IModel seedVrModel) || seedVrModel is null)
+        {
+            return;
+        }
+        WGNodeData vae = vaeOverride ?? CurrentVae;
+        if (UserInput.Get(T2IParamTypes.OutputIntermediateImages, false))
+        {
+            CurrentMedia.SaveOutput(vae, CurrentAudioVae, GetStableDynamicID(50000, 0));
+        }
+        long seed = UserInput.Get(T2IParamTypes.Seed) + 500;
+        WGNodeData media = CurrentMedia;
+        double scale = UserInput.Get(ComfyUIBackendExtension.SeedVRUpscale, 1);
+        double downscale = UserInput.Get(ComfyUIBackendExtension.SeedVRPreDownscale, 1);
+        if (downscale <= 0)
+        {
+            throw new SwarmReadableErrorException($"Invalid SeedVR pre-downscale value {downscale}. Must be greater than 0.");
+        }
+        if (downscale < 1)
+        {
+            media = media.AsRawImage(vae);
+            int downWidth = (int)Math.Round((media.Width ?? UserInput.GetImageWidth()) * downscale);
+            int downHeight = (int)Math.Round((media.Height ?? UserInput.GetImageHeight()) * downscale);
+            string scaledDown = CreateNode("ImageScale", new JObject()
+            {
+                ["image"] = media.Path,
+                ["width"] = downWidth,
+                ["height"] = downHeight,
+                ["upscale_method"] = "bilinear",
+                ["crop"] = "disabled"
+            });
+            media = media.WithPath([scaledDown, 0]);
+            media.Width = downWidth;
+            media.Height = downHeight;
+            scale /= downscale;
+        }
+        if (scale != 1)
+        {
+            // TODO: Should probably extract a shared upscale logic with the refiner rather than copy/pasted here
+            string method = UserInput.Get(ComfyUIBackendExtension.SeedVRUpscaleMethod, "pixel-lanczos");
+            int width = (((int)Math.Round((media.Width ?? UserInput.GetImageWidth()) * scale)) / 16) * 16;
+            int height = (((int)Math.Round((media.Height ?? UserInput.GetImageHeight()) * scale)) / 16) * 16;
+            if (method.StartsWith("latent-"))
+            {
+                media = media.AsLatentImage(vae);
+                string latentUpscaled = CreateNode("LatentUpscaleBy", new JObject()
+                {
+                    ["samples"] = media.Path,
+                    ["upscale_method"] = method.After("latent-"),
+                    ["scale_by"] = scale
+                });
+                media = media.WithPath([latentUpscaled, 0]);
+                media.Width = width;
+                media.Height = height;
+            }
+            else
+            {
+                media = media.AsRawImage(vae);
+                if (method.StartsWith("pidmodel-"))
+                {
+                    T2IModel pidModel = ComfyUIBackendExtension.GetPidModel(method.After("pidmodel-"), UserInput.SourceSession);
+                    media = CreatePixelDecode(pidModel, media, vae, seed);
+                }
+                else if (method.StartsWith("model-"))
+                {
+                    string loaderNode = CreateNode("UpscaleModelLoader", new JObject()
+                    {
+                        ["model_name"] = method.After("model-")
+                    });
+                    string upscaledNode = CreateNode("ImageUpscaleWithModel", new JObject()
+                    {
+                        ["upscale_model"] = NodePath(loaderNode, 0),
+                        ["image"] = media.Path
+                    });
+                    media = media.WithPath([upscaledNode, 0]);
+                    media.Width = null; // the model's own scale factor is unknown here, so always correct after
+                    media.Height = null;
+                }
+                else if (method.StartsWith("pixel-"))
+                {
+                    if (media.Width != width || media.Height != height)
+                    {
+                        string scaled = CreateNode("ImageScale", new JObject()
+                        {
+                            ["image"] = media.Path,
+                            ["width"] = width,
+                            ["height"] = height,
+                            ["upscale_method"] = method.StartsWith("pixel-") ? method.After("pixel-") : "lanczos",
+                            ["crop"] = "disabled"
+                        });
+                        media = media.WithPath([scaled, 0]);
+                        media.Width = width;
+                        media.Height = height;
+                    }
+                }
+                else
+                {
+                    throw new SwarmReadableErrorException($"Unsupported upscale method '{method}' for SeedVR");
+                }
+            }
+        }
+        CurrentMedia = CreateSeedVR2Restore(seedVrModel, media, vae, seed);
     }
 
     /// <summary>Creates a "CLIPTextEncode" or equivalent node for the given input, applying prompt-given conditioning modifiers as relevant.</summary>

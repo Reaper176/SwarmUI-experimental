@@ -140,6 +140,9 @@ public static class ComfyNodeNames
     /// <summary>Comfy class name for configuring Detail Daemon options.</summary>
     public const string DetailDaemonOptions = "SwarmDetailDaemonOptions";
 
+    /// <summary>Comfy class name for creating an empty MiniMax H3 joint audio/video latent.</summary>
+    public const string EmptyMiniMaxH3LatentAV = "SwarmEmptyMiniMaxH3LatentAV";
+
     /// <summary>Comfy class name for extracting a LoRA from model differences.</summary>
     public const string ExtractLora = "SwarmExtractLora";
 
@@ -148,6 +151,9 @@ public static class ComfyNodeNames
 
     /// <summary>Comfy class name for masked latent blending.</summary>
     public const string LatentBlendMasked = "SwarmLatentBlendMasked";
+
+    /// <summary>Comfy class name for selecting a model attention backend.</summary>
+    public const string ModelAttentionBackend = "ModelAttentionBackend";
 
     /// <summary>Comfy class name for configuring model tiling.</summary>
     public const string ModelTiling = "SwarmModelTiling";
@@ -163,6 +169,21 @@ public static class ComfyNodeNames
 
     /// <summary>Comfy class name for reversing latent sampling.</summary>
     public const string Unsampler = "SwarmUnsampler";
+
+    /// <summary>Comfy class name for preparing media for SeedVR2 restoration.</summary>
+    public const string SeedVR2Preprocess = "SeedVR2Preprocess";
+
+    /// <summary>Comfy class name for creating SeedVR2 restoration conditioning.</summary>
+    public const string SeedVR2Conditioning = "SeedVR2Conditioning";
+
+    /// <summary>Comfy class name for post-processing SeedVR2 restoration output.</summary>
+    public const string SeedVR2PostProcessing = "SeedVR2PostProcessing";
+
+    /// <summary>Comfy class name for splitting SeedVR2 video latents into temporal chunks.</summary>
+    public const string SeedVR2TemporalChunk = "SeedVR2TemporalChunk";
+
+    /// <summary>Comfy class name for merging sampled SeedVR2 temporal chunks.</summary>
+    public const string SeedVR2TemporalMerge = "SeedVR2TemporalMerge";
 
     #endregion
 
@@ -198,6 +219,9 @@ public static class ComfyNodeNames
     #endregion
 
     #region Audio, video, and utility nodes
+
+    /// <summary>Comfy class name for adding masked silent prefix and suffix regions to latent audio.</summary>
+    public const string AudioSilentMaskPrefixSuffix = "SwarmAudioSilentMaskPrefixSuffix";
 
     /// <summary>Comfy class name for counting frames.</summary>
     public const string CountFrames = "SwarmCountFrames";

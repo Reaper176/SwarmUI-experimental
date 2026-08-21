@@ -6,7 +6,7 @@ namespace SwarmUI.Builtin_ComfyUIBackend;
 public static class ComfyCapabilityRegistry
 {
     /// <summary>Stores the immutable evidence and interpreted snapshot for one backend owner.</summary>
-    internal sealed record CapabilityEntry(FrozenSet<string> NodeTypes, string ModelFolderFormat, ComfyBackendCapabilitySnapshot Snapshot);
+    internal sealed record CapabilityEntry(FrozenSet<string> NodeTypes, FrozenSet<string> BackendFeatures, string ModelFolderFormat, ComfyBackendCapabilitySnapshot Snapshot);
 
     /// <summary>Stores candidate compatibility tracking state without changing current observations.</summary>
     internal sealed record CompatibilityTrackingState(
@@ -141,12 +141,13 @@ public static class ComfyCapabilityRegistry
     /// <param name="owner">The backend object whose identity owns the snapshot.</param>
     /// <param name="nodeTypes">The frozen ComfyUI node types exposed by the backend.</param>
     /// <param name="modelFolderFormat">The path separator format used by the backend's model folders.</param>
+    /// <param name="backendFeatures">Optional backend-local capabilities derived from object-info values.</param>
     /// <returns>A complete candidate ready to commit atomically with related shared values.</returns>
-    internal static RegistryCandidate PreparePublish(object owner, FrozenSet<string> nodeTypes, string modelFolderFormat)
+    internal static RegistryCandidate PreparePublish(object owner, FrozenSet<string> nodeTypes, string modelFolderFormat, FrozenSet<string> backendFeatures = null)
     {
         CaptureCompatibilityChanges(out CompatibilityTrackingState compatibility);
         Dictionary<object, CapabilityEntry> candidateEntries = CopyEntries();
-        candidateEntries[owner] = new(nodeTypes, modelFolderFormat, ComfyBackendCapabilitySnapshot.Empty);
+        candidateEntries[owner] = new(nodeTypes, backendFeatures ?? Array.Empty<string>().ToFrozenSet(), modelFolderFormat, ComfyBackendCapabilitySnapshot.Empty);
         return BuildCandidate(candidateEntries, compatibility);
     }
 
@@ -253,8 +254,10 @@ public static class ComfyCapabilityRegistry
                 compatibility.LastNodeMap,
                 compatibility.SuppressedFeatures,
                 entry.ModelFolderFormat);
+            features.UnionWith(entry.BackendFeatures);
+            features.ExceptWith(compatibility.SuppressedFeatures);
             ComfyBackendCapabilitySnapshot snapshot = new(features, entry.NodeTypes, entry.ModelFolderFormat, NextGeneration);
-            candidateEntries[owner] = new(entry.NodeTypes, entry.ModelFolderFormat, snapshot);
+            candidateEntries[owner] = new(entry.NodeTypes, entry.BackendFeatures, entry.ModelFolderFormat, snapshot);
             foreach (string feature in snapshot.Features)
             {
                 if (feature != "folderbackslash" && feature != "folderslash")

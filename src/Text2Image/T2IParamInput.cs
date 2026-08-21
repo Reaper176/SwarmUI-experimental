@@ -13,7 +13,7 @@ namespace SwarmUI.Text2Image;
 public class T2IParamInput
 {
     /// <summary>Core section ID numbers.</summary>
-    public static int SectionID_BaseOnly = 5, SectionID_Refiner = 1, SectionID_Video = 2, SectionID_VideoSwap = 3, SectionID_PixelDecoder = 4;
+    public static int SectionID_BaseOnly = 5, SectionID_Refiner = 1, SectionID_Video = 2, SectionID_VideoSwap = 3, SectionID_PixelDecoder = 4, SectionID_SeedVR = 6;
 
     /// <summary>Parameter IDs that must be loaded early on, eg extracted from presets in prompts early. Primarily things that affect backend selection.</summary>
     public static readonly string[] ParamsMustLoadEarly = ["model", "images", "internalbackendtype", "exactbackendid"];
@@ -128,6 +128,12 @@ public class T2IParamInput
 
     /// <summary>Special handlers for any special logic to apply at the end of other processing on param input.</summary>
     public static List<Action<T2IParamInput>> LateSpecialParameterHandlers = [input => input.PreparsePromptLikes()];
+
+    /// <summary>Lock protecting registration and snapshots of final required-feature handlers.</summary>
+    private static readonly LockObject FinalRequiredFlagsHandlersLock = new();
+
+    /// <summary>Handlers that recompute dynamic required-feature flags after all input mutation and before backend routing.</summary>
+    private static readonly List<Action<T2IParamInput>> FinalRequiredFlagsHandlers = [];
 
     /// <summary>The underlying raw <see cref="T2IParamSet"/> backing the main inputs.</summary>
     public T2IParamSet InternalSet = new();
@@ -778,6 +784,45 @@ public class T2IParamInput
     public void ApplyLateSpecialLogic()
     {
         foreach (Action<T2IParamInput> handler in LateSpecialParameterHandlers)
+        {
+            handler(this);
+        }
+    }
+
+    /// <summary>Registers a dynamic required-feature recomputation handler once.</summary>
+    /// <param name="handler">The handler to run at the final backend-routing boundary.</param>
+    public static void RegisterFinalRequiredFlagsHandler(Action<T2IParamInput> handler)
+    {
+        ArgumentNullException.ThrowIfNull(handler);
+        lock (FinalRequiredFlagsHandlersLock)
+        {
+            if (!FinalRequiredFlagsHandlers.Contains(handler))
+            {
+                FinalRequiredFlagsHandlers.Add(handler);
+            }
+        }
+    }
+
+    /// <summary>Unregisters a dynamic required-feature recomputation handler.</summary>
+    /// <param name="handler">The previously registered handler.</param>
+    public static void UnregisterFinalRequiredFlagsHandler(Action<T2IParamInput> handler)
+    {
+        ArgumentNullException.ThrowIfNull(handler);
+        lock (FinalRequiredFlagsHandlersLock)
+        {
+            FinalRequiredFlagsHandlers.Remove(handler);
+        }
+    }
+
+    /// <summary>Recomputes dynamic required-feature flags from the final input immediately before backend routing.</summary>
+    public void ApplyFinalRequiredFlags()
+    {
+        Action<T2IParamInput>[] handlers;
+        lock (FinalRequiredFlagsHandlersLock)
+        {
+            handlers = [.. FinalRequiredFlagsHandlers];
+        }
+        foreach (Action<T2IParamInput> handler in handlers)
         {
             handler(this);
         }

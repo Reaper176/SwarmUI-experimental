@@ -381,6 +381,75 @@ public static class ComfyNodeInputNames
         public const string Samples1 = "samples1";
     }
 
+    /// <summary>Input names for the model attention backend node.</summary>
+    public static class ModelAttentionBackend
+    {
+        /// <summary>Input name for the diffusion model.</summary>
+        public const string Model = "model";
+        /// <summary>Input name for the attention backend selection.</summary>
+        public const string Attention = "attention";
+    }
+
+    /// <summary>Input names for the empty MiniMax H3 joint audio/video latent node.</summary>
+    public static class EmptyMiniMaxH3LatentAV
+    {
+        /// <summary>Input name for the latent batch size.</summary>
+        public const string BatchSize = "batch_size";
+        /// <summary>Input name for the latent height.</summary>
+        public const string Height = "height";
+        /// <summary>Input name for the requested frame count.</summary>
+        public const string Length = "length";
+        /// <summary>Input name for the latent width.</summary>
+        public const string Width = "width";
+    }
+
+    /// <summary>Input names for the SeedVR2 preprocess node.</summary>
+    public static class SeedVR2Preprocess
+    {
+        /// <summary>Input name for the resized source images.</summary>
+        public const string ResizedImages = "resized_images";
+    }
+
+    /// <summary>Input names for the SeedVR2 conditioning node.</summary>
+    public static class SeedVR2Conditioning
+    {
+        /// <summary>Input name for the diffusion model.</summary>
+        public const string Model = "model";
+        /// <summary>Input name for the VAE conditioning latent.</summary>
+        public const string VAEConditioning = "vae_conditioning";
+    }
+
+    /// <summary>Input names for the SeedVR2 post-processing node.</summary>
+    public static class SeedVR2PostProcessing
+    {
+        /// <summary>Input name for the restored images.</summary>
+        public const string Images = "images";
+        /// <summary>Input name for the original resized images.</summary>
+        public const string OriginalResizedImages = "original_resized_images";
+        /// <summary>Input name for the color-correction method.</summary>
+        public const string ColorCorrectionMethod = "color_correction_method";
+    }
+
+    /// <summary>Input names for the SeedVR2 temporal chunk node.</summary>
+    public static class SeedVR2TemporalChunk
+    {
+        /// <summary>Input name for the source latent.</summary>
+        public const string Latent = "latent";
+        /// <summary>Input name for the overlap between temporal chunks.</summary>
+        public const string TemporalOverlap = "temporal_overlap";
+        /// <summary>Input name for the chunking mode.</summary>
+        public const string ChunkingMode = "chunking_mode";
+    }
+
+    /// <summary>Input names for the SeedVR2 temporal merge node.</summary>
+    public static class SeedVR2TemporalMerge
+    {
+        /// <summary>Input name for the sampled latent chunks.</summary>
+        public const string Latents = "latents";
+        /// <summary>Input name for the overlap metadata from temporal chunking.</summary>
+        public const string TemporalOverlap = "temporal_overlap";
+    }
+
     /// <summary>Input names for the model tiling node.</summary>
     public static class ModelTiling
     {

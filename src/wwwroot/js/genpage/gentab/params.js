@@ -204,13 +204,13 @@ class AspectRatio {
     }
 
     read(inWidth, inHeight, doAltLogic = true) {
-        if (this.altLogic && doAltLogic) {
+        let precision = getResolutionPrecision();
+        if (this.altLogic && doAltLogic && precision == 16) {
             let [newWidth, newHeight] = this.altLogic(inWidth, inHeight);
             if (newWidth && newHeight) {
                 return [newWidth, newHeight];
             }
         }
-        let precision = getResolutionPrecision();
         if (inWidth != inHeight) {
             inWidth = roundTo(Math.sqrt(inWidth * inHeight), precision);
             inHeight = inWidth;
@@ -308,8 +308,7 @@ function enableVideoFramesInput(id, prefix) {
     let secondsRange = getRequiredElementById(`${id}_rangeslider`);
     let fpsInput = document.getElementById(`${prefix}videofps`);
     let fpsToggle = document.getElementById(`${prefix}videofps_toggle`);
-    let isSyncingFrames = false;
-    let isSyncingSeconds = false;
+    let noDup = false;
     enableSliderForBox(findParentOfClass(frameInput, 'auto-slider-box'), secondsInput);
     function updateSecondsRangeStep(event) {
         secondsRange.step = event.shiftKey ? 1 / getFPS() : 0.5;
@@ -328,45 +327,48 @@ function enableVideoFramesInput(id, prefix) {
         return Number.isFinite(fps) && fps > 0 ? fps : 24;
     }
     function updateFromFrames() {
+        if (noDup) {
+            return;
+        }
+        noDup = true;
         let frames = parseInt(frameInput.value);
         if (!Number.isFinite(frames)) {
             frames = 0;
         }
         let seconds = formatNumberClean(frames / getFPS(), 2);
-        isSyncingSeconds = true;
         secondsInput.value = seconds;
-        secondsInput.dispatchEvent(new Event('input'));
-        isSyncingSeconds = false;
+        secondsInput.dataset.old_value = seconds;
+        secondsRange.value = seconds;
+        updateRangeStyle(secondsRange);
         autoNumberWidth(frameInput);
+        autoNumberWidth(secondsInput);
+        noDup = false;
     }
     function updateFromSeconds() {
+        if (noDup) {
+            return;
+        }
         let seconds = parseFloat(secondsInput.value);
         if (!Number.isFinite(seconds)) {
             return;
         }
-        secondsInput.value = formatNumberClean(seconds, 2);
-        let frames = Math.round(seconds * getFPS());
-        frames = Math.max(parseInt(frameInput.min), Math.min(parseInt(frameInput.max), frames));
-        isSyncingFrames = true;
-        frameInput.value = frames;
-        triggerChangeFor(frameInput);
-        isSyncingFrames = false;
-        autoNumberWidth(frameInput);
-        autoNumberWidth(secondsInput);
+        noDup = true;
+        try {
+            secondsInput.value = formatNumberClean(seconds, 2);
+            let frames = Math.round(seconds * getFPS());
+            frames = Math.max(parseInt(frameInput.min), Math.min(parseInt(frameInput.max), frames));
+            frameInput.value = frames;
+            triggerChangeFor(frameInput);
+            autoNumberWidth(frameInput);
+            autoNumberWidth(secondsInput);
+        }
+        finally {
+            noDup = false;
+        }
     }
-    frameInput.addEventListener('input', () => {
-        if (!isSyncingFrames) {
-            updateFromFrames();
-        }
-    });
-    secondsInput.addEventListener('input', () => {
-        if (!isSyncingSeconds) {
-            updateFromSeconds();
-        }
-    });
-    secondsRange.addEventListener('input', () => {
-        updateFromSeconds();
-    });
+    frameInput.addEventListener('input', updateFromFrames);
+    secondsInput.addEventListener('input', updateFromSeconds);
+    secondsRange.addEventListener('input', updateFromSeconds);
     if (fpsInput) {
         fpsInput.addEventListener('input', updateFromFrames);
         fpsInput.addEventListener('change', updateFromFrames);

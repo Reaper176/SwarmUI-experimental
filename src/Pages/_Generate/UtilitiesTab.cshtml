@@ -30,16 +30,16 @@
         <div class="card border-secondary mb-3 card-center-container">
             <div class="card-header">Utilities</div>
             <div class="card-body">
-                <p class="card-text translate">
+                <div class="card-text translate">
                     The "Utilities" tab provides a variety of general utilities and tools in the subtabs above, and the quicktools below.
-                </p>
+                </div>
             </div>
         </div>
         <br>
         <div class="card border-secondary mb-3 card-center-container" data-requiredpermission="reset_metadata">
             <div class="card-header translate">Metadata Utilities</div>
             <div class="card-body">
-                <p class="card-text">
+                <div class="card-text">
                     <div class="card-center-container">
                         <button id="util_massmetadataclear_button" class="basic-button translate" onclick="util_massMetadataClear()">Reset All Metadata</button>
                     </div>
@@ -93,7 +93,7 @@
                         <br>Additional debug info while running can be found in the browser console.
                         <br><b>Be careful!</b> If you have manually edited metadata, you can easily accidentally delete it. There is no undo for unwanted changes, they are applied rapidly in bulk.
                     </span>
-                </p>
+                </div>
             </div>
         </div>
     </div>
@@ -101,12 +101,12 @@
         <div class="card border-secondary mb-3 card-center-container">
             <div class="card-header translate">CLIP Tokenizer</div>
             <div class="card-body">
-                <p class="card-text translate">
+                <div class="card-text translate">
                     This is a tool to analyze CLIP tokenization for Stable Diffusion models.
                     <br>All current Stable Diffusion models use the same CLIP token set, so this applies to them all.
                     <br>Simply type some text in the box below to see how it gets tokenized.
                     <br>It will show each text-piece, and its numerical ID.
-                </p>
+                </div>
             </div>
         </div>
         <div style="padding: 1rem">
@@ -119,7 +119,7 @@
         <div class="card border-secondary mb-3 card-center-container">
             <div class="card-header translate">Pickle To Safetensors</div>
             <div class="card-body">
-                <p class="card-text translate">
+                <div class="card-text translate">
                     This is a tool to quickly convert legacy Pickle (.pt, .ckpt, .bin) files to modern Safetensors files.
                     <br><b>WARNING:</b> Pickle files may contain malicious code. Do not use this tool or otherwise load pickle files unless you trust their source.
                     <br>The pickle files will be moved to a "backups" folder, and the safetensors files left in place where the pickles originally were.
@@ -127,7 +127,7 @@
                     <br>Be aware that this may temporarily use a large amount of filespace.
                     <br>This may take some time to process.
                     <br>(You can continue using the UI as normal while this runs)
-                </p>
+                </div>
             </div>
         </div>
         <div class="card-center-container">
@@ -153,7 +153,7 @@
         <div class="card border-secondary mb-3 card-center-container">
             <div class="card-header translate">LoRA Extractor</div>
             <div class="card-body">
-                <p class="card-text translate">
+                <div class="card-text translate">
                     This is a tool to extract a LoRA from the difference between two models.
                     <br>"Base" should be whatever the common base model is, eg SDXL-1.0-Base.
                     <br>"Other" should be the unique model with information to extract into the LoRA.
@@ -161,7 +161,7 @@
                     <br>
                     <br>Note that LoRA Extraction is an imperfect partial process, and will lose some of the data that makes the model unique.
                     <br>Rank is a number indicating how much detail to try to save. Higher numbers result in bigger files, and only slightly more accurate matching. Small values (eg 16) are usually sufficient.
-                </p>
+                </div>
             </div>
         </div>
         <div class="card-center-container">
@@ -184,35 +184,39 @@
         <div class="card border-secondary mb-3 card-center-container">
             <div class="card-header translate">Model Downloader</div>
             <div class="card-body">
-                <p class="card-text translate">
+                <div class="card-text translate">
                     This is a tool to download models for you and save them to Swarm's model folder.
                     <br>Note that only <code>.safetensors</code> or <code>.gguf</code> models may be downloaded.
                     <br><b>HuggingFace</b> file URLs are supported.
                     <br><b>Civitai</b> URLs are supported and will automatically download+apply model metadata from the civitai API.
                     <br>For anything else, make sure your URL is a direct download URL (not eg an html page with the info about it).
-                </p>
+                </div>
             </div>
         </div>
         <div class="model-downloader-section-wrapper">
             <div class="model-downloader-main-section">
                 <div style="width: 100%">
-                    <br>@WebUtil.TextPopoverButton("modeldownloaderurl", "Exact web URL to the model.\nCivitai URLs are fully supported and will load metadata.\nHuggingFace URLs will be recognized.\nFor anything else, make sure the URL is a direct download URL, not a webpage.\nNote only '.safetensors' or '.gguf' models are allowed.") <b>URL</b>: <input type="text" id="model_downloader_url" class="auto-text auto-text-wide" placeholder="Model URL" oninput="modelDownloader.urlInput()" autocomplete="off" />
-                    <br>
-                    <br><div>@WebUtil.TextPopoverButton("modeldownloaderstatus", "This section will update after you input a URL to inform you if the URL is valid.\nThe box below will display loaded metadata if you use a civitai URL.") <b>Status</b>: <span id="model_downloader_status">(...)</span></div>
-                    <div class="model_downloader_metadatazone" id="model_downloader_metadatazone"></div>
-                    <div class="model_downloader_imageside" id="model_downloader_imageside"></div>
-                    <br>@WebUtil.TextPopoverButton("modeldownloadertype", "The base model sub-type to use, ie what category it gets saved to.\nMake sure this is correct, you don't want a LoRA in your base models folder or similar.\nCivitai links will autoset this when they load metadata.") <b>Model Type</b>: <select class="auto-dropdown" id="model_downloader_type" autocomplete="off">
+                    <div class="model-downloader-field">@WebUtil.TextPopoverButton("modeldownloaderurl", "Exact web URL to the model.\nCivitai URLs are fully supported and will load metadata.\nHuggingFace URLs will be recognized.\nFor anything else, make sure the URL is a direct download URL, not a webpage.\nNote only '.safetensors' or '.gguf' models are allowed.") <b>URL</b> <input type="text" id="model_downloader_url" class="auto-text auto-text-wide" placeholder="Model URL" oninput="modelDownloader.urlInput()" autocomplete="off" /></div>
+                    <div class="model-downloader-field">@WebUtil.TextPopoverButton("modeldownloaderstatus", "This section will update after you input a URL to inform you if the URL is valid.\nThe box below will display loaded metadata if you use a civitai URL.") <b>Status</b> <span class="model-downloader-status" id="model_downloader_status">(...)</span></div>
+                    <div class="model-downloader-preview">
+                        <div class="model_downloader_metadatazone" id="model_downloader_metadatazone"></div>
+                        <div class="model_downloader_imageside" id="model_downloader_imageside"></div>
+                    </div>
+                    <div class="model_downloader_input_wrap" id="model_downloader_version_wrap" style="display: none;">
+                    <div class="model-downloader-field">@WebUtil.TextPopoverButton("modeldownloaderversion", "Which Civitai model version to download.\nThis is filled in automatically when you load a Civitai model URL.") <b>Version</b> <select class="auto-dropdown" id="model_downloader_version" autocomplete="off"></select></div>
+                    </div>
+                    <div class="model_downloader_input_wrap" id="model_downloader_file_wrap" style="display: none;">
+                    <div class="model-downloader-field">@WebUtil.TextPopoverButton("modeldownloaderfile", "Which file to download from this Civitai version.\nSome versions include multiple variants or optional files.") <b>File</b> <select class="auto-dropdown" id="model_downloader_file" autocomplete="off"></select></div>
+                    </div>
+                    <div class="model-downloader-field">@WebUtil.TextPopoverButton("modeldownloadertype", "The base model sub-type to use, ie what category it gets saved to.\nMake sure this is correct, you don't want a LoRA in your base models folder or similar.\nCivitai links will autoset this when they load metadata.") <b>Model Type</b> <select class="auto-dropdown" id="model_downloader_type" autocomplete="off">
                         <option value="Stable-Diffusion">Base Model</option>
                         <option value="LoRA">LoRA</option>
                         <option value="VAE">VAE</option>
                         <option value="Embedding">Embedding</option>
                         <option value="ControlNet">ControlNet</option>
-                    </select>
-                    <br>@WebUtil.TextPopoverButton("modeldownloaderfolder", "What folder to put the model in.\nTo create new folders, simply type paths with '/' in them into the 'Save as:' name box below.") <b>Folder</b>: <select class="auto-dropdown" id="model_downloader_folder" autocomplete="off"></select>
-                    <br>
-                    <br>@WebUtil.TextPopoverButton("modeldownloadersaveas", "File name to save as. Don't include the '.safetensors' file extension, just the name.\nYou can use a folder path with the '/' symbol.") <b>Save as</b>: <input type="text" id="model_downloader_name" class="auto-text auto-text-wide" placeholder="Model Name" autocomplete="off" oninput="modelDownloader.nameInput()" />
-                    <br>
-                    <br>
+                    </select></div>
+                    <div class="model-downloader-field">@WebUtil.TextPopoverButton("modeldownloaderfolder", "What folder to put the model in.\nTo create new folders, simply type paths with '/' in them into the 'Save as:' name box below.") <b>Folder</b> <select class="auto-dropdown" id="model_downloader_folder" autocomplete="off"></select></div>
+                    <div class="model-downloader-field">@WebUtil.TextPopoverButton("modeldownloadersaveas", "File name to save as. Don't include the '.safetensors' file extension, just the name.\nYou can use a folder path with the '/' symbol.") <b>Save as</b> <input type="text" id="model_downloader_name" class="auto-text auto-text-wide" placeholder="Model Name" autocomplete="off" oninput="modelDownloader.nameInput()" /></div>
                     <center>
                         <button id="model_downloader_button" class="basic-button translate" onclick="modelDownloader.run()" disabled>Download</button>
                     </center>

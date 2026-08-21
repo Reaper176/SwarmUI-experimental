@@ -136,7 +136,7 @@ public class WorkflowGeneratorSteps
         }, -10);
         AddModelGenStep(g =>
         {
-            if (g.UserInput.TryGet(ComfyUIBackendExtension.SetClipDevice, out string device) && g.Features.Contains("set_clip_device"))
+            if (g.LoadingClip is not null && g.UserInput.TryGet(ComfyUIBackendExtension.SetClipDevice, out string device) && g.Features.Contains("set_clip_device"))
             {
                 string clipDeviceNode = g.CreateNode("OverrideCLIPDevice", new JObject()
                 {
@@ -236,7 +236,7 @@ public class WorkflowGeneratorSteps
         }, -7);
         AddModelGenStep(g =>
         {
-            if (g.UserInput.TryGet(T2IParamTypes.ClipStopAtLayer, out int layer))
+            if (g.LoadingClip is not null && g.UserInput.TryGet(T2IParamTypes.ClipStopAtLayer, out int layer))
             {
                 string clipSkip = g.CreateNode("CLIPSetLastLayer", new JObject()
                 {
@@ -383,6 +383,15 @@ public class WorkflowGeneratorSteps
                     ["keep_loaded"] = "disable"
                 });
                 g.LoadingModel = [aitLoad, 0];
+            }
+            if (g.Features.Contains("model_attention_backend") && g.UserInput.TryGet(ComfyUIBackendExtension.ModelAttentionBackend, out string attentionBackend))
+            {
+                string attentionNode = g.CreateNode(ComfyNodeNames.ModelAttentionBackend, new JObject()
+                {
+                    [ComfyNodeInputNames.ModelAttentionBackend.Model] = g.LoadingModel,
+                    [ComfyNodeInputNames.ModelAttentionBackend.Attention] = attentionBackend
+                });
+                g.LoadingModel = [attentionNode, 0];
             }
             if (g.UserInput.TryGet(T2IParamTypes.TorchCompile, out string compileMode) && compileMode != "Disabled")
             {
@@ -1578,7 +1587,7 @@ public class WorkflowGeneratorSteps
                 {
                     if (g.UserInput.Get(T2IParamTypes.OutputIntermediateImages, false))
                     {
-                        g.CurrentMedia.DecodeLatents(origVae, false, "24").SaveOutput(null, null, id: "29");
+                        g.CurrentMedia.DecodeLatents(origVae, false, "24").SaveOutput(null, g.CurrentAudioVae, id: "29");
                     }
                     WGNodeData pidDecoded = g.CreatePixelDecode(refineModel, g.CurrentMedia, origVae, g.UserInput.Get(T2IParamTypes.Seed) + 1, isRefiner: true);
                     if (g.UserInput.TryGet(T2IParamTypes.RefinerUpscale, out double pidUpscale) && pidUpscale != 1)
@@ -1608,13 +1617,17 @@ public class WorkflowGeneratorSteps
                 {
                     modelMustReencode = true;
                 }
-                g.NoVAEOverride = refineModel.ModelClass?.CompatClass != baseModel.ModelClass?.CompatClass;
-                g.FinalLoadedModel = refineModel;
-                g.FinalLoadedModelList = [refineModel];
-                (g.FinalLoadedModel, g.CurrentModel, g.CurrentTextEnc, g.CurrentVae) = g.CreateModelLoader(refineModel, "Refiner", loaderNodeId, sectionId: T2IParamInput.SectionID_Refiner);
-                g.NoVAEOverride = false;
-                prompt = g.CreateConditioning(g.UserInput.Get(T2IParamTypes.Prompt), g.CurrentTextEnc.Path, g.FinalLoadedModel, true, isRefiner: true);
-                negPrompt = g.CreateConditioning(g.UserInput.Get(T2IParamTypes.NegativePrompt), g.CurrentTextEnc.Path, g.FinalLoadedModel, false, isRefiner: true);
+                bool isSeedVr = refineModel.ModelClass?.CompatClass?.ID == "seedvr2";
+                if (!isSeedVr)
+                {
+                    g.NoVAEOverride = refineModel.ModelClass?.CompatClass != baseModel.ModelClass?.CompatClass;
+                    g.FinalLoadedModel = refineModel;
+                    g.FinalLoadedModelList = [refineModel];
+                    (g.FinalLoadedModel, g.CurrentModel, g.CurrentTextEnc, g.CurrentVae) = g.CreateModelLoader(refineModel, "Refiner", loaderNodeId, sectionId: T2IParamInput.SectionID_Refiner);
+                    g.NoVAEOverride = false;
+                    prompt = g.CreateConditioning(g.UserInput.Get(T2IParamTypes.Prompt), g.CurrentTextEnc.Path, g.FinalLoadedModel, true, isRefiner: true);
+                    negPrompt = g.CreateConditioning(g.UserInput.Get(T2IParamTypes.NegativePrompt), g.CurrentTextEnc.Path, g.FinalLoadedModel, false, isRefiner: true);
+                }
                 bool doSave = g.UserInput.Get(T2IParamTypes.OutputIntermediateImages, false);
                 bool doUpscale = g.UserInput.TryGet(T2IParamTypes.RefinerUpscale, out double refineUpscale) && refineUpscale != 1;
                 string upscaleMethod = g.UserInput.Get(ComfyUIBackendExtension.RefinerUpscaleMethod, "None");
@@ -1664,7 +1677,7 @@ public class WorkflowGeneratorSteps
                     WGNodeData decoded = g.CreatePixelDecode(pidModel, g.CurrentMedia, origVae, g.UserInput.Get(T2IParamTypes.Seed) + 2);
                     if (doSave)
                     {
-                        decoded.SaveOutput(null, null, id: "29");
+                        decoded.SaveOutput(null, g.CurrentAudioVae, id: "29");
                     }
                     if (decoded.Width != width || decoded.Height != height)
                     {
@@ -1685,7 +1698,7 @@ public class WorkflowGeneratorSteps
                         g.CurrentMedia = decoded;
                         return;
                     }
-                    g.CurrentMedia = decoded.WithMaskedAudio(g.CurrentAudioVae).EncodeToLatent(g.CurrentVae, "25");
+                    g.CurrentMedia = isSeedVr ? decoded : decoded.WithMaskedAudio(g.CurrentAudioVae).EncodeToLatent(g.CurrentVae, "25");
                 }
                 else if (modelMustReencode || doPixelUpscale || doSave || g.MaskShrunkInfo.BoundsNode is not null)
                 {
@@ -1695,7 +1708,7 @@ public class WorkflowGeneratorSteps
                     g.CurrentMedia = decoded;
                     if (doSave)
                     {
-                        decoded.SaveOutput(null, null, id: "29");
+                        decoded.SaveOutput(null, g.CurrentAudioVae, id: "29");
                     }
                     if (doPixelUpscale)
                     {
@@ -1741,7 +1754,7 @@ public class WorkflowGeneratorSteps
                     }
                     if (modelMustReencode || doPixelUpscale)
                     {
-                        g.CurrentMedia = decoded.WithMaskedAudio(g.CurrentAudioVae).EncodeToLatent(g.CurrentVae, "25");
+                        g.CurrentMedia = isSeedVr ? decoded : decoded.WithMaskedAudio(g.CurrentAudioVae).EncodeToLatent(g.CurrentVae, "25");
                     }
                 }
                 if (doUpscale && upscaleMethod.StartsWith("latent-"))
@@ -1801,6 +1814,12 @@ public class WorkflowGeneratorSteps
                     }
                     g.CurrentMedia.Width = width;
                     g.CurrentMedia.Height = height;
+                }
+                if (isSeedVr)
+                {
+                    g.CurrentMedia = g.CreateSeedVR2Restore(refineModel, g.CurrentMedia, origVae, g.UserInput.Get(T2IParamTypes.Seed) + 1, isRefiner: true);
+                    g.IsRefinerStage = false;
+                    return;
                 }
                 runRefinerPass("23");
                 g.IsRefinerStage = false;
@@ -1979,6 +1998,7 @@ public class WorkflowGeneratorSteps
                         new WGNodeData([imageNode, 0], g, WGNodeData.DT_IMAGE, g.CurrentCompat()).SaveOutput(null, null, g.GetStableDynamicID(50000, 0));
                     }
                     int oversize = g.UserInput.Get(T2IParamTypes.SegmentMaskOversize, 16);
+                    ImageMaskCropData priorMaskShrunkInfo = g.MaskShrunkInfo;
                     g.MaskShrunkInfo = g.CreateImageMaskCrop([segmentNode, 0], g.CurrentMedia.Path, oversize, vae.Path, g.FinalLoadedModel, thresholdMax: g.UserInput.Get(T2IParamTypes.SegmentThresholdMax, 1));
                     g.EnableDifferential();
                     if (part.ContextID > 0)
@@ -2001,7 +2021,7 @@ public class WorkflowGeneratorSteps
                     g.CurrentMedia = g.CurrentMedia.AsRawImage(vae);
                     JArray composited = g.RecompositeCropped(g.MaskShrunkInfo.BoundsNode, [g.MaskShrunkInfo.CroppedMask, 0], beforeImage.Path, g.CurrentMedia.Path);
                     g.CurrentMedia = g.CurrentMedia.WithPath(composited);
-                    g.MaskShrunkInfo = new(null, null, null, null);
+                    g.MaskShrunkInfo = priorMaskShrunkInfo;
                 }
             }
         }
@@ -2091,6 +2111,10 @@ public class WorkflowGeneratorSteps
                 bool willHaveFollowupVideo = g.UserInput.TryGet(T2IParamTypes.VideoModel, out _) || g.UserInput.Get(T2IParamTypes.Prompt, "").Contains("<extend:");
                 // Heuristic check for if this is an Init Image with no further processing, ie the initial image save is redundant because we're just wanting to extend a presaved image to a video
                 bool formedFromSingleImage = g.UserInput.Get(T2IParamTypes.InitImageCreativity, -1) == 0 && !g.UserInput.Get(T2IParamTypes.OutputIntermediateImages, false) && !g.UserInput.TryGet(T2IParamTypes.RefinerMethod, out _);
+                if (!willHaveFollowupVideo)
+                {
+                    g.RunSeedVR2Stage();
+                }
                 if (g.IsVideoModel() && !formedFromSingleImage && !willHaveFollowupVideo)
                 {
                     if (g.UserInput.TryGet(T2IParamTypes.TrimVideoStartFrames, out _) || g.UserInput.TryGet(T2IParamTypes.TrimVideoEndFrames, out _))
@@ -2204,7 +2228,7 @@ public class WorkflowGeneratorSteps
                     BatchIndex = batchInd,
                     BatchLen = batchLen,
                     ContextID = T2IParamInput.SectionID_Video,
-                    VideoEndFrame = g.UserInput.Get(T2IParamTypes.VideoEndFrame, null)
+                    VideoEndImage = g.UserInput.Get(T2IParamTypes.VideoEndImage, null)
                 };
                 if (g.UserInput.TryGet(T2IParamTypes.Video2VideoCreativity, out double v2vCreativity))
                 {
@@ -2213,6 +2237,10 @@ public class WorkflowGeneratorSteps
                 g.CreateImageToVideo(genInfo);
                 g.CurrentMedia = g.CurrentMedia.AsRawImage(genInfo.Vae);
                 bool hasExtend = prompt.Contains("<extend:");
+                if (!hasExtend)
+                {
+                    g.RunSeedVR2Stage(genInfo.Vae);
+                }
                 if (!hasExtend && g.UserInput.TryGet(ComfyUIBackendExtension.VideoFrameInterpolationMethod, out string method) && g.UserInput.TryGet(ComfyUIBackendExtension.VideoFrameInterpolationMultiplier, out int mult) && mult > 1)
                 {
                     if (g.UserInput.Get(T2IParamTypes.OutputIntermediateImages, false))
@@ -2270,6 +2298,7 @@ public class WorkflowGeneratorSteps
                 string negPrompt = g.UserInput.Get(T2IParamTypes.NegativePrompt, "");
                 long seed = g.UserInput.Get(T2IParamTypes.Seed) + 600;
                 int? videoFps = g.UserInput.TryGet(T2IParamTypes.VideoFPS, out int fpsRaw) ? fpsRaw : null;
+                WGNodeData extendVae = null;
                 string format = g.UserInput.Get(T2IParamTypes.VideoExtendFormat, "mp4").ToLowerFast();
                 int frameExtendOverlap = g.UserInput.Get(T2IParamTypes.VideoExtendFrameOverlap, 9);
                 bool saveIntermediate = g.UserInput.Get(T2IParamTypes.OutputIntermediateImages, false);
@@ -2335,6 +2364,7 @@ public class WorkflowGeneratorSteps
                         ContextID = part.ContextID
                     };
                     g.CreateImageToVideo(genInfo);
+                    extendVae = genInfo.Vae;
                     g.CurrentMedia = g.CurrentMedia.AsRawImage(genInfo.Vae);
                     WGNodeData stageWithAudio = ensureAttachedAudio(g.CurrentMedia);
                     videoFps = genInfo.VideoFPS;
@@ -2361,6 +2391,7 @@ public class WorkflowGeneratorSteps
                 }
                 g.CurrentMedia = conjoinedLast;
                 g.CurrentMedia.FPS = videoFps ?? g.CurrentMedia.FPS;
+                g.RunSeedVR2Stage(extendVae);
                 if (g.UserInput.TryGet(ComfyUIBackendExtension.VideoFrameInterpolationMethod, out string method) && g.UserInput.TryGet(ComfyUIBackendExtension.VideoFrameInterpolationMultiplier, out int mult) && mult > 1)
                 {
                     if (saveIntermediate)

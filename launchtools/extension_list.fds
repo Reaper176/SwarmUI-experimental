@@ -244,7 +244,6 @@ SeedVR2Upscaler:
     description: Adds SeedVR2 AI upscaler with auto VRAM detection, quality presets, and 2-step upscaling for reduced artifacts.
     url: https://github.com/rlerdorf/SwarmUI-SeedVR2Upscaler
     license: MIT
-    ci-test: true
     tags:
     - parameters
     - nodes
@@ -367,3 +366,13 @@ KreaGoneWild:
     tags:
     - parameters
     - nodes
+
+H3Attn:
+    author: Juan Treminio
+    description: Attention and speedup options for the MiniMax H3 video model - a built-in window-attention node, plus optional support for the Sol-Attn and Spectrum custom nodes.
+    url: https://github.com/jtreminio/SwarmUI-H3Attn
+    license: MIT
+    tags:
+    - parameters
+    - nodes
+    - beta

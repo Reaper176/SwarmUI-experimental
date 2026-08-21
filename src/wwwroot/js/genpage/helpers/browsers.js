@@ -266,6 +266,7 @@ class GenPageBrowserClass {
         this.filter = localStorage.getItem(`browser_${id}_filter`) || '';
         this.folderTreeVerticalSpacing = '0';
         this.splitterMinWidth = 100;
+        this.splitterMinWidthMobile = 50;
         this.everLoaded = false;
         this.showDisplayFormat = true;
         this.showDepth = true;
@@ -303,12 +304,17 @@ class GenPageBrowserClass {
         this.multiSelectActionSelect = null;
     }
 
-    /**
-     * Checks if the window is small, setting isSmallWindow (mostly for mobile compat).
-     */
+    /** Checks whether the window is small and returns whether the responsive mode changed. */
     checkIsSmall() {
+        let prior = this.isSmallWindow;
         let mobileDesktopLayout = localStorage.getItem('layout_mobileDesktop') || 'auto';
         this.isSmallWindow = mobileDesktopLayout == 'auto' ? window.innerWidth < 768 : mobileDesktopLayout == 'mobile';
+        return prior != undefined && prior != this.isSmallWindow;
+    }
+
+    /** Returns the mode-specific folder splitter storage key. */
+    getBarSpotStorageKey() {
+        return this.isSmallWindow ? `barspot_browser_mobile_${this.id}` : `barspot_browser_${this.id}`;
     }
 
     /**
@@ -1167,7 +1173,10 @@ class GenPageBrowserClass {
      * Central call to build the browser content area.
      */
     build(path, folders, files) {
-        this.checkIsSmall();
+        let modeChanged = this.checkIsSmall();
+        if (modeChanged && this.lastReset) {
+            this.lastReset();
+        }
         if (path.endsWith('/')) {
             path = path.substring(0, path.length - 1);
         }
@@ -1365,10 +1374,14 @@ class GenPageBrowserClass {
             }
             if (!this.headerResizeHandler) {
                 this.headerResizeHandler = () => {
+                    if (this.checkIsSmall() && this.lastReset) {
+                        this.lastReset();
+                    }
                     this.closeHeaderOverflowMenu();
                     this.queueHeaderLayout();
                 };
                 window.addEventListener('resize', this.headerResizeHandler);
+                window.addEventListener('swarm-layout-mode-change', this.headerResizeHandler);
             }
             if (window.ResizeObserver && !this.headerResizeObserver) {
                 this.headerResizeObserver = new ResizeObserver(() => this.queueHeaderLayout());
@@ -1416,9 +1429,6 @@ class GenPageBrowserClass {
             this.barSpot = 0;
             let setBar = () => {
                 let barSpot = this.barSpot;
-                if (this.isSmallWindow) {
-                    barSpot = 100; // TODO: Swipeable width
-                }
                 this.folderTreeDiv.style.width = `${barSpot}px`;
                 this.fullContentDiv.style.width = `calc(100% - ${barSpot + 1}px - 0.6rem)`;
                 if (this.sizeChangedEvent) {
@@ -1427,34 +1437,44 @@ class GenPageBrowserClass {
                 this.queueHeaderLayout();
             }
             this.lastReset = () => {
-                this.barSpot = parseInt(localStorage.getItem(`barspot_browser_${this.id}`) || convertRemToPixels(20));
+                let stored = localStorage.getItem(this.getBarSpotStorageKey());
+                this.barSpot = parseInt(stored || (this.isSmallWindow ? 100 : convertRemToPixels(20)));
                 setBar();
             };
             this.lastReset();
             let isDrag = false;
-            folderTreeSplitter.addEventListener('mousedown', (e) => {
+            folderTreeSplitter.addEventListener('touchstart', (e) => {
+                e.stopPropagation();
+            }, { capture: true, passive: true });
+            folderTreeSplitter.addEventListener('pointerdown', (e) => {
                 e.preventDefault();
-                if (this.isSmallWindow) {
-                    return;
-                }
+                e.stopPropagation();
                 isDrag = true;
+                try {
+                    folderTreeSplitter.setPointerCapture(e.pointerId);
+                }
+                catch (err) {
+                }
             }, true);
             this.lastListen = (e) => {
-                let offX = e.pageX - this.container.getBoundingClientRect().left;
-                offX = Math.min(Math.max(offX, this.splitterMinWidth), window.innerWidth - 100);
-                if (isDrag) {
-                    this.barSpot = offX - 5;
-                    localStorage.setItem(`barspot_browser_${this.id}`, this.barSpot);
-                    setBar();
+                if (!isDrag) {
+                    return;
                 }
+                let offX = e.pageX - this.container.getBoundingClientRect().left;
+                offX = Math.min(Math.max(offX, this.isSmallWindow ? this.splitterMinWidthMobile : this.splitterMinWidth), window.innerWidth - 100);
+                this.barSpot = offX - 5;
+                localStorage.setItem(this.getBarSpotStorageKey(), this.barSpot);
+                setBar();
             };
             this.lastListenUp = () => {
                 isDrag = false;
             };
-            document.addEventListener('mousemove', this.lastListen);
-            document.addEventListener('mouseup', this.lastListenUp);
+            document.addEventListener('pointermove', this.lastListen);
+            document.addEventListener('pointerup', this.lastListenUp);
+            document.addEventListener('pointercancel', this.lastListenUp);
             genTabLayout.layoutResets.push(() => {
                 localStorage.removeItem(`barspot_browser_${this.id}`);
+                localStorage.removeItem(`barspot_browser_mobile_${this.id}`);
                 this.lastReset();
             });
         }

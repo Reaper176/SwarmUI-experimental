@@ -10,8 +10,6 @@ let num_waiting_gens = 0, num_models_loading = 0, num_live_gens = 0, num_backend
 
 let shouldApplyDefault = false;
 
-let sessionReadyCallbacks = [];
-
 /** Runs all session-ready callbacks in insertion order while isolating synchronous failures. */
 function runSessionReadyCallbacks() {
     for (let i = 0; i < sessionReadyCallbacks.length; i++) {
@@ -32,7 +30,6 @@ function runSessionReadyCallbacks() {
         }
     }
 }
-
 let allModels = [];
 
 let coreModelMap = {};
@@ -271,7 +268,7 @@ function reviseBackendFeatureSet() {
     doAnyArchFeature(['Flux.1-dev', 'flux.2-dev', 'flux.2-klein-4b', 'flux.2-klein-9b', 'hunyuan-video'], 'flux-dev');
     doCompatFeature('stable-diffusion-xl-v1', 'sdxl');
     doAnyCompatFeature(['genmo-mochi-1', 'lightricks-ltx-video', 'hunyuan-video', 'nvidia-cosmos-1', `wan-21`, `wan-22`, 'kandinsky5-vidlite', 'kandinsky5-vidpro', 'minimax-h3'], 'text2video');
-    doAnyCompatFeature(['ace-step-1_5'], 'text2audio');
+    doAnyCompatFeature(['ace-step-1_5', 'minimax-music-3'], 'text2audio');
     for (let changer of featureSetChangers) {
         let [add, remove] = changer();
         addMe.push(...add);

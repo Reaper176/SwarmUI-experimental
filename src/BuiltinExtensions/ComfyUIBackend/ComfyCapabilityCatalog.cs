@@ -3,6 +3,20 @@ namespace SwarmUI.Builtin_ComfyUIBackend;
 /// <summary>Provides the built-in mapping of ComfyUI node names to Swarm feature IDs.</summary>
 public static class ComfyCapabilityCatalog
 {
+    /// <summary>Feature ID requiring the Swarm MiniMax H3 joint audio/video empty-latent node.</summary>
+    public const string EmptyMiniMaxH3LatentAVFeature = "comfy_empty_minimax_h3_latent_av";
+
+    /// <summary>Prefix for backend-local model-attention option feature IDs.</summary>
+    public const string ModelAttentionBackendValueFeaturePrefix = "model_attention_backend_value_";
+
+    /// <summary>Encodes an exact Comfy model-attention option as a safe backend feature ID.</summary>
+    /// <param name="value">The exact option value accepted by the Comfy node.</param>
+    /// <returns>A deterministic feature ID containing the UTF-8 option bytes as hexadecimal.</returns>
+    public static string ModelAttentionBackendValueFeature(string value)
+    {
+        return $"{ModelAttentionBackendValueFeaturePrefix}{Convert.ToHexString(System.Text.Encoding.UTF8.GetBytes(value))}";
+    }
+
     /// <summary>Creates a mutable mapping of known ComfyUI node names to their feature IDs.</summary>
     public static Dictionary<string, string> CreateNodeToFeatureMap()
     {
@@ -13,6 +27,9 @@ public static class ComfyCapabilityCatalog
             [ComfyNodeNames.JustLoadTheModelPlease] = "comfy_just_load_model",
             [ComfyNodeNames.LatentBlendMasked] = "comfy_latent_blend_masked",
             [ComfyNodeNames.KSampler] = "variation_seed",
+            [ComfyNodeNames.ModelAttentionBackend] = "model_attention_backend",
+            [ComfyNodeNames.EmptyMiniMaxH3LatentAV] = EmptyMiniMaxH3LatentAVFeature,
+            [ComfyNodeNames.AudioSilentMaskPrefixSuffix] = "audio_silent_mask_prefix_suffix",
             ["FreeU"] = "freeu",
             ["AITemplateLoader"] = "aitemplate",
             ["IPAdapter"] = "ipadapter",
@@ -89,6 +106,28 @@ public static class ComfyCapabilityCatalog
         {
             features.Remove(hookFeature);
             features.Remove(interpolatedHookFeature);
+        }
+
+        string seedVRFeature = "seedvr2";
+        string[] requiredSeedVRNodes = [ComfyNodeNames.SeedVR2Preprocess, ComfyNodeNames.SeedVR2Conditioning, ComfyNodeNames.SeedVR2PostProcessing];
+        if (requiredSeedVRNodes.All(nodeTypes.Contains))
+        {
+            features.Add(seedVRFeature);
+        }
+        else
+        {
+            features.Remove(seedVRFeature);
+        }
+
+        string seedVRTemporalChunkingFeature = "seedvr2_temporal_chunking";
+        bool seedVRTemporalChunkingSupported = nodeTypes.Contains(ComfyNodeNames.SeedVR2TemporalChunk) && nodeTypes.Contains(ComfyNodeNames.SeedVR2TemporalMerge);
+        if (seedVRTemporalChunkingSupported)
+        {
+            features.Add(seedVRTemporalChunkingFeature);
+        }
+        else
+        {
+            features.Remove(seedVRTemporalChunkingFeature);
         }
 
         features.ExceptWith(suppressedFeatures);

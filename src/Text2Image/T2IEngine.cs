@@ -271,6 +271,7 @@ namespace SwarmUI.Text2Image
             {
                 user_input.ApplyLateSpecialLogic();
                 PreGenerateEvent?.Invoke(new(user_input));
+                user_input.ApplyFinalRequiredFlags();
                 claim.Extend(backendWaits: 1);
                 sendStatus();
                 backend = await Program.Backends.GetNextT2IBackend(TimeSpan.FromMinutes(backendTimeoutMin), user_input.Get(T2IParamTypes.Model), user_input,

@@ -143,6 +143,7 @@ public class ComfyUIBackendExtension : Extension
     {
         Program.Backends.BackendRemovedEvent -= OnBackendRemoved;
         T2IParamTypes.FakeTypeProviders.Remove(DynamicParamGenerator);
+        T2IParamInput.UnregisterFinalRequiredFlagsHandler(RecomputeBackendRoutingRequirementsHandler);
     }
 
     /// <summary>Forces all currently running comfy backends to restart.</summary>
@@ -406,6 +407,9 @@ public class ComfyUIBackendExtension : Extension
     /// <summary>Accumulated node evidence published through the legacy object-info facade.</summary>
     private static FrozenSet<string> LegacyObjectInfoNodeTypes = Array.Empty<string>().ToFrozenSet();
 
+    /// <summary>Accumulated backend-local value capabilities published through the legacy object-info facade.</summary>
+    private static FrozenSet<string> LegacyObjectInfoFeatures = Array.Empty<string>().ToFrozenSet();
+
     /// <summary>Backend-local shared values parsed without reading or mutating published aggregate state.</summary>
     private sealed class SharedValueDelta
     {
@@ -457,6 +461,9 @@ public class ComfyUIBackendExtension : Extension
         /// <summary>Discovered CLIP device values.</summary>
         public List<string> SetClipDevices = [];
 
+        /// <summary>Discovered model attention backend values.</summary>
+        public List<string> ModelAttentionBackends = [];
+
         /// <summary>Discovered ControlNet preprocessor definitions.</summary>
         public Dictionary<string, JToken> ControlNetPreprocessors = [];
     }
@@ -493,6 +500,9 @@ public class ComfyUIBackendExtension : Extension
 
         /// <summary>Candidate CLIP device values.</summary>
         public List<string> SetClipDevices;
+
+        /// <summary>Candidate model attention backend values.</summary>
+        public List<string> ModelAttentionBackends;
 
         /// <summary>Candidate additive ControlNet preprocessor definitions.</summary>
         public Dictionary<string, JToken> ControlNetPreprocessors;
@@ -591,6 +601,10 @@ public class ComfyUIBackendExtension : Extension
         {
             delta.SetClipDevices = [.. overrideClipDevice.Select(m => $"{m}")];
         }
+        if (TryGetRequiredInputs(rawObjectInfo, ComfyNodeNames.ModelAttentionBackend, ComfyNodeInputNames.ModelAttentionBackend.Attention, out JToken modelAttentionBackends))
+        {
+            delta.ModelAttentionBackends = [.. modelAttentionBackends.Select(m => $"{m}")];
+        }
         foreach ((string key, JToken data) in rawObjectInfo)
         {
             if (data["category"].ToString() == "image/preprocessors")
@@ -603,6 +617,14 @@ public class ComfyUIBackendExtension : Extension
             }
         }
         return delta;
+    }
+
+    /// <summary>Builds backend-local routing features from values discovered in one object-info response.</summary>
+    /// <param name="delta">The backend-local values parsed from object info.</param>
+    /// <returns>An immutable set of exact-value routing capabilities.</returns>
+    private static FrozenSet<string> BuildBackendValueFeatures(SharedValueDelta delta)
+    {
+        return delta.ModelAttentionBackends.Select(ComfyCapabilityCatalog.ModelAttentionBackendValueFeature).ToFrozenSet();
     }
 
     /// <summary>Merges a backend-local delta into copies of the latest published shared values.</summary>
@@ -623,6 +645,7 @@ public class ComfyUIBackendExtension : Extension
             StyleModels = [.. StyleModels],
             ControlnetUnionTypes = [.. ControlnetUnionTypes],
             SetClipDevices = [.. SetClipDevices],
+            ModelAttentionBackends = [.. ModelAttentionBackends],
             ControlNetPreprocessors = new(delta.ControlNetPreprocessors)
         };
         T2IParamTypes.ConcatDropdownValsClean(ref candidate.UpscalerModels, delta.UpscalerModels);
@@ -648,6 +671,7 @@ public class ComfyUIBackendExtension : Extension
         T2IParamTypes.ConcatDropdownValsClean(ref candidate.YoloModels, delta.YoloModels);
         T2IParamTypes.ConcatDropdownValsClean(ref candidate.ControlnetUnionTypes, delta.ControlnetUnionTypes);
         T2IParamTypes.ConcatDropdownValsClean(ref candidate.SetClipDevices, delta.SetClipDevices);
+        T2IParamTypes.ConcatDropdownValsClean(ref candidate.ModelAttentionBackends, delta.ModelAttentionBackends);
         return candidate;
     }
 
@@ -665,6 +689,7 @@ public class ComfyUIBackendExtension : Extension
         StyleModels = candidate.StyleModels;
         ControlnetUnionTypes = candidate.ControlnetUnionTypes;
         SetClipDevices = candidate.SetClipDevices;
+        ModelAttentionBackends = candidate.ModelAttentionBackends;
         foreach ((string key, JToken data) in candidate.ControlNetPreprocessors)
         {
             ControlNetPreprocessors[key] = data;
@@ -693,17 +718,22 @@ public class ComfyUIBackendExtension : Extension
     public static void AssignValuesFromRaw(JObject rawObjectInfo)
     {
         SharedValueDelta sharedDelta = BuildSharedValueDelta(rawObjectInfo);
+        FrozenSet<string> rawValueFeatures = BuildBackendValueFeatures(sharedDelta);
         FrozenSet<string> rawNodeTypes = rawObjectInfo.Properties().Select(property => property.Name).ToFrozenSet();
         lock (ValueAssignmentLocker)
         {
             HashSet<string> accumulatedNodeTypes = [.. LegacyObjectInfoNodeTypes];
             accumulatedNodeTypes.UnionWith(rawNodeTypes);
             FrozenSet<string> frozenAccumulatedNodeTypes = accumulatedNodeTypes.ToFrozenSet();
+            HashSet<string> accumulatedValueFeatures = [.. LegacyObjectInfoFeatures];
+            accumulatedValueFeatures.UnionWith(rawValueFeatures);
+            FrozenSet<string> frozenAccumulatedValueFeatures = accumulatedValueFeatures.ToFrozenSet();
             SharedValueCandidate sharedCandidate = MergeSharedValueDelta(sharedDelta);
-            ComfyCapabilityRegistry.RegistryCandidate capabilityCandidate = ComfyCapabilityRegistry.PreparePublish(LegacyObjectInfoOwner, frozenAccumulatedNodeTypes, "/");
+            ComfyCapabilityRegistry.RegistryCandidate capabilityCandidate = ComfyCapabilityRegistry.PreparePublish(LegacyObjectInfoOwner, frozenAccumulatedNodeTypes, "/", frozenAccumulatedValueFeatures);
             PublishSharedValues(sharedCandidate);
             ComfyCapabilityRegistry.Commit(capabilityCandidate);
             LegacyObjectInfoNodeTypes = frozenAccumulatedNodeTypes;
+            LegacyObjectInfoFeatures = frozenAccumulatedValueFeatures;
             RunRawObjectInfoParsers(rawObjectInfo);
             ComfyCapabilityRegistry.GetSnapshot(LegacyObjectInfoOwner);
             ComfyCapabilityRegistry.GetAggregateSnapshot();
@@ -725,6 +755,7 @@ public class ComfyUIBackendExtension : Extension
     internal static ComfyBackendCapabilitySnapshot AssignValuesFromRaw(object owner, JObject rawObjectInfo, IReadOnlySet<string> nodeTypes, string modelFolderFormat, Func<bool> canPublish)
     {
         SharedValueDelta sharedDelta = BuildSharedValueDelta(rawObjectInfo);
+        FrozenSet<string> backendValueFeatures = BuildBackendValueFeatures(sharedDelta);
         FrozenSet<string> frozenNodeTypes = nodeTypes.ToFrozenSet();
         lock (ValueAssignmentLocker)
         {
@@ -733,7 +764,7 @@ public class ComfyUIBackendExtension : Extension
                 return null;
             }
             SharedValueCandidate sharedCandidate = MergeSharedValueDelta(sharedDelta);
-            ComfyCapabilityRegistry.RegistryCandidate capabilityCandidate = ComfyCapabilityRegistry.PreparePublish(owner, frozenNodeTypes, modelFolderFormat);
+            ComfyCapabilityRegistry.RegistryCandidate capabilityCandidate = ComfyCapabilityRegistry.PreparePublish(owner, frozenNodeTypes, modelFolderFormat, backendValueFeatures);
             PublishSharedValues(sharedCandidate);
             ComfyCapabilityRegistry.Commit(capabilityCandidate);
             RunRawObjectInfoParsers(rawObjectInfo);
@@ -743,13 +774,40 @@ public class ComfyUIBackendExtension : Extension
 
     public static T2IRegisteredParam<string> CustomWorkflowParam, SamplerParam, SchedulerParam, RefinerSamplerParam, RefinerSchedulerParam, RefinerUpscaleMethod, UseIPAdapterForRevision, IPAdapterWeightType, VideoPreviewType, VideoFrameInterpolationMethod, GligenModel, RegionalPromptingMethod, YoloModelInternal, PreferredDType, UseStyleModel, TeaCacheMode, EasyCacheMode, SetClipDevice;
 
+    /// <summary>Parameter that selects a backend-supported model attention implementation.</summary>
+    public static T2IRegisteredParam<string> ModelAttentionBackend;
+
+    /// <summary>Recomputes backend-local routing requirements from the finalized generation input.</summary>
+    private static readonly Action<T2IParamInput> RecomputeBackendRoutingRequirementsHandler = RecomputeBackendRoutingRequirements;
+
+    /// <summary>Parameter that selects the SeedVR pre-upscale method.</summary>
+    public static T2IRegisteredParam<string> SeedVRUpscaleMethod;
+
+    /// <summary>Parameter that selects the SeedVR color-correction behavior.</summary>
+    public static T2IRegisteredParam<string> SeedVRColorCorrectionBehavior;
+
     public static T2IRegisteredParam<bool> AITemplateParam, DebugRegionalPrompting, ShiftedLatentAverageInit, UseCfgZeroStar, UseTCFG, DetailDaemonSmooth;
+
+    /// <summary>Parameter that enables VRAM-aware temporal chunking for SeedVR video restoration.</summary>
+    public static T2IRegisteredParam<bool> SeedVRSplitLatent;
 
     public static T2IRegisteredParam<double> IPAdapterWeight, IPAdapterStart, IPAdapterEnd, SelfAttentionGuidanceScale, SelfAttentionGuidanceSigmaBlur, PerturbedAttentionGuidanceScale, StyleModelMergeStrength, StyleModelApplyStart, StyleModelMultiplyStrength, RescaleCFGMultiplier, TeaCacheThreshold, TeaCacheStart, NunchakuCacheThreshold, EasyCacheThreshold, EasyCacheStart, EasyCacheEnd, RenormCFG, NormalizedAttentionGuidanceScale, NormalizedAttentionGuidanceAlpha, NormalizedAttentionGuidanceTau, DetailDaemonAmount, DetailDaemonStart, DetailDaemonEnd, DetailDaemonBias, DetailDaemonExponent, DetailDaemonStartOffset, DetailDaemonEndOffset, DetailDaemonFade, DetailDaemonCFGScaleOverride;
 
+    /// <summary>Parameter that controls the SeedVR upscale factor.</summary>
+    public static T2IRegisteredParam<double> SeedVRUpscale;
+
+    /// <summary>Parameter that controls the optional SeedVR pre-downscale factor.</summary>
+    public static T2IRegisteredParam<double> SeedVRPreDownscale;
+
     public static T2IRegisteredParam<int> RefinerHyperTile, VideoFrameInterpolationMultiplier;
 
+    /// <summary>Parameter that controls temporal overlap between SeedVR latent chunks.</summary>
+    public static T2IRegisteredParam<int> SeedVRTemporalVideoOverlap;
+
     public static T2IRegisteredParam<T2IModel> PixelDecoderModel;
+
+    /// <summary>Parameter that selects the SeedVR restoration model.</summary>
+    public static T2IRegisteredParam<T2IModel> SeedVRModel;
 
     public static T2IRegisteredParam<string>[] ControlNetPreprocessorParams = new T2IRegisteredParam<string>[3], ControlNetUnionTypeParams = new T2IRegisteredParam<string>[3];
 
@@ -802,11 +860,17 @@ public class ComfyUIBackendExtension : Extension
 
     public static List<string> GligenModels = ["None"], YoloModels = [], StyleModels = ["None"], SetClipDevices = ["cpu"];
 
+    /// <summary>Model attention implementations discovered from connected ComfyUI backends.</summary>
+    public static List<string> ModelAttentionBackends = ["pytorch attention"];
+
     public static List<string> ControlnetUnionTypes = ["auto", "openpose", "depth", "hed/pidi/scribble/ted", "canny/lineart/anime_lineart/mlsd", "normal", "segment", "tile", "repaint"];
 
     public static ConcurrentDictionary<string, JToken> ControlNetPreprocessors = new() { ["None"] = null };
 
     public static T2IParamGroup ComfyAdvancedGroup, DetailDaemonGroup;
+
+    /// <summary>Parameter group for SeedVR restoration settings.</summary>
+    public static T2IParamGroup GroupSeedVR;
 
     public static T2IRegisteredParam<string> Sam3PointCoordsPositive, Sam3PointCoordsNegative, Sam3BBox, Sam3MaskPadding, Sam3SegmentPrompt, Sam3SegmentConfidence;
 
@@ -1057,6 +1121,55 @@ public class ComfyUIBackendExtension : Extension
         SetClipDevice = T2IParamTypes.Register<string>(new("Set CLIP Device", "Override the hardware device that text encoders run on.",
             "cpu", FeatureFlag: "set_clip_device", Group: T2IParamTypes.GroupAdvancedModelAddons, IsAdvanced: true, Toggleable: true, GetValues: (_) => SetClipDevices, OrderPriority: 70
             ));
+        ModelAttentionBackend = T2IParamTypes.Register<string>(new("Model Attention Backend", "Override which attention implementation the model uses.\n'pytorch attention' is the standard default.\n'comfy kitchen attention' is a new sage-like attention impl from Comfy directly that has better performance, but may not work on all machines.",
+            "pytorch attention", FeatureFlag: "model_attention_backend", Group: T2IParamTypes.GroupAdvancedModelAddons, IsAdvanced: true, Toggleable: true, GetValues: (_) => ModelAttentionBackends, OrderPriority: 41
+            ));
+        // ================================================ SeedVR ================================================
+        GroupSeedVR = new T2IParamGroup("SeedVR", Toggles: true, Open: false, OrderPriority: -2.5, Description: "SeedVR2 is a one-step restoration model, run over the result of the normal generation.");
+        SeedVRModel = T2IParamTypes.Register<T2IModel>(new("SeedVR Model", "Which SeedVR2 model to restore with.",
+            "None", IgnoreIf: "None", FeatureFlag: "seedvr2", Group: GroupSeedVR, Subtype: "Stable-Diffusion", ChangeWeight: 9, DoNotPreview: true, OrderPriority: -10,
+            GetValues: (session) => ["None", .. T2IParamTypes.CleanModelList(Program.MainSDModels.ListModelsFor(session).Where(m => m.ModelClass?.CompatClass?.ID == "seedvr2").OrderBy(m => m.Name).Select(m => m.Name))]
+            ));
+        SeedVRPreDownscale = T2IParamTypes.Register<double>(new("SeedVR Pre-Downscale", "Optional downscale of the image immediately before upscaling it back.\nSetting to '1' disables this behavior.\nPre-downscaling to degrade the image can help improve quality (reduces oversharpening).",
+            "1", IgnoreIf: "1", Min: 0.05, Max: 1, Step: 0.05, OrderPriority: -9.5, ViewType: ParamViewType.SLIDER, FeatureFlag: "seedvr2", Group: GroupSeedVR, DoNotPreview: true, Examples: ["1", "0.5", "0.25"]
+            ));
+        SeedVRUpscale = T2IParamTypes.Register<double>(new("SeedVR Upscale", "Optional upscale of the image before SeedVR2 runs over it.\nSetting to '1' disables the upscale, and just restores at the current size.",
+            "1", IgnoreIf: "1", Min: 0.25, Max: 8, ViewMax: 4, Step: 0.25, OrderPriority: -9, ViewType: ParamViewType.SLIDER, FeatureFlag: "seedvr2", Group: GroupSeedVR, DoNotPreview: true, Examples: ["1", "1.5", "2"]
+            ));
+        SeedVRUpscaleMethod = T2IParamTypes.Register<string>(new("SeedVR Upscale Method", "How to upscale the image before SeedVR2 runs over it, if upscaling is used.",
+            "pixel-lanczos", OrderPriority: -8, FeatureFlag: "seedvr2", Group: GroupSeedVR, ChangeWeight: 1,
+            GetValues: (session) => RefinerUpscaleMethod.Type.GetValues(session), DependNonDefault: SeedVRUpscale.Type.ID
+            ));
+        SeedVRColorCorrectionBehavior = T2IParamTypes.Register<string>(new("SeedVR Color Correction Behavior", "How to match the colors of a SeedVR2 restore back to the image it was given.\n'None' = Do not attempt color correction, only align the geometry.\n'CIELAB' = Transfer the color in CIELAB space, preserving detail.\n'Wavelet' = Transfer the low-frequency color, keeping the upscaled high-frequency detail.\n'AdaIN' = Match the per-channel mean and standard deviation.",
+            "lab", FeatureFlag: "seedvr2", Group: GroupSeedVR, IsAdvanced: true, OrderPriority: 1, GetValues: (_) => ["none///None", "lab///CIELAB", "wavelet///Wavelet", "adain///AdaIN"]
+            ));
+        SeedVRSplitLatent = T2IParamTypes.Register<bool>(new("SeedVR Split Latent", "If enabled, samples a SeedVR2 video restore as chunks of frames instead of all at once, sized to fit in free VRAM.\nChunking reduces VRAM consumption.\nDoes nothing to a single image, or to a video that already fits.",
+            "false", IgnoreIf: "false", FeatureFlag: "seedvr2,seedvr2_temporal_chunking", Group: GroupSeedVR, IsAdvanced: true, OrderPriority: 2
+            ));
+        SeedVRTemporalVideoOverlap = T2IParamTypes.Register<int>(new("SeedVR Temporal Video Overlap", "How many latent frames of overlap to keep between 'SeedVR Split Latent' chunks.\nHigher overlap hides the chunk seams better but takes longer.",
+            "0", Min: 0, Max: 4096, Step: 1, IsAdvanced: true, FeatureFlag: "seedvr2,seedvr2_temporal_chunking", Group: GroupSeedVR, OrderPriority: 3, DependNonDefault: SeedVRSplitLatent.Type.ID
+            ));
+        T2IParamInput.RegisterFinalRequiredFlagsHandler(RecomputeBackendRoutingRequirementsHandler);
+    }
+
+    /// <summary>Recomputes dynamic feature requirements that depend on selected values or model families.</summary>
+    /// <param name="input">The finalized generation input to prepare for backend routing.</param>
+    private static void RecomputeBackendRoutingRequirements(T2IParamInput input)
+    {
+        input.RequiredFlags.RemoveWhere(flag => flag.StartsWith(ComfyCapabilityCatalog.ModelAttentionBackendValueFeaturePrefix, StringComparison.Ordinal));
+        input.RequiredFlags.Remove(ComfyCapabilityCatalog.EmptyMiniMaxH3LatentAVFeature);
+        if (input.TryGet(ModelAttentionBackend, out string attentionBackend))
+        {
+            input.RequiredFlags.Add(ComfyCapabilityCatalog.ModelAttentionBackendValueFeature(attentionBackend));
+        }
+        static bool isMiniMaxH3(T2IParamInput input, T2IRegisteredParam<T2IModel> param)
+        {
+            return input.TryGet(param, out T2IModel model) && model?.ModelClass?.CompatClass?.ID == T2IModelClassSorter.CompatMiniMaxH3.ID;
+        }
+        if (isMiniMaxH3(input, T2IParamTypes.Model) || isMiniMaxH3(input, T2IParamTypes.VideoModel) || isMiniMaxH3(input, T2IParamTypes.VideoExtendModel))
+        {
+            input.RequiredFlags.Add(ComfyCapabilityCatalog.EmptyMiniMaxH3LatentAVFeature);
+        }
     }
 
     /// <summary>Registers backend types that must exist before saved backend entries can load.</summary>
@@ -1126,14 +1239,14 @@ public class ComfyUIBackendExtension : Extension
             {
                 tasks.Add(Utilities.RunCheckedTask(async () =>
                 {
-                    string headTarget = ComfyUISelfStartBackend.ComfyNodeGitPins.TryGetValue(folder, out string pinCommit) ? pinCommit : null;
-                    JObject nodeUpdates = await AdminAPI.GetUpdatesDataFor(folder, true, headTarget: headTarget);
+                    string nodeName = Path.GetFileName(folder);
+                    string latestTarget = ComfyUISelfStartBackend.ComfyNodeGitPins.TryGetValue(nodeName, out string pinCommit) ? pinCommit : null;
+                    JObject nodeUpdates = await AdminAPI.GetUpdatesDataFor(folder, true, latestTarget: latestTarget);
                     if (nodeUpdates is null)
                     {
                         Logs.Debug($"Check for updates found no updates for ComfyUI node at {folder}");
                         return;
                     }
-                    string nodeName = Path.GetFileName(folder);
                     lock (locker)
                     {
                         backendsData[$"Comfy Node: {nodeName}"] = nodeUpdates;
@@ -1167,8 +1280,8 @@ public class ComfyUIBackendExtension : Extension
             {
                 tasks.Add(Utilities.RunCheckedTask(async () =>
                 {
-                    string headTarget = ComfyUISelfStartBackend.ComfyNodeGitPins.TryGetValue(folder, out string pinCommit) ? pinCommit : null;
-                    await AdminAPI.DoGitUpdate(folder, aggressive, didWork, didFail, targetCommit: headTarget);
+                    string targetCommit = ComfyUISelfStartBackend.ComfyNodeGitPins.TryGetValue(nodeName, out string pinCommit) ? pinCommit : null;
+                    await AdminAPI.DoGitUpdate(folder, aggressive, didWork, didFail, targetCommit: targetCommit);
                 }));
             }
         }

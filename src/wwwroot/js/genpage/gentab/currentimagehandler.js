@@ -225,6 +225,7 @@ class ImageFullViewHelper {
         this.zoomRate = 1.1;
         this.modal = getRequiredElementById('image_fullview_modal');
         this.content = getRequiredElementById('image_fullview_modal_content');
+        this.content.classList.add('image-fullview-modal-content');
         this.modalJq = $('#image_fullview_modal');
         this.noClose = false;
         document.addEventListener('click', (e) => {
@@ -246,8 +247,16 @@ class ImageFullViewHelper {
         this.lastMouseY = 0;
         this.isDragging = false;
         this.didDrag = false;
+        this.isPinching = false;
+        this.lastPinchDist = 0;
+        this.lastPinchMidX = 0;
+        this.lastPinchMidY = 0;
         this.content.addEventListener('wheel', this.onWheel.bind(this), { passive: false });
         this.content.addEventListener('mousedown', this.onMouseDown.bind(this));
+        this.content.addEventListener('touchstart', this.onTouchStart.bind(this), { passive: false });
+        this.content.addEventListener('touchmove', this.onTouchMove.bind(this), { passive: false });
+        this.content.addEventListener('touchend', this.onTouchEnd.bind(this));
+        this.content.addEventListener('touchcancel', this.onTouchEnd.bind(this));
         document.addEventListener('mouseup', this.onGlobalMouseUp.bind(this));
         document.addEventListener('mousemove', this.onGlobalMouseMove.bind(this));
         this.fixButtonDelay = null;
@@ -419,6 +428,11 @@ class ImageFullViewHelper {
         };
     }
 
+    /** True if a pointer event is on the image wrap (not media controls / modifiers). */
+    isImageWrapGesture(e) {
+        return findParentOfClass(e.target, 'imageview_modal_imagewrap') && !findParentOfClass(e.target, 'video-controls') && !findParentOfClass(e.target, 'audio-controls') && !findParentOfClass(e.target, 'audio-waveform-wrap') && !e.ctrlKey && !e.shiftKey;
+    }
+
     onMouseDown(e) {
         if (this.modal.style.display != 'block') {
             return;
@@ -426,7 +440,7 @@ class ImageFullViewHelper {
         if (e.button == 2) { // right-click
             return;
         }
-        if (!findParentOfClass(e.target, 'imageview_modal_imagewrap') || findParentOfClass(e.target, 'video-controls') || findParentOfClass(e.target, 'audio-controls') || findParentOfClass(e.target, 'audio-waveform-wrap') || e.ctrlKey || e.shiftKey) {
+        if (!this.isImageWrapGesture(e)) {
             return;
         }
         this.lastMouseX = e.clientX;
@@ -446,6 +460,85 @@ class ImageFullViewHelper {
         this.isDragging = false;
         this.noClose = this.didDrag;
         this.didDrag = false;
+    }
+
+    /** Distance between two touch points. */
+    touchDistance(a, b) {
+        let dx = a.clientX - b.clientX;
+        let dy = a.clientY - b.clientY;
+        return Math.sqrt(dx * dx + dy * dy);
+    }
+
+    /** Starts one-finger pan or two-finger pinch handling in full view. */
+    onTouchStart(e) {
+        if (this.modal.style.display != 'block' || !this.isImageWrapGesture(e)) {
+            return;
+        }
+        if (e.touches.length >= 2) {
+            this.isPinching = true;
+            this.isDragging = false;
+            this.lastPinchDist = this.touchDistance(e.touches[0], e.touches[1]);
+            this.lastPinchMidX = (e.touches[0].clientX + e.touches[1].clientX) / 2;
+            this.lastPinchMidY = (e.touches[0].clientY + e.touches[1].clientY) / 2;
+            e.preventDefault();
+            e.stopPropagation();
+        }
+        else if (e.touches.length == 1 && !this.isPinching) {
+            this.lastMouseX = e.touches[0].clientX;
+            this.lastMouseY = e.touches[0].clientY;
+            this.isDragging = true;
+        }
+    }
+
+    /** Applies the active touch pan or pinch gesture. */
+    onTouchMove(e) {
+        if (this.isPinching && e.touches.length >= 2) {
+            e.preventDefault();
+            e.stopPropagation();
+            let dist = this.touchDistance(e.touches[0], e.touches[1]);
+            let midX = (e.touches[0].clientX + e.touches[1].clientX) / 2;
+            let midY = (e.touches[0].clientY + e.touches[1].clientY) / 2;
+            if (this.lastPinchDist > 0) {
+                this.zoomAround(midX, midY, dist / this.lastPinchDist);
+            }
+            this.moveImg(midX - this.lastPinchMidX, midY - this.lastPinchMidY);
+            this.lastPinchDist = dist;
+            this.lastPinchMidX = midX;
+            this.lastPinchMidY = midY;
+            this.didDrag = true;
+        }
+        else if (this.isDragging && e.touches.length == 1) {
+            let xDiff = e.touches[0].clientX - this.lastMouseX;
+            let yDiff = e.touches[0].clientY - this.lastMouseY;
+            if (!this.didDrag && Math.abs(xDiff) < 2 && Math.abs(yDiff) < 2) {
+                return;
+            }
+            e.preventDefault();
+            e.stopPropagation();
+            this.detachImg();
+            this.lastMouseX = e.touches[0].clientX;
+            this.lastMouseY = e.touches[0].clientY;
+            this.moveImg(xDiff, yDiff);
+            this.didDrag = true;
+        }
+    }
+
+    /** Finishes or downgrades the active touch gesture. */
+    onTouchEnd(e) {
+        if (e.touches.length < 2) {
+            this.isPinching = false;
+            this.lastPinchDist = 0;
+        }
+        if (e.touches.length == 1) {
+            this.lastMouseX = e.touches[0].clientX;
+            this.lastMouseY = e.touches[0].clientY;
+            this.isDragging = true;
+        }
+        else if (e.touches.length == 0) {
+            this.isDragging = false;
+            this.noClose = this.didDrag;
+            this.didDrag = false;
+        }
     }
 
     moveImg(xDiff, yDiff) {
@@ -675,7 +768,7 @@ class ImageFullViewHelper {
     }
 
     onWheel(e) {
-        if (!findParentOfClass(e.target, 'imageview_modal_imagewrap') || e.shiftKey) {
+        if (!this.isImageWrapGesture(e)) {
             return;
         }
         e.preventDefault();
@@ -697,6 +790,14 @@ class ImageFullViewHelper {
             this.pendingWheelSteps = 0;
             this.applyWheelZoom(stepDelta, mouseX, mouseY);
         });
+    }
+
+    /** Zoom the full-view image around a client-space point by a multiplicative factor. */
+    zoomAround(clientX, clientY, zoom) {
+        if (!Number.isFinite(zoom) || zoom <= 0 || this.zoomRate <= 0 || this.zoomRate == 1) {
+            return;
+        }
+        this.applyWheelZoom(Math.log(zoom) / Math.log(this.zoomRate), clientX, clientY);
     }
 
     toggleMetadataVisibility(showMetadata) {
@@ -866,6 +967,8 @@ class ImageFullViewHelper {
         if (media && (media.tagName == 'VIDEO' || media.tagName == 'AUDIO')) {
             media.pause();
         }
+        this.isPinching = false;
+        this.lastPinchDist = 0;
     }
 
     isOpen() {
@@ -1039,8 +1142,12 @@ function rightClickImageInBatch(e, div) {
     let src = div.dataset.src;
     let fullsrc = getImageFullSrc(src);
     let metadata = div.dataset.metadata;
+    let mediaType = getMediaType(src);
     let popoverActions = [];
     for (let added of buttonsForImage(fullsrc, src, metadata)) {
+        if (added.multi_only || (added.media_types && !added.media_types.includes(mediaType))) {
+            continue;
+        }
         if (added.href) {
             popoverActions.push({ key: added.label, href: added.href, is_download: added.is_download, title: added.title });
         }
