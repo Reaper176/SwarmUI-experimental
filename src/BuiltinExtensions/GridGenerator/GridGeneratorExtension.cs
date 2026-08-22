@@ -210,7 +210,15 @@ public class GridGeneratorExtension : Extension
                 }
             }
             int iteration = runner.Iteration;
-            Task t = Task.Run(() => T2IEngine.CreateImageTask(thisParams, $"{iteration}", data.Claim, data.AddOutput, setError, true,
+            void outputGridProgress(JObject output)
+            {
+                if (output["gen_progress"] is JObject progress)
+                {
+                    progress["batch_index"] = $"{iteration}";
+                }
+                data.AddOutput(output);
+            }
+            Task t = Task.Run(() => T2IEngine.CreateImageTask(thisParams, $"{iteration}", data.Claim, outputGridProgress, setError, true,
                 (image, metadata) =>
                 {
                     Logs.Info($"Completed gen #{iteration} (of {runner.TotalRun}) ... Set: '{set.Data}', file '{set.BaseFilepath}'");
