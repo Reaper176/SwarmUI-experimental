@@ -462,7 +462,7 @@ class GridGenClass {
                 showError("Cannot generate, no model selected.");
                 return;
             }
-            this.doGenerate();
+            mainGenHandler.preloadCurrentModelForPreviews(document.getElementById('current_model').value, () => this.doGenerate());
         });
     }
 
