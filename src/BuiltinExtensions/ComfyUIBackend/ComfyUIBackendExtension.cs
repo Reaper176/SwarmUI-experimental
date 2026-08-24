@@ -809,6 +809,9 @@ public class ComfyUIBackendExtension : Extension
     /// <summary>Parameter that selects the SeedVR restoration model.</summary>
     public static T2IRegisteredParam<T2IModel> SeedVRModel;
 
+    /// <summary>Per-ControlNet preprocessor resolution parameters.</summary>
+    public static T2IRegisteredParam<int>[] ControlNetPreprocessorResolutionParams = new T2IRegisteredParam<int>[3];
+
     public static T2IRegisteredParam<string>[] ControlNetPreprocessorParams = new T2IRegisteredParam<string>[3], ControlNetUnionTypeParams = new T2IRegisteredParam<string>[3];
 
     public static List<string> UpscalerModels = ["pixel-lanczos///Pixel: Lanczos (cheap + high quality)", "pixel-bicubic///Pixel: Bicubic (Basic)", "pixel-area///Pixel: Area", "pixel-bilinear///Pixel: Bilinear", "pixel-nearest-exact///Pixel: Nearest-Exact (Pixel art)", "latent-bislerp///Latent: Bislerp", "latent-bicubic///Latent: Bicubic", "latent-area///Latent: Area", "latent-bilinear///Latent: Bilinear", "latent-nearest-exact///Latent: Nearest-Exact"],
@@ -1060,6 +1063,9 @@ public class ComfyUIBackendExtension : Extension
         {
             ControlNetPreprocessorParams[i] = T2IParamTypes.Register<string>(new($"ControlNet{T2IParamTypes.Controlnets[i].NameSuffix} Preprocessor", "The preprocessor to use on the ControlNet input image.\nIf toggled off, will be automatically selected.\nUse 'None' to disable preprocessing.",
                 "None", Toggleable: true, FeatureFlag: "controlnet", Permission: Permissions.ParamControlNet, Group: T2IParamTypes.Controlnets[i].Group, OrderPriority: 3, GetValues: (_) => [.. ControlNetPreprocessors.Keys.Order().OrderBy(v => v == "None" ? -1 : 0)], ChangeWeight: 2
+                ));
+            ControlNetPreprocessorResolutionParams[i] = T2IParamTypes.Register<int>(new($"ControlNet{T2IParamTypes.Controlnets[i].NameSuffix} Preprocessor Resolution", "The resolution used by ControlNet preprocessors that support a resolution input. Lower values use less VRAM.",
+                "1024", Min: 64, Max: 4096, Step: 64, FeatureFlag: "controlnet", Permission: Permissions.ParamControlNet, Group: T2IParamTypes.Controlnets[i].Group, ViewType: ParamViewType.SLIDER, OrderPriority: 3.1, ChangeWeight: 2
                 ));
             ControlNetUnionTypeParams[i] = T2IParamTypes.Register<string>(new($"ControlNet{T2IParamTypes.Controlnets[i].NameSuffix} Union Type", "For Union ControlNets, you can optionally manually specify the union controlnet type.",
                 "auto", Toggleable: true, IsAdvanced: true, FeatureFlag: "controlnet", Permission: Permissions.ParamControlNet, Group: T2IParamTypes.Controlnets[i].Group, OrderPriority: 4, GetValues: (_) => ControlnetUnionTypes
