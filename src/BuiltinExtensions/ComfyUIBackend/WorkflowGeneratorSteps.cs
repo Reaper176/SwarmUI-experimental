@@ -1175,21 +1175,17 @@ public class WorkflowGeneratorSteps
                     }
                     if (controlModel.ModelClass?.CompatClass?.ID == T2IModelClassSorter.CompatAnima.ID)
                     {
-                        string modelPatchLoader = g.CreateNode("ModelPatchLoader", new JObject()
-                        {
-                            ["name"] = controlModel.ToString(g.ModelFolderFormat)
-                        });
                         JObject animaInputs = new()
                         {
-                            ["model"] = g.CurrentModel.Path,
-                            ["model_patch"] = NodePath(modelPatchLoader, 0),
-                            ["image"] = imageNodeActual.Path,
-                            ["mask"] = g.FinalMask,
-                            ["strength"] = controlStrength,
-                            ["start_percent"] = g.UserInput.Get(controlnetParams.Start, 0),
-                            ["end_percent"] = g.UserInput.Get(controlnetParams.End, 1)
+                            [ComfyNodeInputNames.AnimaLLLite.Model] = g.CurrentModel.Path,
+                            [ComfyNodeInputNames.AnimaLLLite.LLLiteName] = controlModel.ToString(g.ModelFolderFormat),
+                            [ComfyNodeInputNames.AnimaLLLite.Image] = imageNodeActual.Path,
+                            [ComfyNodeInputNames.AnimaLLLite.Mask] = g.FinalMask,
+                            [ComfyNodeInputNames.AnimaLLLite.Strength] = controlStrength,
+                            [ComfyNodeInputNames.AnimaLLLite.StartPercent] = g.UserInput.Get(controlnetParams.Start, 0),
+                            [ComfyNodeInputNames.AnimaLLLite.EndPercent] = g.UserInput.Get(controlnetParams.End, 1)
                         };
-                        string animaApplyNode = g.CreateNode("AnimaLLLiteApply", animaInputs);
+                        string animaApplyNode = g.CreateNode(ComfyNodeNames.AnimaLLLite, animaInputs);
                         g.CurrentModel = g.CurrentModel.WithPath([animaApplyNode, 0]);
                         continue;
                     }
