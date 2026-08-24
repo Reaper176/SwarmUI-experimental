@@ -14,6 +14,9 @@ def _run_tunableop_flush_loop():
     if not tunable.is_enabled():
         print("[Swarm] TunableOp flush helper disabled: TunableOp is not enabled.")
         return
+    if not hasattr(tunable, "write_file"):
+        print("[Swarm] TunableOp persistence is managed automatically by this PyTorch version.")
+        return
     interval = 15.0
     try:
         interval = float(os.environ.get("SWARM_TUNABLEOP_FLUSH_SECONDS", "15"))
