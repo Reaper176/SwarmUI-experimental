@@ -536,6 +536,20 @@ def load_lllite_weights(lllite: ControlNetLLLiteDiT, file: str, strict: bool = F
     return info
 
 
+def is_anima_lllite_weights(file: str) -> bool:
+    """Returns whether a weight file uses Anima LLLite's named-key format."""
+    if os.path.splitext(file)[1] == ".safetensors":
+        from safetensors import safe_open
+        with safe_open(file, framework="pt") as f:
+            keys = list(f.keys())
+    else:
+        weights_sd = torch.load(file, map_location="cpu", weights_only=True)
+        keys = list(weights_sd)
+    return (any(k.startswith(_INTERNAL_MODULES_PREFIX) for k in keys)
+            or (any(k.startswith(_SAVED_COND_PREFIX) for k in keys)
+                and any(k.startswith("lllite_") and k.endswith(".down.weight") for k in keys)))
+
+
 def read_lllite_metadata(file: str) -> dict:
     if os.path.splitext(file)[1] != ".safetensors":
         return {}

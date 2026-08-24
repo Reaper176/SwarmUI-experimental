@@ -22,6 +22,7 @@ import folder_paths
 from .SwarmAnimaLLLiteCore import (
     ASPP_DEFAULT_DILATIONS,
     ControlNetLLLiteDiT,
+    is_anima_lllite_weights,
     load_lllite_weights,
     read_lllite_metadata,
 )
@@ -141,6 +142,11 @@ class SwarmAnimaLLLite:
         weights_path = folder_paths.get_full_path("controlnet", lllite_name)
         if weights_path is None or not os.path.isfile(weights_path):
             raise FileNotFoundError(f"LLLite weights not found: {lllite_name}")
+        if not is_anima_lllite_weights(weights_path):
+            raise ValueError(
+                f"ControlNet '{lllite_name}' is not an Anima ControlNet-LLLite model. "
+                "Select compatible Anima LLLite weights from the ControlNet folder."
+            )
 
         # Architecture is fully determined by the trained weights - read everything
         # from metadata rather than exposing knobs that would just cause load errors.
