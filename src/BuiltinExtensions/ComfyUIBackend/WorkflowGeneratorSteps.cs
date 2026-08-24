@@ -1119,7 +1119,8 @@ public class WorkflowGeneratorSteps
                             imageNodeActual = imageNodeActual.WithPath([resampleNode, 0]);
                             imageNodeActual.FPS = fps;
                         }
-                        JArray preprocActual = g.CreatePreprocessor(preprocessor, imageNodeActual);
+                        JArray preprocActual = g.CreatePreprocessor(preprocessor, imageNodeActual,
+                            g.UserInput.Get(ComfyUIBackendExtension.ControlNetPreprocessorResolutionParams[i], 1024));
                         g.NodeHelpers["controlnet_preprocessor"] = $"{preprocActual[0]}";
                         imageNodeActual = imageNodeActual.WithPath(preprocActual);
                         string multipleOf8 = g.CreateNode("ResizeImageMaskNode", new JObject()

@@ -2517,7 +2517,7 @@ public partial class WorkflowGenerator
     }
 
     /// <summary>Creates an image preprocessor node.</summary>
-    public JArray CreatePreprocessor(string preprocessor, WGNodeData imageNode)
+    public JArray CreatePreprocessor(string preprocessor, WGNodeData imageNode, int resolution)
     {
         imageNode = imageNode.AsRawImage(CurrentVae);
         JToken objectData = ComfyUIBackendExtension.ControlNetPreprocessors[preprocessor] ?? throw new SwarmUserErrorException($"ComfyUI backend does not have a preprocessor named '{preprocessor}'");
@@ -2547,7 +2547,7 @@ public partial class WorkflowGenerator
                         }
                         else if (key == "resolution")
                         {
-                            n["inputs"]["resolution"] = (int)Math.Round(Math.Sqrt(UserInput.GetImageWidth() * UserInput.GetImageHeight()) / 64) * 64;
+                            n["inputs"]["resolution"] = resolution;
                         }
                         else if (key == "bbox_detector" && preprocessor == "DWPreprocessor")
                         {
