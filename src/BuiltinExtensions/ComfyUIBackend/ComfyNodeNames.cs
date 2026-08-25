@@ -130,6 +130,9 @@ public static class ComfyNodeNames
     /// <summary>Comfy class name for creating a square mask from percentages.</summary>
     public const string SquareMaskFromPercent = "SwarmSquareMaskFromPercent";
 
+    /// <summary>Comfy class name for applying a watermark to images.</summary>
+    public const string Watermark = "SwarmWatermark";
+
     #endregion
 
     #region Sampling, latents, and models

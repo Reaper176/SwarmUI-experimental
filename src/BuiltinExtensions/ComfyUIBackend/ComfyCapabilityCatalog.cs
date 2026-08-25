@@ -6,6 +6,9 @@ public static class ComfyCapabilityCatalog
     /// <summary>Feature ID requiring the Swarm MiniMax H3 joint audio/video empty-latent node.</summary>
     public const string EmptyMiniMaxH3LatentAVFeature = "comfy_empty_minimax_h3_latent_av";
 
+    /// <summary>Feature ID requiring the Swarm watermark node.</summary>
+    public const string WatermarkFeature = "swarm_watermark";
+
     /// <summary>Prefix for backend-local model-attention option feature IDs.</summary>
     public const string ModelAttentionBackendValueFeaturePrefix = "model_attention_backend_value_";
 
@@ -30,6 +33,7 @@ public static class ComfyCapabilityCatalog
             [ComfyNodeNames.ModelAttentionBackend] = "model_attention_backend",
             [ComfyNodeNames.EmptyMiniMaxH3LatentAV] = EmptyMiniMaxH3LatentAVFeature,
             [ComfyNodeNames.AudioSilentMaskPrefixSuffix] = "audio_silent_mask_prefix_suffix",
+            [ComfyNodeNames.Watermark] = WatermarkFeature,
             ["FreeU"] = "freeu",
             ["AITemplateLoader"] = "aitemplate",
             ["IPAdapter"] = "ipadapter",

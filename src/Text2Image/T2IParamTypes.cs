@@ -333,12 +333,12 @@ public class T2IParamTypes
         return update;
     }
 
-    public static T2IRegisteredParam<string> Prompt, NegativePrompt, AspectRatio, BackendType, RefinerMethod, FreeUApplyTo, FreeUVersion, PersonalNote, VideoFormat, VideoResolution, UnsamplerPrompt, ImageFormat, MaskBehavior, ColorCorrectionBehavior, RawResolution, SeamlessTileable, SD3TextEncs, BitDepth, Webhooks, Text2VideoFormat, WildcardSeedBehavior, PromptTokenNormalization, PromptWeightInterpretation, SegmentSortOrder, SegmentTargetResolution, SegmentApplyAfter, TorchCompile, VideoExtendFormat, ExactBackendID, OverridePredictionType, OverrideOutpathFormat, HistorySaveFolder, Text2AudioTimeSignature, Text2AudioLanguage, Text2AudioKeyScale, Text2AudioStyle;
+    public static T2IRegisteredParam<string> Prompt, NegativePrompt, AspectRatio, BackendType, RefinerMethod, FreeUApplyTo, FreeUVersion, PersonalNote, VideoFormat, VideoResolution, UnsamplerPrompt, ImageFormat, MaskBehavior, ColorCorrectionBehavior, RawResolution, SeamlessTileable, SD3TextEncs, BitDepth, Webhooks, Text2VideoFormat, WildcardSeedBehavior, PromptTokenNormalization, PromptWeightInterpretation, SegmentSortOrder, SegmentTargetResolution, SegmentApplyAfter, TorchCompile, VideoExtendFormat, ExactBackendID, OverridePredictionType, OverrideOutpathFormat, HistorySaveFolder, Text2AudioTimeSignature, Text2AudioLanguage, Text2AudioKeyScale, Text2AudioStyle, WatermarkPreset, WatermarkAlignment;
     public static T2IRegisteredParam<int> Images, Steps, Width, Height, SideLength, BatchSize, VAETileSize, VAETileOverlap, VAETemporalTileSize, VAETemporalTileOverlap, ClipStopAtLayer, VideoFrames, VideoMotionBucket, VideoFPS, VideoSteps, RefinerSteps, CascadeLatentCompression, MaskShrinkGrow, MaskBlur, MaskGrow, InitImageScaleForMPWidth, InitImageScaleForMPHeight, SegmentMaskBlur, SegmentMaskGrow, SegmentMaskOversize, SegmentSteps, Text2VideoFrames, TrimVideoStartFrames, TrimVideoEndFrames, VideoExtendFrameOverlap;
     public static T2IRegisteredParam<long> Seed, VariationSeed, WildcardSeed, Text2AudioBPM;
     public static T2IRegisteredParam<double> CFGScale, DenoiseStrength, VariationSeedStrength, InitImageCreativity, InitImageResetToNorm, InitImageNoise, MaskShrinkGrowResolutionOverrideMP, RefinerControl, RefinerUpscale, RefinerCFGScale, ReVisionStrength, AltResolutionHeightMult,
-        FreeUBlock1, FreeUBlock2, FreeUSkip1, FreeUSkip2, GlobalRegionFactor, EndStepsEarly, SamplerSigmaMin, SamplerSigmaMax, SamplerRho, VideoAugmentationLevel, VideoCFG, VideoMinCFG, Video2VideoCreativity, VideoSwapPercent, VideoExtendSwapPercent, IP2PCFG2, RegionalObjectCleanupFactor, SigmaShift, SegmentThresholdMax, SegmentCFGScale, FluxGuidanceScale, Text2AudioDuration, AudioSilentPrefixDuration, AudioSilentSuffixDuration, ConditioningMultiplier, NegativeConditioningMultiplier;
-    public static T2IRegisteredParam<Image> InitImage, MaskImage, VideoEndImage;
+        FreeUBlock1, FreeUBlock2, FreeUSkip1, FreeUSkip2, GlobalRegionFactor, EndStepsEarly, SamplerSigmaMin, SamplerSigmaMax, SamplerRho, VideoAugmentationLevel, VideoCFG, VideoMinCFG, Video2VideoCreativity, VideoSwapPercent, VideoExtendSwapPercent, IP2PCFG2, RegionalObjectCleanupFactor, SigmaShift, SegmentThresholdMax, SegmentCFGScale, FluxGuidanceScale, Text2AudioDuration, AudioSilentPrefixDuration, AudioSilentSuffixDuration, ConditioningMultiplier, NegativeConditioningMultiplier, WatermarkOffsetPercentage, WatermarkResizePercentage, WatermarkOpacity;
+    public static T2IRegisteredParam<Image> InitImage, MaskImage, VideoEndImage, WatermarkImage, WatermarkMask;
 
     /// <summary>Compatibility alias for <see cref="VideoEndImage"/>.</summary>
     [Obsolete("Use VideoEndImage instead.")]
@@ -355,7 +355,7 @@ public class T2IParamTypes
 
     public static T2IParamGroup GroupImagePrompting, GroupCore, GroupVariation, GroupResolution, GroupSampling, GroupInitImage, GroupRefiners, GroupRefinerOverrides,
         GroupAdvancedModelAddons, GroupSwarmInternal, GroupFreeU, GroupRegionalPrompting, GroupSegmentRefining, GroupSegmentOverrides, GroupAdvancedSampling, GroupAlternateGuidance, GroupVideo, GroupText2Video, GroupAdvancedVideo, GroupAdvancedVideoObscure, GroupVideoExtend, GroupText2Audio,
-        GroupStarred, GroupUser1, GroupUser2, GroupUser3;
+        GroupStarred, GroupUser1, GroupUser2, GroupUser3, GroupWatermark;
 
     public static T2IParamGroup GroupOtherFixes;
 
@@ -1006,6 +1006,28 @@ public class T2IParamTypes
             ));
         FreeUSkip2 = Register<double>(new("[FreeU] Skip Two", "Skip2 multiplier value for FreeU.\nPaper recommends 0.2.",
             "0.2", Min: 0, Max: 10, Step: 0.05, IsAdvanced: true, Group: GroupFreeU, FeatureFlag: "freeu", OrderPriority: -1
+            ));
+        GroupWatermark = new("Watermark", Open: false, OrderPriority: 55, IsAdvanced: true, Toggles: true, Description: "Optionally apply a preset or custom watermark to final still images and video frames.");
+        WatermarkPreset = Register<string>(new("Watermark Preset", "Which built-in watermark preset to use when no custom watermark image is provided.",
+            "speaker-white", GetValues: _ => ["speaker-white", "speaker-black"], OrderPriority: 1, Group: GroupWatermark, FeatureFlag: "swarm_watermark", DoNotPreview: true
+            ));
+        WatermarkImage = Register<Image>(new("Watermark Image", "Optional custom watermark image that overrides the preset and uses its embedded PNG alpha.",
+            null, OrderPriority: 2, Group: GroupWatermark, FeatureFlag: "swarm_watermark", DoNotPreview: true, ChangeWeight: 1, ImageShouldResize: false
+            ));
+        WatermarkMask = Register<Image>(new("Watermark Mask", "Optional custom opacity mask for the watermark. White is opaque and black is transparent; this overrides embedded alpha.",
+            null, OrderPriority: 3, Group: GroupWatermark, FeatureFlag: "swarm_watermark", DoNotPreview: true, ChangeWeight: 1, ImageShouldResize: false, DependNonDefault: WatermarkImage.Type.ID
+            ));
+        WatermarkAlignment = Register<string>(new("Watermark Alignment", "Where to place the watermark on the image.",
+            "bottom-right", GetValues: _ => ["bottom-right", "center", "top-center", "top-left", "top-right", "center-right", "center-left", "bottom-center", "bottom-left"], OrderPriority: 4, Group: GroupWatermark, FeatureFlag: "swarm_watermark", DoNotPreview: true
+            ));
+        WatermarkOffsetPercentage = Register<double>(new("Watermark Offset Percentage", "The margin from the selected image edges to the watermark, as a percentage of the final width and height.",
+            "2", Min: 0, Max: 100, Step: 0.1, ViewType: ParamViewType.SLIDER, OrderPriority: 5, Group: GroupWatermark, FeatureFlag: "swarm_watermark", DoNotPreview: true
+            ));
+        WatermarkResizePercentage = Register<double>(new("Watermark Resize Percentage", "The watermark width as a percentage of the final output width; aspect ratio is preserved.",
+            "20", Min: 0.1, Max: 200, Step: 0.1, ViewType: ParamViewType.SLIDER, OrderPriority: 6, Group: GroupWatermark, FeatureFlag: "swarm_watermark", DoNotPreview: true
+            ));
+        WatermarkOpacity = Register<double>(new("Watermark Opacity", "The watermark opacity percentage.",
+            "60", Min: 0, Max: 100, Step: 1, ViewType: ParamViewType.SLIDER, OrderPriority: 7, Group: GroupWatermark, FeatureFlag: "swarm_watermark", DoNotPreview: true
             ));
         // ================================================ Other Fixes ================================================
         GroupOtherFixes = new("Other Fixes", Open: false, OrderPriority: 60, IsAdvanced: true);

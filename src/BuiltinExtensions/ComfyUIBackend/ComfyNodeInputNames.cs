@@ -252,6 +252,27 @@ public static class ComfyNodeInputNames
         public const string Y = "y";
     }
 
+    /// <summary>Input names for the watermark node.</summary>
+    public static class Watermark
+    {
+        /// <summary>Input name for the watermark alignment.</summary>
+        public const string Alignment = "alignment";
+        /// <summary>Input name for the source image.</summary>
+        public const string Image = "image";
+        /// <summary>Input name for the watermark offset percentage.</summary>
+        public const string OffsetPercentage = "offset_percentage";
+        /// <summary>Input name for the watermark opacity.</summary>
+        public const string Opacity = "opacity";
+        /// <summary>Input name for the watermark resize percentage.</summary>
+        public const string ResizePercentage = "resize_percentage";
+        /// <summary>Input name for the watermark image.</summary>
+        public const string WatermarkImage = "watermark";
+        /// <summary>Input name for the watermark mask.</summary>
+        public const string WatermarkMask = "watermark_mask";
+        /// <summary>Input name for the watermark preset.</summary>
+        public const string WatermarkPreset = "watermark_preset";
+    }
+
     #endregion
 
     #region Sampling, latents, and models
