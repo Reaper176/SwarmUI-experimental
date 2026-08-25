@@ -2151,6 +2151,10 @@ public class WorkflowGeneratorSteps
                 }
                 if (nodeId is not null)
                 {
+                    if (!willHaveFollowupVideo)
+                    {
+                        g.CurrentMedia = g.ApplyFinalWatermark(g.CurrentMedia, g.CurrentVae);
+                    }
                     g.CurrentMedia.SaveOutput(g.CurrentVae, g.CurrentAudioVae, nodeId);
                 }
             }
@@ -2252,6 +2256,10 @@ public class WorkflowGeneratorSteps
                 if (hasExtend)
                 {
                     nodeId = $"{g.GetStableDynamicID(50000, 0)}";
+                }
+                if (!hasExtend)
+                {
+                    g.CurrentMedia = g.ApplyFinalWatermark(g.CurrentMedia, genInfo.Vae);
                 }
                 g.CurrentMedia.SaveOutput(genInfo.Vae, g.CurrentAudioVae, nodeId);
             }
@@ -2400,6 +2408,7 @@ public class WorkflowGeneratorSteps
                     videoFps *= mult;
                     g.CurrentMedia.FPS = videoFps;
                 }
+                g.CurrentMedia = g.ApplyFinalWatermark(g.CurrentMedia, extendVae ?? g.CurrentVae);
                 g.CurrentMedia.SaveOutput(g.CurrentVae, g.CurrentAudioVae, "9");
             }
         }, 12);

@@ -753,6 +753,66 @@ public partial class WorkflowGenerator
         }
     }
 
+    /// <summary>Applies the configured final-output watermark, or returns the media unchanged when watermarking is disabled.</summary>
+    /// <param name="media">Final media to watermark.</param>
+    /// <param name="vae">VAE used when the final media still requires decoding.</param>
+    /// <returns>Final raw media with its path replaced by the watermark node output.</returns>
+    public WGNodeData ApplyFinalWatermark(WGNodeData media, WGNodeData vae)
+    {
+        if (!UserInput.TryGet(T2IParamTypes.WatermarkPreset, out string preset))
+        {
+            return media;
+        }
+        if (!Features.Contains(ComfyCapabilityCatalog.WatermarkFeature))
+        {
+            throw new SwarmUserErrorException("The selected backend does not support final-output watermarking.");
+        }
+        if (media.DataType == WGNodeData.DT_AUDIO || media.DataType == WGNodeData.DT_LATENT_AUDIO)
+        {
+            throw new SwarmUserErrorException("Watermarking requires an image or video output, but this generation produced audio only.");
+        }
+
+        WGNodeData rawMedia = media.AsRawImage(vae);
+        JObject inputs = new()
+        {
+            [ComfyNodeInputNames.Watermark.Image] = rawMedia.Path,
+            [ComfyNodeInputNames.Watermark.WatermarkPreset] = preset,
+            [ComfyNodeInputNames.Watermark.Alignment] = UserInput.Get(T2IParamTypes.WatermarkAlignment, "bottom-right"),
+            [ComfyNodeInputNames.Watermark.OffsetPercentage] = UserInput.Get(T2IParamTypes.WatermarkOffsetPercentage, 2.0),
+            [ComfyNodeInputNames.Watermark.ResizePercentage] = UserInput.Get(T2IParamTypes.WatermarkResizePercentage, 20.0),
+            [ComfyNodeInputNames.Watermark.Opacity] = UserInput.Get(T2IParamTypes.WatermarkOpacity, 60.0)
+        };
+
+        if (UserInput.TryGet(T2IParamTypes.WatermarkImage, out Image customImage))
+        {
+            WGNodeData customLoader = LoadImage(customImage, "${watermarkimage}", false);
+            inputs[ComfyNodeInputNames.Watermark.WatermarkImage] = customLoader.Path;
+            JArray alphaMask;
+            if (UserInput.TryGet(T2IParamTypes.WatermarkMask, out Image customMask))
+            {
+                WGNodeData maskLoader = LoadImage(customMask, "${watermarkmask}", false);
+                string imageToMask = CreateNode("ImageToMask", new JObject()
+                {
+                    ["image"] = maskLoader.Path,
+                    ["channel"] = "red"
+                });
+                alphaMask = NodePath(imageToMask, 0);
+            }
+            else
+            {
+                string invertMask = CreateNode("InvertMask", new JObject()
+                {
+                    ["mask"] = NodePath($"{customLoader.Path[0]}", 1)
+                });
+                alphaMask = NodePath(invertMask, 0);
+            }
+            inputs[ComfyNodeInputNames.Watermark.WatermarkMask] = alphaMask;
+        }
+
+        string watermarkNode = CreateNode(ComfyNodeNames.Watermark, inputs);
+        return rawMedia.WithPath([watermarkNode, 0]);
+    }
+
     /// <summary>For <see cref="CreateImageMaskCrop(JArray, JArray, int, JArray, T2IModel, double, double, int, int, double, bool)"/>.</summary>
     public record class ImageMaskCropData(string BoundsNode, string CroppedMask, string MaskedLatent, string ScaledImage);
 
