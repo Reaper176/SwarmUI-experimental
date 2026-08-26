@@ -891,6 +891,8 @@ function setMediaFileDirect(elem, src, type, name, longName = null, callback = n
     let parent = findParentOfClass(elem, 'auto-input');
     let preview = parent.querySelector('.auto-input-preview');
     let label = parent.querySelector('.auto-file-input-filename');
+    delete elem.dataset.filename;
+    delete elem.dataset.filenameSource;
     elem.dataset.filedata = src;
     let button = `<button class="interrupt-button auto-input-remove-button" title="Remove ${type}">&times;</button>`;
     let img;
@@ -930,12 +932,13 @@ function setMediaFileDirect(elem, src, type, name, longName = null, callback = n
         }
         longName = longName && longName.length > 500 ? longName.substring(0, 150) + '...' : longName;
         elem.dataset.filename = longName || shortName;
-        loadMediaFileDedup = true;
-        triggerChangeFor(elem);
-        loadMediaFileDedup = false;
         if (callback) {
             callback();
         }
+        elem.dataset.filenameSource = elem.dataset.filedata;
+        loadMediaFileDedup = true;
+        triggerChangeFor(elem);
+        loadMediaFileDedup = false;
     };
     if (type == 'video') {
         img.addEventListener('loadeddata', () => {

@@ -9,6 +9,7 @@ class GenerateHandler {
         this.sockets = {};
         this.imageContainerDivId = 'current_image';
         this.imageId = 'current_image_img';
+        this.watermarkInputId = 'input_watermarkimage';
         this.progressBarHtml = `<div class="image-preview-progress-inner"><div class="image-preview-progress-overall"></div><div class="image-preview-progress-current"></div></div>`;
         this.batchDiv = document.getElementById('current_image_batch');
     }
@@ -533,7 +534,7 @@ class GenerateHandler {
             if (postCollectRun) {
                 postCollectRun(actualInput);
             }
-            submittedWatermarkName = watermarkRecentHistory.captureSubmittedName(actualInput);
+            submittedWatermarkName = watermarkRecentHistory.captureSubmittedName(actualInput, this.watermarkInputId);
             this.debugTrack('request-start', {
                 images: actualInput.images,
                 batchsize: actualInput.batchsize,

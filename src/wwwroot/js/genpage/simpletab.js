@@ -525,6 +525,7 @@ class SimpleTabGenerateHandler extends GenerateHandler {
 
     constructor() {
         super();
+        this.watermarkInputId = 'simpleinput_watermarkimage';
         this.currentDisplayedRequestId = null;
         this.batchDiv = document.getElementById('simple_current_image_batch');
     }

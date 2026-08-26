@@ -207,22 +207,20 @@ class WatermarkRecentHistory {
         }
     }
 
-    /** Gets a trusted filename from a watermark input matching the submitted source. */
-    captureSubmittedName(actualInput) {
+    /** Gets a trusted filename from the submitted handler's matching watermark input. */
+    captureSubmittedName(actualInput, inputId) {
         if (!actualInput || typeof actualInput.watermarkimage != 'string' || !actualInput.watermarkimage) {
             return null;
         }
-        let inputs = document.querySelectorAll('input.auto-file[data-param_id="watermarkimage"]');
-        for (let input of inputs) {
-            if (input.dataset.filedata != actualInput.watermarkimage) {
-                continue;
-            }
-            if (input.dataset.filename) {
-                return input.dataset.filename;
-            }
-            if (input.files && input.files[0] && input.files[0].name) {
-                return input.files[0].name;
-            }
+        let input = document.getElementById(inputId);
+        if (!input || input.dataset.filedata != actualInput.watermarkimage) {
+            return null;
+        }
+        if (input.dataset.filename && input.dataset.filenameSource == actualInput.watermarkimage) {
+            return input.dataset.filename;
+        }
+        if (input.files && input.files[0] && input.files[0].name) {
+            return input.files[0].name;
         }
         return null;
     }
