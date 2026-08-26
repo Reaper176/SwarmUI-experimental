@@ -118,6 +118,10 @@ Metadata:
 	#The average header length of a standard model is already between several hundred kilobytes to a few megabytes,
 	#so 64 KiB is not a major increase in space but is enough to fit major metadata changes including eg adding a small jpeg thumbnail.
 	ModelMetadataSpacerKilobytes: 64
+	#Special developmental debug tool: if true, always recheck model class when rescanning models.
+	#This ignores any saved architecture in the modelspec header.
+	#This is quite performance wasteful, and will undo user choices.
+	DebugAlwaysRecheckClass: false
 #Settings related to networking and the webserver.
 Network:
 	#Optionally set an external URL here, eg 'https://swarm.example.com'
@@ -173,7 +177,7 @@ Network:
 	#Set to 0 to not trust any forwarded-for.
 	MaxXForwardedFor: 3
 	#Maximum megabytes that can be sent as a single message from a client to the Swarm server.
-	#Set this lower to limit above, set this higher to allow very large file uploads.
+	#Set this lower to limit abuse, set this higher to allow very large file uploads.
 	#Server needs a restart for this to fully apply.
 	MaxNetworkRequestMegabytes: 200
 #Settings related to Swarm server maintenance.
@@ -302,6 +306,13 @@ DefaultUser:
 		#Whether LoRAs can be added to a generation multiple times.
 		#If false, the firstmost usage of a LoRA will be kept and others will be discarded.
 		AllowLoraStacking: true
+	#Settings related to markdown notes in the Generate tab.
+	Notes:
+		#Filesystem root for notes used by the Generate tab Notes sub-tab.
+		#This folder is user-specific and notes access is restricted to stay within it.
+		#Can be an absolute path, or relative to the SwarmUI folder.
+		#If blank, the Notes tab will remain disabled until set.
+		Root: \x
 	#Whether your image output files save to server data drive or not.
 	#Disabling this can make some systems misbehave, and makes the Image History do nothing.
 	SaveFiles: true
@@ -321,7 +332,9 @@ DefaultUser:
 	#A list of what buttons to include directly under images in the main prompt area of the Generate tab.
 	#Other buttons will be moved into the 'More' dropdown.
 	#This should be a comma separated list.
-	#The following options are available: "Use As Init", "Use As Image Prompt", "Edit Image", "Upscale 2x", "Star", "Reuse Parameters", "Open In Folder", "Delete", "Download" "View In History", "Refine Image"
+	#The following options are available: "Use As Init", "Use As Image Prompt", "Edit Image", "Upscale 2x", "Star", "Reuse Parameters", "Open In Folder", "Delete", "Download", "View In History", "Refine Image", "Copy Path", "Copy Raw Metadata"
+	#Some buttons like 'Edit Image' may only apply to images and will not show for audio or video files.
+	#Extensions can add their own button names here too.
 	#The default is blank, which currently implies 'Use As Init,Edit Image,Star,Reuse Parameters'
 	ButtonsUnderMainImages: \x
 	#How to format image metadata on the Generate tab when looking at an image.
@@ -334,6 +347,34 @@ DefaultUser:
 	#This can prevent accidents that might thrash your GPU or cause compatibility issues, especially for example when importing a comfy workflow.
 	#You can still set the batch size at will in the GUI.
 	ResetBatchSizeToOne: false
+	#If enabled, the Generate tab's 'Do Not Save' parameter defaults to enabled and is preserved when using Reuse Parameters.
+	DefaultDoNotSave: false
+	#If enabled, the Prompt Lab tab is available on the Generate page.
+	EnablePromptLab: true
+	#If enabled, advanced Image History organization tools are available.
+	EnableImageHistoryAdvancedTools: true
+	#Default Image History sort mode when the browser has no saved local preference.
+	DefaultImageHistorySort: Name
+	#Default Image History view mode when the browser has no saved local preference.
+	DefaultImageHistoryView: Thumbnails
+	#If enabled, Image History shows hidden images by default when the browser has no saved local preference.
+	ImageHistoryShowHiddenDefault: false
+	#If enabled, Image History compare tools are available.
+	EnableImageHistoryCompare: true
+	#If enabled, Image History compare opens with metadata differences visible.
+	ImageHistoryCompareMetadataDefault: false
+	#If enabled, Image History compare opens in pixel diff mode.
+	ImageHistoryCompareDiffDefault: false
+	#Prompt Lab wildcard combinations above this count require confirmation before queueing.
+	PromptLabWildcardCombinationWarningLimit: 1000
+	#Prompt Lab wildcard expansions cannot return more combinations than this hard limit.
+	PromptLabWildcardCombinationHardLimit: 10000
+	#If enabled, Prompt Lab wildcard expansion results are shuffled by default.
+	PromptLabShuffleWildcardCombinations: false
+	#If enabled, Prompt Lab wildcard choices are saved into generated image metadata.
+	PromptLabSaveWildcardValuesToMetadata: true
+	#If enabled, Prompt Lab auto-save is enabled by default.
+	PromptLabAutoSaveDefault: false
 	#The format for parameter hints to display as.
 	#Default is 'BUTTON'.
 	HintFormat: BUTTON
@@ -343,6 +384,14 @@ DefaultUser:
 	#Actual size in practice tends to be a few lines shorter due to browser and font variations.
 	#Default is 10.
 	MaxPromptLines: 10
+	#How to visually show prompt conditioning split points in the Generate tab prompt boxes.
+	#'none' disables the indicator.
+	#'background' colors each split section behind the text.
+	#'underline' underlines each split section.
+	#'gutter' shows compact split labels beside the prompt box.
+	PromptSplitIndicator: none
+	#If enabled, prompt split indicators include visible text labels such as '--forced-break--' between split sections. Useful when color alone is hard to distinguish.
+	PromptSplitIndicatorTextLabels: false
 	#Options to override default VAEs with.
 	VAEs:
 		#What VAE to use with SDXL models by default. Use 'None' to use the one in the model.
@@ -359,6 +408,8 @@ DefaultUser:
 		DefaultSD3VAE: None
 		#What VAE to use with Mochi Text2Video models by default.
 		DefaultMochiVAE: None
+		#What VAE to use with Qwen Image models by default.
+		DefaultQwenVAE: None
 	#Set to a number above 1 to allow generations of multiple images to automatically generate square mini-grids when they're done.
 	MaxImagesInMiniGrid: 1
 	#How many images the history view should stop trying to load after.
@@ -463,6 +514,14 @@ Backends:
 	#Defaults to 60 minutes (one hour).
 	#Set to -1 to disable.
 	ClearSystemRAMAfterMinutes: 60
+	#If true, automatically free backend VRAM immediately after all generation queues have gone idle.
+	#This has the downside of forcing models to reload to VRAM for the next generation.
+	#Defaults to false.
+	ClearVRAMAfterEveryBatch: false
+	#If true, automatically free backend system RAM immediately after all generation queues have gone idle.
+	#This has the downside of forcing models to fully reload from disk for the next generation.
+	#Defaults to false.
+	ClearSystemRAMAfterEveryBatch: false
 	#If true, any time you load the UI, trigger a server refresh.
 	#If false, only triggers a refresh if you restart Swarm or trigger a refresh manually from the Quick Tools menu.
 	#Defaults to true.
@@ -512,6 +571,8 @@ UserAuthorization:
 	#You may use (basic!) HTML here.
 	#It is recommended to add contact information here, such as a Discord invite code or an email address.
 	LoginNotice: This is a local instance not yet configured for shared usage. If you're seeing this on the login screen, ask the server owner to fill it in on the Server Configuration page.
+	#If true, and authorization is enabled, allow logging in to accounts with a simple username/password/combo.
+	AllowSimplePasswordLogin: true
 	#Settings related to user registration.
 	Registration:
 		#If true, allow new users to register accounts on this SwarmUI instance.
@@ -644,7 +705,7 @@ Performance:
 	#Past this count, the list will simply be cut off.
 	#Use sub-folder organization to prevent issues.
 	ModelListSanityCap: 5000
-#Settings related to local Krita round-trip integration.
+#Settings related to the local Krita round-trip integration.
 KritaBridge:
 	#Optional full path to the Krita executable for local launch integration.
 	#Environment-variable and home-directory markers such as '%ProgramFiles%', '$HOME', or '~' are expanded.
@@ -654,3 +715,22 @@ KritaBridge:
 	#Relative path under the Data directory for temporary Swarm-to-Krita image exports.
 	#Defaults to 'Temp/KritaBridge'.
 	TempPath: Temp/KritaBridge
+#Settings related to the managed IOPaint repair service used by image editor inpainting tools.
+IOPaint:
+	#If true, enable the managed IOPaint service for editor repair tools.
+	Enabled: false
+	#Python interpreter used to create the dedicated IOPaint virtual environment.
+	#Defaults to `python3` on Linux/macOS and `python` on Windows.
+	BootstrapPython: \x
+	#Path to the dedicated IOPaint virtual environment.
+	#Defaults to `(Data)/tools/iopaint/venv`.
+	VenvPath: \x
+	#Preferred execution device for IOPaint.
+	#Use `cpu`, `cuda`, or `mps` depending on your system.
+	Device: cpu
+	#Optional model cache directory for IOPaint.
+	#If empty, IOPaint will use its default cache location.
+	ModelCachePath: \x
+#List of disabled extension folder names.
+#Disabled extensions remain installed on disk, but are not loaded at server startup.
+DisabledExtensions:
