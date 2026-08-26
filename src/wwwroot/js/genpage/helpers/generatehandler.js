@@ -586,6 +586,11 @@ class GenerateHandler {
                 }
                 this.hadError(e);
             };
+            if (!isPreview) {
+                watermarkRecentHistory.recordSubmitted(actualInput).catch(error => {
+                    console.warn('Failed to store recent watermark history.', error);
+                });
+            }
             if (this.sockets[socketId] && this.sockets[socketId].readyState == WebSocket.OPEN) {
                 this.sockets[socketId].send(JSON.stringify(actualInput));
             }
