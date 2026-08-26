@@ -1488,8 +1488,17 @@ class ModelBrowserWrapper {
     }
 
     selectModel(model) {
+        let contentDiv = this.subType == 'LoRA' ? this.browser.contentDiv : null;
+        let scrollTop = contentDiv ? contentDiv.scrollTop : null;
         this.selectOne(model);
         this.rebuildSelectedClasses();
+        if (scrollTop != null) {
+            setTimeout(() => {
+                if (this.browser.contentDiv == contentDiv && contentDiv.isConnected) {
+                    contentDiv.scrollTop = scrollTop;
+                }
+            }, 1);
+        }
     }
 }
 
