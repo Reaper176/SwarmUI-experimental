@@ -202,6 +202,7 @@ class SwarmWatermark:
                 "image": ("IMAGE",),
                 "watermark_preset": (["speaker-white", "speaker-black"],),
                 "alignment": ([
+                    "bottom-left",
                     "bottom-right",
                     "center",
                     "top-center",
@@ -210,11 +211,10 @@ class SwarmWatermark:
                     "center-right",
                     "center-left",
                     "bottom-center",
-                    "bottom-left",
                 ],),
                 "offset_percentage": ("FLOAT", {"default": 2.0, "min": 0.0, "max": 100.0, "step": 0.1}),
                 "resize_percentage": ("FLOAT", {"default": 20.0, "min": 0.1, "max": 200.0, "step": 0.1}),
-                "opacity": ("FLOAT", {"default": 60.0, "min": 0.0, "max": 100.0, "step": 1.0}),
+                "opacity": ("FLOAT", {"default": 100.0, "min": 0.0, "max": 100.0, "step": 1.0}),
             },
             "optional": {
                 "watermark": ("IMAGE",),
@@ -233,7 +233,7 @@ class SwarmWatermark:
 
         offset = _clamp_number(offset_percentage, 0.0, 100.0, 2.0)
         resize = _clamp_number(resize_percentage, 0.1, 200.0, 20.0)
-        opacity_value = _clamp_number(opacity, 0.0, 100.0, 60.0) / 100.0
+        opacity_value = _clamp_number(opacity, 0.0, 100.0, 100.0) / 100.0
         destination = image.clone()
         if opacity_value == 0:
             return (destination,)

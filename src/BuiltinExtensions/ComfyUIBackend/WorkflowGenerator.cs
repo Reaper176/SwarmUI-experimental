@@ -777,10 +777,10 @@ public partial class WorkflowGenerator
         {
             [ComfyNodeInputNames.Watermark.Image] = rawMedia.Path,
             [ComfyNodeInputNames.Watermark.WatermarkPreset] = preset,
-            [ComfyNodeInputNames.Watermark.Alignment] = UserInput.Get(T2IParamTypes.WatermarkAlignment, "bottom-right"),
+            [ComfyNodeInputNames.Watermark.Alignment] = UserInput.Get(T2IParamTypes.WatermarkAlignment, "bottom-left"),
             [ComfyNodeInputNames.Watermark.OffsetPercentage] = UserInput.Get(T2IParamTypes.WatermarkOffsetPercentage, 2.0),
             [ComfyNodeInputNames.Watermark.ResizePercentage] = UserInput.Get(T2IParamTypes.WatermarkResizePercentage, 20.0),
-            [ComfyNodeInputNames.Watermark.Opacity] = UserInput.Get(T2IParamTypes.WatermarkOpacity, 60.0)
+            [ComfyNodeInputNames.Watermark.Opacity] = UserInput.Get(T2IParamTypes.WatermarkOpacity, 100.0)
         };
 
         if (UserInput.TryGet(T2IParamTypes.WatermarkImage, out Image customImage))

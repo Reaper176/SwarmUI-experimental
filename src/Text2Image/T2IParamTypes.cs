@@ -1018,7 +1018,7 @@ public class T2IParamTypes
             null, OrderPriority: 3, Group: GroupWatermark, FeatureFlag: "swarm_watermark", DoNotPreview: true, ChangeWeight: 1, ImageShouldResize: false, DependNonDefault: WatermarkImage.Type.ID
             ));
         WatermarkAlignment = Register<string>(new("Watermark Alignment", "Where to place the watermark on the image.",
-            "bottom-right", GetValues: _ => ["bottom-right", "center", "top-center", "top-left", "top-right", "center-right", "center-left", "bottom-center", "bottom-left"], OrderPriority: 4, Group: GroupWatermark, FeatureFlag: "swarm_watermark", DoNotPreview: true
+            "bottom-left", GetValues: _ => ["bottom-right", "center", "top-center", "top-left", "top-right", "center-right", "center-left", "bottom-center", "bottom-left"], OrderPriority: 4, Group: GroupWatermark, FeatureFlag: "swarm_watermark", DoNotPreview: true
             ));
         WatermarkOffsetPercentage = Register<double>(new("Watermark Offset Percentage", "The margin from the selected image edges to the watermark, as a percentage of the final width and height.",
             "2", Min: 0, Max: 100, Step: 0.1, ViewType: ParamViewType.SLIDER, OrderPriority: 5, Group: GroupWatermark, FeatureFlag: "swarm_watermark", DoNotPreview: true
@@ -1027,7 +1027,7 @@ public class T2IParamTypes
             "20", Min: 0.1, Max: 200, Step: 0.1, ViewType: ParamViewType.SLIDER, OrderPriority: 6, Group: GroupWatermark, FeatureFlag: "swarm_watermark", DoNotPreview: true
             ));
         WatermarkOpacity = Register<double>(new("Watermark Opacity", "The watermark opacity percentage.",
-            "60", Min: 0, Max: 100, Step: 1, ViewType: ParamViewType.SLIDER, OrderPriority: 7, Group: GroupWatermark, FeatureFlag: "swarm_watermark", DoNotPreview: true
+            "100", Min: 0, Max: 100, Step: 1, ViewType: ParamViewType.SLIDER, OrderPriority: 7, Group: GroupWatermark, FeatureFlag: "swarm_watermark", DoNotPreview: true
             ));
         // ================================================ Other Fixes ================================================
         GroupOtherFixes = new("Other Fixes", Open: false, OrderPriority: 60, IsAdvanced: true);
