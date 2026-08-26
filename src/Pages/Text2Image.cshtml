@@ -146,14 +146,14 @@
         </div>
     }
     <div class="tab-pane tab-pane-vw tab-no-scroll" id="@lazyTabs[0].TabId" role="tabpanel">
-        <div class="tab-loading-shell">@lazyTabs[0].LoadingText</div>
+        @await Html.PartialAsync(lazyTabs[0].Partial, pageModel)
     </div>
     @WebServer.T2ITabBody
 @for (int i = 1; i < lazyTabs.Count; i++)
 {
     (string key, string tabId, string partial, string loadingText) lazyTab = lazyTabs[i];
     <div class="tab-pane tab-pane-vw tab-no-scroll" id="@lazyTab.tabId" role="tabpanel">
-        <div class="tab-loading-shell">@lazyTab.loadingText</div>
+        @await Html.PartialAsync(lazyTab.partial, pageModel)
     </div>
 }
 </div>
@@ -161,6 +161,7 @@
 @section Scripts {
     <script src="js/lib/exif-reader.min.js"></script>
     <script src="js/genpage/gentab/welcomemessages.js?vary=@Utilities.VaryID"></script>
+    <script src="js/genpage/server/backends.js?vary=@Utilities.VaryID"></script>
     <script src="js/genpage/helpers/browsers.js?vary=@Utilities.VaryID"></script>
     <script src="js/genpage/gentab/presets.js?vary=@Utilities.VaryID"></script>
     <script src="js/genpage/gentab/wildcards.js?vary=@Utilities.VaryID"></script>
@@ -170,13 +171,18 @@
     <script src="js/genpage/gentab/params.js?vary=@Utilities.VaryID"></script>
     <script src="js/genpage/gentab/prompttools.js?vary=@Utilities.VaryID"></script>
     <script src="js/genpage/utiltab.js?vary=@Utilities.VaryID"></script>
+    <script src="js/genpage/server/servertab.js?vary=@Utilities.VaryID"></script>
     <script src="js/genpage/usertab.js?vary=@Utilities.VaryID"></script>
+    <script src="js/genpage/helpers/color_picker.js?vary=@Utilities.VaryID"></script>
+    <script src="js/genpage/helpers/image_editor_tools.js?vary=@Utilities.VaryID"></script>
+    <script src="js/genpage/helpers/image_editor.js?vary=@Utilities.VaryID"></script>
     <script src="js/genpage/helpers/generatehandler.js?vary=@Utilities.VaryID"></script>
     <script src="js/genpage/simpletab.js?vary=@Utilities.VaryID"></script>
     <script src="js/genpage/gentab/layout.js?vary=@Utilities.VaryID"></script>
     <script src="js/genpage/helpers/metadatahelpers.js?vary=@Utilities.VaryID"></script>
     <script src="js/genpage/gentab/generatecontrols.js?vary=@Utilities.VaryID"></script>
     <script src="js/genpage/gentab/currentimagehandler.js?vary=@Utilities.VaryID"></script>
+    <script src="js/genpage/helpers/image_editor_ui.js?vary=@Utilities.VaryID"></script>
     <script src="js/genpage/gentab/imagehistoryfilter.js?vary=@Utilities.VaryID"></script>
     <script src="js/genpage/gentab/imagehistorycomparison.js?vary=@Utilities.VaryID"></script>
     <script src="js/genpage/gentab/imagehistorybulkactions.js?vary=@Utilities.VaryID"></script>
@@ -185,6 +191,7 @@
     <script src="js/genpage/main.js?vary=@Utilities.VaryID"></script>
     <script src="js/genpage/promptlab.js?vary=@Utilities.VaryID"></script>
     <script src="js/genpage/helpers/settings_editor.js?vary=@Utilities.VaryID"></script>
+    <script src="js/genpage/server/logs.js?vary=@Utilities.VaryID"></script>
     <script src="js/genpage/helpers/ui_improvements.js?vary=@Utilities.VaryID"></script>
     <script src="js/genpage/helpers/mediacontrols.js?vary=@Utilities.VaryID"></script>
     @WebServer.PageFooterExtra
