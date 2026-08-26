@@ -451,7 +451,8 @@ function getHtmlForParam(param, prefix, isPreset = false) {
                 return {html: makeDropdownInput(param.feature_flag, `${prefix}${param.id}`, param.id, param.name, param.description, modelList, param.default, param.toggleable, !param.no_popover, modelAltNames, false) + pop,
                     runnable: () => autoSelectWidth(getRequiredElementById(`${prefix}${param.id}`))};
             case 'image':
-                return {html: makeImageInput(param.feature_flag, `${prefix}${param.id}`, param.id, param.name, param.description, param.toggleable, !param.no_popover, !isPreset) + pop};
+                return {html: makeImageInput(param.feature_flag, `${prefix}${param.id}`, param.id, param.name, param.description, param.toggleable, !param.no_popover, !isPreset) + pop,
+                    runnable: param.id == 'watermarkimage' && prefix == 'input_' && !isPreset ? () => watermarkRecentHistory.attach() : null};
             case 'audio':
                 return {html: makeAudioInput(param.feature_flag, `${prefix}${param.id}`, param.id, param.name, param.description, param.toggleable, !param.no_popover, !isPreset) + pop};
             case 'video':

@@ -125,6 +125,31 @@ body {
     width: fit-content;
     margin: auto;
 }
+.watermark-recent-history {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: center;
+    gap: 0.35rem;
+    margin: 0.35rem auto 0;
+}
+.watermark-recent-thumbnail {
+    width: 3.25rem;
+    height: 3.25rem;
+    padding: 0;
+    overflow: hidden;
+    border: 1px solid var(--button-border);
+    border-radius: 0.35rem;
+    background-color: var(--background-soft);
+}
+.watermark-recent-thumbnail:hover, .watermark-recent-thumbnail:focus-visible {
+    border-color: var(--emphasis);
+}
+.watermark-recent-thumbnail img {
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+}
 .auto-input-remove-button {
     position: absolute;
     left: 0.5rem;
