@@ -66,12 +66,15 @@ When starting a task, always check for if there are any relevant skill files to 
 ## Building
 
 Agents never run their own builds, the user does it themselves. Agents may check automated linters.
+The user may expressly state to ignore this rule with an override.
 
 ## Tests
 
 This repo is complex, and made of many interlinked parts not easily mockable, and heavily depends on slow expensive GPU operations.
 
 Automated tests are not currently used in this repo. Agents cannot run any form of testing. Developers must manually run the live software to verify things. Agents should do their best to logically validate through static analysis and step-by-step execution logic tracking before the developer spends time testing.
+
+The user may expressly state to ignore this rule with an override.
 
 ## General Edit Strategy
 
