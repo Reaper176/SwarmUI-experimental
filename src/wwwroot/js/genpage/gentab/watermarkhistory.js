@@ -125,12 +125,12 @@ class WatermarkRecentHistory {
         }
         let source = entry.source;
         let name = entry.name || this.getFallbackName(source);
-        setMediaFileDirect(input, this.getPreviewSource(source), 'image', name, source, () => {
+        setMediaFileDirect(input, this.getPreviewSource(source), 'image', name, name, () => {
             input.dataset.filedata = source;
-            input.dataset.filename = name;
         });
         input.dataset.filedata = source;
         input.dataset.filename = name;
+        input.dataset.filenameSource = source;
     }
 
     /** Deletes a rendered watermark entry through the serialized write queue. */
