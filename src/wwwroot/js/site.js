@@ -891,9 +891,11 @@ function setMediaFileDirect(elem, src, type, name, longName = null, callback = n
     let parent = findParentOfClass(elem, 'auto-input');
     let preview = parent.querySelector('.auto-input-preview');
     let label = parent.querySelector('.auto-file-input-filename');
-    delete elem.dataset.filename;
-    delete elem.dataset.filenameSource;
+    longName = longName && longName.length > 500 ? longName.substring(0, 150) + '...' : longName;
+    let storedName = longName || name;
     elem.dataset.filedata = src;
+    elem.dataset.filename = storedName;
+    elem.dataset.filenameSource = elem.dataset.filedata;
     let button = `<button class="interrupt-button auto-input-remove-button" title="Remove ${type}">&times;</button>`;
     let img;
     if (type == 'image') {
@@ -930,11 +932,10 @@ function setMediaFileDirect(elem, src, type, name, longName = null, callback = n
         else {
             label.textContent = shortName;
         }
-        longName = longName && longName.length > 500 ? longName.substring(0, 150) + '...' : longName;
-        elem.dataset.filename = longName || shortName;
         if (callback) {
             callback();
         }
+        elem.dataset.filename = storedName;
         elem.dataset.filenameSource = elem.dataset.filedata;
         loadMediaFileDedup = true;
         triggerChangeFor(elem);

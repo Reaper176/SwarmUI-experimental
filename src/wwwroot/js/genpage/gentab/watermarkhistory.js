@@ -219,9 +219,6 @@ class WatermarkRecentHistory {
         if (input.dataset.filename && input.dataset.filenameSource == actualInput.watermarkimage) {
             return input.dataset.filename;
         }
-        if (input.files && input.files[0] && input.files[0].name) {
-            return input.files[0].name;
-        }
         return null;
     }
 
