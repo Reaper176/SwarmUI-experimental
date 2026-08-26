@@ -524,6 +524,7 @@ class GenerateHandler {
         }
         this.beforeGenRun();
         let actualInput = null;
+        let submittedWatermarkName = null;
         let collectInput = () => {
             actualInput = this.getGenInput(input_overrides, input_preoverrides);
             if (window.promptLab?.applyPendingGenerateMetadata) {
@@ -532,6 +533,7 @@ class GenerateHandler {
             if (postCollectRun) {
                 postCollectRun(actualInput);
             }
+            submittedWatermarkName = watermarkRecentHistory.captureSubmittedName(actualInput);
             this.debugTrack('request-start', {
                 images: actualInput.images,
                 batchsize: actualInput.batchsize,
@@ -587,7 +589,7 @@ class GenerateHandler {
                 this.hadError(e);
             };
             if (!isPreview) {
-                watermarkRecentHistory.recordSubmitted(actualInput).catch(error => {
+                watermarkRecentHistory.recordSubmitted(actualInput, submittedWatermarkName).catch(error => {
                     console.warn('Failed to store recent watermark history.', error);
                 });
             }

@@ -11,7 +11,7 @@ class WatermarkRecentHistory {
         this.inputId = 'input_watermarkimage';
         this.writeQueue = Promise.resolve();
         this.lastUpdated = 0;
-        this.pendingDeletionIds = new Set();
+        this.pendingDeletionKeys = new Set();
     }
 
     /** Opens the IndexedDB database used for recent watermark entries. */
@@ -133,18 +133,25 @@ class WatermarkRecentHistory {
         input.dataset.filename = name;
     }
 
-    /** Deletes one stored watermark entry by ID through the serialized write queue. */
-    deleteEntry(id) {
-        this.writeQueue = this.writeQueue.catch(() => { }).then(() => this.deleteEntryDirect(id));
+    /** Deletes a rendered watermark entry through the serialized write queue. */
+    deleteEntry(entry) {
+        this.writeQueue = this.writeQueue.catch(() => { }).then(() => this.deleteEntryDirect(entry));
         return this.writeQueue;
     }
 
-    /** Deletes one stored watermark entry by ID. */
-    async deleteEntryDirect(id) {
+    /** Deletes a stored entry only when it still matches the rendered version. */
+    async deleteEntryDirect(entry) {
         let database = await this.openDatabase();
         try {
             let transaction = database.transaction(this.storeName, 'readwrite');
-            transaction.objectStore(this.storeName).delete(id);
+            let store = transaction.objectStore(this.storeName);
+            let request = store.get(entry.id);
+            request.onsuccess = () => {
+                let currentEntry = request.result;
+                if (currentEntry && currentEntry.id == entry.id && currentEntry.source == entry.source && currentEntry.updated == entry.updated) {
+                    store.delete(entry.id);
+                }
+            };
             await this.waitForTransaction(transaction);
         }
         finally {
@@ -174,14 +181,17 @@ class WatermarkRecentHistory {
             image.onerror = () => {
                 image.onerror = null;
                 button.remove();
-                if (this.pendingDeletionIds.has(entry.id)) {
+                this.hideContainerIfEmpty(container);
+                let deletionKey = `${entry.id}:${entry.updated}`;
+                if (this.pendingDeletionKeys.has(deletionKey)) {
                     return;
                 }
-                this.pendingDeletionIds.add(entry.id);
-                this.deleteEntry(entry.id).then(() => this.render()).catch(error => {
+                this.pendingDeletionKeys.add(deletionKey);
+                this.deleteEntry(entry).then(() => this.render()).catch(error => {
+                    this.hideContainerIfEmpty(container);
                     console.warn('Unable to remove stale recent watermark entry.', error);
                 }).finally(() => {
-                    this.pendingDeletionIds.delete(entry.id);
+                    this.pendingDeletionKeys.delete(deletionKey);
                 });
             };
             button.addEventListener('click', () => {
@@ -197,14 +207,32 @@ class WatermarkRecentHistory {
         }
     }
 
+    /** Gets a trusted filename from a watermark input matching the submitted source. */
+    captureSubmittedName(actualInput) {
+        if (!actualInput || typeof actualInput.watermarkimage != 'string' || !actualInput.watermarkimage) {
+            return null;
+        }
+        let inputs = document.querySelectorAll('input.auto-file[data-param_id="watermarkimage"]');
+        for (let input of inputs) {
+            if (input.dataset.filedata != actualInput.watermarkimage) {
+                continue;
+            }
+            if (input.dataset.filename) {
+                return input.dataset.filename;
+            }
+            if (input.files && input.files[0] && input.files[0].name) {
+                return input.files[0].name;
+            }
+        }
+        return null;
+    }
+
     /** Records a submitted watermark image without blocking the generation request. */
-    recordSubmitted(actualInput) {
+    recordSubmitted(actualInput, name = null) {
         if (!actualInput || typeof actualInput.watermarkimage != 'string' || !actualInput.watermarkimage) {
             return Promise.resolve();
         }
         let source = actualInput.watermarkimage;
-        let input = document.getElementById(this.inputId);
-        let name = input && input.dataset.filedata == source && input.dataset.filename ? input.dataset.filename : this.getFallbackName(source);
         this.writeQueue = this.writeQueue.catch(() => { }).then(() => this.recordSource(source, name));
         return this.writeQueue;
     }
@@ -228,10 +256,17 @@ class WatermarkRecentHistory {
                 this.lastUpdated = updated;
                 let existingEntry = request.result.find(entry => entry.source == source);
                 let id = existingEntry ? existingEntry.id : this.createEntryId(request.result);
+                let entryName = this.getFallbackName(source);
+                if (existingEntry && existingEntry.name) {
+                    entryName = existingEntry.name;
+                }
+                if (typeof name == 'string' && name) {
+                    entryName = name;
+                }
                 let entries = request.result.filter(entry => entry.source != source);
-                entries.push({ id: id, source: source, name: name, updated: updated });
+                entries.push({ id: id, source: source, name: entryName, updated: updated });
                 entries.sort((first, second) => second.updated - first.updated);
-                store.put({ id: id, source: source, name: name, updated: updated });
+                store.put({ id: id, source: source, name: entryName, updated: updated });
                 for (let entry of request.result) {
                     if (entry.source == source && entry.id != id) {
                         store.delete(entry.id);
@@ -249,6 +284,13 @@ class WatermarkRecentHistory {
         this.render().catch(error => {
             console.warn('Unable to render recent watermark history.', error);
         });
+    }
+
+    /** Hides a history container that no longer has any thumbnail buttons. */
+    hideContainerIfEmpty(container) {
+        if (!container.querySelector('.watermark-recent-thumbnail')) {
+            container.hidden = true;
+        }
     }
 
     /** Creates a compact ID for a newly stored watermark entry. */
