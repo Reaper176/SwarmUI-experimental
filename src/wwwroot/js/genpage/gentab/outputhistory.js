@@ -5,6 +5,277 @@ let IMAGE_HISTORY_BACKGROUND_MAX_RETRIES = 2;
 let IMAGE_HISTORY_SAVED_REFRESH_MAX_ATTEMPTS = 8;
 let IMAGE_HISTORY_UNLOAD_ROW_BUFFER = 10;
 let IMAGE_HISTORY_MIN_MEDIA_ROWS_TO_UNLOAD = 2;
+let IMAGE_HISTORY_SCROLL_POSITION_KEY = 'image_history_scroll_position';
+let IMAGE_HISTORY_FALLBACK_CHUNKS_PER_FRAME = 2;
+
+class ImageHistoryScrollManager {
+    constructor() {
+        this.browser = null;
+        this.content = null;
+        this.anchorPath = null;
+        this.anchorOffset = 0;
+        this.fallbackScrollTop = 0;
+        this.captureQueued = false;
+        this.captureCancel = null;
+        this.restoring = false;
+        this.restoreToken = 0;
+        this.queuedRestoreToken = null;
+        this.boundQueueCapture = this.queueCapture.bind(this);
+        this.boundUserScrollIntent = this.handleUserScrollIntent.bind(this);
+        this.boundPointerDown = this.handlePointerDown.bind(this);
+        this.boundKeyDown = this.handleKeyDown.bind(this);
+        this.resizeObserver = window.ResizeObserver ? new ResizeObserver(() => {
+            if (this.restoring) {
+                this.afterBuild();
+            }
+        }) : null;
+        this.load();
+    }
+
+    /** Loads the persisted user-selected History position. */
+    load() {
+        try {
+            let saved = JSON.parse(localStorage.getItem(IMAGE_HISTORY_SCROLL_POSITION_KEY) || 'null');
+            if (!saved || typeof saved != 'object') {
+                return;
+            }
+            this.anchorPath = typeof saved.anchorPath == 'string' ? saved.anchorPath : null;
+            this.anchorOffset = Number.isFinite(saved.anchorOffset) ? saved.anchorOffset : 0;
+            this.fallbackScrollTop = Number.isFinite(saved.scrollTop) ? Math.max(0, saved.scrollTop) : 0;
+        }
+        catch (error) {
+            localStorage.removeItem(IMAGE_HISTORY_SCROLL_POSITION_KEY);
+        }
+    }
+
+    /** Persists the current user-selected History position. */
+    save() {
+        try {
+            localStorage.setItem(IMAGE_HISTORY_SCROLL_POSITION_KEY, JSON.stringify({
+                anchorPath: this.anchorPath,
+                anchorOffset: this.anchorOffset,
+                scrollTop: this.fallbackScrollTop
+            }));
+        }
+        catch (error) {
+        }
+    }
+
+    /** Attaches scroll tracking to the current History content element. */
+    attach(browser) {
+        this.browser = browser;
+        let content = browser?.contentDiv || null;
+        if (this.content == content) {
+            return;
+        }
+        if (this.content) {
+            this.content.removeEventListener('scroll', this.boundQueueCapture);
+            this.content.removeEventListener('wheel', this.boundUserScrollIntent);
+            this.content.removeEventListener('touchstart', this.boundUserScrollIntent);
+            this.content.removeEventListener('pointerdown', this.boundPointerDown);
+            this.content.removeEventListener('keydown', this.boundKeyDown);
+            this.resizeObserver?.unobserve(this.content);
+        }
+        this.content = content;
+        if (this.content) {
+            this.content.addEventListener('scroll', this.boundQueueCapture);
+            this.content.addEventListener('wheel', this.boundUserScrollIntent, { passive: true });
+            this.content.addEventListener('touchstart', this.boundUserScrollIntent, { passive: true });
+            this.content.addEventListener('pointerdown', this.boundPointerDown, { passive: true });
+            this.content.addEventListener('keydown', this.boundKeyDown);
+            this.resizeObserver?.observe(this.content);
+        }
+    }
+
+    /** Cancels delayed restoration when the user deliberately scrolls. */
+    handleUserScrollIntent() {
+        if (!this.restoring) {
+            return;
+        }
+        this.restoreToken++;
+        this.restoring = false;
+        this.queueCapture();
+    }
+
+    /** Treats a pointer press on the scroll container itself as scrollbar input. */
+    handlePointerDown(event) {
+        if (event.target == this.content) {
+            this.handleUserScrollIntent();
+        }
+    }
+
+    /** Treats keyboard scrolling within History as deliberate user input. */
+    handleKeyDown(event) {
+        if (event.defaultPrevented) {
+            return;
+        }
+        let target = event.target;
+        if (target != this.content && target?.closest('input, select, textarea, button, [contenteditable="true"]')) {
+            return;
+        }
+        let scrollKeys = ['ArrowUp', 'ArrowDown', 'PageUp', 'PageDown', 'Home', 'End', ' ', 'Spacebar'];
+        if (scrollKeys.includes(event.key)) {
+            this.handleUserScrollIntent();
+        }
+    }
+
+    /** Queues at most one user-position capture per animation frame. */
+    queueCapture() {
+        if (this.restoring || this.captureQueued) {
+            return;
+        }
+        this.captureQueued = true;
+        let run = () => {
+            this.captureQueued = false;
+            this.captureCancel = null;
+            if (!this.restoring) {
+                this.capture();
+            }
+        };
+        if (window.requestAnimationFrame) {
+            let frame = requestAnimationFrame(run);
+            this.captureCancel = () => cancelAnimationFrame(frame);
+        }
+        else {
+            let timer = setTimeout(run, 16);
+            this.captureCancel = () => clearTimeout(timer);
+        }
+    }
+
+    /** Flushes a queued user scroll capture before its DOM is rebuilt. */
+    flushCapture() {
+        if (!this.captureQueued) {
+            return;
+        }
+        this.captureCancel?.();
+        this.captureQueued = false;
+        this.captureCancel = null;
+        this.capture();
+    }
+
+    /** Captures the first visible image and its viewport-relative offset. */
+    capture() {
+        if (!this.content || !this.content.isConnected) {
+            return;
+        }
+        let entries = Array.from(this.content.children).filter(entry => entry?.dataset?.name);
+        if (entries.length == 0) {
+            return;
+        }
+        let scrollTop = this.content.scrollTop;
+        let contentTop = this.content.getBoundingClientRect().top;
+        let anchor = entries[entries.length - 1];
+        for (let entry of entries) {
+            if (entry.getBoundingClientRect().bottom > contentTop) {
+                anchor = entry;
+                break;
+            }
+        }
+        this.anchorPath = anchor.dataset.name;
+        this.anchorOffset = anchor.getBoundingClientRect().top - contentTop;
+        this.fallbackScrollTop = scrollTop;
+        this.save();
+    }
+
+    /** Suspends capture and asks the browser to synchronously render the saved anchor. */
+    beforeBuild() {
+        this.attach(this.browser);
+        this.flushCapture();
+        this.restoring = true;
+        this.restoreToken++;
+        this.browser.preBuildTarget = this.anchorPath;
+    }
+
+    /** Expands a bounded number of lazy sections overlapping the numeric fallback viewport. */
+    expandFallbackContent() {
+        if (!this.content) {
+            return true;
+        }
+        let viewportBottom = this.fallbackScrollTop + this.content.clientHeight;
+        let loaders = this.content.getElementsByClassName('browser-section-loader');
+        let expanded = 0;
+        while (loaders.length > 0 && expanded < IMAGE_HISTORY_FALLBACK_CHUNKS_PER_FRAME) {
+            let loader = loaders[0];
+            let contentTop = this.content.getBoundingClientRect().top;
+            let loaderTop = loader.getBoundingClientRect().top - contentTop + this.content.scrollTop;
+            if (loaderTop > viewportBottom) {
+                return true;
+            }
+            loader.click();
+            loader.remove();
+            expanded++;
+        }
+        if (loaders.length == 0) {
+            return true;
+        }
+        let contentTop = this.content.getBoundingClientRect().top;
+        let loaderTop = loaders[0].getBoundingClientRect().top - contentTop + this.content.scrollTop;
+        return loaderTop > viewportBottom;
+    }
+
+    /** Restores the saved image after the rebuilt layout becomes measurable. */
+    afterBuild() {
+        this.attach(this.browser);
+        if (!this.restoring || !this.content) {
+            return;
+        }
+        let token = this.restoreToken;
+        if (this.queuedRestoreToken == token) {
+            return;
+        }
+        this.queuedRestoreToken = token;
+        let queueNextRun = (run) => {
+            this.queuedRestoreToken = token;
+            if (window.requestAnimationFrame) {
+                requestAnimationFrame(run);
+            }
+            else {
+                setTimeout(run, 16);
+            }
+        };
+        let run = () => {
+            if (this.queuedRestoreToken == token) {
+                this.queuedRestoreToken = null;
+            }
+            if (token != this.restoreToken || !this.restoring || !this.content?.isConnected) {
+                return;
+            }
+            if (this.content.clientHeight == 0) {
+                return;
+            }
+            let anchor = this.anchorPath ? this.browser.getVisibleEntry(this.anchorPath) : null;
+            if (!anchor && !this.expandFallbackContent()) {
+                queueNextRun(run);
+                return;
+            }
+            let targetScrollTop = this.fallbackScrollTop;
+            if (anchor) {
+                let contentTop = this.content.getBoundingClientRect().top;
+                let anchorTop = anchor.getBoundingClientRect().top;
+                targetScrollTop = this.content.scrollTop + anchorTop - contentTop - this.anchorOffset;
+            }
+            let maxScrollTop = Math.max(0, this.content.scrollHeight - this.content.clientHeight);
+            this.content.scrollTop = Math.max(0, Math.min(targetScrollTop, maxScrollTop));
+            let finish = () => {
+                if (token == this.restoreToken) {
+                    this.restoring = false;
+                }
+            };
+            if (window.requestAnimationFrame) {
+                requestAnimationFrame(finish);
+            }
+            else {
+                setTimeout(finish, 16);
+            }
+        };
+        if (window.requestAnimationFrame) {
+            requestAnimationFrame(() => requestAnimationFrame(run));
+        }
+        else {
+            setTimeout(run, 32);
+        }
+    }
+}
 
 class ImageHistoryWindowManager {
     constructor() {
@@ -179,6 +450,7 @@ class ImageHistoryController {
         this.savedRefreshAttempts = 0;
         this.savedRefreshTargets = new Set();
         this.registeredMediaButtons = [];
+        this.scrollManager = new ImageHistoryScrollManager();
         this.windowManager = new ImageHistoryWindowManager();
         this.filter = null;
         this.comparison = null;
@@ -1575,6 +1847,11 @@ class ImageHistoryController {
             (image, div) => this.selectOutput(image, div),
             IMAGE_HISTORY_HEADER_HTML
         );
+        this.scrollManager.attach(this.browser);
+        this.browser.resetScrollOnRefresh = false;
+        this.browser.beforeBuildEvent = () => {
+            this.scrollManager.beforeBuild();
+        };
         this.browser.allowMultiSelect = true;
         this.browser.maxPreBuild = IMAGE_HISTORY_FAST_FIRST_LIMIT;
         this.browser.filterMatcher = (desc, filter) => this.filter.matches(desc, filter);
@@ -1584,6 +1861,7 @@ class ImageHistoryController {
         };
         this.browser.builtEvent = () => {
             this.handleBrowserBuilt();
+            this.scrollManager.afterBuild();
         };
         getRequiredElementById('imagehistorytabclickable').addEventListener('shown.bs.tab', () => {
             this.handleHistoryTabShown();
@@ -1603,6 +1881,7 @@ class ImageHistoryController {
     /** Handles the History tab becoming visible. */
     handleHistoryTabShown() {
         this.scheduleInitialLoad();
+        this.scrollManager.afterBuild();
         let historyContent = document.getElementById('imagehistorybrowser-content');
         if (historyContent) {
             browserUtil.queueMakeVisible(historyContent);

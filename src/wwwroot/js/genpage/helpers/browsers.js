@@ -275,6 +275,7 @@ class GenPageBrowserClass {
         this.showFilter = true;
         this.folderTreeShowFiles = false;
         this.folderSelectedEvent = null;
+        this.beforeBuildEvent = null;
         this.builtEvent = null;
         this.sizeChangedEvent = null;
         this.updateFailedEvent = null;
@@ -297,6 +298,8 @@ class GenPageBrowserClass {
         this.refreshHandler = (callback) => callback();
         this.pendingRefreshPath = null;
         this.mediaWindowManager = null;
+        this.resetScrollOnRefresh = true;
+        this.preBuildTarget = null;
         this.checkIsSmall();
         this.allowMultiSelect = false;
         this.multiSelectActive = false;
@@ -610,7 +613,9 @@ class GenPageBrowserClass {
         this.updatePendingSince = new Date().getTime();
         if (isRefresh) {
             this.tree = new BrowserTreePart('', false, null, null, '');
-            this.contentDiv.scrollTop = 0;
+            if (this.resetScrollOnRefresh) {
+                this.contentDiv.scrollTop = 0;
+            }
             this.describeCache.clear();
         }
         let folder = this.folder;
@@ -847,6 +852,10 @@ class GenPageBrowserClass {
                 entries = sortedEntries;
             }
         }
+        let preBuildTargetIndex = -1;
+        if (this.preBuildTarget) {
+            preBuildTargetIndex = entries.findIndex(entry => entry.file?.name == this.preBuildTarget);
+        }
         let id = startId;
         let maxBuildNow = this.maxPreBuild;
         if (startId == 0) {
@@ -855,6 +864,9 @@ class GenPageBrowserClass {
         }
         else {
             this.chunksRendered++;
+        }
+        if (preBuildTargetIndex >= 0) {
+            maxBuildNow = Math.max(maxBuildNow, preBuildTargetIndex);
         }
         for (let i = 0; i < entries.length; i++) {
             let entry = entries[i];
@@ -1216,6 +1228,9 @@ class GenPageBrowserClass {
                 this.lastFilesMap.set(file.name, file);
             }
         }
+        if (this.beforeBuildEvent) {
+            this.beforeBuildEvent(path, folders, files);
+        }
         if (files && this.folderTreeShowFiles) {
             this.refillTree(path, files.map(f => {
                 let name = f.name.substring(path.length);
@@ -1500,6 +1515,7 @@ class GenPageBrowserClass {
         this.queueHeaderLayout();
         if (!this.noContentUpdates) {
             this.buildContentList(this.contentDiv, files);
+            this.preBuildTarget = null;
             if (this.preservedMultiSelect && this.preservedMultiSelect.size > 0) {
                 for (let child of this.contentDiv.children) {
                     if (child.dataset && child.dataset.name && this.preservedMultiSelect.has(child.dataset.name)) {
