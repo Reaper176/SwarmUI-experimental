@@ -1,0 +1,1049 @@
+"""Native Qwen3.5-4B progressive conditioning for Anima 3.8B.
+
+The progressive adapter implementation is adapted from the MIT-licensed
+GumGum10/comfyui-anima-3-8B project (copyright 2026 GumGum10 contributors).
+Swarm uses ComfyUI's native Qwen3.5 model and tokenizer rather than copying the
+companion project's text encoder or bundled tokenizer assets.
+"""
+
+from __future__ import annotations
+
+import functools
+import logging
+import os
+import weakref
+
+
+logger = logging.getLogger(__name__)
+
+ADAPTER_ARCHITECTURE = "anima_progressive_qwen35_cross_adapter_v1"
+SEMANTIC_LAYER_TAPS = (8, 16, 24, 32)
+QWEN35_4B_MARKERS = (
+    "qwen35_4b",
+    "qwen3.5-4b",
+    "qwen3_5_4b",
+    "anima38",
+    "anima2bqwen35",
+)
+ADAPTER_ROOTS = ("text_encoders", "controlnet")
+_MODEL_DETECTION_SENTINEL = "_swarm_anima38_52_block_patch"
+_PROGRESSIVE_ADAPTER_CLASS = None
+_ADAPTER_CACHE = {"key": None, "native_ref": None, "adapter": None}
+
+
+def is_qwen35_4b_candidate(filename):
+    """Return whether a safetensors filename identifies a Qwen3.5-4B candidate."""
+    normalized = str(filename).replace("\\", "/").lower()
+    basename = normalized.rsplit("/", 1)[-1]
+    return basename.endswith(".safetensors") and any(
+        marker in basename for marker in QWEN35_4B_MARKERS
+    )
+
+
+def _stable_name(value):
+    """Create a case-insensitive stable lexical sorting key."""
+    value = str(value).replace("\\", "/")
+    return value.lower(), value
+
+
+def _qwen_preference(filename):
+    """Rank an encoder filename for deterministic automatic selection."""
+    normalized = str(filename).replace("\\", "/").lower()
+    basename = normalized.rsplit("/", 1)[-1]
+    if "anima38" in basename:
+        rank = 0
+    elif basename == "qwen35_4b.safetensors":
+        rank = 1
+    else:
+        rank = 2
+    return rank, *_stable_name(filename)
+
+
+def select_qwen35_candidate(filenames, selection="auto"):
+    """Resolve a filtered Qwen3.5-4B filename, including deterministic auto."""
+    candidates = sorted(
+        {str(name) for name in filenames if is_qwen35_4b_candidate(name)},
+        key=_stable_name,
+    )
+    if selection == "auto":
+        if not candidates:
+            markers = ", ".join(QWEN35_4B_MARKERS)
+            raise ValueError(
+                "No Qwen3.5-4B text encoder candidate was found in text_encoders. "
+                f"Expected a .safetensors filename containing one of: {markers}."
+            )
+        return min(candidates, key=_qwen_preference)
+    if selection not in candidates:
+        raise ValueError(
+            f"Selected Qwen3.5-4B encoder '{selection}' is unavailable or its "
+            "filename does not identify the required 32-layer, 2560-wide model."
+        )
+    return selection
+
+
+def adapter_tag(root, relative_name):
+    """Tag a relative adapter filename with its Comfy model-folder root."""
+    if root not in ADAPTER_ROOTS:
+        raise ValueError(
+            f"Unsupported adapter root '{root}'; expected one of {ADAPTER_ROOTS}."
+        )
+    return f"{root}::{str(relative_name).replace(chr(92), '/')}"
+
+
+def _split_adapter_tag(value):
+    """Split a tagged adapter selector and validate its source root."""
+    root, separator, relative_name = str(value).partition("::")
+    if not separator or root not in ADAPTER_ROOTS or not relative_name:
+        raise ValueError(
+            f"Adapter selector '{value}' must be tagged as "
+            "text_encoders::<relative path> or controlnet::<relative path>."
+        )
+    return root, relative_name
+
+
+def _adapter_record_valid(metadata, keys):
+    """Validate metadata and forbidden key families without importing safetensors."""
+    if (metadata or {}).get("architecture") != ADAPTER_ARCHITECTURE:
+        return False
+    key_names = keys.keys() if hasattr(keys, "keys") else keys
+    for key in key_names:
+        if str(key).startswith("timestep_gates.") or str(key).startswith(
+            "anchor_deviation"
+        ):
+            return False
+    return True
+
+
+def discover_adapter_candidates(records):
+    """Filter ``(root, name, metadata, keys)`` records and return tagged choices."""
+    candidates = set()
+    for root, name, metadata, keys in records:
+        if root not in ADAPTER_ROOTS or not str(name).lower().endswith(".safetensors"):
+            continue
+        if _adapter_record_valid(metadata, keys):
+            candidates.add(adapter_tag(root, name))
+    return sorted(candidates, key=_stable_name)
+
+
+def _adapter_preference(tagged_name):
+    """Rank adapter selectors for deterministic automatic selection."""
+    _, relative_name = _split_adapter_tag(tagged_name)
+    basename = relative_name.rsplit("/", 1)[-1].lower()
+    rank = 0 if "anima38" in basename else 1
+    return rank, *_stable_name(relative_name), *_stable_name(tagged_name)
+
+
+def select_adapter_candidate(candidates, selection="auto"):
+    """Resolve a tagged progressive adapter selector with actionable errors."""
+    candidates = sorted({str(candidate) for candidate in candidates}, key=_stable_name)
+    if selection == "auto":
+        if not candidates:
+            raise ValueError(
+                "No compatible Anima 3.8B adapter was found under text_encoders "
+                f"or controlnet. Expected safetensors architecture metadata "
+                f"'{ADAPTER_ARCHITECTURE}'."
+            )
+        return min(candidates, key=_adapter_preference)
+    if "::" in selection:
+        _split_adapter_tag(selection)
+        if selection not in candidates:
+            raise ValueError(
+                f"Selected Anima 3.8B adapter '{selection}' is unavailable or "
+                f"does not declare architecture '{ADAPTER_ARCHITECTURE}'."
+            )
+        return selection
+    matches = [candidate for candidate in candidates if candidate.partition("::")[2] == selection]
+    if len(matches) > 1:
+        raise ValueError(
+            f"Adapter name '{selection}' is ambiguous across model roots; use a "
+            "tagged text_encoders:: or controlnet:: selector."
+        )
+    if len(matches) == 1:
+        return matches[0]
+    raise ValueError(
+        f"Selected Anima 3.8B adapter '{selection}' was not found in text_encoders "
+        "or controlnet."
+    )
+
+
+def normalize_qwen35_state_dict(state_dict):
+    """Normalize companion Qwen keys and remove only its root output projection."""
+    normalized = {}
+    ignored = []
+    for key, value in state_dict.items():
+        if key.startswith("norm."):
+            ignored.append(key)
+            continue
+        if key.startswith("embed_tokens."):
+            key = f"model.{key}"
+        elif key.startswith("layers."):
+            key = f"model.{key}"
+        elif key.startswith("model.language_model."):
+            key = f"model.{key[len('model.language_model.'):]}"
+        normalized[key] = value
+    return normalized, tuple(sorted(ignored))
+
+
+def format_unified_prompt(prompt):
+    """Preserve raw tag/Description prompt text exactly for both encoders."""
+    return prompt
+
+
+def _expected_progressive_adapter_shapes():
+    """Return the exact trainable tensor layout for the six-stage adapter."""
+    expected = {"layer_mix_logits": (6, 4)}
+    attention_shapes = {
+        "q_proj.weight": (1024, 1024),
+        "q_norm.weight": (64,),
+        "k_proj.weight": (1024, 2560),
+        "k_norm.weight": (64,),
+        "v_proj.weight": (1024, 2560),
+        "o_proj.weight": (1024, 1024),
+    }
+    for index in range(6):
+        expected[f"query_norms.{index}.weight"] = (1024,)
+        expected[f"source_norms.{index}.weight"] = (2560,)
+        for suffix, shape in attention_shapes.items():
+            expected[f"semantic_attentions.{index}.{suffix}"] = shape
+    return expected
+
+
+def validate_progressive_adapter_shapes(state_dict, selected_name):
+    """Reject incomplete, extra, or incorrectly shaped progressive adapter state."""
+    expected = _expected_progressive_adapter_shapes()
+    for key in sorted(set(expected) & set(state_dict)):
+        expected_shape = expected[key]
+        actual_shape = tuple(state_dict[key].shape)
+        if actual_shape != expected_shape:
+            raise ValueError(
+                f"Anima 3.8B adapter '{selected_name}' tensor '{key}' has shape "
+                f"{actual_shape}; expected {expected_shape}."
+            )
+    missing = sorted(set(expected) - set(state_dict))
+    unexpected = sorted(set(state_dict) - set(expected))
+    if missing or unexpected:
+        raise ValueError(
+            f"Anima 3.8B adapter '{selected_name}' has incompatible state keys: "
+            f"missing={missing}, unexpected={unexpected}. Expected the complete "
+            "six-stage progressive Qwen3.5 adapter state."
+        )
+
+
+def _anima38_signature(state_dict, key_prefix):
+    """Return whether state keys contain exactly the contiguous 52-block signature."""
+    block_prefix = f"{key_prefix}blocks."
+    indices = set()
+    for key in state_dict:
+        if not key.startswith(block_prefix):
+            continue
+        index = key[len(block_prefix) :].split(".", 1)[0]
+        if index.isdigit():
+            indices.add(int(index))
+    return indices == set(range(52))
+
+
+def install_anima38_model_detection():
+    """Narrowly and idempotently correct Comfy's Anima block count to 52."""
+    import comfy.model_detection
+
+    current = comfy.model_detection.detect_unet_config
+    if getattr(current, _MODEL_DETECTION_SENTINEL, False):
+        return
+
+    @functools.wraps(current)
+    def detect_unet_config(state_dict, key_prefix, metadata=None):
+        config = current(state_dict, key_prefix, metadata=metadata)
+        if (
+            config is not None
+            and config.get("image_model") == "anima"
+            and _anima38_signature(state_dict, key_prefix)
+            and config.get("num_blocks") != 52
+        ):
+            config = config.copy()
+            config["num_blocks"] = 52
+            logger.info("[Swarm] Detected native 52-block Anima 3.8B model")
+        return config
+
+    setattr(detect_unet_config, _MODEL_DETECTION_SENTINEL, True)
+    comfy.model_detection.detect_unet_config = detect_unet_config
+
+
+def _qwen35_4b_expected_shapes(include_final_norm=True):
+    """Build mandatory native Qwen3.5-4B text-backbone shapes."""
+    expected = {"model.embed_tokens.weight": (248320, 2560)}
+    if include_final_norm:
+        expected["model.norm.weight"] = (2560,)
+    common = {
+        "input_layernorm.weight": (2560,),
+        "post_attention_layernorm.weight": (2560,),
+        "mlp.gate_proj.weight": (9216, 2560),
+        "mlp.up_proj.weight": (9216, 2560),
+        "mlp.down_proj.weight": (2560, 9216),
+    }
+    linear_attention = {
+        "linear_attn.in_proj_qkv.weight": (8192, 2560),
+        "linear_attn.in_proj_z.weight": (4096, 2560),
+        "linear_attn.in_proj_b.weight": (32, 2560),
+        "linear_attn.in_proj_a.weight": (32, 2560),
+        "linear_attn.out_proj.weight": (2560, 4096),
+        "linear_attn.dt_bias": (32,),
+        "linear_attn.A_log": (32,),
+        "linear_attn.conv1d.weight": (8192, 1, 4),
+        "linear_attn.norm.weight": (128,),
+    }
+    full_attention = {
+        "self_attn.q_proj.weight": (8192, 2560),
+        "self_attn.k_proj.weight": (1024, 2560),
+        "self_attn.v_proj.weight": (1024, 2560),
+        "self_attn.o_proj.weight": (2560, 4096),
+        "self_attn.q_norm.weight": (256,),
+        "self_attn.k_norm.weight": (256,),
+    }
+    for index in range(32):
+        prefix = f"model.layers.{index}."
+        for suffix, shape in common.items():
+            expected[f"{prefix}{suffix}"] = shape
+        layer_attention = full_attention if (index + 1) % 4 == 0 else linear_attention
+        for suffix, shape in layer_attention.items():
+            expected[f"{prefix}{suffix}"] = shape
+    return expected
+
+
+def _is_known_quant_auxiliary(key, expected_keys):
+    """Return whether a key is Comfy quantization metadata for a known weight."""
+    suffixes = (
+        ".weight_scale",
+        ".weight_scale_2",
+        ".input_scale",
+        ".quantized_scale",
+    )
+    for suffix in suffixes:
+        if key.endswith(suffix) and f"{key[:-len(suffix)]}.weight" in expected_keys:
+            return True
+    return key.endswith(".comfy_quant")
+
+
+def _validate_qwen35_4b_state_dict(state_dict, selected_name, companion_format):
+    """Validate the complete 32-layer, 2560-wide native text backbone."""
+    expected = _qwen35_4b_expected_shapes(include_final_norm=not companion_format)
+    missing = sorted(set(expected) - set(state_dict))
+    if missing:
+        sample = ", ".join(missing[:8])
+        remainder = len(missing) - 8
+        suffix = f"; plus {remainder} more" if remainder > 0 else ""
+        raise ValueError(
+            f"Qwen3.5-4B encoder '{selected_name}' is incomplete or has the wrong "
+            f"architecture. Missing {len(missing)} mandatory weights: {sample}{suffix}. "
+            "Expected 32 layers, hidden width 2560, and intermediate width 9216."
+        )
+    for key, shape in expected.items():
+        actual = tuple(state_dict[key].shape)
+        if actual != shape:
+            raise ValueError(
+                f"Qwen3.5-4B encoder '{selected_name}' tensor '{key}' has shape "
+                f"{actual}; expected {shape}."
+            )
+    allowed = set(expected)
+    if companion_format:
+        allowed.add("model.norm.weight")
+    unexpected = sorted(
+        key for key in state_dict if key not in allowed and not _is_known_quant_auxiliary(key, allowed)
+    )
+    if unexpected:
+        raise ValueError(
+            f"Qwen3.5-4B encoder '{selected_name}' contains unexpected text-model "
+            f"weights after normalization: {unexpected[:12]}. Only companion root "
+            "projection keys norm.* may be ignored."
+        )
+
+
+def _qwen_candidates():
+    """Read filtered Qwen choices from Comfy's text-encoder roots."""
+    import folder_paths
+
+    return sorted(
+        {
+            name
+            for name in folder_paths.get_filename_list("text_encoders")
+            if is_qwen35_4b_candidate(name)
+        },
+        key=_stable_name,
+    )
+
+
+def _runtime_adapter_records(require_complete=True):
+    """Inspect compatible safetensors headers across both approved roots."""
+    import folder_paths
+    from safetensors import SafetensorError, safe_open
+
+    records = []
+    for root in ADAPTER_ROOTS:
+        for name in folder_paths.get_filename_list(root):
+            if not str(name).lower().endswith(".safetensors"):
+                continue
+            path = folder_paths.get_full_path(root, name)
+            if path is None or not os.path.isfile(path):
+                continue
+            try:
+                with safe_open(path, framework="pt", device="cpu") as checkpoint:
+                    metadata = checkpoint.metadata() or {}
+                    shapes = {
+                        key: _ShapeOnly(checkpoint.get_slice(key).get_shape())
+                        for key in checkpoint.keys()
+                    }
+                if not _adapter_record_valid(metadata, shapes):
+                    continue
+                if require_complete:
+                    validate_progressive_adapter_shapes(shapes, adapter_tag(root, name))
+            except (OSError, ValueError, SafetensorError):
+                continue
+            records.append((root, name, metadata, shapes))
+    return records
+
+
+class _ShapeOnly:
+    """Small shape carrier used while inspecting safetensors headers."""
+
+    def __init__(self, shape):
+        self.shape = tuple(shape)
+
+
+def _adapter_choices():
+    """Return dropdown choices with automatic selection first."""
+    return ["auto", *discover_adapter_candidates(_runtime_adapter_records())]
+
+
+def _resolve_adapter_path(selection):
+    """Resolve and revalidate a selected tagged adapter path and metadata."""
+    import folder_paths
+    from safetensors import safe_open
+
+    candidates = discover_adapter_candidates(_runtime_adapter_records())
+    selected = select_adapter_candidate(candidates, selection)
+    root, relative_name = _split_adapter_tag(selected)
+    path = folder_paths.get_full_path_or_raise(root, relative_name)
+    with safe_open(path, framework="pt", device="cpu") as checkpoint:
+        metadata = checkpoint.metadata() or {}
+        shapes = {
+            key: _ShapeOnly(checkpoint.get_slice(key).get_shape())
+            for key in checkpoint.keys()
+        }
+    if not _adapter_record_valid(metadata, shapes):
+        architecture = metadata.get("architecture", "no architecture metadata")
+        raise ValueError(
+            f"Anima 3.8B adapter '{selected}' uses '{architecture}'; expected "
+            f"'{ADAPTER_ARCHITECTURE}' without timestep gates or anchor deviation."
+        )
+    validate_progressive_adapter_shapes(shapes, selected)
+    return selected, path, metadata
+
+
+def _qwen_runtime_classes():
+    """Create CLIP wrapper classes around Comfy's native raw Qwen3.5 tokenizer."""
+    import torch
+    import comfy.sd1_clip
+    import comfy.text_encoders.qwen35 as comfy_qwen35
+
+    class SwarmAnima38Qwen35Tokenizer:
+        """Expose raw Qwen3.5-4B tokens without image/chat templates."""
+
+        def __init__(self, embedding_directory=None, tokenizer_data={}):
+            self.qwen35_4b = comfy_qwen35.Qwen35Tokenizer(
+                embedding_directory=embedding_directory,
+                tokenizer_data=tokenizer_data,
+                embedding_size=2560,
+                embedding_key="qwen35_4b",
+            )
+
+        def tokenize_with_weights(self, text, return_word_ids=False, **kwargs):
+            return {
+                "qwen35_4b": self.qwen35_4b.tokenize_with_weights(
+                    text, return_word_ids, **kwargs
+                )
+            }
+
+        def untokenize(self, token_weight_pair):
+            return self.qwen35_4b.untokenize(token_weight_pair)
+
+        def state_dict(self):
+            return {}
+
+        def decode(self, token_ids, **kwargs):
+            return self.qwen35_4b.decode(token_ids, **kwargs)
+
+    class SwarmAnima38Qwen35ClipModel(comfy_qwen35.Qwen35ClipModel):
+        """Native Qwen3.5-4B model with direct intermediate-state access."""
+
+        def __init__(
+            self,
+            device="cpu",
+            layer="hidden",
+            layer_idx=-2,
+            dtype=None,
+            attention_mask=True,
+            model_options={},
+        ):
+            class Qwen35NoFinalNorm(comfy_qwen35.Qwen35):
+                """Retain the checkpoint norm weight but bypass it at inference."""
+
+                model_type = "qwen35_4b"
+
+                def __init__(self, config_dict, dtype, device, operations):
+                    super().__init__(config_dict, dtype, device, operations)
+
+                    class LoadedIdentityNorm(torch.nn.Module):
+                        """Load model.norm.weight while leaving final states raw."""
+
+                        def __init__(self, original_norm):
+                            super().__init__()
+                            self.weight = original_norm.weight
+
+                        def forward(self, value):
+                            return value
+
+                    self.model.norm = LoadedIdentityNorm(self.model.norm)
+
+            comfy.sd1_clip.SDClipModel.__init__(
+                self,
+                device=device,
+                layer=layer,
+                layer_idx=layer_idx,
+                textmodel_json_config={},
+                dtype=dtype,
+                special_tokens={"pad": 248044},
+                layer_norm_hidden_state=False,
+                model_class=Qwen35NoFinalNorm,
+                enable_attention_masks=attention_mask,
+                return_attention_masks=attention_mask,
+                model_options=model_options,
+            )
+
+        def raw_hidden_states(self, token_pairs, execution_device):
+            if len(token_pairs) != 1:
+                raise RuntimeError(
+                    "Anima 3.8B semantic conditioning expects one raw prompt."
+                )
+            token_ids = []
+            for item in token_pairs[0]:
+                token = item[0] if isinstance(item, (tuple, list)) else item
+                if not isinstance(token, int):
+                    raise RuntimeError(
+                        "Textual-inversion embeddings are unsupported by the "
+                        "Anima 3.8B Qwen3.5 semantic encoder."
+                    )
+                token_ids.append(token)
+            embeds, attention_mask, num_tokens, embeds_info = self.process_tokens(
+                [token_ids], execution_device
+            )
+            outputs = self.transformer(
+                None,
+                attention_mask,
+                embeds=embeds,
+                num_tokens=num_tokens,
+                intermediate_output=list(SEMANTIC_LAYER_TAPS),
+                final_layer_norm_intermediate=False,
+                dtype=torch.float32,
+                embeds_info=embeds_info,
+            )
+            intermediate = outputs[1]
+            if not isinstance(intermediate, torch.Tensor) or intermediate.ndim != 4:
+                raise RuntimeError(
+                    "Native Qwen3.5 did not return four requested intermediate layers."
+                )
+            if intermediate.shape[1] != len(SEMANTIC_LAYER_TAPS):
+                raise RuntimeError(
+                    "Native Qwen3.5 returned "
+                    f"{intermediate.shape[1]} semantic layers; expected 4 at taps "
+                    f"{SEMANTIC_LAYER_TAPS}."
+                )
+            return [state.float() for state in intermediate.unbind(dim=1)], attention_mask
+
+    class SwarmAnima38Qwen35TEModel(comfy.sd1_clip.SD1ClipModel):
+        """Single raw Qwen3.5-4B text encoder exposed as a CLIP model."""
+
+        def __init__(self, device="cpu", dtype=None, model_options={}):
+            super().__init__(
+                device=device,
+                dtype=dtype,
+                name="qwen35_4b",
+                clip_model=SwarmAnima38Qwen35ClipModel,
+                model_options=model_options,
+            )
+
+    return SwarmAnima38Qwen35Tokenizer, SwarmAnima38Qwen35TEModel
+
+
+def _configured_qwen_te(base_class, dtype_llama=None, llama_quantization_metadata=None):
+    """Bind detected dtype and Comfy quantization metadata to the TE wrapper."""
+    class ConfiguredQwenTE(base_class):
+        def __init__(self, device="cpu", dtype=None, model_options={}):
+            if dtype_llama is not None:
+                dtype = dtype_llama
+            options = model_options.copy()
+            if llama_quantization_metadata is not None:
+                options["quantization_metadata"] = llama_quantization_metadata
+            super().__init__(device=device, dtype=dtype, model_options=options)
+
+    return ConfiguredQwenTE
+
+
+def load_anima38_qwen35_clip(path, selected_name):
+    """Load and validate one native raw-prompt Qwen3.5-4B CLIP object."""
+    import comfy.sd
+    import comfy.text_encoders.hunyuan_video
+    import comfy.utils
+    import folder_paths
+    from comfy.supported_models_base import ClipTarget
+
+    try:
+        import comfy.text_encoders.qwen35
+    except ModuleNotFoundError as error:
+        raise RuntimeError(
+            "Anima 3.8B requires current ComfyUI native Qwen3.5 support "
+            "(comfy.text_encoders.qwen35)."
+        ) from error
+    state_dict, metadata = comfy.utils.load_torch_file(
+        path, safe_load=True, return_metadata=True
+    )
+    if hasattr(comfy.utils, "convert_old_quants"):
+        state_dict, metadata = comfy.utils.convert_old_quants(
+            state_dict, model_prefix="", metadata=metadata
+        )
+    companion_format = any(
+        key.startswith("embed_tokens.") or key.startswith("layers.")
+        for key in state_dict
+    )
+    state_dict, ignored = normalize_qwen35_state_dict(state_dict)
+    _validate_qwen35_4b_state_dict(state_dict, selected_name, companion_format)
+    if ignored:
+        logger.info(
+            "[Swarm] Ignored companion Qwen output projection keys for %s: %s",
+            selected_name,
+            ", ".join(ignored),
+        )
+    detection = comfy.text_encoders.hunyuan_video.llama_detect(state_dict)
+    tokenizer_class, te_class = _qwen_runtime_classes()
+    target = ClipTarget(
+        tokenizer_class,
+        _configured_qwen_te(te_class, **detection),
+    )
+    return comfy.sd.CLIP(
+        target,
+        embedding_directory=folder_paths.get_folder_paths("embeddings"),
+        parameters=comfy.utils.calculate_parameters(state_dict),
+        state_dict=[state_dict],
+    )
+
+
+def _progressive_adapter_type():
+    """Lazily define the companion-compatible progressive adapter module."""
+    global _PROGRESSIVE_ADAPTER_CLASS
+    if _PROGRESSIVE_ADAPTER_CLASS is not None:
+        return _PROGRESSIVE_ADAPTER_CLASS
+
+    import torch
+    from torch import nn
+    from comfy.ldm.anima.model import Attention
+
+    class ProgressiveQwen35CrossAdapter(nn.Module):
+        """Insert a learned Qwen3.5 cross-attention after each native stage."""
+
+        def __init__(self, native_adapter, operations):
+            super().__init__()
+            self.native_adapter = native_adapter
+            model_dim = native_adapter.embed.weight.shape[1]
+            num_heads = native_adapter.blocks[0].self_attn.n_heads
+            head_dim = model_dim // num_heads
+            device = native_adapter.embed.weight.device
+            dtype = native_adapter.embed.weight.dtype
+            self.query_norms = nn.ModuleList(
+                [
+                    operations.RMSNorm(
+                        model_dim, eps=1e-6, device=device, dtype=dtype
+                    )
+                    for _ in native_adapter.blocks
+                ]
+            )
+            self.source_norms = nn.ModuleList(
+                [
+                    operations.RMSNorm(
+                        2560, eps=1e-6, device=device, dtype=dtype
+                    )
+                    for _ in native_adapter.blocks
+                ]
+            )
+            self.semantic_attentions = nn.ModuleList(
+                [
+                    Attention(
+                        query_dim=model_dim,
+                        context_dim=2560,
+                        n_heads=num_heads,
+                        head_dim=head_dim,
+                        device=device,
+                        dtype=dtype,
+                        operations=operations,
+                    )
+                    for _ in native_adapter.blocks
+                ]
+            )
+            self.layer_mix_logits = nn.Parameter(
+                torch.empty(
+                    len(native_adapter.blocks),
+                    len(SEMANTIC_LAYER_TAPS),
+                    device=device,
+                    dtype=dtype,
+                )
+            )
+
+        @staticmethod
+        def _attention_mask(mask):
+            if mask is None:
+                return None
+            mask = mask.to(torch.bool)
+            return mask.unsqueeze(1).unsqueeze(1) if mask.ndim == 2 else mask
+
+        def forward(
+            self,
+            native_source,
+            target_input_ids,
+            semantic_hidden_states,
+            target_attention_mask=None,
+            native_source_mask=None,
+            semantic_source_mask=None,
+        ):
+            if len(semantic_hidden_states) != len(SEMANTIC_LAYER_TAPS):
+                raise ValueError(
+                    f"Expected 4 Qwen3.5 semantic states, got "
+                    f"{len(semantic_hidden_states)}."
+                )
+            target_attention_mask = self._attention_mask(target_attention_mask)
+            native_source_mask = self._attention_mask(native_source_mask)
+            semantic_source_mask = self._attention_mask(semantic_source_mask)
+            x = self.native_adapter.in_proj(
+                self.native_adapter.embed(
+                    target_input_ids, out_dtype=native_source.dtype
+                )
+            )
+            query_positions = torch.arange(x.shape[1], device=x.device).unsqueeze(0)
+            native_positions = torch.arange(
+                native_source.shape[1], device=x.device
+            ).unsqueeze(0)
+            semantic_positions = torch.arange(
+                semantic_hidden_states[0].shape[1], device=x.device
+            ).unsqueeze(0)
+            query_rope = self.native_adapter.rotary_emb(x, query_positions)
+            native_rope = self.native_adapter.rotary_emb(x, native_positions)
+            semantic_rope = self.native_adapter.rotary_emb(x, semantic_positions)
+            mix = self.layer_mix_logits.float().softmax(dim=-1).to(dtype=x.dtype)
+            for index, native_block in enumerate(self.native_adapter.blocks):
+                x = native_block(
+                    x,
+                    native_source,
+                    target_attention_mask=target_attention_mask,
+                    source_attention_mask=native_source_mask,
+                    position_embeddings=query_rope,
+                    position_embeddings_context=native_rope,
+                )
+                semantic_source = sum(
+                    state * mix[index, layer_index]
+                    for layer_index, state in enumerate(semantic_hidden_states)
+                )
+                semantic_source = self.source_norms[index](semantic_source)
+                x = x + self.semantic_attentions[index](
+                    self.query_norms[index](x),
+                    mask=semantic_source_mask,
+                    context=semantic_source,
+                    position_embeddings=query_rope,
+                    position_embeddings_context=semantic_rope,
+                )
+            return self.native_adapter.norm(self.native_adapter.out_proj(x))
+
+    _PROGRESSIVE_ADAPTER_CLASS = ProgressiveQwen35CrossAdapter
+    return _PROGRESSIVE_ADAPTER_CLASS
+
+
+def _native_anima38_adapter(model):
+    """Resolve and validate the native six-stage adapter on a 52-block model."""
+    base_model = getattr(model, "model", None)
+    diffusion_model = getattr(base_model, "diffusion_model", None)
+    blocks = getattr(diffusion_model, "blocks", None)
+    if blocks is None or len(blocks) != 52:
+        count = "missing" if blocks is None else len(blocks)
+        raise RuntimeError(
+            f"SwarmAnima38Conditioning requires a 52-block Anima 3.8B MODEL; "
+            f"got {count} diffusion blocks."
+        )
+    adapter = getattr(diffusion_model, "llm_adapter", None)
+    if adapter is None or len(getattr(adapter, "blocks", ())) != 6:
+        count = "missing" if adapter is None else len(getattr(adapter, "blocks", ()))
+        raise RuntimeError(
+            "The selected Anima 3.8B MODEL must contain its native six-stage LLM "
+            f"adapter; got {count} stages."
+        )
+    return adapter
+
+
+def _loaded_progressive_adapter(native_adapter, selected, path):
+    """Load or reuse the one active progressive adapter without duplicate weights."""
+    import safetensors.torch
+    import comfy.ops
+
+    device = native_adapter.embed.weight.device
+    dtype = native_adapter.embed.weight.dtype
+    cache_key = (path, id(native_adapter), str(device), str(dtype))
+    native_ref = _ADAPTER_CACHE["native_ref"]
+    if (
+        _ADAPTER_CACHE["key"] == cache_key
+        and native_ref is not None
+        and native_ref() is native_adapter
+        and _ADAPTER_CACHE["adapter"] is not None
+    ):
+        return _ADAPTER_CACHE["adapter"]
+    adapter_type = _progressive_adapter_type()
+    expanded = adapter_type(native_adapter, comfy.ops.disable_weight_init)
+    state_dict = safetensors.torch.load_file(path, device=str(device))
+    validate_progressive_adapter_shapes(state_dict, selected)
+    incompatible = expanded.load_state_dict(state_dict, strict=False)
+    missing = sorted(
+        key
+        for key in incompatible.missing_keys
+        if not key.startswith("native_adapter.")
+    )
+    unexpected = sorted(incompatible.unexpected_keys)
+    if missing or unexpected:
+        raise RuntimeError(
+            f"Anima 3.8B adapter '{selected}' could not be applied: "
+            f"missing={missing}, unexpected={unexpected}."
+        )
+    expanded.eval()
+    expanded.requires_grad_(False)
+    _ADAPTER_CACHE.update(
+        {
+            "key": cache_key,
+            "native_ref": weakref.ref(native_adapter),
+            "adapter": expanded,
+        }
+    )
+    return expanded
+
+
+def _pad_context(context, length=512):
+    """Pad or truncate Anima adapter context to its fixed conditioning length."""
+    import torch.nn.functional as functional
+
+    if context.shape[1] >= length:
+        return context[:, :length]
+    return functional.pad(context, (0, 0, 0, length - context.shape[1]))
+
+
+class SwarmLoadAnima38Qwen35:
+    """Load the separate raw-prompt Qwen3.5-4B semantic encoder."""
+
+    @classmethod
+    def INPUT_TYPES(cls):
+        return {"required": {"qwen_filename": (["auto", *_qwen_candidates()],)}}
+
+    RETURN_TYPES = ("CLIP",)
+    FUNCTION = "load_clip"
+    CATEGORY = "SwarmUI/loaders"
+    DESCRIPTION = "Loads native raw-prompt Qwen3.5-4B semantics for Anima 3.8B."
+
+    def load_clip(self, qwen_filename):
+        import folder_paths
+
+        selected = select_qwen35_candidate(_qwen_candidates(), qwen_filename)
+        path = folder_paths.get_full_path_or_raise("text_encoders", selected)
+        try:
+            clip = load_anima38_qwen35_clip(path, selected)
+        except Exception as error:
+            raise RuntimeError(
+                f"Failed to load Anima 3.8B Qwen3.5-4B encoder '{selected}': {error}"
+            ) from error
+        logger.info("[Swarm] Loaded Anima 3.8B semantic encoder %s", selected)
+        return (clip,)
+
+
+class SwarmAnima38Conditioning:
+    """Combine native Anima and Qwen3.5 semantics through the progressive adapter."""
+
+    @classmethod
+    def INPUT_TYPES(cls):
+        return {
+            "required": {
+                "source_model": ("MODEL",),
+                "clip": ("CLIP",),
+                "qwen35_clip": ("CLIP",),
+                "adapter": (_adapter_choices(),),
+                "prompt": (
+                    "STRING",
+                    {"multiline": True, "dynamicPrompts": True},
+                ),
+                "adapter_strength": (
+                    "FLOAT",
+                    {"default": 1.0, "min": 0.0, "max": 2.0, "step": 0.05},
+                ),
+            }
+        }
+
+    RETURN_TYPES = ("CONDITIONING", "CONDITIONING")
+    RETURN_NAMES = ("expanded", "native")
+    FUNCTION = "encode"
+    CATEGORY = "SwarmUI/conditioning"
+
+    @staticmethod
+    def _encode_native(clip, prompt):
+        conditioning = clip.encode_from_tokens_scheduled(clip.tokenize(prompt))
+        if len(conditioning) != 1:
+            raise RuntimeError(
+                "Anima 3.8B conditioning expects one Swarm-presegmented prompt; "
+                "scheduled prompt syntax must be resolved before this node."
+            )
+        return conditioning
+
+    @staticmethod
+    def _encode_semantic_layers(clip, prompt):
+        import torch
+        import comfy.model_management
+
+        tokens = clip.tokenize(prompt)
+        token_pairs = tokens.get("qwen35_4b")
+        if token_pairs is None:
+            raise RuntimeError(
+                "qwen35_clip must come from SwarmLoadAnima38Qwen35 and expose "
+                "raw qwen35_4b tokens."
+            )
+        clip.load_model(tokens)
+        execution_device = clip.patcher.load_device
+        try:
+            inner = clip.cond_stage_model.qwen35_4b
+        except AttributeError as error:
+            raise RuntimeError(
+                "qwen35_clip must come from SwarmLoadAnima38Qwen35."
+            ) from error
+        inner.set_clip_options({"execution_device": execution_device})
+        with comfy.model_management.cuda_device_context(execution_device):
+            states, attention_mask = inner.raw_hidden_states(
+                token_pairs, execution_device
+            )
+        intermediate_device = comfy.model_management.intermediate_device()
+        states = [
+            state.to(device=intermediate_device, dtype=torch.bfloat16)
+            for state in states
+        ]
+        return states, attention_mask.to(intermediate_device)
+
+    def encode(
+        self,
+        source_model,
+        clip,
+        qwen35_clip,
+        adapter,
+        prompt,
+        adapter_strength,
+    ):
+        import torch
+        import comfy.model_management
+
+        raw_prompt = format_unified_prompt(prompt)
+        native = self._encode_native(clip, raw_prompt)
+        if float(adapter_strength) == 0.0:
+            return native, native
+
+        selected, adapter_path, adapter_metadata = _resolve_adapter_path(adapter)
+        native_source, native_metadata = native[0]
+        if native_source.ndim != 3 or native_source.shape[-1] != 1024:
+            raise RuntimeError(
+                "The native clip input must be Anima's Qwen3-0.6B encoder with "
+                f"1024-wide conditioning; got {tuple(native_source.shape)}."
+            )
+        target_ids = native_metadata.get("t5xxl_ids")
+        if target_ids is None:
+            raise RuntimeError(
+                "Native Anima conditioning is missing required t5xxl_ids metadata."
+            )
+        semantic_states, semantic_mask = self._encode_semantic_layers(
+            qwen35_clip, raw_prompt
+        )
+        for tap, state in zip(SEMANTIC_LAYER_TAPS, semantic_states):
+            if state.ndim != 3 or state.shape[-1] != 2560:
+                raise RuntimeError(
+                    f"Qwen3.5 semantic encoder tap {tap} returned shape "
+                    f"{tuple(state.shape)}; expected [batch, tokens, 2560]."
+                )
+        comfy.model_management.load_models_gpu([source_model], force_full_load=True)
+        native_adapter = _native_anima38_adapter(source_model)
+        device = native_adapter.embed.weight.device
+        dtype = native_adapter.embed.weight.dtype
+        source = native_source.to(device=device, dtype=dtype)
+        semantic_states = [state.to(device=device, dtype=dtype) for state in semantic_states]
+        semantic_mask = semantic_mask.to(device=device, dtype=torch.bool)
+        target_ids = torch.as_tensor(
+            target_ids, device=device, dtype=torch.long
+        ).reshape(1, -1)[:, :512]
+        expanded_adapter = _loaded_progressive_adapter(
+            native_adapter, selected, adapter_path
+        )
+        with torch.no_grad():
+            expanded_context = expanded_adapter(
+                source,
+                target_ids,
+                semantic_states,
+                semantic_source_mask=semantic_mask,
+            )
+            strength = float(adapter_strength)
+            if strength != 1.0:
+                native_context = native_adapter(source, target_ids)
+                expanded_context = native_context + strength * (
+                    expanded_context - native_context
+                )
+            target_weights = native_metadata.get("t5xxl_weights")
+            if target_weights is not None:
+                weights = torch.as_tensor(
+                    target_weights,
+                    device=device,
+                    dtype=expanded_context.dtype,
+                ).reshape(1, -1, 1)[:, : expanded_context.shape[1]]
+                expanded_context = expanded_context * weights
+            expanded_context = _pad_context(expanded_context)
+            expanded_context = expanded_context.to(
+                comfy.model_management.intermediate_device()
+            )
+        output_metadata = {
+            key: value
+            for key, value in native_metadata.items()
+            if key not in {"t5xxl_ids", "t5xxl_weights", "attention_mask"}
+        }
+        output_metadata.update(
+            {
+                "qwen35_expanded_adapter": selected,
+                "qwen35_expanded_strength": float(adapter_strength),
+                "qwen35_expanded_architecture": ADAPTER_ARCHITECTURE,
+                "qwen35_expanded_step": adapter_metadata.get("step", ""),
+            }
+        )
+        logger.info(
+            "[Swarm] Encoded Anima 3.8B prompt with %s at strength %.2f",
+            selected,
+            adapter_strength,
+        )
+        return [[expanded_context, output_metadata]], native
+
+
+NODE_CLASS_MAPPINGS = {
+    "SwarmLoadAnima38Qwen35": SwarmLoadAnima38Qwen35,
+    "SwarmAnima38Conditioning": SwarmAnima38Conditioning,
+}
+
+NODE_DISPLAY_NAME_MAPPINGS = {
+    "SwarmLoadAnima38Qwen35": "Swarm Load Anima 3.8B Qwen3.5-4B",
+    "SwarmAnima38Conditioning": "Swarm Anima 3.8B Conditioning",
+}
+
+
+try:
+    import comfy.model_detection  # noqa: F401
+except ModuleNotFoundError as error:
+    if error.name != "comfy":
+        raise
+else:
+    install_anima38_model_detection()
