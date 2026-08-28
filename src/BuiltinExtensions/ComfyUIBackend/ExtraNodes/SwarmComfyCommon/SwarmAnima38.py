@@ -11,7 +11,6 @@ from __future__ import annotations
 import functools
 import logging
 import os
-import weakref
 
 
 logger = logging.getLogger(__name__)
@@ -28,7 +27,46 @@ QWEN35_4B_MARKERS = (
 ADAPTER_ROOTS = ("text_encoders", "controlnet")
 _MODEL_DETECTION_SENTINEL = "_swarm_anima38_52_block_patch"
 _PROGRESSIVE_ADAPTER_CLASS = None
-_ADAPTER_CACHE = {"key": None, "native_ref": None, "adapter": None}
+_COMPANION_PROJECTION_KEYS = frozenset(
+    {
+        "norm.0.weight",
+        "norm.0.bias",
+        "norm.1.weight",
+        "norm.3.weight",
+        "norm.3.bias",
+    }
+)
+
+
+class LastAdapterCache:
+    """Bounded one-entry cache with explicit disposal on replacement."""
+
+    def __init__(self, disposer=None):
+        self.key = None
+        self.managed_adapter = None
+        self.disposer = disposer
+
+    def get(self, key):
+        if self.key == key:
+            return self.managed_adapter
+        return None
+
+    def store(self, key, managed_adapter):
+        if self.managed_adapter is not None and self.managed_adapter is not managed_adapter:
+            if self.disposer is not None:
+                self.disposer(self.managed_adapter)
+        self.key = key
+        self.managed_adapter = managed_adapter
+
+
+def _dispose_managed_adapter(managed_adapter):
+    """Release a replaced semantic adapter through Comfy's model manager."""
+    import comfy.model_management
+
+    comfy.model_management.unload_model_and_clones(managed_adapter)
+
+
+_ADAPTER_CACHE = LastAdapterCache(_dispose_managed_adapter)
 
 
 def is_qwen35_4b_candidate(filename):
@@ -171,7 +209,7 @@ def normalize_qwen35_state_dict(state_dict):
     normalized = {}
     ignored = []
     for key, value in state_dict.items():
-        if key.startswith("norm."):
+        if key in _COMPANION_PROJECTION_KEYS:
             ignored.append(key)
             continue
         if key.startswith("embed_tokens."):
@@ -646,22 +684,25 @@ def _progressive_adapter_type():
     from comfy.ldm.anima.model import Attention
 
     class ProgressiveQwen35CrossAdapter(nn.Module):
-        """Insert a learned Qwen3.5 cross-attention after each native stage."""
+        """Semantic-only learned injections, managed independently by Comfy."""
 
-        def __init__(self, native_adapter, operations):
+        def __init__(
+            self,
+            model_dim,
+            num_heads,
+            device,
+            dtype,
+            operations,
+            stage_count=6,
+        ):
             super().__init__()
-            self.native_adapter = native_adapter
-            model_dim = native_adapter.embed.weight.shape[1]
-            num_heads = native_adapter.blocks[0].self_attn.n_heads
             head_dim = model_dim // num_heads
-            device = native_adapter.embed.weight.device
-            dtype = native_adapter.embed.weight.dtype
             self.query_norms = nn.ModuleList(
                 [
                     operations.RMSNorm(
                         model_dim, eps=1e-6, device=device, dtype=dtype
                     )
-                    for _ in native_adapter.blocks
+                    for _ in range(stage_count)
                 ]
             )
             self.source_norms = nn.ModuleList(
@@ -669,7 +710,7 @@ def _progressive_adapter_type():
                     operations.RMSNorm(
                         2560, eps=1e-6, device=device, dtype=dtype
                     )
-                    for _ in native_adapter.blocks
+                    for _ in range(stage_count)
                 ]
             )
             self.semantic_attentions = nn.ModuleList(
@@ -683,80 +724,50 @@ def _progressive_adapter_type():
                         dtype=dtype,
                         operations=operations,
                     )
-                    for _ in native_adapter.blocks
+                    for _ in range(stage_count)
                 ]
             )
             self.layer_mix_logits = nn.Parameter(
                 torch.empty(
-                    len(native_adapter.blocks),
+                    stage_count,
                     len(SEMANTIC_LAYER_TAPS),
                     device=device,
                     dtype=dtype,
                 )
             )
 
-        @staticmethod
-        def _attention_mask(mask):
-            if mask is None:
-                return None
-            mask = mask.to(torch.bool)
-            return mask.unsqueeze(1).unsqueeze(1) if mask.ndim == 2 else mask
-
         def forward(
             self,
-            native_source,
-            target_input_ids,
+            block_index,
+            query,
             semantic_hidden_states,
-            target_attention_mask=None,
-            native_source_mask=None,
             semantic_source_mask=None,
+            query_rope=None,
+            semantic_rope=None,
         ):
             if len(semantic_hidden_states) != len(SEMANTIC_LAYER_TAPS):
                 raise ValueError(
                     f"Expected 4 Qwen3.5 semantic states, got "
                     f"{len(semantic_hidden_states)}."
                 )
-            target_attention_mask = self._attention_mask(target_attention_mask)
-            native_source_mask = self._attention_mask(native_source_mask)
-            semantic_source_mask = self._attention_mask(semantic_source_mask)
-            x = self.native_adapter.in_proj(
-                self.native_adapter.embed(
-                    target_input_ids, out_dtype=native_source.dtype
-                )
+            if semantic_source_mask is not None:
+                semantic_source_mask = semantic_source_mask.to(torch.bool)
+                if semantic_source_mask.ndim == 2:
+                    semantic_source_mask = semantic_source_mask.unsqueeze(1).unsqueeze(1)
+            mix = self.layer_mix_logits[block_index].float().softmax(dim=-1)
+            mix = mix.to(dtype=query.dtype)
+            semantic_source = sum(
+                state * mix[layer_index]
+                for layer_index, state in enumerate(semantic_hidden_states)
             )
-            query_positions = torch.arange(x.shape[1], device=x.device).unsqueeze(0)
-            native_positions = torch.arange(
-                native_source.shape[1], device=x.device
-            ).unsqueeze(0)
-            semantic_positions = torch.arange(
-                semantic_hidden_states[0].shape[1], device=x.device
-            ).unsqueeze(0)
-            query_rope = self.native_adapter.rotary_emb(x, query_positions)
-            native_rope = self.native_adapter.rotary_emb(x, native_positions)
-            semantic_rope = self.native_adapter.rotary_emb(x, semantic_positions)
-            mix = self.layer_mix_logits.float().softmax(dim=-1).to(dtype=x.dtype)
-            for index, native_block in enumerate(self.native_adapter.blocks):
-                x = native_block(
-                    x,
-                    native_source,
-                    target_attention_mask=target_attention_mask,
-                    source_attention_mask=native_source_mask,
-                    position_embeddings=query_rope,
-                    position_embeddings_context=native_rope,
-                )
-                semantic_source = sum(
-                    state * mix[index, layer_index]
-                    for layer_index, state in enumerate(semantic_hidden_states)
-                )
-                semantic_source = self.source_norms[index](semantic_source)
-                x = x + self.semantic_attentions[index](
-                    self.query_norms[index](x),
-                    mask=semantic_source_mask,
-                    context=semantic_source,
-                    position_embeddings=query_rope,
-                    position_embeddings_context=semantic_rope,
-                )
-            return self.native_adapter.norm(self.native_adapter.out_proj(x))
+            semantic_source = self.source_norms[block_index](semantic_source)
+            return self.semantic_attentions[block_index](
+                self.query_norms[block_index](query),
+                mask=semantic_source_mask,
+                context=semantic_source,
+                position_embeddings=query_rope,
+                position_embeddings_context=semantic_rope,
+            )
 
     _PROGRESSIVE_ADAPTER_CLASS = ProgressiveQwen35CrossAdapter
     return _PROGRESSIVE_ADAPTER_CLASS
@@ -783,48 +794,105 @@ def _native_anima38_adapter(model):
     return adapter
 
 
-def _loaded_progressive_adapter(native_adapter, selected, path):
-    """Load or reuse the one active progressive adapter without duplicate weights."""
-    import safetensors.torch
+def _managed_progressive_adapter(source_model, native_adapter, selected, path):
+    """Load or reuse one CPU-offloadable, semantic-only adapter patcher."""
+    import comfy.model_management
+    import comfy.model_patcher
     import comfy.ops
+    import comfy.utils
 
-    device = native_adapter.embed.weight.device
     dtype = native_adapter.embed.weight.dtype
-    cache_key = (path, id(native_adapter), str(device), str(dtype))
-    native_ref = _ADAPTER_CACHE["native_ref"]
-    if (
-        _ADAPTER_CACHE["key"] == cache_key
-        and native_ref is not None
-        and native_ref() is native_adapter
-        and _ADAPTER_CACHE["adapter"] is not None
-    ):
-        return _ADAPTER_CACHE["adapter"]
+    load_device = source_model.load_device
+    offload_device = comfy.model_management.text_encoder_offload_device()
+    cache_key = (path, str(load_device), str(offload_device), str(dtype))
+    cached = _ADAPTER_CACHE.get(cache_key)
+    if cached is not None:
+        return cached
     adapter_type = _progressive_adapter_type()
-    expanded = adapter_type(native_adapter, comfy.ops.disable_weight_init)
-    state_dict = safetensors.torch.load_file(path, device=str(device))
-    validate_progressive_adapter_shapes(state_dict, selected)
-    incompatible = expanded.load_state_dict(state_dict, strict=False)
-    missing = sorted(
-        key
-        for key in incompatible.missing_keys
-        if not key.startswith("native_adapter.")
+    semantic_adapter = adapter_type(
+        model_dim=native_adapter.embed.weight.shape[1],
+        num_heads=native_adapter.blocks[0].self_attn.n_heads,
+        device=offload_device,
+        dtype=dtype,
+        operations=comfy.ops.disable_weight_init,
+        stage_count=len(native_adapter.blocks),
     )
+    state_dict = comfy.utils.load_torch_file(
+        path,
+        safe_load=True,
+        device=offload_device,
+    )
+    validate_progressive_adapter_shapes(state_dict, selected)
+    incompatible = semantic_adapter.load_state_dict(state_dict, strict=True)
+    missing = sorted(incompatible.missing_keys)
     unexpected = sorted(incompatible.unexpected_keys)
     if missing or unexpected:
         raise RuntimeError(
             f"Anima 3.8B adapter '{selected}' could not be applied: "
             f"missing={missing}, unexpected={unexpected}."
         )
-    expanded.eval()
-    expanded.requires_grad_(False)
-    _ADAPTER_CACHE.update(
-        {
-            "key": cache_key,
-            "native_ref": weakref.ref(native_adapter),
-            "adapter": expanded,
-        }
+    semantic_adapter.eval()
+    semantic_adapter.requires_grad_(False)
+    managed_adapter = comfy.model_patcher.ModelPatcher(
+        semantic_adapter,
+        load_device=load_device,
+        offload_device=offload_device,
+        size=comfy.model_management.module_size(semantic_adapter),
     )
-    return expanded
+    _ADAPTER_CACHE.store(cache_key, managed_adapter)
+    return managed_adapter
+
+
+def _run_progressive_adapter(
+    native_adapter,
+    semantic_adapter,
+    native_source,
+    target_input_ids,
+    semantic_hidden_states,
+    target_attention_mask=None,
+    native_source_mask=None,
+    semantic_source_mask=None,
+):
+    """Run native stages and independently managed semantic residuals together."""
+    import torch
+
+    def attention_mask(mask):
+        if mask is None:
+            return None
+        mask = mask.to(torch.bool)
+        return mask.unsqueeze(1).unsqueeze(1) if mask.ndim == 2 else mask
+
+    target_attention_mask = attention_mask(target_attention_mask)
+    native_source_mask = attention_mask(native_source_mask)
+    x = native_adapter.in_proj(
+        native_adapter.embed(target_input_ids, out_dtype=native_source.dtype)
+    )
+    query_positions = torch.arange(x.shape[1], device=x.device).unsqueeze(0)
+    native_positions = torch.arange(native_source.shape[1], device=x.device).unsqueeze(0)
+    semantic_positions = torch.arange(
+        semantic_hidden_states[0].shape[1], device=x.device
+    ).unsqueeze(0)
+    query_rope = native_adapter.rotary_emb(x, query_positions)
+    native_rope = native_adapter.rotary_emb(x, native_positions)
+    semantic_rope = native_adapter.rotary_emb(x, semantic_positions)
+    for index, native_block in enumerate(native_adapter.blocks):
+        x = native_block(
+            x,
+            native_source,
+            target_attention_mask=target_attention_mask,
+            source_attention_mask=native_source_mask,
+            position_embeddings=query_rope,
+            position_embeddings_context=native_rope,
+        )
+        x = x + semantic_adapter(
+            index,
+            x,
+            semantic_hidden_states,
+            semantic_source_mask=semantic_source_mask,
+            query_rope=query_rope,
+            semantic_rope=semantic_rope,
+        )
+    return native_adapter.norm(native_adapter.out_proj(x))
 
 
 def _pad_context(context, length=512):
@@ -873,7 +941,7 @@ class SwarmAnima38Conditioning:
                 "source_model": ("MODEL",),
                 "clip": ("CLIP",),
                 "qwen35_clip": ("CLIP",),
-                "adapter": (_adapter_choices(),),
+                "adapter_name": (_adapter_choices(),),
                 "prompt": (
                     "STRING",
                     {"multiline": True, "dynamicPrompts": True},
@@ -937,7 +1005,7 @@ class SwarmAnima38Conditioning:
         source_model,
         clip,
         qwen35_clip,
-        adapter,
+        adapter_name,
         prompt,
         adapter_strength,
     ):
@@ -949,7 +1017,7 @@ class SwarmAnima38Conditioning:
         if float(adapter_strength) == 0.0:
             return native, native
 
-        selected, adapter_path, adapter_metadata = _resolve_adapter_path(adapter)
+        selected, adapter_path, adapter_metadata = _resolve_adapter_path(adapter_name)
         native_source, native_metadata = native[0]
         if native_source.ndim != 3 or native_source.shape[-1] != 1024:
             raise RuntimeError(
@@ -970,7 +1038,16 @@ class SwarmAnima38Conditioning:
                     f"Qwen3.5 semantic encoder tap {tap} returned shape "
                     f"{tuple(state.shape)}; expected [batch, tokens, 2560]."
                 )
-        comfy.model_management.load_models_gpu([source_model], force_full_load=True)
+        native_adapter = _native_anima38_adapter(source_model)
+        managed_adapter = _managed_progressive_adapter(
+            source_model,
+            native_adapter,
+            selected,
+            adapter_path,
+        )
+        comfy.model_management.load_models_gpu(
+            [source_model, managed_adapter], force_full_load=True
+        )
         native_adapter = _native_anima38_adapter(source_model)
         device = native_adapter.embed.weight.device
         dtype = native_adapter.embed.weight.dtype
@@ -980,11 +1057,11 @@ class SwarmAnima38Conditioning:
         target_ids = torch.as_tensor(
             target_ids, device=device, dtype=torch.long
         ).reshape(1, -1)[:, :512]
-        expanded_adapter = _loaded_progressive_adapter(
-            native_adapter, selected, adapter_path
-        )
+        semantic_adapter = managed_adapter.model
         with torch.no_grad():
-            expanded_context = expanded_adapter(
+            expanded_context = _run_progressive_adapter(
+                native_adapter,
+                semantic_adapter,
                 source,
                 target_ids,
                 semantic_states,

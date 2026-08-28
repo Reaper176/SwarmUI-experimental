@@ -1,4 +1,5 @@
 import pathlib
+import inspect
 import sys
 import types
 import unittest
@@ -12,7 +13,12 @@ sys.modules[TEST_PACKAGE_NAME] = test_package
 
 from _swarm_comfy_common_anima38_tests.SwarmAnima38 import (  # noqa: E402
     ADAPTER_ARCHITECTURE,
+    LastAdapterCache,
     SEMANTIC_LAYER_TAPS,
+    SwarmAnima38Conditioning,
+    _adapter_record_valid,
+    _qwen35_4b_expected_shapes,
+    _validate_qwen35_4b_state_dict,
     adapter_tag,
     discover_adapter_candidates,
     format_unified_prompt,
@@ -27,6 +33,20 @@ from _swarm_comfy_common_anima38_tests.SwarmAnima38 import (  # noqa: E402
 class FakeTensor:
     def __init__(self, shape):
         self.shape = shape
+
+
+def valid_adapter_state():
+    state = {"layer_mix_logits": FakeTensor((6, 4))}
+    for index in range(6):
+        state[f"query_norms.{index}.weight"] = FakeTensor((1024,))
+        state[f"source_norms.{index}.weight"] = FakeTensor((2560,))
+        state[f"semantic_attentions.{index}.q_proj.weight"] = FakeTensor((1024, 1024))
+        state[f"semantic_attentions.{index}.q_norm.weight"] = FakeTensor((64,))
+        state[f"semantic_attentions.{index}.k_proj.weight"] = FakeTensor((1024, 2560))
+        state[f"semantic_attentions.{index}.k_norm.weight"] = FakeTensor((64,))
+        state[f"semantic_attentions.{index}.v_proj.weight"] = FakeTensor((1024, 2560))
+        state[f"semantic_attentions.{index}.o_proj.weight"] = FakeTensor((1024, 1024))
+    return state
 
 
 class Anima38QwenCandidateTests(unittest.TestCase):
@@ -126,29 +146,65 @@ class Anima38AdapterDiscoveryTests(unittest.TestCase):
                 "same.safetensors",
             )
 
+    def test_rejects_companion_gate_and_anchor_adapter_keys(self):
+        metadata = {"architecture": ADAPTER_ARCHITECTURE}
+        self.assertFalse(_adapter_record_valid(metadata, ["timestep_gates.0"]))
+        self.assertFalse(_adapter_record_valid(metadata, ["anchor_deviation"]))
+        self.assertFalse(_adapter_record_valid(metadata, ["anchor_deviation.weight"]))
+        self.assertTrue(_adapter_record_valid(metadata, ["layer_mix_logits"]))
+
+    def test_rejects_missing_or_wrong_adapter_architecture_metadata(self):
+        self.assertFalse(_adapter_record_valid({}, []))
+        self.assertFalse(_adapter_record_valid({"architecture": "other"}, []))
+
 
 class Anima38QwenStateTests(unittest.TestCase):
-    def test_normalizes_companion_encoder_keys_and_only_ignores_projection_norm(self):
+    def test_normalizes_companion_encoder_keys_and_ignores_exact_projection_norm_keys(self):
         embed = object()
         layer = object()
         model_norm = object()
-        projection = object()
+        projection_keys = (
+            "norm.0.weight",
+            "norm.0.bias",
+            "norm.1.weight",
+            "norm.3.weight",
+            "norm.3.bias",
+        )
         unrelated = object()
+        source = {
+            "embed_tokens.weight": embed,
+            "layers.0.input_layernorm.weight": layer,
+            "model.norm.weight": model_norm,
+            "other.weight": unrelated,
+        }
+        for key in projection_keys:
+            source[key] = object()
         normalized, ignored = normalize_qwen35_state_dict(
-            {
-                "embed_tokens.weight": embed,
-                "layers.0.input_layernorm.weight": layer,
-                "model.norm.weight": model_norm,
-                "norm.0.weight": projection,
-                "other.weight": unrelated,
-            }
+            source
         )
         self.assertIs(normalized["model.embed_tokens.weight"], embed)
         self.assertIs(normalized["model.layers.0.input_layernorm.weight"], layer)
         self.assertIs(normalized["model.norm.weight"], model_norm)
         self.assertIs(normalized["other.weight"], unrelated)
-        self.assertNotIn("norm.0.weight", normalized)
-        self.assertEqual(ignored, ("norm.0.weight",))
+        for key in projection_keys:
+            self.assertNotIn(key, normalized)
+        self.assertEqual(ignored, tuple(sorted(projection_keys)))
+
+    def test_unknown_root_norm_survives_for_strict_validation(self):
+        value = object()
+        normalized, ignored = normalize_qwen35_state_dict(
+            {"norm.unrelated.weight": value}
+        )
+        self.assertIs(normalized["norm.unrelated.weight"], value)
+        self.assertEqual(ignored, ())
+
+        complete = {
+            key: FakeTensor(shape)
+            for key, shape in _qwen35_4b_expected_shapes().items()
+        }
+        complete.update(normalized)
+        with self.assertRaisesRegex(ValueError, r"unexpected.*norm.unrelated.weight"):
+            _validate_qwen35_4b_state_dict(complete, "unknown-norm", False)
 
 
 class Anima38PromptAndTapTests(unittest.TestCase):
@@ -171,18 +227,9 @@ class Anima38PromptAndTapTests(unittest.TestCase):
 
 class Anima38AdapterShapeTests(unittest.TestCase):
     def test_accepts_complete_lightweight_progressive_state_shapes(self):
-        state = {"layer_mix_logits": FakeTensor((6, 4))}
-        for index in range(6):
-            state[f"query_norms.{index}.weight"] = FakeTensor((1024,))
-            state[f"source_norms.{index}.weight"] = FakeTensor((2560,))
-            state[f"semantic_attentions.{index}.q_proj.weight"] = FakeTensor((1024, 1024))
-            state[f"semantic_attentions.{index}.q_norm.weight"] = FakeTensor((64,))
-            state[f"semantic_attentions.{index}.k_proj.weight"] = FakeTensor((1024, 2560))
-            state[f"semantic_attentions.{index}.k_norm.weight"] = FakeTensor((64,))
-            state[f"semantic_attentions.{index}.v_proj.weight"] = FakeTensor((1024, 2560))
-            state[f"semantic_attentions.{index}.o_proj.weight"] = FakeTensor((1024, 1024))
-
-        validate_progressive_adapter_shapes(state, "controlnet::valid.safetensors")
+        validate_progressive_adapter_shapes(
+            valid_adapter_state(), "controlnet::valid.safetensors"
+        )
 
     def test_shape_validation_names_adapter_and_expected_shape(self):
         with self.assertRaisesRegex(ValueError, r"broken.safetensors.*layer_mix_logits.*\(6, 4\)"):
@@ -190,6 +237,64 @@ class Anima38AdapterShapeTests(unittest.TestCase):
                 {"layer_mix_logits": FakeTensor((6, 5))},
                 "controlnet::broken.safetensors",
             )
+
+    def test_reports_missing_state_key_separately(self):
+        state = valid_adapter_state()
+        del state["query_norms.3.weight"]
+        with self.assertRaisesRegex(ValueError, r"missing=.*query_norms.3.weight"):
+            validate_progressive_adapter_shapes(state, "missing.safetensors")
+
+    def test_reports_unexpected_state_key_separately(self):
+        state = valid_adapter_state()
+        state["unexpected.weight"] = FakeTensor((1,))
+        with self.assertRaisesRegex(ValueError, r"unexpected=.*unexpected.weight"):
+            validate_progressive_adapter_shapes(state, "unexpected.safetensors")
+
+
+class Anima38NodeContractTests(unittest.TestCase):
+    def test_conditioning_contract_uses_adapter_name(self):
+        parameters = inspect.signature(SwarmAnima38Conditioning.encode).parameters
+        self.assertIn("adapter_name", parameters)
+        self.assertNotIn("adapter", parameters)
+
+        module = sys.modules[SwarmAnima38Conditioning.__module__]
+        original = module._adapter_choices
+        module._adapter_choices = lambda: ["auto"]
+        try:
+            required = SwarmAnima38Conditioning.INPUT_TYPES()["required"]
+        finally:
+            module._adapter_choices = original
+        self.assertIn("adapter_name", required)
+        self.assertNotIn("adapter", required)
+
+
+class Anima38AdapterCacheTests(unittest.TestCase):
+    def test_cache_reuses_matching_key_and_replaces_previous_entry(self):
+        disposed = []
+        cache = LastAdapterCache(lambda managed: disposed.append(managed))
+        first = object()
+        second = object()
+
+        cache.store("first", first)
+        self.assertIs(cache.get("first"), first)
+        self.assertIsNone(cache.get("other"))
+        cache.store("second", second)
+
+        self.assertEqual(disposed, [first])
+        self.assertIsNone(cache.get("first"))
+        self.assertIs(cache.get("second"), second)
+
+    def test_cache_entry_contains_only_managed_semantic_adapter(self):
+        class SemanticOnly:
+            def modules(self):
+                return (self,)
+
+        native_adapter = object()
+        semantic = SemanticOnly()
+        cache = LastAdapterCache()
+        cache.store("adapter", semantic)
+
+        self.assertNotIn(native_adapter, tuple(cache.get("adapter").modules()))
 
 
 if __name__ == "__main__":
