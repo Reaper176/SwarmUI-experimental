@@ -103,6 +103,17 @@ class Anima38LoraMappingTests(unittest.TestCase):
 
         self.assertEqual(mapped, {"diffusion_model.blocks.51.attn.weight": block_value})
 
+    def test_legacy_mapping_omits_kohya_llm_adapter_tensors(self):
+        block_value = object()
+        source = {
+            "lora_unet_blocks_27_attn_to_q.lora_up.weight": block_value,
+            "lora_unet_llm_adapter_blocks_5_self_attn_v_proj.lora_up.weight": object(),
+        }
+
+        mapped = map_lora_state_dict_to_anima38(source)
+
+        self.assertEqual(mapped, {"lora_unet_blocks_51_attn_to_q.lora_up.weight": block_value})
+
     def test_native_mapping_preserves_llm_adapter_tensors(self):
         adapter_value = object()
         source = {
@@ -125,6 +136,29 @@ class Anima38LoraMappingTests(unittest.TestCase):
 
         self.assertIn("text_encoder.layer.0.weight", mapped)
         self.assertIs(mapped["text_encoder.layer.0.weight"], unrelated_value)
+
+    def test_near_match_block_keys_remain_unrelated(self):
+        generic_value = object()
+        kohya_value = object()
+        source = {
+            "diffusion_model.blocks.27.attn.weight": object(),
+            "diffusion_model.blocks.27extra.weight": generic_value,
+            "lora_unet_blocks_27extra": kohya_value,
+        }
+
+        mapped = map_lora_state_dict_to_anima38(source)
+
+        self.assertIs(mapped["diffusion_model.blocks.27extra.weight"], generic_value)
+        self.assertIs(mapped["lora_unet_blocks_27extra"], kohya_value)
+
+    def test_rejects_state_dict_with_only_near_match_block_keys(self):
+        source = {
+            "diffusion_model.blocks.27extra.weight": object(),
+            "lora_unet_blocks_27extra": object(),
+        }
+
+        with self.assertRaisesRegex(ValueError, "recognizable.*block"):
+            map_lora_state_dict_to_anima38(source)
 
     def test_rejects_block_indices_beyond_native_depth(self):
         with self.assertRaisesRegex(ValueError, "52"):
