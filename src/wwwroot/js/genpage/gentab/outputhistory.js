@@ -17,18 +17,31 @@ class ImageHistoryScrollManager {
         this.fallbackScrollTop = 0;
         this.captureQueued = false;
         this.captureCancel = null;
+        this.userScrollActive = false;
+        this.userScrollEndTimer = null;
+        this.pointerScrollActive = false;
+        this.userIntentToken = 0;
+        this.restoreIntentToken = 0;
         this.restoring = false;
         this.restoreToken = 0;
         this.queuedRestoreToken = null;
-        this.boundQueueCapture = this.queueCapture.bind(this);
+        this.expectedProgrammaticScrollTop = null;
+        this.boundScroll = this.handleScroll.bind(this);
         this.boundUserScrollIntent = this.handleUserScrollIntent.bind(this);
         this.boundPointerDown = this.handlePointerDown.bind(this);
+        this.boundPointerMove = this.handlePointerMove.bind(this);
+        this.boundPointerEnd = this.handlePointerEnd.bind(this);
         this.boundKeyDown = this.handleKeyDown.bind(this);
+        this.boundDocumentKeyDown = this.handleDocumentKeyDown.bind(this);
         this.resizeObserver = window.ResizeObserver ? new ResizeObserver(() => {
             if (this.restoring) {
                 this.afterBuild();
             }
         }) : null;
+        window.addEventListener('pointerup', this.boundPointerEnd, { passive: true });
+        window.addEventListener('pointercancel', this.boundPointerEnd, { passive: true });
+        window.addEventListener('pointermove', this.boundPointerMove, { passive: true });
+        document.addEventListener('keydown', this.boundDocumentKeyDown);
         this.load();
     }
 
@@ -69,39 +82,68 @@ class ImageHistoryScrollManager {
             return;
         }
         if (this.content) {
-            this.content.removeEventListener('scroll', this.boundQueueCapture);
+            this.content.removeEventListener('scroll', this.boundScroll);
             this.content.removeEventListener('wheel', this.boundUserScrollIntent);
-            this.content.removeEventListener('touchstart', this.boundUserScrollIntent);
+            this.content.removeEventListener('touchmove', this.boundUserScrollIntent);
             this.content.removeEventListener('pointerdown', this.boundPointerDown);
             this.content.removeEventListener('keydown', this.boundKeyDown);
             this.resizeObserver?.unobserve(this.content);
         }
         this.content = content;
         if (this.content) {
-            this.content.addEventListener('scroll', this.boundQueueCapture);
+            this.content.addEventListener('scroll', this.boundScroll);
             this.content.addEventListener('wheel', this.boundUserScrollIntent, { passive: true });
-            this.content.addEventListener('touchstart', this.boundUserScrollIntent, { passive: true });
+            this.content.addEventListener('touchmove', this.boundUserScrollIntent, { passive: true });
             this.content.addEventListener('pointerdown', this.boundPointerDown, { passive: true });
             this.content.addEventListener('keydown', this.boundKeyDown);
             this.resizeObserver?.observe(this.content);
         }
     }
 
-    /** Cancels delayed restoration when the user deliberately scrolls. */
-    handleUserScrollIntent() {
-        if (!this.restoring) {
+    /** Ends an inactive user-scroll session after momentum scrolling settles. */
+    scheduleUserScrollEnd() {
+        if (this.userScrollEndTimer) {
+            clearTimeout(this.userScrollEndTimer);
+            this.userScrollEndTimer = null;
+        }
+        if (this.pointerScrollActive) {
             return;
         }
-        this.restoreToken++;
-        this.restoring = false;
-        this.queueCapture();
+        this.userScrollEndTimer = setTimeout(() => {
+            this.userScrollEndTimer = null;
+            this.userScrollActive = false;
+        }, 250);
+    }
+
+    /** Marks explicit user scroll input and cancels any delayed restoration. */
+    handleUserScrollIntent() {
+        this.userIntentToken++;
+        this.userScrollActive = true;
+        this.scheduleUserScrollEnd();
+    }
+
+    /** Keeps an active scrollbar drag marked as explicit user input. */
+    handlePointerMove() {
+        if (this.pointerScrollActive) {
+            this.handleUserScrollIntent();
+        }
     }
 
     /** Treats a pointer press on the scroll container itself as scrollbar input. */
     handlePointerDown(event) {
         if (event.target == this.content) {
+            this.pointerScrollActive = true;
             this.handleUserScrollIntent();
         }
+    }
+
+    /** Releases a scrollbar-driven user-scroll session after its final scroll event. */
+    handlePointerEnd() {
+        if (!this.pointerScrollActive) {
+            return;
+        }
+        this.pointerScrollActive = false;
+        this.scheduleUserScrollEnd();
     }
 
     /** Treats keyboard scrolling within History as deliberate user input. */
@@ -119,11 +161,59 @@ class ImageHistoryScrollManager {
         }
     }
 
-    /** Queues at most one user-position capture per animation frame. */
-    queueCapture() {
-        if (this.restoring || this.captureQueued) {
+    /** Treats focus traversal while History is visible as deliberate scroll input. */
+    handleDocumentKeyDown(event) {
+        if (event.defaultPrevented || event.key != 'Tab' || !this.content) {
             return;
         }
+        let tabPane = this.content.closest('.tab-pane');
+        if (tabPane?.classList.contains('active')) {
+            this.handleUserScrollIntent();
+        }
+    }
+
+    /** Captures user scrolling and reverses every scroll without explicit user intent. */
+    handleScroll() {
+        if (this.expectedProgrammaticScrollTop != null) {
+            let reachedExpectedPosition = Math.abs(this.content.scrollTop - this.expectedProgrammaticScrollTop) <= 1;
+            this.expectedProgrammaticScrollTop = null;
+            if (reachedExpectedPosition) {
+                return;
+            }
+        }
+        if (this.restoring) {
+            if (this.userIntentToken > this.restoreIntentToken) {
+                this.restoreToken++;
+                this.restoring = false;
+                this.queueCapture();
+            }
+            return;
+        }
+        if (this.userScrollActive) {
+            this.queueCapture();
+            return;
+        }
+        this.restoring = true;
+        this.restoreToken++;
+        this.restoreIntentToken = this.userIntentToken;
+        this.afterBuild(true);
+    }
+
+    /** Assigns scroll position while marking the resulting event as manager-owned. */
+    setProgrammaticScrollTop(scrollTop) {
+        if (!this.content || Math.abs(this.content.scrollTop - scrollTop) <= 1) {
+            return;
+        }
+        this.expectedProgrammaticScrollTop = scrollTop;
+        this.content.scrollTop = scrollTop;
+    }
+
+    /** Queues at most one user-position capture per animation frame. */
+    queueCapture() {
+        if (this.restoring || !this.userScrollActive || this.captureQueued) {
+            return;
+        }
+        this.scheduleUserScrollEnd();
         this.captureQueued = true;
         let run = () => {
             this.captureQueued = false;
@@ -183,6 +273,7 @@ class ImageHistoryScrollManager {
         this.flushCapture();
         this.restoring = true;
         this.restoreToken++;
+        this.restoreIntentToken = this.userIntentToken;
         this.browser.preBuildTarget = this.anchorPath;
     }
 
@@ -213,8 +304,8 @@ class ImageHistoryScrollManager {
         return loaderTop > viewportBottom;
     }
 
-    /** Restores the saved image after the rebuilt layout becomes measurable. */
-    afterBuild() {
+    /** Restores the saved image, immediately for unauthorized scrolling or after rebuilt layout. */
+    afterBuild(immediate = false) {
         this.attach(this.browser);
         if (!this.restoring || !this.content) {
             return;
@@ -244,9 +335,15 @@ class ImageHistoryScrollManager {
                 return;
             }
             let anchor = this.anchorPath ? this.browser.getVisibleEntry(this.anchorPath) : null;
-            if (!anchor && !this.expandFallbackContent()) {
-                queueNextRun(run);
-                return;
+            if (!anchor) {
+                let immediateMaxScrollTop = Math.max(0, this.content.scrollHeight - this.content.clientHeight);
+                this.setProgrammaticScrollTop(Math.max(0, Math.min(this.fallbackScrollTop, immediateMaxScrollTop)));
+                if (!this.expandFallbackContent()) {
+                    let expandedMaxScrollTop = Math.max(0, this.content.scrollHeight - this.content.clientHeight);
+                    this.setProgrammaticScrollTop(Math.max(0, Math.min(this.fallbackScrollTop, expandedMaxScrollTop)));
+                    queueNextRun(run);
+                    return;
+                }
             }
             let targetScrollTop = this.fallbackScrollTop;
             if (anchor) {
@@ -255,7 +352,7 @@ class ImageHistoryScrollManager {
                 targetScrollTop = this.content.scrollTop + anchorTop - contentTop - this.anchorOffset;
             }
             let maxScrollTop = Math.max(0, this.content.scrollHeight - this.content.clientHeight);
-            this.content.scrollTop = Math.max(0, Math.min(targetScrollTop, maxScrollTop));
+            this.setProgrammaticScrollTop(Math.max(0, Math.min(targetScrollTop, maxScrollTop)));
             let finish = () => {
                 if (token == this.restoreToken) {
                     this.restoring = false;
@@ -268,7 +365,10 @@ class ImageHistoryScrollManager {
                 setTimeout(finish, 16);
             }
         };
-        if (window.requestAnimationFrame) {
+        if (immediate) {
+            run();
+        }
+        else if (window.requestAnimationFrame) {
             requestAnimationFrame(() => requestAnimationFrame(run));
         }
         else {
