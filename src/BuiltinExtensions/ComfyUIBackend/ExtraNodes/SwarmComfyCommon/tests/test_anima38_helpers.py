@@ -17,6 +17,7 @@ from _swarm_comfy_common_anima38_tests.SwarmAnima38 import (  # noqa: E402
     SEMANTIC_LAYER_TAPS,
     SwarmAnima38Conditioning,
     _adapter_record_valid,
+    _dispose_managed_adapter,
     _qwen35_4b_expected_shapes,
     _validate_qwen35_4b_state_dict,
     adapter_tag,
@@ -276,8 +277,11 @@ class Anima38AdapterCacheTests(unittest.TestCase):
         second = object()
 
         cache.store("first", first)
+        self.assertEqual(disposed, [])
         self.assertIs(cache.get("first"), first)
         self.assertIsNone(cache.get("other"))
+        cache.store("first", first)
+        self.assertEqual(disposed, [])
         cache.store("second", second)
 
         self.assertEqual(disposed, [first])
@@ -295,6 +299,34 @@ class Anima38AdapterCacheTests(unittest.TestCase):
         cache.store("adapter", semantic)
 
         self.assertNotIn(native_adapter, tuple(cache.get("adapter").modules()))
+
+    def test_production_disposer_unloads_adapter_on_all_devices(self):
+        calls = []
+        fake_model_management = types.ModuleType("comfy.model_management")
+        fake_model_management.unload_model_and_clones = (
+            lambda managed, all_devices=False: calls.append((managed, all_devices))
+        )
+        fake_comfy = types.ModuleType("comfy")
+        fake_comfy.__path__ = []
+        fake_comfy.model_management = fake_model_management
+        original_comfy = sys.modules.get("comfy")
+        original_management = sys.modules.get("comfy.model_management")
+        sys.modules["comfy"] = fake_comfy
+        sys.modules["comfy.model_management"] = fake_model_management
+        managed = object()
+        try:
+            _dispose_managed_adapter(managed)
+        finally:
+            if original_comfy is None:
+                del sys.modules["comfy"]
+            else:
+                sys.modules["comfy"] = original_comfy
+            if original_management is None:
+                del sys.modules["comfy.model_management"]
+            else:
+                sys.modules["comfy.model_management"] = original_management
+
+        self.assertEqual(calls, [(managed, True)])
 
 
 if __name__ == "__main__":

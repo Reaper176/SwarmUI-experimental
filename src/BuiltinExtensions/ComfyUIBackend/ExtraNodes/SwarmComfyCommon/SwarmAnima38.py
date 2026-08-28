@@ -63,7 +63,10 @@ def _dispose_managed_adapter(managed_adapter):
     """Release a replaced semantic adapter through Comfy's model manager."""
     import comfy.model_management
 
-    comfy.model_management.unload_model_and_clones(managed_adapter)
+    comfy.model_management.unload_model_and_clones(
+        managed_adapter,
+        all_devices=True,
+    )
 
 
 _ADAPTER_CACHE = LastAdapterCache(_dispose_managed_adapter)
