@@ -598,16 +598,25 @@ def _quant_auxiliary_keys(state_dict, weight_key):
     if quant_key not in state_dict:
         return set()
     _, quant_format = _quant_config(state_dict, quant_key, weight_key)
-    keys = {quant_key}
-    for suffix in ("weight_scale", "weight_scale_2", "input_scale"):
-        key = f"{prefix}{suffix}"
-        if key in state_dict:
-            keys.add(key)
-    if quant_format != "nvfp4" and f"{prefix}weight_scale_2" in keys:
+    parameters = {
+        "float8_e4m3fn": {"weight_scale", "input_scale"},
+        "float8_e5m2": {"weight_scale", "input_scale"},
+        "int8_tensorwise": {"weight_scale"},
+        "mxfp8": {"weight_scale", "input_scale"},
+        "nvfp4": {"weight_scale", "weight_scale_2", "input_scale"},
+    }[quant_format]
+    known_parameters = {"weight_scale", "weight_scale_2", "input_scale"}
+    present = {
+        name for name in known_parameters if f"{prefix}{name}" in state_dict
+    }
+    unsupported = sorted(present - parameters)
+    if unsupported:
         raise ValueError(
-            f"Qwen3.5-4B weight '{weight_key}' mixes {quant_format} metadata with NVFP4 weight_scale_2."
+            f"Qwen3.5-4B weight '{weight_key}' uses {quant_format} but contains "
+            "unsupported quantization auxiliary tensors: "
+            f"{', '.join(f'{prefix}{name}' for name in unsupported)}."
         )
-    return keys
+    return {quant_key, *(f"{prefix}{name}" for name in present)}
 
 
 def _validate_qwen35_4b_state_dict(state_dict, selected_name, companion_format):

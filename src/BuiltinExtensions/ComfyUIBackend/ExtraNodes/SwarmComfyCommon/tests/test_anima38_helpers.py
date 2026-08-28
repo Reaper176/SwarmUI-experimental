@@ -30,6 +30,7 @@ from _swarm_comfy_common_anima38_tests.SwarmAnima38 import (  # noqa: E402
     _dispose_managed_adapter,
     _qwen35_4b_expected_shapes,
     _qwen_runtime_classes,
+    _quant_auxiliary_keys,
     _validate_qwen35_4b_state_dict,
     _validate_qwen35_quantized_weight,
     adapter_tag,
@@ -286,12 +287,14 @@ class Anima38QwenStateTests(unittest.TestCase):
             weight_key: FakeTensor((2560, 9216)),
             f"{prefix}comfy_quant": self.quant_metadata("mxfp8"),
             f"{prefix}weight_scale": torch.empty((2560, 288), device="meta"),
+            f"{prefix}input_scale": torch.empty((), device="meta"),
         }
         nvfp4 = {
             weight_key: FakeTensor((2560, 4608)),
             f"{prefix}comfy_quant": self.quant_metadata("nvfp4"),
             f"{prefix}weight_scale": torch.empty((2560, 576), device="meta"),
             f"{prefix}weight_scale_2": torch.empty((), device="meta"),
+            f"{prefix}input_scale": torch.empty((), device="meta"),
         }
 
         self.assertTrue(_validate_qwen35_quantized_weight(mxfp8, weight_key, logical_shape))
@@ -340,13 +343,13 @@ class Anima38QwenStateTests(unittest.TestCase):
                     f"{prefix}weight_scale": torch.empty((2560, 288), device="meta"),
                     f"{prefix}weight_scale_2": torch.empty((), device="meta"),
                 },
-                "mixes mxfp8.*NVFP4",
+                "mxfp8.*unsupported.*weight_scale_2",
             ),
         )
         for state, message in cases:
             with self.subTest(message=message):
                 with self.assertRaisesRegex(ValueError, message):
-                    if "mixes" in message:
+                    if "unsupported" in message and "unknown" not in message:
                         complete = {
                             key: FakeTensor(shape)
                             for key, shape in _qwen35_4b_expected_shapes().items()
@@ -359,6 +362,55 @@ class Anima38QwenStateTests(unittest.TestCase):
                             weight_key,
                             logical_shape,
                         )
+
+    def test_rejects_int8_input_scale_as_unsupported_auxiliary(self):
+        weight_key = "model.layers.0.mlp.down_proj.weight"
+        prefix = "model.layers.0.mlp.down_proj."
+        complete = {
+            key: FakeTensor(shape)
+            for key, shape in _qwen35_4b_expected_shapes().items()
+        }
+        complete.update(
+            {
+                weight_key: FakeTensor((2560, 9216)),
+                f"{prefix}comfy_quant": self.quant_metadata("int8_tensorwise"),
+                f"{prefix}weight_scale": torch.empty((), device="meta"),
+                f"{prefix}input_scale": torch.empty((), device="meta"),
+            }
+        )
+
+        with self.assertRaisesRegex(
+            ValueError,
+            r"int8_tensorwise.*unsupported.*input_scale",
+        ):
+            _validate_qwen35_4b_state_dict(complete, "foreign-int8", False)
+
+    def test_quant_auxiliary_sets_match_current_comfy_algorithms(self):
+        weight_key = "model.layers.0.mlp.down_proj.weight"
+        prefix = "model.layers.0.mlp.down_proj."
+        formats = {
+            "float8_e4m3fn": {"weight_scale", "input_scale"},
+            "float8_e5m2": {"weight_scale", "input_scale"},
+            "int8_tensorwise": {"weight_scale"},
+            "mxfp8": {"weight_scale", "input_scale"},
+            "nvfp4": {"weight_scale", "weight_scale_2", "input_scale"},
+        }
+        for quant_format, parameter_names in formats.items():
+            with self.subTest(quant_format=quant_format):
+                state = {
+                    f"{prefix}comfy_quant": self.quant_metadata(quant_format),
+                    **{
+                        f"{prefix}{name}": torch.empty((), device="meta")
+                        for name in parameter_names
+                    },
+                }
+                self.assertEqual(
+                    _quant_auxiliary_keys(state, weight_key),
+                    {
+                        f"{prefix}comfy_quant",
+                        *(f"{prefix}{name}" for name in parameter_names),
+                    },
+                )
 
 
 class Anima38PromptAndTapTests(unittest.TestCase):
