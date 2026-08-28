@@ -1,19 +1,41 @@
-"""Native Qwen3.5-4B progressive conditioning for Anima 3.8B.
-
-The progressive adapter implementation is adapted from the MIT-licensed
-GumGum10/comfyui-anima-3-8B project (copyright 2026 GumGum10 contributors).
-Swarm uses ComfyUI's native Qwen3.5 model and tokenizer rather than copying the
-companion project's text encoder or bundled tokenizer assets.
-"""
+"""Native Qwen3.5-4B progressive conditioning for Anima 3.8B."""
 
 from __future__ import annotations
 
+from contextlib import contextmanager
 import functools
+import json
 import logging
 import os
+import threading
 
 
 logger = logging.getLogger(__name__)
+
+THIRD_PARTY_LICENSE_NOTICE = """MIT License
+
+Copyright (c) 2026 GumGum10 contributors
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+"""
+# The progressive semantic adapter below is substantially adapted from the
+# project covered by this notice. No tokenizer assets are copied.
 
 ADAPTER_ARCHITECTURE = "anima_progressive_qwen35_cross_adapter_v1"
 SEMANTIC_LAYER_TAPS = (8, 16, 24, 32)
@@ -26,6 +48,7 @@ QWEN35_4B_MARKERS = (
 )
 ADAPTER_ROOTS = ("text_encoders", "controlnet")
 _MODEL_DETECTION_SENTINEL = "_swarm_anima38_52_block_patch"
+_MODEL_DETECTION_REGISTRY = "_swarm_model_detection_patch_registry"
 _PROGRESSIVE_ADAPTER_CLASS = None
 _COMPANION_PROJECTION_KEYS = frozenset(
     {
@@ -59,6 +82,28 @@ class LastAdapterCache:
         self.managed_adapter = managed_adapter
 
 
+class AdapterInferenceLease:
+    """Serialize cache mutation and the complete inference using its entry."""
+
+    def __init__(self, cache):
+        self.cache = cache
+        self.lock = threading.RLock()
+
+    @contextmanager
+    def locked(self):
+        with self.lock:
+            yield
+
+    @contextmanager
+    def use(self, key, factory):
+        with self.lock:
+            managed_adapter = self.cache.get(key)
+            if managed_adapter is None:
+                managed_adapter = factory()
+                self.cache.store(key, managed_adapter)
+            yield managed_adapter
+
+
 def _dispose_managed_adapter(managed_adapter):
     """Release a replaced semantic adapter through Comfy's model manager."""
     import comfy.model_management
@@ -70,6 +115,7 @@ def _dispose_managed_adapter(managed_adapter):
 
 
 _ADAPTER_CACHE = LastAdapterCache(_dispose_managed_adapter)
+_ADAPTER_INFERENCE_LEASE = AdapterInferenceLease(_ADAPTER_CACHE)
 
 
 def is_qwen35_4b_candidate(filename):
@@ -230,6 +276,45 @@ def format_unified_prompt(prompt):
     return prompt
 
 
+def truncate_semantic_token_pairs(token_pairs, limit=1024):
+    """Return one raw token sequence capped like the installed companion."""
+    flattened = []
+    for chunk in token_pairs:
+        remaining = limit - len(flattened)
+        if remaining <= 0:
+            break
+        flattened.extend(chunk[:remaining])
+    return [flattened]
+
+
+def _mixed_semantic_source(hidden_states, layer_mix_logits, block_index):
+    """Apply one stage's softmax routing to the four semantic sources."""
+    mix = layer_mix_logits[block_index].float().softmax(dim=-1)
+    mix = mix.to(dtype=hidden_states[0].dtype)
+    return sum(
+        state * mix[layer_index]
+        for layer_index, state in enumerate(hidden_states)
+    )
+
+
+def _expanded_conditioning_metadata(native_metadata, selected, strength, adapter_metadata):
+    """Copy safe native metadata and annotate expanded conditioning."""
+    output = {
+        key: value
+        for key, value in native_metadata.items()
+        if key not in {"t5xxl_ids", "t5xxl_weights", "attention_mask"}
+    }
+    output.update(
+        {
+            "qwen35_expanded_adapter": selected,
+            "qwen35_expanded_strength": float(strength),
+            "qwen35_expanded_architecture": ADAPTER_ARCHITECTURE,
+            "qwen35_expanded_step": adapter_metadata.get("step", ""),
+        }
+    )
+    return output
+
+
 def _expected_progressive_adapter_shapes():
     """Return the exact trainable tensor layout for the six-stage adapter."""
     expected = {"layer_mix_logits": (6, 4)}
@@ -287,9 +372,10 @@ def install_anima38_model_detection():
     """Narrowly and idempotently correct Comfy's Anima block count to 52."""
     import comfy.model_detection
 
-    current = comfy.model_detection.detect_unet_config
-    if getattr(current, _MODEL_DETECTION_SENTINEL, False):
+    registry = getattr(comfy.model_detection, _MODEL_DETECTION_REGISTRY, set())
+    if _MODEL_DETECTION_SENTINEL in registry:
         return
+    current = comfy.model_detection.detect_unet_config
 
     @functools.wraps(current)
     def detect_unet_config(state_dict, key_prefix, metadata=None):
@@ -307,9 +393,12 @@ def install_anima38_model_detection():
 
     setattr(detect_unet_config, _MODEL_DETECTION_SENTINEL, True)
     comfy.model_detection.detect_unet_config = detect_unet_config
+    updated_registry = set(registry)
+    updated_registry.add(_MODEL_DETECTION_SENTINEL)
+    setattr(comfy.model_detection, _MODEL_DETECTION_REGISTRY, updated_registry)
 
 
-def _qwen35_4b_expected_shapes(include_final_norm=True):
+def _qwen35_4b_expected_shapes(include_final_norm=True, companion_format=False):
     """Build mandatory native Qwen3.5-4B text-backbone shapes."""
     expected = {"model.embed_tokens.weight": (248320, 2560)}
     if include_final_norm:
@@ -342,7 +431,12 @@ def _qwen35_4b_expected_shapes(include_final_norm=True):
     }
     for index in range(32):
         prefix = f"model.layers.{index}."
-        for suffix, shape in common.items():
+        layer_common = common
+        if companion_format and index == 31:
+            layer_common = {
+                "input_layernorm.weight": common["input_layernorm.weight"],
+            }
+        for suffix, shape in layer_common.items():
             expected[f"{prefix}{suffix}"] = shape
         layer_attention = full_attention if (index + 1) % 4 == 0 else linear_attention
         for suffix, shape in layer_attention.items():
@@ -350,23 +444,178 @@ def _qwen35_4b_expected_shapes(include_final_norm=True):
     return expected
 
 
-def _is_known_quant_auxiliary(key, expected_keys):
-    """Return whether a key is Comfy quantization metadata for a known weight."""
-    suffixes = (
-        ".weight_scale",
-        ".weight_scale_2",
-        ".input_scale",
-        ".quantized_scale",
-    )
-    for suffix in suffixes:
-        if key.endswith(suffix) and f"{key[:-len(suffix)]}.weight" in expected_keys:
-            return True
-    return key.endswith(".comfy_quant")
+def _round_up(value, multiple):
+    return ((value + multiple - 1) // multiple) * multiple
+
+
+def _quant_config(state_dict, quant_key, weight_key):
+    import torch
+
+    metadata = state_dict[quant_key]
+    if not isinstance(metadata, torch.Tensor) or metadata.ndim != 1 or metadata.dtype != torch.uint8:
+        raise ValueError(
+            f"Qwen3.5-4B quantization metadata '{quant_key}' must be a 1D byte tensor."
+        )
+    try:
+        config = json.loads(bytes(metadata.tolist()))
+    except (TypeError, ValueError, UnicodeDecodeError) as error:
+        raise ValueError(
+            f"Qwen3.5-4B quantization metadata '{quant_key}' is not valid JSON."
+        ) from error
+    if not isinstance(config, dict):
+        raise ValueError(f"Qwen3.5-4B quantization metadata '{quant_key}' must contain a JSON object.")
+    quant_format = config.get("format")
+    supported = ("float8_e4m3fn", "float8_e5m2", "int8_tensorwise", "mxfp8", "nvfp4")
+    if quant_format not in supported:
+        raise ValueError(
+            f"Qwen3.5-4B weight '{weight_key}' uses unsupported Comfy quantization format '{quant_format}'."
+        )
+    return config, quant_format
+
+
+def _validate_quant_shape(state_dict, key, shape, weight_key, quant_format):
+    import torch
+
+    tensor = state_dict[key]
+    if not isinstance(tensor, torch.Tensor) or tuple(tensor.shape) != shape:
+        actual = tuple(tensor.shape) if isinstance(tensor, torch.Tensor) else "non-tensor"
+        raise ValueError(
+            f"Qwen3.5-4B weight '{weight_key}' uses {quant_format}, but tensor "
+            f"'{key}' has shape {actual}; required shape is {shape}."
+        )
+
+
+def _validate_quant_scalar(state_dict, key, weight_key, quant_format):
+    import torch
+
+    tensor = state_dict[key]
+    if not isinstance(tensor, torch.Tensor) or tensor.numel() != 1:
+        actual = tuple(tensor.shape) if isinstance(tensor, torch.Tensor) else "non-tensor"
+        raise ValueError(
+            f"Qwen3.5-4B weight '{weight_key}' uses {quant_format}, but tensor "
+            f"'{key}' must contain exactly one element; got {actual}."
+        )
+
+
+def _validate_qwen35_quantized_weight(state_dict, weight_key, logical_shape):
+    """Validate current Comfy FP8/INT8/MXFP8/NVFP4 serialization."""
+    import torch
+
+    prefix = weight_key.removesuffix("weight")
+    quant_key = f"{prefix}comfy_quant"
+    if quant_key not in state_dict:
+        return False
+    config, quant_format = _quant_config(state_dict, quant_key, weight_key)
+    if not weight_key.endswith(".weight") or len(logical_shape) != 2:
+        raise ValueError(
+            f"Qwen3.5-4B quantization marker '{quant_key}' targets non-2D weight "
+            f"'{weight_key}' with logical shape {logical_shape}."
+        )
+    if weight_key == "model.embed_tokens.weight" and quant_format not in (
+        "float8_e4m3fn",
+        "float8_e5m2",
+    ):
+        raise ValueError(
+            f"Qwen3.5-4B embedding '{weight_key}' supports only Comfy FP8, not '{quant_format}'."
+        )
+    required = {
+        "float8_e4m3fn": () if weight_key == "model.embed_tokens.weight" else ("weight_scale",),
+        "float8_e5m2": () if weight_key == "model.embed_tokens.weight" else ("weight_scale",),
+        "int8_tensorwise": ("weight_scale",),
+        "mxfp8": ("weight_scale",),
+        "nvfp4": ("weight_scale", "weight_scale_2"),
+    }[quant_format]
+    missing = [f"{prefix}{name}" for name in required if f"{prefix}{name}" not in state_dict]
+    if missing:
+        raise ValueError(
+            f"Qwen3.5-4B weight '{weight_key}' uses {quant_format} but is missing "
+            f"required quantization tensors: {', '.join(missing)}."
+        )
+    rows, columns = logical_shape
+    if quant_format in ("float8_e4m3fn", "float8_e5m2", "int8_tensorwise"):
+        storage_shape = logical_shape
+    elif quant_format == "mxfp8":
+        storage_shape = (_round_up(rows, 32), _round_up(columns, 32))
+    else:
+        storage_shape = (_round_up(rows, 16), _round_up(columns, 16) // 2)
+    actual_storage = tuple(state_dict[weight_key].shape)
+    if actual_storage != storage_shape:
+        raise ValueError(
+            f"Qwen3.5-4B quantized weight '{weight_key}' uses {quant_format} storage "
+            f"shape {actual_storage}; logical shape {logical_shape} requires storage shape {storage_shape}."
+        )
+    scale_key = f"{prefix}weight_scale"
+    if quant_format in ("float8_e4m3fn", "float8_e5m2"):
+        if scale_key in state_dict:
+            _validate_quant_scalar(state_dict, scale_key, weight_key, quant_format)
+    elif quant_format == "int8_tensorwise":
+        scale = state_dict[scale_key]
+        if not isinstance(scale, torch.Tensor) or not (
+            tuple(scale.shape) == (rows, 1) or scale.numel() == 1
+        ):
+            raise ValueError(
+                f"Qwen3.5-4B INT8 weight '{weight_key}' scale '{scale_key}' must be scalar or {(rows, 1)}."
+            )
+        params = config.get("params", {}) if isinstance(config.get("params", {}), dict) else {}
+        convrot = config.get("convrot", params.get("convrot", False))
+        if convrot:
+            raw_group = config.get("convrot_groupsize", params.get("convrot_groupsize", 256))
+            try:
+                group = int(raw_group)
+            except (TypeError, ValueError) as error:
+                raise ValueError(f"Qwen3.5-4B INT8 metadata has invalid convrot_groupsize {raw_group!r}.") from error
+            power_of_four = group >= 4 and (group & (group - 1)) == 0 and (group.bit_length() - 1) % 2 == 0
+            if not power_of_four or columns % group != 0 or tuple(scale.shape) != (rows, 1):
+                raise ValueError(
+                    f"Qwen3.5-4B INT8 ConvRot group {group} or scale shape {tuple(scale.shape)} is invalid for {logical_shape}."
+                )
+    elif quant_format == "mxfp8":
+        _validate_quant_shape(
+            state_dict,
+            scale_key,
+            (_round_up(rows, 128), _round_up(_round_up(columns, 32) // 32, 4)),
+            weight_key,
+            quant_format,
+        )
+    else:
+        _validate_quant_shape(
+            state_dict,
+            scale_key,
+            (_round_up(rows, 128), _round_up(_round_up(columns, 16) // 16, 4)),
+            weight_key,
+            quant_format,
+        )
+        _validate_quant_scalar(state_dict, f"{prefix}weight_scale_2", weight_key, quant_format)
+    input_scale = f"{prefix}input_scale"
+    if quant_format != "int8_tensorwise" and input_scale in state_dict:
+        _validate_quant_scalar(state_dict, input_scale, weight_key, quant_format)
+    return True
+
+
+def _quant_auxiliary_keys(state_dict, weight_key):
+    prefix = weight_key.removesuffix("weight")
+    quant_key = f"{prefix}comfy_quant"
+    if quant_key not in state_dict:
+        return set()
+    _, quant_format = _quant_config(state_dict, quant_key, weight_key)
+    keys = {quant_key}
+    for suffix in ("weight_scale", "weight_scale_2", "input_scale"):
+        key = f"{prefix}{suffix}"
+        if key in state_dict:
+            keys.add(key)
+    if quant_format != "nvfp4" and f"{prefix}weight_scale_2" in keys:
+        raise ValueError(
+            f"Qwen3.5-4B weight '{weight_key}' mixes {quant_format} metadata with NVFP4 weight_scale_2."
+        )
+    return keys
 
 
 def _validate_qwen35_4b_state_dict(state_dict, selected_name, companion_format):
     """Validate the complete 32-layer, 2560-wide native text backbone."""
-    expected = _qwen35_4b_expected_shapes(include_final_norm=not companion_format)
+    expected = _qwen35_4b_expected_shapes(
+        include_final_norm=not companion_format,
+        companion_format=companion_format,
+    )
     missing = sorted(set(expected) - set(state_dict))
     if missing:
         sample = ", ".join(missing[:8])
@@ -378,6 +627,8 @@ def _validate_qwen35_4b_state_dict(state_dict, selected_name, companion_format):
             "Expected 32 layers, hidden width 2560, and intermediate width 9216."
         )
     for key, shape in expected.items():
+        if _validate_qwen35_quantized_weight(state_dict, key, shape):
+            continue
         actual = tuple(state_dict[key].shape)
         if actual != shape:
             raise ValueError(
@@ -385,11 +636,9 @@ def _validate_qwen35_4b_state_dict(state_dict, selected_name, companion_format):
                 f"{actual}; expected {shape}."
             )
     allowed = set(expected)
-    if companion_format:
-        allowed.add("model.norm.weight")
-    unexpected = sorted(
-        key for key in state_dict if key not in allowed and not _is_known_quant_auxiliary(key, allowed)
-    )
+    for key in expected:
+        allowed.update(_quant_auxiliary_keys(state_dict, key))
+    unexpected = sorted(key for key in state_dict if key not in allowed)
     if unexpected:
         raise ValueError(
             f"Qwen3.5-4B encoder '{selected_name}' contains unexpected text-model "
@@ -454,14 +703,11 @@ def _adapter_choices():
     return ["auto", *discover_adapter_candidates(_runtime_adapter_records())]
 
 
-def _resolve_adapter_path(selection):
-    """Resolve and revalidate a selected tagged adapter path and metadata."""
+def _load_adapter_header(root, relative_name):
+    """Read one explicitly named adapter's header without loading its weights."""
     import folder_paths
     from safetensors import safe_open
 
-    candidates = discover_adapter_candidates(_runtime_adapter_records())
-    selected = select_adapter_candidate(candidates, selection)
-    root, relative_name = _split_adapter_tag(selected)
     path = folder_paths.get_full_path_or_raise(root, relative_name)
     with safe_open(path, framework="pt", device="cpu") as checkpoint:
         metadata = checkpoint.metadata() or {}
@@ -469,17 +715,48 @@ def _resolve_adapter_path(selection):
             key: _ShapeOnly(checkpoint.get_slice(key).get_shape())
             for key in checkpoint.keys()
         }
-    if not _adapter_record_valid(metadata, shapes):
-        architecture = metadata.get("architecture", "no architecture metadata")
+    return path, metadata, shapes
+
+
+def _validate_adapter_header(metadata, shapes, selected):
+    """Provide precise diagnostics for an explicitly selected adapter header."""
+    architecture = (metadata or {}).get("architecture")
+    if architecture != ADAPTER_ARCHITECTURE:
+        actual = architecture or "no architecture metadata"
         raise ValueError(
-            f"Anima 3.8B adapter '{selected}' uses '{architecture}'; expected "
-            f"'{ADAPTER_ARCHITECTURE}' without timestep gates or anchor deviation."
+            f"Anima 3.8B adapter '{selected}' uses '{actual}'; expected architecture "
+            f"'{ADAPTER_ARCHITECTURE}'."
         )
+    for key in shapes:
+        if str(key).startswith("timestep_gates."):
+            raise ValueError(
+                f"Anima 3.8B adapter '{selected}' contains forbidden tensor '{key}'; "
+                "the native progressive format must not contain timestep gates."
+            )
+        if str(key).startswith("anchor_deviation"):
+            raise ValueError(
+                f"Anima 3.8B adapter '{selected}' contains forbidden tensor '{key}'; "
+                "the native progressive format must not contain anchor deviation."
+            )
     validate_progressive_adapter_shapes(shapes, selected)
+
+
+def _resolve_adapter_path(selection, header_loader=None):
+    """Resolve and precisely revalidate a selected adapter path and metadata."""
+    loader = _load_adapter_header if header_loader is None else header_loader
+    if selection != "auto" and "::" in selection:
+        selected = selection
+        root, relative_name = _split_adapter_tag(selected)
+    else:
+        candidates = discover_adapter_candidates(_runtime_adapter_records())
+        selected = select_adapter_candidate(candidates, selection)
+        root, relative_name = _split_adapter_tag(selected)
+    path, metadata, shapes = loader(root, relative_name)
+    _validate_adapter_header(metadata, shapes, selected)
     return selected, path, metadata
 
 
-def _qwen_runtime_classes():
+def _qwen_runtime_classes(companion_format=False):
     """Create CLIP wrapper classes around Comfy's native raw Qwen3.5 tokenizer."""
     import torch
     import comfy.sd1_clip
@@ -497,10 +774,11 @@ def _qwen_runtime_classes():
             )
 
         def tokenize_with_weights(self, text, return_word_ids=False, **kwargs):
+            token_pairs = self.qwen35_4b.tokenize_with_weights(
+                text, return_word_ids, **kwargs
+            )
             return {
-                "qwen35_4b": self.qwen35_4b.tokenize_with_weights(
-                    text, return_word_ids, **kwargs
-                )
+                "qwen35_4b": truncate_semantic_token_pairs(token_pairs)
             }
 
         def untokenize(self, token_weight_pair):
@@ -531,6 +809,39 @@ def _qwen_runtime_classes():
 
                 def __init__(self, config_dict, dtype, device, operations):
                     super().__init__(config_dict, dtype, device, operations)
+
+                    if companion_format:
+                        original_final = self.model.layers[-1]
+
+                        class AttentionOnlyFinalBlock(torch.nn.Module):
+                            """Match the companion's intentionally truncated layer 31."""
+
+                            def __init__(self, original):
+                                super().__init__()
+                                self.layer_type = original.layer_type
+                                self.self_attn = original.self_attn
+                                self.input_layernorm = original.input_layernorm
+
+                            def forward(
+                                self,
+                                x,
+                                attention_mask=None,
+                                freqs_cis=None,
+                                optimized_attention=None,
+                                past_key_value=None,
+                            ):
+                                hidden, present = self.self_attn(
+                                    self.input_layernorm(x),
+                                    attention_mask=attention_mask,
+                                    freqs_cis=freqs_cis,
+                                    optimized_attention=optimized_attention,
+                                    past_key_value=past_key_value,
+                                )
+                                return x + hidden, present
+
+                        self.model.layers[-1] = AttentionOnlyFinalBlock(original_final)
+                        self.model.norm = None
+                        return
 
                     class LoadedIdentityNorm(torch.nn.Module):
                         """Load model.norm.weight while leaving final states raw."""
@@ -565,7 +876,7 @@ def _qwen_runtime_classes():
                     "Anima 3.8B semantic conditioning expects one raw prompt."
                 )
             token_ids = []
-            for item in token_pairs[0]:
+            for item in token_pairs[0][:1024]:
                 token = item[0] if isinstance(item, (tuple, list)) else item
                 if not isinstance(token, int):
                     raise RuntimeError(
@@ -628,7 +939,55 @@ def _configured_qwen_te(base_class, dtype_llama=None, llama_quantization_metadat
     return ConfiguredQwenTE
 
 
-def load_anima38_qwen35_clip(path, selected_name):
+def _install_clip_reload_factory(
+    clip,
+    path,
+    selected_name,
+    embedding_directory,
+    model_options,
+    loader=None,
+):
+    """Install Comfy's CoreModelPatcher recreation callback on a loaded CLIP."""
+    factory = load_anima38_qwen35_clip_model_patcher
+    if loader is not None:
+        factory = functools.partial(
+            load_anima38_qwen35_clip_model_patcher,
+            loader=loader,
+        )
+
+    clip.patcher.cached_patcher_init = (
+        factory,
+        (path, selected_name, embedding_directory, model_options),
+    )
+
+
+def load_anima38_qwen35_clip_model_patcher(
+    path,
+    selected_name,
+    embedding_directory=None,
+    model_options=None,
+    disable_dynamic=False,
+    loader=None,
+):
+    """Recreate this loader's patcher for Comfy's non-dynamic delegate."""
+    reload_loader = load_anima38_qwen35_clip if loader is None else loader
+    clip = reload_loader(
+        path,
+        selected_name,
+        embedding_directory=embedding_directory,
+        model_options=model_options,
+        disable_dynamic=disable_dynamic,
+    )
+    return clip.patcher
+
+
+def load_anima38_qwen35_clip(
+    path,
+    selected_name,
+    embedding_directory=None,
+    model_options=None,
+    disable_dynamic=False,
+):
     """Load and validate one native raw-prompt Qwen3.5-4B CLIP object."""
     import comfy.sd
     import comfy.text_encoders.hunyuan_video
@@ -643,10 +1002,17 @@ def load_anima38_qwen35_clip(path, selected_name):
             "Anima 3.8B requires current ComfyUI native Qwen3.5 support "
             "(comfy.text_encoders.qwen35)."
         ) from error
+    if model_options is None:
+        model_options = {}
+    if embedding_directory is None:
+        embedding_directory = folder_paths.get_folder_paths("embeddings")
     state_dict, metadata = comfy.utils.load_torch_file(
         path, safe_load=True, return_metadata=True
     )
-    if hasattr(comfy.utils, "convert_old_quants"):
+    if (
+        model_options.get("custom_operations") is None
+        and hasattr(comfy.utils, "convert_old_quants")
+    ):
         state_dict, metadata = comfy.utils.convert_old_quants(
             state_dict, model_prefix="", metadata=metadata
         )
@@ -663,17 +1029,27 @@ def load_anima38_qwen35_clip(path, selected_name):
             ", ".join(ignored),
         )
     detection = comfy.text_encoders.hunyuan_video.llama_detect(state_dict)
-    tokenizer_class, te_class = _qwen_runtime_classes()
+    tokenizer_class, te_class = _qwen_runtime_classes(companion_format)
     target = ClipTarget(
         tokenizer_class,
         _configured_qwen_te(te_class, **detection),
     )
-    return comfy.sd.CLIP(
+    clip = comfy.sd.CLIP(
         target,
-        embedding_directory=folder_paths.get_folder_paths("embeddings"),
+        embedding_directory=embedding_directory,
         parameters=comfy.utils.calculate_parameters(state_dict),
         state_dict=[state_dict],
+        model_options=model_options,
+        disable_dynamic=disable_dynamic,
     )
+    _install_clip_reload_factory(
+        clip,
+        path,
+        selected_name,
+        embedding_directory,
+        model_options,
+    )
+    return clip
 
 
 def _progressive_adapter_type():
@@ -757,11 +1133,10 @@ def _progressive_adapter_type():
                 semantic_source_mask = semantic_source_mask.to(torch.bool)
                 if semantic_source_mask.ndim == 2:
                     semantic_source_mask = semantic_source_mask.unsqueeze(1).unsqueeze(1)
-            mix = self.layer_mix_logits[block_index].float().softmax(dim=-1)
-            mix = mix.to(dtype=query.dtype)
-            semantic_source = sum(
-                state * mix[layer_index]
-                for layer_index, state in enumerate(semantic_hidden_states)
+            semantic_source = _mixed_semantic_source(
+                semantic_hidden_states,
+                self.layer_mix_logits,
+                block_index,
             )
             semantic_source = self.source_norms[block_index](semantic_source)
             return self.semantic_attentions[block_index](
@@ -1041,65 +1416,61 @@ class SwarmAnima38Conditioning:
                     f"Qwen3.5 semantic encoder tap {tap} returned shape "
                     f"{tuple(state.shape)}; expected [batch, tokens, 2560]."
                 )
-        native_adapter = _native_anima38_adapter(source_model)
-        managed_adapter = _managed_progressive_adapter(
-            source_model,
-            native_adapter,
-            selected,
-            adapter_path,
-        )
-        comfy.model_management.load_models_gpu(
-            [source_model, managed_adapter], force_full_load=True
-        )
-        native_adapter = _native_anima38_adapter(source_model)
-        device = native_adapter.embed.weight.device
-        dtype = native_adapter.embed.weight.dtype
-        source = native_source.to(device=device, dtype=dtype)
-        semantic_states = [state.to(device=device, dtype=dtype) for state in semantic_states]
-        semantic_mask = semantic_mask.to(device=device, dtype=torch.bool)
-        target_ids = torch.as_tensor(
-            target_ids, device=device, dtype=torch.long
-        ).reshape(1, -1)[:, :512]
-        semantic_adapter = managed_adapter.model
-        with torch.no_grad():
-            expanded_context = _run_progressive_adapter(
+        with _ADAPTER_INFERENCE_LEASE.locked():
+            native_adapter = _native_anima38_adapter(source_model)
+            managed_adapter = _managed_progressive_adapter(
+                source_model,
                 native_adapter,
-                semantic_adapter,
-                source,
-                target_ids,
-                semantic_states,
-                semantic_source_mask=semantic_mask,
+                selected,
+                adapter_path,
             )
-            strength = float(adapter_strength)
-            if strength != 1.0:
-                native_context = native_adapter(source, target_ids)
-                expanded_context = native_context + strength * (
-                    expanded_context - native_context
+            comfy.model_management.load_models_gpu(
+                [source_model, managed_adapter], force_full_load=True
+            )
+            native_adapter = _native_anima38_adapter(source_model)
+            device = native_adapter.embed.weight.device
+            dtype = native_adapter.embed.weight.dtype
+            source = native_source.to(device=device, dtype=dtype)
+            semantic_states = [
+                state.to(device=device, dtype=dtype) for state in semantic_states
+            ]
+            semantic_mask = semantic_mask.to(device=device, dtype=torch.bool)
+            target_ids = torch.as_tensor(
+                target_ids, device=device, dtype=torch.long
+            ).reshape(1, -1)[:, :512]
+            semantic_adapter = managed_adapter.model
+            with torch.no_grad():
+                expanded_context = _run_progressive_adapter(
+                    native_adapter,
+                    semantic_adapter,
+                    source,
+                    target_ids,
+                    semantic_states,
+                    semantic_source_mask=semantic_mask,
                 )
-            target_weights = native_metadata.get("t5xxl_weights")
-            if target_weights is not None:
-                weights = torch.as_tensor(
-                    target_weights,
-                    device=device,
-                    dtype=expanded_context.dtype,
-                ).reshape(1, -1, 1)[:, : expanded_context.shape[1]]
-                expanded_context = expanded_context * weights
-            expanded_context = _pad_context(expanded_context)
-            expanded_context = expanded_context.to(
-                comfy.model_management.intermediate_device()
-            )
-        output_metadata = {
-            key: value
-            for key, value in native_metadata.items()
-            if key not in {"t5xxl_ids", "t5xxl_weights", "attention_mask"}
-        }
-        output_metadata.update(
-            {
-                "qwen35_expanded_adapter": selected,
-                "qwen35_expanded_strength": float(adapter_strength),
-                "qwen35_expanded_architecture": ADAPTER_ARCHITECTURE,
-                "qwen35_expanded_step": adapter_metadata.get("step", ""),
-            }
+                strength = float(adapter_strength)
+                if strength != 1.0:
+                    native_context = native_adapter(source, target_ids)
+                    expanded_context = native_context + strength * (
+                        expanded_context - native_context
+                    )
+                target_weights = native_metadata.get("t5xxl_weights")
+                if target_weights is not None:
+                    weights = torch.as_tensor(
+                        target_weights,
+                        device=device,
+                        dtype=expanded_context.dtype,
+                    ).reshape(1, -1, 1)[:, : expanded_context.shape[1]]
+                    expanded_context = expanded_context * weights
+                expanded_context = _pad_context(expanded_context)
+                expanded_context = expanded_context.to(
+                    comfy.model_management.intermediate_device()
+                )
+        output_metadata = _expanded_conditioning_metadata(
+            native_metadata,
+            selected,
+            adapter_strength,
+            adapter_metadata,
         )
         logger.info(
             "[Swarm] Encoded Anima 3.8B prompt with %s at strength %.2f",

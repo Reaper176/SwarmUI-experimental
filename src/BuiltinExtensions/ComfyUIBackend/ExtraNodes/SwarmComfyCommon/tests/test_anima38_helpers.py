@@ -1,8 +1,12 @@
 import pathlib
 import inspect
+import json
 import sys
+import threading
 import types
 import unittest
+
+import torch
 
 
 COMMON_NODE_DIRECTORY = pathlib.Path(__file__).resolve().parents[1]
@@ -13,20 +17,30 @@ sys.modules[TEST_PACKAGE_NAME] = test_package
 
 from _swarm_comfy_common_anima38_tests.SwarmAnima38 import (  # noqa: E402
     ADAPTER_ARCHITECTURE,
+    AdapterInferenceLease,
     LastAdapterCache,
     SEMANTIC_LAYER_TAPS,
     SwarmAnima38Conditioning,
+    THIRD_PARTY_LICENSE_NOTICE,
     _adapter_record_valid,
+    _expanded_conditioning_metadata,
+    _install_clip_reload_factory,
+    _resolve_adapter_path,
+    _mixed_semantic_source,
     _dispose_managed_adapter,
     _qwen35_4b_expected_shapes,
+    _qwen_runtime_classes,
     _validate_qwen35_4b_state_dict,
+    _validate_qwen35_quantized_weight,
     adapter_tag,
     discover_adapter_candidates,
     format_unified_prompt,
     is_qwen35_4b_candidate,
+    install_anima38_model_detection,
     normalize_qwen35_state_dict,
     select_adapter_candidate,
     select_qwen35_candidate,
+    truncate_semantic_token_pairs,
     validate_progressive_adapter_shapes,
 )
 
@@ -158,8 +172,60 @@ class Anima38AdapterDiscoveryTests(unittest.TestCase):
         self.assertFalse(_adapter_record_valid({}, []))
         self.assertFalse(_adapter_record_valid({"architecture": "other"}, []))
 
+    def test_explicit_invalid_adapter_surfaces_precise_header_error(self):
+        selection = "controlnet::broken.safetensors"
+        cases = (
+            (
+                {"architecture": ADAPTER_ARCHITECTURE},
+                {"timestep_gates.0": FakeTensor((1,))},
+                "timestep_gates",
+            ),
+            (
+                {"architecture": ADAPTER_ARCHITECTURE},
+                {"anchor_deviation.weight": FakeTensor((1,))},
+                "anchor_deviation",
+            ),
+            ({"architecture": "wrong"}, {}, "expected architecture"),
+        )
+        for metadata, shapes, message in cases:
+            with self.subTest(message=message):
+                def header_loader(root, name):
+                    self.assertEqual(
+                        (root, name),
+                        ("controlnet", "broken.safetensors"),
+                    )
+                    return "/models/broken.safetensors", metadata, shapes
+
+                with self.assertRaisesRegex(
+                    ValueError,
+                    rf"broken.safetensors.*{message}",
+                ):
+                    _resolve_adapter_path(selection, header_loader=header_loader)
+
 
 class Anima38QwenStateTests(unittest.TestCase):
+    def test_accepts_exact_426_tensor_companion_layout_after_projection_filter(self):
+        companion = {
+            key.removeprefix("model."): FakeTensor(shape)
+            for key, shape in _qwen35_4b_expected_shapes().items()
+            if key != "model.norm.weight"
+            and not key.startswith("model.layers.31.mlp.")
+            and key != "model.layers.31.post_attention_layernorm.weight"
+        }
+        for key in (
+            "norm.0.weight",
+            "norm.0.bias",
+            "norm.1.weight",
+            "norm.3.weight",
+            "norm.3.bias",
+        ):
+            companion[key] = FakeTensor((1,))
+        self.assertEqual(len(companion), 426)
+
+        normalized, ignored = normalize_qwen35_state_dict(companion)
+        self.assertEqual(len(ignored), 5)
+        _validate_qwen35_4b_state_dict(normalized, "companion", True)
+
     def test_normalizes_companion_encoder_keys_and_ignores_exact_projection_norm_keys(self):
         embed = object()
         layer = object()
@@ -207,6 +273,93 @@ class Anima38QwenStateTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, r"unexpected.*norm.unrelated.weight"):
             _validate_qwen35_4b_state_dict(complete, "unknown-norm", False)
 
+    @staticmethod
+    def quant_metadata(quant_format, **extra):
+        config = {"format": quant_format, **extra}
+        return torch.tensor(list(json.dumps(config).encode("utf-8")), dtype=torch.uint8)
+
+    def test_validates_packed_mxfp8_and_nvfp4_4b_weights(self):
+        weight_key = "model.layers.0.mlp.down_proj.weight"
+        logical_shape = (2560, 9216)
+        prefix = "model.layers.0.mlp.down_proj."
+        mxfp8 = {
+            weight_key: FakeTensor((2560, 9216)),
+            f"{prefix}comfy_quant": self.quant_metadata("mxfp8"),
+            f"{prefix}weight_scale": torch.empty((2560, 288), device="meta"),
+        }
+        nvfp4 = {
+            weight_key: FakeTensor((2560, 4608)),
+            f"{prefix}comfy_quant": self.quant_metadata("nvfp4"),
+            f"{prefix}weight_scale": torch.empty((2560, 576), device="meta"),
+            f"{prefix}weight_scale_2": torch.empty((), device="meta"),
+        }
+
+        self.assertTrue(_validate_qwen35_quantized_weight(mxfp8, weight_key, logical_shape))
+        self.assertTrue(_validate_qwen35_quantized_weight(nvfp4, weight_key, logical_shape))
+
+    def test_rejects_malformed_packed_quant_metadata_storage_and_scales(self):
+        weight_key = "model.layers.0.mlp.down_proj.weight"
+        logical_shape = (2560, 9216)
+        prefix = "model.layers.0.mlp.down_proj."
+        cases = (
+            (
+                {
+                    weight_key: FakeTensor((2560, 9216)),
+                    f"{prefix}comfy_quant": torch.tensor([255], dtype=torch.uint8),
+                },
+                "valid JSON",
+            ),
+            (
+                {
+                    weight_key: FakeTensor((1, 1)),
+                    f"{prefix}comfy_quant": self.quant_metadata("mxfp8"),
+                    f"{prefix}weight_scale": torch.empty((2560, 288), device="meta"),
+                },
+                "storage shape",
+            ),
+            (
+                {
+                    weight_key: FakeTensor((2560, 4608)),
+                    f"{prefix}comfy_quant": self.quant_metadata("nvfp4"),
+                    f"{prefix}weight_scale": torch.empty((1, 1), device="meta"),
+                    f"{prefix}weight_scale_2": torch.empty((), device="meta"),
+                },
+                "weight_scale.*required shape",
+            ),
+            (
+                {
+                    weight_key: FakeTensor((2560, 9216)),
+                    f"{prefix}comfy_quant": self.quant_metadata("unknown"),
+                },
+                "unsupported.*unknown",
+            ),
+            (
+                {
+                    weight_key: FakeTensor((2560, 9216)),
+                    f"{prefix}comfy_quant": self.quant_metadata("mxfp8"),
+                    f"{prefix}weight_scale": torch.empty((2560, 288), device="meta"),
+                    f"{prefix}weight_scale_2": torch.empty((), device="meta"),
+                },
+                "mixes mxfp8.*NVFP4",
+            ),
+        )
+        for state, message in cases:
+            with self.subTest(message=message):
+                with self.assertRaisesRegex(ValueError, message):
+                    if "mixes" in message:
+                        complete = {
+                            key: FakeTensor(shape)
+                            for key, shape in _qwen35_4b_expected_shapes().items()
+                        }
+                        complete.update(state)
+                        _validate_qwen35_4b_state_dict(complete, "mixed", False)
+                    else:
+                        _validate_qwen35_quantized_weight(
+                            state,
+                            weight_key,
+                            logical_shape,
+                        )
+
 
 class Anima38PromptAndTapTests(unittest.TestCase):
     def test_unified_prompt_is_exact_raw_identity_for_tags_and_description(self):
@@ -224,6 +377,104 @@ class Anima38PromptAndTapTests(unittest.TestCase):
     def test_native_taps_match_companion_post_layers(self):
         self.assertEqual(SEMANTIC_LAYER_TAPS, (8, 16, 24, 32))
         self.assertEqual(tuple(index - 1 for index in SEMANTIC_LAYER_TAPS), (7, 15, 23, 31))
+
+    def test_semantic_token_cap_preserves_boundary_and_truncates_overflow(self):
+        boundary = [[(index, 1.0) for index in range(1024)]]
+        overflow = [[(index, 1.0) for index in range(1030)]]
+        self.assertEqual(truncate_semantic_token_pairs(boundary), boundary)
+        truncated = truncate_semantic_token_pairs(overflow)
+        self.assertEqual(len(truncated), 1)
+        self.assertEqual(len(truncated[0]), 1024)
+        self.assertEqual(truncated[0][0][0], 0)
+        self.assertEqual(truncated[0][-1][0], 1023)
+        attention_mask = [1] * len(truncated[0])
+        self.assertEqual(len(attention_mask), len(truncated[0]))
+
+    def test_fake_native_tokenizer_and_attention_mask_are_capped_together(self):
+        fake_comfy = types.ModuleType("comfy")
+        fake_comfy.__path__ = []
+        fake_sd1_clip = types.ModuleType("comfy.sd1_clip")
+        fake_qwen = types.ModuleType("comfy.text_encoders.qwen35")
+        fake_text_encoders = types.ModuleType("comfy.text_encoders")
+        fake_text_encoders.__path__ = []
+
+        class FakeNativeTokenizer:
+            def __init__(self, **kwargs):
+                pass
+
+            def tokenize_with_weights(self, text, return_word_ids=False, **kwargs):
+                return [[(index, 1.0) for index in range(int(text))]]
+
+        class FakeSD1ClipModel:
+            def __init__(self, clip_model=None, **kwargs):
+                self.qwen35_4b = clip_model.__new__(clip_model)
+
+        fake_qwen.Qwen35Tokenizer = FakeNativeTokenizer
+        fake_qwen.Qwen35ClipModel = object
+        fake_qwen.Qwen35 = object
+        fake_sd1_clip.SD1ClipModel = FakeSD1ClipModel
+        fake_comfy.sd1_clip = fake_sd1_clip
+        fake_comfy.text_encoders = fake_text_encoders
+        modules = {
+            "comfy": fake_comfy,
+            "comfy.sd1_clip": fake_sd1_clip,
+            "comfy.text_encoders": fake_text_encoders,
+            "comfy.text_encoders.qwen35": fake_qwen,
+        }
+        saved = {name: sys.modules.get(name) for name in modules}
+        sys.modules.update(modules)
+        try:
+            tokenizer_class, clip_class = _qwen_runtime_classes()
+            tokens = tokenizer_class().tokenize_with_weights("1030")["qwen35_4b"]
+            self.assertEqual(len(tokens[0]), 1024)
+
+            clip_model = clip_class().qwen35_4b
+            clip_model.process_tokens = lambda token_ids, device: (
+                torch.empty((1, len(token_ids[0]), 1)),
+                torch.ones((1, len(token_ids[0])), dtype=torch.bool),
+                [len(token_ids[0])],
+                {},
+            )
+            clip_model.transformer = lambda *args, **kwargs: (
+                None,
+                torch.empty((1, 4, len(tokens[0]), 1)),
+            )
+            states, attention_mask = clip_model.raw_hidden_states(tokens, "cpu")
+            self.assertEqual(attention_mask.shape, (1, 1024))
+            self.assertEqual([state.shape[1] for state in states], [1024] * 4)
+        finally:
+            for name, module in saved.items():
+                if module is None:
+                    del sys.modules[name]
+                else:
+                    sys.modules[name] = module
+
+    def test_progressive_mixing_matches_softmax_weighted_sources(self):
+        states = [torch.tensor([[[float(index)]]]) for index in range(4)]
+        logits = torch.zeros((6, 4))
+        mixed = _mixed_semantic_source(states, logits, 2)
+        self.assertTrue(torch.equal(mixed, torch.tensor([[[1.5]]])))
+
+    def test_expanded_metadata_is_copied_without_mutating_native(self):
+        native = {
+            "pooled_output": object(),
+            "regional": "keep",
+            "t5xxl_ids": [1],
+            "t5xxl_weights": [1.0],
+            "attention_mask": [1],
+        }
+        before = native.copy()
+        expanded = _expanded_conditioning_metadata(
+            native,
+            "controlnet::adapter.safetensors",
+            0.75,
+            {"step": "42"},
+        )
+        self.assertEqual(native, before)
+        self.assertIs(expanded["pooled_output"], native["pooled_output"])
+        self.assertEqual(expanded["regional"], "keep")
+        self.assertNotIn("t5xxl_ids", expanded)
+        self.assertEqual(expanded["qwen35_expanded_step"], "42")
 
 
 class Anima38AdapterShapeTests(unittest.TestCase):
@@ -253,6 +504,11 @@ class Anima38AdapterShapeTests(unittest.TestCase):
 
 
 class Anima38NodeContractTests(unittest.TestCase):
+    def test_companion_mit_notice_retains_required_terms(self):
+        self.assertIn("Copyright (c) 2026 GumGum10 contributors", THIRD_PARTY_LICENSE_NOTICE)
+        self.assertIn("Permission is hereby granted, free of charge", THIRD_PARTY_LICENSE_NOTICE)
+        self.assertIn('THE SOFTWARE IS PROVIDED "AS IS"', THIRD_PARTY_LICENSE_NOTICE)
+
     def test_conditioning_contract_uses_adapter_name(self):
         parameters = inspect.signature(SwarmAnima38Conditioning.encode).parameters
         self.assertIn("adapter_name", parameters)
@@ -267,6 +523,67 @@ class Anima38NodeContractTests(unittest.TestCase):
             module._adapter_choices = original
         self.assertIn("adapter_name", required)
         self.assertNotIn("adapter", required)
+
+    def test_dynamic_clip_reload_factory_returns_recreated_patcher(self):
+        recreated_patcher = object()
+
+        class FakeClip:
+            def __init__(self):
+                self.patcher = types.SimpleNamespace(cached_patcher_init=None)
+
+        clip = FakeClip()
+
+        def fake_loader(path, selected_name, embedding_directory=None, model_options=None, disable_dynamic=False):
+            self.assertEqual(path, "/models/qwen.safetensors")
+            self.assertEqual(selected_name, "qwen35_4b.safetensors")
+            self.assertTrue(disable_dynamic)
+            return types.SimpleNamespace(patcher=recreated_patcher)
+
+        _install_clip_reload_factory(
+            clip,
+            "/models/qwen.safetensors",
+            "qwen35_4b.safetensors",
+            ["/embeddings"],
+            {"load_device": "cpu"},
+            loader=fake_loader,
+        )
+        factory, arguments = clip.patcher.cached_patcher_init
+        self.assertTrue(callable(factory))
+        self.assertIs(factory(*arguments, disable_dynamic=True), recreated_patcher)
+
+    def test_detection_install_registry_survives_alternating_wrapper_order(self):
+        fake_detection = types.ModuleType("comfy.model_detection")
+
+        def base_detection(state_dict, key_prefix, metadata=None):
+            return {"image_model": "other"}
+
+        fake_detection.detect_unet_config = base_detection
+        fake_comfy = types.ModuleType("comfy")
+        fake_comfy.__path__ = []
+        fake_comfy.model_detection = fake_detection
+        original_comfy = sys.modules.get("comfy")
+        original_detection = sys.modules.get("comfy.model_detection")
+        sys.modules["comfy"] = fake_comfy
+        sys.modules["comfy.model_detection"] = fake_detection
+        try:
+            install_anima38_model_detection()
+            first_wrapper = fake_detection.detect_unet_config
+
+            def other_wrapper(state_dict, key_prefix, metadata=None):
+                return first_wrapper(state_dict, key_prefix, metadata=metadata)
+
+            fake_detection.detect_unet_config = other_wrapper
+            install_anima38_model_detection()
+            self.assertIs(fake_detection.detect_unet_config, other_wrapper)
+        finally:
+            if original_comfy is None:
+                del sys.modules["comfy"]
+            else:
+                sys.modules["comfy"] = original_comfy
+            if original_detection is None:
+                del sys.modules["comfy.model_detection"]
+            else:
+                sys.modules["comfy.model_detection"] = original_detection
 
 
 class Anima38AdapterCacheTests(unittest.TestCase):
@@ -327,6 +644,42 @@ class Anima38AdapterCacheTests(unittest.TestCase):
                 sys.modules["comfy.model_management"] = original_management
 
         self.assertEqual(calls, [(managed, True)])
+
+    def test_inference_lease_blocks_replacement_until_first_use_exits(self):
+        disposed = []
+        cache = LastAdapterCache(lambda managed: disposed.append(managed))
+        lease = AdapterInferenceLease(cache)
+        first_entered = threading.Event()
+        release_first = threading.Event()
+        second_entered = threading.Event()
+        first = object()
+        second = object()
+
+        def use_first():
+            with lease.use("first", lambda: first):
+                first_entered.set()
+                release_first.wait(timeout=5)
+
+        def replace_with_second():
+            first_entered.wait(timeout=5)
+            with lease.use("second", lambda: second):
+                second_entered.set()
+
+        first_thread = threading.Thread(target=use_first)
+        second_thread = threading.Thread(target=replace_with_second)
+        first_thread.start()
+        second_thread.start()
+        self.assertTrue(first_entered.wait(timeout=5))
+        self.assertFalse(second_entered.wait(timeout=0.05))
+        self.assertEqual(disposed, [])
+        release_first.set()
+        first_thread.join(timeout=5)
+        second_thread.join(timeout=5)
+
+        self.assertFalse(first_thread.is_alive())
+        self.assertFalse(second_thread.is_alive())
+        self.assertTrue(second_entered.is_set())
+        self.assertEqual(disposed, [first])
 
 
 if __name__ == "__main__":
