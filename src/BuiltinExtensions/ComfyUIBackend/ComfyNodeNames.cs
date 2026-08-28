@@ -140,6 +140,21 @@ public static class ComfyNodeNames
     /// <summary>Comfy class name for applying Anima ControlNet-LLLite weights.</summary>
     public const string AnimaLLLite = "SwarmAnimaLLLite";
 
+    /// <summary>Comfy class name for creating Anima 3.8B LoRA hooks.</summary>
+    public const string Anima38CreateHookLora = "SwarmAnima38CreateHookLora";
+
+    /// <summary>Comfy class name for creating Anima 3.8B conditioning.</summary>
+    public const string Anima38Conditioning = "SwarmAnima38Conditioning";
+
+    /// <summary>Comfy class name for loading an Anima 3.8B LoRA.</summary>
+    public const string Anima38LoraLoader = "SwarmAnima38LoraLoader";
+
+    /// <summary>Comfy class name for loading an Anima 3.8B model-only LoRA.</summary>
+    public const string Anima38LoraLoaderModelOnly = "SwarmAnima38LoraLoaderModelOnly";
+
+    /// <summary>Comfy class name for loading the Anima 3.8B Qwen3.5 encoder.</summary>
+    public const string LoadAnima38Qwen35 = "SwarmLoadAnima38Qwen35";
+
     /// <summary>Comfy class name for configuring Detail Daemon options.</summary>
     public const string DetailDaemonOptions = "SwarmDetailDaemonOptions";
 

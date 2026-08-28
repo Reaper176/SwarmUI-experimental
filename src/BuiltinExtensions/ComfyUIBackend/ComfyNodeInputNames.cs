@@ -296,6 +296,69 @@ public static class ComfyNodeInputNames
         public const string Strength = "strength";
     }
 
+    /// <summary>Input names for the Anima 3.8B LoRA hook node.</summary>
+    public static class Anima38CreateHookLora
+    {
+        /// <summary>Input name for the LoRA model name.</summary>
+        public const string LoraName = "lora_name";
+        /// <summary>Input name for previously created hooks.</summary>
+        public const string PrevHooks = "prev_hooks";
+        /// <summary>Input name for the CLIP strength.</summary>
+        public const string StrengthClip = "strength_clip";
+        /// <summary>Input name for the diffusion-model strength.</summary>
+        public const string StrengthModel = "strength_model";
+    }
+
+    /// <summary>Input names for the Anima 3.8B conditioning node.</summary>
+    public static class Anima38Conditioning
+    {
+        /// <summary>Input name for the progressive adapter selection.</summary>
+        public const string Adapter = "adapter";
+        /// <summary>Input name for the progressive adapter strength.</summary>
+        public const string AdapterStrength = "adapter_strength";
+        /// <summary>Input name for the native Anima CLIP model.</summary>
+        public const string CLIP = "clip";
+        /// <summary>Input name for the prompt text.</summary>
+        public const string Prompt = "prompt";
+        /// <summary>Input name for the Qwen3.5 semantic CLIP model.</summary>
+        public const string Qwen35CLIP = "qwen35_clip";
+        /// <summary>Input name for the source diffusion model.</summary>
+        public const string SourceModel = "source_model";
+    }
+
+    /// <summary>Input names for the Anima 3.8B LoRA loader node.</summary>
+    public static class Anima38LoraLoader
+    {
+        /// <summary>Input name for the CLIP model.</summary>
+        public const string CLIP = "clip";
+        /// <summary>Input name for the LoRA model name.</summary>
+        public const string LoraName = "lora_name";
+        /// <summary>Input name for the diffusion model.</summary>
+        public const string Model = "model";
+        /// <summary>Input name for the CLIP strength.</summary>
+        public const string StrengthClip = "strength_clip";
+        /// <summary>Input name for the diffusion-model strength.</summary>
+        public const string StrengthModel = "strength_model";
+    }
+
+    /// <summary>Input names for the Anima 3.8B model-only LoRA loader node.</summary>
+    public static class Anima38LoraLoaderModelOnly
+    {
+        /// <summary>Input name for the LoRA model name.</summary>
+        public const string LoraName = "lora_name";
+        /// <summary>Input name for the diffusion model.</summary>
+        public const string Model = "model";
+        /// <summary>Input name for the diffusion-model strength.</summary>
+        public const string StrengthModel = "strength_model";
+    }
+
+    /// <summary>Input names for the Anima 3.8B Qwen3.5 encoder loader.</summary>
+    public static class LoadAnima38Qwen35
+    {
+        /// <summary>Input name for the Qwen3.5 encoder filename.</summary>
+        public const string QwenFilename = "qwen_filename";
+    }
+
     /// <summary>Input names for the Detail Daemon options node.</summary>
     public static class DetailDaemonOptions
     {
