@@ -1,17 +1,25 @@
 import pathlib
 import sys
+import types
 import unittest
 
 
 COMMON_NODE_DIRECTORY = pathlib.Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(COMMON_NODE_DIRECTORY))
+TEST_PACKAGE_NAME = "_swarm_comfy_common_tests"
+test_package = types.ModuleType(TEST_PACKAGE_NAME)
+test_package.__path__ = [str(COMMON_NODE_DIRECTORY)]
+sys.modules[TEST_PACKAGE_NAME] = test_package
 
-from SwarmAnima38LoraMapping import (  # noqa: E402
+from _swarm_comfy_common_tests.SwarmAnima38LoraMapping import (  # noqa: E402
     ANIMA_29_TO_38_INSERTIONS,
     BASE_TO_29_INSERTIONS,
     infer_source_block_count,
     map_block_index_to_anima38,
     map_lora_state_dict_to_anima38,
+)
+from _swarm_comfy_common_tests.SwarmAnima38Lora import (  # noqa: E402
+    get_cached_anima38_lora,
+    prepare_anima38_lora,
 )
 
 
@@ -167,6 +175,63 @@ class Anima38LoraMappingTests(unittest.TestCase):
     def test_rejects_state_dict_without_recognizable_block_keys(self):
         with self.assertRaisesRegex(ValueError, "recognizable.*block"):
             map_lora_state_dict_to_anima38({"text_encoder.layer.0.weight": object()})
+
+
+class Anima38LoraLoadingDecisionTests(unittest.TestCase):
+    def test_native_lora_bypasses_remapping_and_retains_state_dict(self):
+        state_dict = {"diffusion_model.blocks.51.attn.weight": object()}
+
+        prepared_state_dict, source_block_count, was_remapped = prepare_anima38_lora(state_dict)
+
+        self.assertIs(prepared_state_dict, state_dict)
+        self.assertEqual(source_block_count, 52)
+        self.assertFalse(was_remapped)
+
+    def test_legacy_loras_are_remapped(self):
+        for source_block_count in (28, 40):
+            with self.subTest(source_block_count=source_block_count):
+                state_dict = {
+                    f"diffusion_model.blocks.{source_block_count - 1}.attn.weight": object()
+                }
+
+                prepared_state_dict, reported_source_block_count, was_remapped = prepare_anima38_lora(state_dict)
+
+                self.assertIsNot(prepared_state_dict, state_dict)
+                self.assertEqual(reported_source_block_count, source_block_count)
+                self.assertTrue(was_remapped)
+                self.assertIn("diffusion_model.blocks.51.attn.weight", prepared_state_dict)
+
+    def test_shared_preparation_reports_source_depth_and_remap_decision(self):
+        prepared_state_dict, source_block_count, was_remapped = prepare_anima38_lora(
+            {"lora_unet_blocks_27_attn_to_q.lora_up.weight": object()}
+        )
+
+        self.assertEqual(source_block_count, 28)
+        self.assertTrue(was_remapped)
+        self.assertIn("lora_unet_blocks_51_attn_to_q.lora_up.weight", prepared_state_dict)
+
+    def test_shared_preparation_explains_supported_layouts_and_key_forms(self):
+        with self.assertRaisesRegex(
+            ValueError,
+            r"28-, 40-, or 52-block.*diffusion_model\.blocks\.N.*lora_unet_blocks_N",
+        ):
+            prepare_anima38_lora({"text_encoder.layer.0.weight": object()})
+
+    def test_cache_lookup_rejects_a_different_resolved_filename(self):
+        state_dict = {"diffusion_model.blocks.51.attn.weight": object()}
+        loaded_lora = ("/models/first.safetensors", state_dict, None, 52, False)
+
+        cached = get_cached_anima38_lora(loaded_lora, "/models/second.safetensors")
+
+        self.assertIsNone(cached)
+
+    def test_cache_lookup_returns_prepared_data_for_matching_resolved_filename(self):
+        state_dict = {"diffusion_model.blocks.51.attn.weight": object()}
+        loaded_lora = ("/models/native.safetensors", state_dict, "metadata", 52, False)
+
+        cached = get_cached_anima38_lora(loaded_lora, "/models/native.safetensors")
+
+        self.assertEqual(cached, (state_dict, "metadata", 52, False))
 
 
 if __name__ == "__main__":
