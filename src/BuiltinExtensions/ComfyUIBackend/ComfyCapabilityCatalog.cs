@@ -12,12 +12,34 @@ public static class ComfyCapabilityCatalog
     /// <summary>Prefix for backend-local model-attention option feature IDs.</summary>
     public const string ModelAttentionBackendValueFeaturePrefix = "model_attention_backend_value_";
 
+    /// <summary>Prefix for backend-local Anima 3.8B Qwen3.5 encoder feature IDs.</summary>
+    public const string Anima38Qwen35ValueFeaturePrefix = "anima_38_qwen35_value_";
+
+    /// <summary>Prefix for backend-local Anima 3.8B progressive adapter feature IDs.</summary>
+    public const string Anima38AdapterValueFeaturePrefix = "anima_38_adapter_value_";
+
     /// <summary>Encodes an exact Comfy model-attention option as a safe backend feature ID.</summary>
     /// <param name="value">The exact option value accepted by the Comfy node.</param>
     /// <returns>A deterministic feature ID containing the UTF-8 option bytes as hexadecimal.</returns>
     public static string ModelAttentionBackendValueFeature(string value)
     {
         return $"{ModelAttentionBackendValueFeaturePrefix}{Convert.ToHexString(System.Text.Encoding.UTF8.GetBytes(value))}";
+    }
+
+    /// <summary>Encodes an exact Anima 3.8B Qwen3.5 encoder choice as a safe backend feature ID.</summary>
+    /// <param name="value">The exact encoder filename accepted by the Comfy node.</param>
+    /// <returns>A deterministic feature ID containing the UTF-8 filename bytes as hexadecimal.</returns>
+    public static string Anima38Qwen35ValueFeature(string value)
+    {
+        return $"{Anima38Qwen35ValueFeaturePrefix}{Convert.ToHexString(System.Text.Encoding.UTF8.GetBytes(value))}";
+    }
+
+    /// <summary>Encodes an exact Anima 3.8B progressive adapter choice as a safe backend feature ID.</summary>
+    /// <param name="value">The exact tagged adapter choice accepted by the Comfy node.</param>
+    /// <returns>A deterministic feature ID containing the UTF-8 adapter bytes as hexadecimal.</returns>
+    public static string Anima38AdapterValueFeature(string value)
+    {
+        return $"{Anima38AdapterValueFeaturePrefix}{Convert.ToHexString(System.Text.Encoding.UTF8.GetBytes(value))}";
     }
 
     /// <summary>Creates a mutable mapping of known ComfyUI node names to their feature IDs.</summary>

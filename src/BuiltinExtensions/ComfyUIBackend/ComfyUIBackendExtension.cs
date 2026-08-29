@@ -464,6 +464,12 @@ public class ComfyUIBackendExtension : Extension
         /// <summary>Discovered model attention backend values.</summary>
         public List<string> ModelAttentionBackends = [];
 
+        /// <summary>Discovered Anima 3.8B Qwen3.5 encoder values.</summary>
+        public List<string> Anima38Qwen35Encoders = [];
+
+        /// <summary>Discovered Anima 3.8B progressive adapter values.</summary>
+        public List<string> Anima38Adapters = [];
+
         /// <summary>Discovered ControlNet preprocessor definitions.</summary>
         public Dictionary<string, JToken> ControlNetPreprocessors = [];
     }
@@ -504,6 +510,12 @@ public class ComfyUIBackendExtension : Extension
         /// <summary>Candidate model attention backend values.</summary>
         public List<string> ModelAttentionBackends;
 
+        /// <summary>Candidate Anima 3.8B Qwen3.5 encoder values.</summary>
+        public List<string> Anima38Qwen35Encoders;
+
+        /// <summary>Candidate Anima 3.8B progressive adapter values.</summary>
+        public List<string> Anima38Adapters;
+
         /// <summary>Candidate additive ControlNet preprocessor definitions.</summary>
         public Dictionary<string, JToken> ControlNetPreprocessors;
     }
@@ -526,6 +538,54 @@ public class ComfyUIBackendExtension : Extension
         Logs.Warning($"object_info has node '{node}' but the input '{id}' is missing or invalid");
         list = null;
         return false;
+    }
+
+    /// <summary>Reads optional string choices from one ComfyUI node input without failing discovery for older or malformed backends.</summary>
+    /// <param name="rawObjectInfo">The raw ComfyUI object-info response to parse.</param>
+    /// <param name="nodeName">The node whose required input contains the choices.</param>
+    /// <param name="inputName">The required input whose choices should be read.</param>
+    /// <returns>Valid string choices from the input, or an empty list when the node is unavailable or invalid.</returns>
+    private static List<string> ReadOptionalStringChoices(JObject rawObjectInfo, string nodeName, string inputName)
+    {
+        if (!rawObjectInfo.ContainsKey(nodeName))
+        {
+            return [];
+        }
+        try
+        {
+            if (!TryGetRequiredInputs(rawObjectInfo, nodeName, inputName, out JToken choices))
+            {
+                return [];
+            }
+            List<string> result = [];
+            foreach (JToken choice in choices)
+            {
+                if (choice.Type == JTokenType.String)
+                {
+                    result.Add($"{choice}");
+                }
+                else
+                {
+                    Logs.Warning($"Invalid JSON data type in object_info choices for node '{nodeName}' input '{inputName}': {choice.Type}");
+                }
+            }
+            return result;
+        }
+        catch (Exception ex)
+        {
+            Logs.Warning($"Unable to read object_info choices for node '{nodeName}' input '{inputName}': {ex.GetType().Name}");
+            return [];
+        }
+    }
+
+    /// <summary>Merges backend-discovered Anima 3.8B choices into a stable, de-duplicated list beginning with automatic selection.</summary>
+    /// <param name="current">The latest published aggregate choices.</param>
+    /// <param name="discovered">Choices discovered from one backend.</param>
+    /// <returns>The deterministic merged choice list.</returns>
+    private static List<string> MergeAnima38Choices(IEnumerable<string> current, IEnumerable<string> discovered)
+    {
+        HashSet<string> merged = new(current.Concat(discovered).Where(value => !string.IsNullOrWhiteSpace(value) && value != "auto"), StringComparer.Ordinal);
+        return ["auto", .. merged.OrderBy(value => value, StringComparer.OrdinalIgnoreCase).ThenBy(value => value, StringComparer.Ordinal)];
     }
 
     /// <summary>Builds a backend-local delta for shared values discovered in raw ComfyUI object info.</summary>
@@ -605,6 +665,8 @@ public class ComfyUIBackendExtension : Extension
         {
             delta.ModelAttentionBackends = [.. modelAttentionBackends.Select(m => $"{m}")];
         }
+        delta.Anima38Qwen35Encoders = ReadOptionalStringChoices(rawObjectInfo, ComfyNodeNames.LoadAnima38Qwen35, ComfyNodeInputNames.LoadAnima38Qwen35.QwenFilename);
+        delta.Anima38Adapters = ReadOptionalStringChoices(rawObjectInfo, ComfyNodeNames.Anima38Conditioning, ComfyNodeInputNames.Anima38Conditioning.Adapter);
         foreach ((string key, JToken data) in rawObjectInfo)
         {
             if (data["category"].ToString() == "image/preprocessors")
@@ -624,7 +686,10 @@ public class ComfyUIBackendExtension : Extension
     /// <returns>An immutable set of exact-value routing capabilities.</returns>
     private static FrozenSet<string> BuildBackendValueFeatures(SharedValueDelta delta)
     {
-        return delta.ModelAttentionBackends.Select(ComfyCapabilityCatalog.ModelAttentionBackendValueFeature).ToFrozenSet();
+        HashSet<string> features = [.. delta.ModelAttentionBackends.Select(ComfyCapabilityCatalog.ModelAttentionBackendValueFeature)];
+        features.UnionWith(delta.Anima38Qwen35Encoders.Where(value => value != "auto").Select(ComfyCapabilityCatalog.Anima38Qwen35ValueFeature));
+        features.UnionWith(delta.Anima38Adapters.Where(value => value != "auto").Select(ComfyCapabilityCatalog.Anima38AdapterValueFeature));
+        return features.ToFrozenSet();
     }
 
     /// <summary>Merges a backend-local delta into copies of the latest published shared values.</summary>
@@ -646,6 +711,8 @@ public class ComfyUIBackendExtension : Extension
             ControlnetUnionTypes = [.. ControlnetUnionTypes],
             SetClipDevices = [.. SetClipDevices],
             ModelAttentionBackends = [.. ModelAttentionBackends],
+            Anima38Qwen35Encoders = [.. Anima38Qwen35Encoders],
+            Anima38Adapters = [.. Anima38Adapters],
             ControlNetPreprocessors = new(delta.ControlNetPreprocessors)
         };
         T2IParamTypes.ConcatDropdownValsClean(ref candidate.UpscalerModels, delta.UpscalerModels);
@@ -672,6 +739,8 @@ public class ComfyUIBackendExtension : Extension
         T2IParamTypes.ConcatDropdownValsClean(ref candidate.ControlnetUnionTypes, delta.ControlnetUnionTypes);
         T2IParamTypes.ConcatDropdownValsClean(ref candidate.SetClipDevices, delta.SetClipDevices);
         T2IParamTypes.ConcatDropdownValsClean(ref candidate.ModelAttentionBackends, delta.ModelAttentionBackends);
+        candidate.Anima38Qwen35Encoders = MergeAnima38Choices(candidate.Anima38Qwen35Encoders, delta.Anima38Qwen35Encoders);
+        candidate.Anima38Adapters = MergeAnima38Choices(candidate.Anima38Adapters, delta.Anima38Adapters);
         return candidate;
     }
 
@@ -690,6 +759,8 @@ public class ComfyUIBackendExtension : Extension
         ControlnetUnionTypes = candidate.ControlnetUnionTypes;
         SetClipDevices = candidate.SetClipDevices;
         ModelAttentionBackends = candidate.ModelAttentionBackends;
+        Anima38Qwen35Encoders = candidate.Anima38Qwen35Encoders;
+        Anima38Adapters = candidate.Anima38Adapters;
         foreach ((string key, JToken data) in candidate.ControlNetPreprocessors)
         {
             ControlNetPreprocessors[key] = data;
@@ -777,6 +848,12 @@ public class ComfyUIBackendExtension : Extension
     /// <summary>Parameter that selects a backend-supported model attention implementation.</summary>
     public static T2IRegisteredParam<string> ModelAttentionBackend;
 
+    /// <summary>Parameter that selects the Anima 3.8B Qwen3.5 semantic encoder.</summary>
+    public static T2IRegisteredParam<string> Anima38Qwen35Encoder;
+
+    /// <summary>Parameter that selects the Anima 3.8B progressive semantic adapter.</summary>
+    public static T2IRegisteredParam<string> Anima38Adapter;
+
     /// <summary>Recomputes backend-local routing requirements from the finalized generation input.</summary>
     private static readonly Action<T2IParamInput> RecomputeBackendRoutingRequirementsHandler = RecomputeBackendRoutingRequirements;
 
@@ -792,6 +869,9 @@ public class ComfyUIBackendExtension : Extension
     public static T2IRegisteredParam<bool> SeedVRSplitLatent;
 
     public static T2IRegisteredParam<double> IPAdapterWeight, IPAdapterStart, IPAdapterEnd, SelfAttentionGuidanceScale, SelfAttentionGuidanceSigmaBlur, PerturbedAttentionGuidanceScale, StyleModelMergeStrength, StyleModelApplyStart, StyleModelMultiplyStrength, RescaleCFGMultiplier, TeaCacheThreshold, TeaCacheStart, NunchakuCacheThreshold, EasyCacheThreshold, EasyCacheStart, EasyCacheEnd, RenormCFG, NormalizedAttentionGuidanceScale, NormalizedAttentionGuidanceAlpha, NormalizedAttentionGuidanceTau, DetailDaemonAmount, DetailDaemonStart, DetailDaemonEnd, DetailDaemonBias, DetailDaemonExponent, DetailDaemonStartOffset, DetailDaemonEndOffset, DetailDaemonFade, DetailDaemonCFGScaleOverride;
+
+    /// <summary>Parameter that controls the Anima 3.8B progressive semantic adapter strength.</summary>
+    public static T2IRegisteredParam<double> Anima38AdapterStrength;
 
     /// <summary>Parameter that controls the SeedVR upscale factor.</summary>
     public static T2IRegisteredParam<double> SeedVRUpscale;
@@ -865,6 +945,12 @@ public class ComfyUIBackendExtension : Extension
 
     /// <summary>Model attention implementations discovered from connected ComfyUI backends.</summary>
     public static List<string> ModelAttentionBackends = ["pytorch attention"];
+
+    /// <summary>Anima 3.8B Qwen3.5 encoders discovered from connected ComfyUI backends.</summary>
+    public static List<string> Anima38Qwen35Encoders = ["auto"];
+
+    /// <summary>Anima 3.8B progressive adapters discovered from connected ComfyUI backends.</summary>
+    public static List<string> Anima38Adapters = ["auto"];
 
     public static List<string> ControlnetUnionTypes = ["auto", "openpose", "depth", "hed/pidi/scribble/ted", "canny/lineart/anime_lineart/mlsd", "normal", "segment", "tile", "repaint"];
 
@@ -1130,6 +1216,15 @@ public class ComfyUIBackendExtension : Extension
         ModelAttentionBackend = T2IParamTypes.Register<string>(new("Model Attention Backend", "Override which attention implementation the model uses.\n'pytorch attention' is the standard default.\n'comfy kitchen attention' is a new sage-like attention impl from Comfy directly that has better performance, but may not work on all machines.",
             "pytorch attention", FeatureFlag: "model_attention_backend", Group: T2IParamTypes.GroupAdvancedModelAddons, IsAdvanced: true, Toggleable: true, GetValues: (_) => ModelAttentionBackends, OrderPriority: 41
             ));
+        Anima38Qwen35Encoder = T2IParamTypes.Register<string>(new("Anima Qwen3.5 Encoder", "Select the Qwen3.5-4B semantic encoder for Anima 3.8B. Automatic selection prefers the best compatible encoder.",
+            "auto", FeatureFlag: "anima-3_8b", Permission: Permissions.ModelParams, Group: T2IParamTypes.GroupAdvancedModelAddons, IsAdvanced: true, GetValues: (_) => Anima38Qwen35Encoders, OrderPriority: 35
+            ));
+        Anima38Adapter = T2IParamTypes.Register<string>(new("Anima 3.8B Adapter", "Select the progressive semantic adapter for Anima 3.8B. Automatic selection uses the compatible adapter when unambiguous.",
+            "auto", FeatureFlag: "anima-3_8b", Permission: Permissions.ModelParams, Group: T2IParamTypes.GroupAdvancedModelAddons, IsAdvanced: true, GetValues: (_) => Anima38Adapters, OrderPriority: 36
+            ));
+        Anima38AdapterStrength = T2IParamTypes.Register<double>(new("Anima 3.8B Adapter Strength", "Controls how strongly the selected Anima 3.8B progressive semantic adapter affects conditioning.",
+            "1", Min: 0, Max: 2, Step: 0.05, FeatureFlag: "anima-3_8b", Permission: Permissions.ModelParams, Group: T2IParamTypes.GroupAdvancedModelAddons, IsAdvanced: true, ViewType: ParamViewType.SLIDER, OrderPriority: 37
+            ));
         // ================================================ SeedVR ================================================
         GroupSeedVR = new T2IParamGroup("SeedVR", Toggles: true, Open: false, OrderPriority: -2.5, Description: "SeedVR2 is a one-step restoration model, run over the result of the normal generation.");
         SeedVRModel = T2IParamTypes.Register<T2IModel>(new("SeedVR Model", "Which SeedVR2 model to restore with.",
@@ -1163,10 +1258,20 @@ public class ComfyUIBackendExtension : Extension
     private static void RecomputeBackendRoutingRequirements(T2IParamInput input)
     {
         input.RequiredFlags.RemoveWhere(flag => flag.StartsWith(ComfyCapabilityCatalog.ModelAttentionBackendValueFeaturePrefix, StringComparison.Ordinal));
+        input.RequiredFlags.RemoveWhere(flag => flag.StartsWith(ComfyCapabilityCatalog.Anima38Qwen35ValueFeaturePrefix, StringComparison.Ordinal));
+        input.RequiredFlags.RemoveWhere(flag => flag.StartsWith(ComfyCapabilityCatalog.Anima38AdapterValueFeaturePrefix, StringComparison.Ordinal));
         input.RequiredFlags.Remove(ComfyCapabilityCatalog.EmptyMiniMaxH3LatentAVFeature);
         if (input.TryGet(ModelAttentionBackend, out string attentionBackend))
         {
             input.RequiredFlags.Add(ComfyCapabilityCatalog.ModelAttentionBackendValueFeature(attentionBackend));
+        }
+        if (input.TryGet(Anima38Qwen35Encoder, out string anima38Qwen35Encoder) && anima38Qwen35Encoder != "auto")
+        {
+            input.RequiredFlags.Add(ComfyCapabilityCatalog.Anima38Qwen35ValueFeature(anima38Qwen35Encoder));
+        }
+        if (input.TryGet(Anima38Adapter, out string anima38Adapter) && anima38Adapter != "auto")
+        {
+            input.RequiredFlags.Add(ComfyCapabilityCatalog.Anima38AdapterValueFeature(anima38Adapter));
         }
         static bool isMiniMaxH3(T2IParamInput input, T2IRegisteredParam<T2IModel> param)
         {

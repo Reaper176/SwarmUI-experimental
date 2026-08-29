@@ -313,7 +313,7 @@ public static class ComfyNodeInputNames
     public static class Anima38Conditioning
     {
         /// <summary>Input name for the progressive adapter selection.</summary>
-        public const string Adapter = "adapter";
+        public const string Adapter = "adapter_name";
         /// <summary>Input name for the progressive adapter strength.</summary>
         public const string AdapterStrength = "adapter_strength";
         /// <summary>Input name for the native Anima CLIP model.</summary>

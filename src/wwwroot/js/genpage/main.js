@@ -267,6 +267,7 @@ function reviseBackendFeatureSet() {
     doCompatFeature('stable-cascade-v1', 'cascade');
     doAnyArchFeature(['Flux.1-dev', 'flux.2-dev', 'flux.2-klein-4b', 'flux.2-klein-9b', 'hunyuan-video'], 'flux-dev');
     doCompatFeature('stable-diffusion-xl-v1', 'sdxl');
+    doAnyArchFeature(['anima-3_8b'], 'anima-3_8b');
     doAnyCompatFeature(['genmo-mochi-1', 'lightricks-ltx-video', 'hunyuan-video', 'nvidia-cosmos-1', `wan-21`, `wan-22`, 'kandinsky5-vidlite', 'kandinsky5-vidpro', 'minimax-h3'], 'text2video');
     doAnyCompatFeature(['ace-step-1_5', 'minimax-music-3'], 'text2audio');
     for (let changer of featureSetChangers) {

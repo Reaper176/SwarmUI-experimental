@@ -198,3 +198,16 @@ class SwarmAnima38CreateHookLora(_SwarmAnima38LoraLoaderBase):
             strength_clip=strength_clip,
         )
         return (prev_hooks.clone_and_combine(hooks),)
+
+
+NODE_CLASS_MAPPINGS = {
+    "SwarmAnima38LoraLoader": SwarmAnima38LoraLoader,
+    "SwarmAnima38LoraLoaderModelOnly": SwarmAnima38LoraLoaderModelOnly,
+    "SwarmAnima38CreateHookLora": SwarmAnima38CreateHookLora,
+}
+
+NODE_DISPLAY_NAME_MAPPINGS = {
+    "SwarmAnima38LoraLoader": "Swarm Load LoRA (Anima 3.8)",
+    "SwarmAnima38LoraLoaderModelOnly": "Swarm Load LoRA Model Only (Anima 3.8)",
+    "SwarmAnima38CreateHookLora": "Create Hook LoRA (Anima 3.8)",
+}
