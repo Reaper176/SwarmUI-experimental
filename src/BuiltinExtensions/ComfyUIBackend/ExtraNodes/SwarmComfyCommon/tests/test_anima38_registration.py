@@ -125,8 +125,8 @@ class Anima38RegistrationTests(unittest.TestCase):
                 )
                 self.assertRegex(
                     extension_source,
-                    rf'!= "auto"\)\s*\{{\s*input\.RequiredFlags\.Add\('
-                    rf"ComfyCapabilityCatalog\.{feature_stem}ValueFeature",
+                    rf'== "auto"\s*\?\s*ComfyCapabilityCatalog\.{feature_stem}AutoFeature'
+                    rf"\s*:\s*ComfyCapabilityCatalog\.{feature_stem}ValueFeature",
                 )
 
     def test_anima_parameter_scope_uses_exact_model_architecture(self):

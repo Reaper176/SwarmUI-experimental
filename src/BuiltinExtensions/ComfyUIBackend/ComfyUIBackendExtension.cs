@@ -689,7 +689,54 @@ public class ComfyUIBackendExtension : Extension
         HashSet<string> features = [.. delta.ModelAttentionBackends.Select(ComfyCapabilityCatalog.ModelAttentionBackendValueFeature)];
         features.UnionWith(delta.Anima38Qwen35Encoders.Where(value => value != "auto").Select(ComfyCapabilityCatalog.Anima38Qwen35ValueFeature));
         features.UnionWith(delta.Anima38Adapters.Where(value => value != "auto").Select(ComfyCapabilityCatalog.Anima38AdapterValueFeature));
+        if (IsAnima38QwenAutoResolvable(delta.Anima38Qwen35Encoders))
+        {
+            features.Add(ComfyCapabilityCatalog.Anima38Qwen35AutoFeature);
+        }
+        if (IsAnima38AdapterAutoResolvable(delta.Anima38Adapters))
+        {
+            features.Add(ComfyCapabilityCatalog.Anima38AdapterAutoFeature);
+        }
         return features.ToFrozenSet();
+    }
+
+    /// <summary>Returns the automatic-selection priority for one advertised Qwen3.5 encoder filename.</summary>
+    private static int Anima38QwenAutoPriority(string value)
+    {
+        string normalized = value.Replace('\\', '/').ToLowerFast();
+        int slash = normalized.LastIndexOf('/');
+        string basename = slash < 0 ? normalized : normalized[(slash + 1)..];
+        if (basename.Contains("anima38"))
+        {
+            return 0;
+        }
+        if (basename == "qwen35_4b.safetensors")
+        {
+            return 1;
+        }
+        return 2;
+    }
+
+    /// <summary>Returns whether one backend's Qwen choices resolve automatically under the Python node's priority rules.</summary>
+    private static bool IsAnima38QwenAutoResolvable(IEnumerable<string> values)
+    {
+        List<string> candidates = [.. values.Where(value => value != "auto").Distinct(StringComparer.Ordinal)];
+        if (candidates.Count == 1)
+        {
+            return true;
+        }
+        if (candidates.Count == 0)
+        {
+            return false;
+        }
+        int bestPriority = candidates.Min(Anima38QwenAutoPriority);
+        return bestPriority < 2 && candidates.Count(candidate => Anima38QwenAutoPriority(candidate) == bestPriority) == 1;
+    }
+
+    /// <summary>Returns whether one backend advertises exactly one compatible progressive adapter.</summary>
+    private static bool IsAnima38AdapterAutoResolvable(IEnumerable<string> values)
+    {
+        return values.Where(value => value != "auto").Distinct(StringComparer.Ordinal).Take(2).Count() == 1;
     }
 
     /// <summary>Merges a backend-local delta into copies of the latest published shared values.</summary>
@@ -1273,6 +1320,8 @@ public class ComfyUIBackendExtension : Extension
         input.RequiredFlags.RemoveWhere(flag => flag.StartsWith(ComfyCapabilityCatalog.ModelAttentionBackendValueFeaturePrefix, StringComparison.Ordinal));
         input.RequiredFlags.RemoveWhere(flag => flag.StartsWith(ComfyCapabilityCatalog.Anima38Qwen35ValueFeaturePrefix, StringComparison.Ordinal));
         input.RequiredFlags.RemoveWhere(flag => flag.StartsWith(ComfyCapabilityCatalog.Anima38AdapterValueFeaturePrefix, StringComparison.Ordinal));
+        input.RequiredFlags.Remove(ComfyCapabilityCatalog.Anima38Qwen35AutoFeature);
+        input.RequiredFlags.Remove(ComfyCapabilityCatalog.Anima38AdapterAutoFeature);
         input.RequiredFlags.Remove(ComfyCapabilityCatalog.EmptyMiniMaxH3LatentAVFeature);
         input.RequiredFlags.Remove(ComfyCapabilityCatalog.Anima38Qwen35NodeFeature);
         input.RequiredFlags.Remove(ComfyCapabilityCatalog.Anima38ConditioningNodeFeature);
@@ -1282,14 +1331,6 @@ public class ComfyUIBackendExtension : Extension
         if (input.TryGet(ModelAttentionBackend, out string attentionBackend))
         {
             input.RequiredFlags.Add(ComfyCapabilityCatalog.ModelAttentionBackendValueFeature(attentionBackend));
-        }
-        if (input.TryGet(Anima38Qwen35Encoder, out string anima38Qwen35Encoder) && anima38Qwen35Encoder != "auto")
-        {
-            input.RequiredFlags.Add(ComfyCapabilityCatalog.Anima38Qwen35ValueFeature(anima38Qwen35Encoder));
-        }
-        if (input.TryGet(Anima38Adapter, out string anima38Adapter) && anima38Adapter != "auto")
-        {
-            input.RequiredFlags.Add(ComfyCapabilityCatalog.Anima38AdapterValueFeature(anima38Adapter));
         }
         static bool isAnima38(T2IModel model)
         {
@@ -1314,6 +1355,14 @@ public class ComfyUIBackendExtension : Extension
         {
             input.RequiredFlags.Add(ComfyCapabilityCatalog.Anima38Qwen35NodeFeature);
             input.RequiredFlags.Add(ComfyCapabilityCatalog.Anima38ConditioningNodeFeature);
+            string anima38Qwen35Encoder = input.Get(Anima38Qwen35Encoder, "auto");
+            input.RequiredFlags.Add(anima38Qwen35Encoder == "auto"
+                ? ComfyCapabilityCatalog.Anima38Qwen35AutoFeature
+                : ComfyCapabilityCatalog.Anima38Qwen35ValueFeature(anima38Qwen35Encoder));
+            string anima38Adapter = input.Get(Anima38Adapter, "auto");
+            input.RequiredFlags.Add(anima38Adapter == "auto"
+                ? ComfyCapabilityCatalog.Anima38AdapterAutoFeature
+                : ComfyCapabilityCatalog.Anima38AdapterValueFeature(anima38Adapter));
         }
         WorkflowGenerator.Anima38LoraNodeRequirement animaLoraRequirements = WorkflowGenerator.GetRequiredAnima38LoraNodes(input);
         foreach (string feature in GetAnima38LoraCapabilityRequirements(animaLoraRequirements))

@@ -134,7 +134,7 @@ def _stable_name(value):
 
 
 def _qwen_preference(filename):
-    """Rank an encoder filename for deterministic automatic selection."""
+    """Rank an encoder filename for automatic-selection priority."""
     normalized = str(filename).replace("\\", "/").lower()
     basename = normalized.rsplit("/", 1)[-1]
     if "anima38" in basename:
@@ -159,7 +159,21 @@ def select_qwen35_candidate(filenames, selection="auto"):
                 "No Qwen3.5-4B text encoder candidate was found in text_encoders. "
                 f"Expected a .safetensors filename containing one of: {markers}."
             )
-        return min(candidates, key=_qwen_preference)
+        best_rank = min(_qwen_preference(candidate)[0] for candidate in candidates)
+        preferred = [
+            candidate
+            for candidate in candidates
+            if _qwen_preference(candidate)[0] == best_rank
+        ]
+        if best_rank < 2 and len(preferred) == 1:
+            return preferred[0]
+        if len(candidates) == 1:
+            return candidates[0]
+        raise ValueError(
+            "Automatic Qwen3.5-4B selection is ambiguous among compatible "
+            f"candidates: {', '.join(candidates)}. Set the advanced "
+            "Anima Qwen3.5 Encoder selector explicitly."
+        )
     if selection not in candidates:
         raise ValueError(
             f"Selected Qwen3.5-4B encoder '{selection}' is unavailable or its "
@@ -212,14 +226,6 @@ def discover_adapter_candidates(records):
     return sorted(candidates, key=_stable_name)
 
 
-def _adapter_preference(tagged_name):
-    """Rank adapter selectors for deterministic automatic selection."""
-    _, relative_name = _split_adapter_tag(tagged_name)
-    basename = relative_name.rsplit("/", 1)[-1].lower()
-    rank = 0 if "anima38" in basename else 1
-    return rank, *_stable_name(relative_name), *_stable_name(tagged_name)
-
-
 def select_adapter_candidate(candidates, selection="auto"):
     """Resolve a tagged progressive adapter selector with actionable errors."""
     candidates = sorted({str(candidate) for candidate in candidates}, key=_stable_name)
@@ -230,7 +236,13 @@ def select_adapter_candidate(candidates, selection="auto"):
                 f"or controlnet. Expected safetensors architecture metadata "
                 f"'{ADAPTER_ARCHITECTURE}'."
             )
-        return min(candidates, key=_adapter_preference)
+        if len(candidates) == 1:
+            return candidates[0]
+        raise ValueError(
+            "Automatic Anima 3.8B adapter selection is ambiguous among compatible "
+            f"candidates: {', '.join(candidates)}. Set the advanced Anima 3.8B "
+            "Adapter selector explicitly."
+        )
     if "::" in selection:
         _split_adapter_tag(selection)
         if selection not in candidates:

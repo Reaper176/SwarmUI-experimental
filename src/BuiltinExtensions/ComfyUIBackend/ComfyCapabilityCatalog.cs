@@ -24,6 +24,12 @@ public static class ComfyCapabilityCatalog
     /// <summary>Feature ID requiring the Anima 3.8B LoRA hook node.</summary>
     public const string Anima38CreateHookLoraNodeFeature = "comfy_anima_38_create_hook_lora";
 
+    /// <summary>Feature ID requiring an owner-local, automatically resolvable Anima 3.8B Qwen3.5 encoder.</summary>
+    public const string Anima38Qwen35AutoFeature = "anima_38_qwen35_auto_resolvable";
+
+    /// <summary>Feature ID requiring an owner-local, automatically resolvable Anima 3.8B progressive adapter.</summary>
+    public const string Anima38AdapterAutoFeature = "anima_38_adapter_auto_resolvable";
+
     /// <summary>Prefix for backend-local model-attention option feature IDs.</summary>
     public const string ModelAttentionBackendValueFeaturePrefix = "model_attention_backend_value_";
 

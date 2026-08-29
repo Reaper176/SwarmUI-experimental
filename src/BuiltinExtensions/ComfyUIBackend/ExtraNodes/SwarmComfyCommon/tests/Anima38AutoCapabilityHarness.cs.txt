@@ -1,0 +1,140 @@
+using System;
+using System.Collections;
+using System.Collections.Generic;
+using System.Linq;
+using System.Reflection;
+using SwarmUI.Builtin_ComfyUIBackend;
+using SwarmUI.Text2Image;
+
+internal static class Anima38AutoCapabilityHarness
+{
+    private const string QwenAutoFeature = "anima_38_qwen35_auto_resolvable";
+    private const string AdapterAutoFeature = "anima_38_adapter_auto_resolvable";
+    private static readonly BindingFlags StaticNonPublic = BindingFlags.Static | BindingFlags.NonPublic;
+
+    private static HashSet<string> OwnerFeatures(string[] qwen, string[] adapters)
+    {
+        Type extensionType = typeof(ComfyUIBackendExtension);
+        Type deltaType = extensionType.GetNestedType("SharedValueDelta", BindingFlags.NonPublic)
+            ?? throw new InvalidOperationException("SharedValueDelta is missing.");
+        object delta = Activator.CreateInstance(deltaType, nonPublic: true);
+        deltaType.GetField("Anima38Qwen35Encoders").SetValue(delta, qwen.ToList());
+        deltaType.GetField("Anima38Adapters").SetValue(delta, adapters.ToList());
+        MethodInfo build = extensionType.GetMethod("BuildBackendValueFeatures", StaticNonPublic)
+            ?? throw new InvalidOperationException("BuildBackendValueFeatures is missing.");
+        return [.. ((IEnumerable)build.Invoke(null, [delta])).Cast<string>()];
+    }
+
+    private static void ExpectAuto(string name, HashSet<string> features, bool qwen, bool adapter)
+    {
+        if (features.Contains(QwenAutoFeature) != qwen || features.Contains(AdapterAutoFeature) != adapter)
+        {
+            throw new InvalidOperationException(
+                $"{name}: expected qwen={qwen}, adapter={adapter}; got [{string.Join(",", features)}]"
+            );
+        }
+    }
+
+    private static T2IModel Model(string id)
+    {
+        return new(null, "", "model.safetensors", id)
+        {
+            ModelClass = new T2IModelClass
+            {
+                ID = id,
+                CompatClass = new T2IModelCompatClass { ID = id }
+            }
+        };
+    }
+
+    private static T2IRegisteredParam<string> StringParam(string id)
+    {
+        return new(new T2IParamType(id, "test-only", "auto", ID: id, SharpType: typeof(string)));
+    }
+
+    private static HashSet<string> RequiredFeatures(T2IModel model, string qwen, string adapter)
+    {
+        T2IParamInput input = new(null);
+        input.Set(T2IParamTypes.Model, model);
+        input.Set(ComfyUIBackendExtension.Anima38Qwen35Encoder, qwen);
+        input.Set(ComfyUIBackendExtension.Anima38Adapter, adapter);
+        MethodInfo recompute = typeof(ComfyUIBackendExtension).GetMethod(
+            "RecomputeBackendRoutingRequirements",
+            StaticNonPublic
+        ) ?? throw new InvalidOperationException("RecomputeBackendRoutingRequirements is missing.");
+        recompute.Invoke(null, [input]);
+        return [.. input.RequiredFlags];
+    }
+
+    public static int Main()
+    {
+        HashSet<string> preferred = OwnerFeatures(
+            ["auto", "other/qwen3.5-4b.safetensors", "Anima38B_base_txt.safetensors"],
+            ["auto", "controlnet::adapter.safetensors"]
+        );
+        ExpectAuto("unique preferred and sole adapter", preferred, true, true);
+        if (!preferred.Contains(ComfyCapabilityCatalog.Anima38Qwen35ValueFeature("Anima38B_base_txt.safetensors"))
+            || !preferred.Contains(ComfyCapabilityCatalog.Anima38AdapterValueFeature("controlnet::adapter.safetensors")))
+        {
+            throw new InvalidOperationException("Manual exact-value features were not retained.");
+        }
+
+        ExpectAuto(
+            "ambiguous owner",
+            OwnerFeatures(
+                ["auto", "Anima38B_a.safetensors", "Anima38B_b.safetensors"],
+                ["auto", "controlnet::a.safetensors", "text_encoders::b.safetensors"]
+            ),
+            false,
+            false
+        );
+        ExpectAuto(
+            "canonical beats generic",
+            OwnerFeatures(["auto", "other/qwen3.5-4b.safetensors", "qwen35_4b.safetensors"], ["auto"]),
+            true,
+            false
+        );
+        ExpectAuto(
+            "sole generic",
+            OwnerFeatures(["auto", "other/qwen3.5-4b.safetensors"], ["auto"]),
+            true,
+            false
+        );
+        ExpectAuto(
+            "heterogeneous asset pool",
+            OwnerFeatures(
+                ["auto", "other/qwen3.5-4b-a.safetensors", "other/qwen3.5-4b-b.safetensors"],
+                ["auto", "text_encoders::adapter.safetensors"]
+            ),
+            false,
+            true
+        );
+        ExpectAuto("missing assets", OwnerFeatures(["auto"], ["auto"]), false, false);
+
+        T2IParamTypes.RegisterDefaults();
+        ComfyUIBackendExtension.ModelAttentionBackend = StringParam("test-model-attention");
+        ComfyUIBackendExtension.Anima38Qwen35Encoder = StringParam("test-anima-qwen");
+        ComfyUIBackendExtension.Anima38Adapter = StringParam("test-anima-adapter");
+        T2IModel exact = Model("anima-3_8b");
+        HashSet<string> autoRequired = RequiredFeatures(exact, "auto", "auto");
+        ExpectAuto("exact auto request", autoRequired, true, true);
+
+        string manualQwen = "manual-qwen.safetensors";
+        string manualAdapter = "controlnet::manual-adapter.safetensors";
+        HashSet<string> manualRequired = RequiredFeatures(exact, manualQwen, manualAdapter);
+        ExpectAuto("manual request", manualRequired, false, false);
+        if (!manualRequired.Contains(ComfyCapabilityCatalog.Anima38Qwen35ValueFeature(manualQwen))
+            || !manualRequired.Contains(ComfyCapabilityCatalog.Anima38AdapterValueFeature(manualAdapter)))
+        {
+            throw new InvalidOperationException("Manual request did not require its exact backend values.");
+        }
+
+        ExpectAuto(
+            "generic auto request",
+            RequiredFeatures(Model("anima"), "auto", "auto"),
+            false,
+            false
+        );
+        return 0;
+    }
+}

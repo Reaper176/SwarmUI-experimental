@@ -5,6 +5,7 @@ import unittest
 
 
 COMMON_NODE_DIRECTORY = pathlib.Path(__file__).resolve().parents[1]
+MAPPING_SOURCE_PATH = COMMON_NODE_DIRECTORY / "SwarmAnima38LoraMapping.py"
 TEST_PACKAGE_NAME = "_swarm_comfy_common_tests"
 test_package = types.ModuleType(TEST_PACKAGE_NAME)
 test_package.__path__ = [str(COMMON_NODE_DIRECTORY)]
@@ -24,6 +25,14 @@ from _swarm_comfy_common_tests.SwarmAnima38Lora import (  # noqa: E402
 
 
 class Anima38LoraMappingTests(unittest.TestCase):
+    def test_adapted_mapping_data_retains_upstream_mit_attribution(self):
+        source = MAPPING_SOURCE_PATH.read_text(encoding="utf-8")
+
+        self.assertIn("MIT License", source)
+        self.assertIn("Copyright (c) 2026 Lakeside529", source)
+        self.assertIn("Permission is hereby granted, free of charge", source)
+        self.assertIn("THE SOFTWARE IS PROVIDED \"AS IS\"", source)
+
     def test_insertion_schedules_match_the_legacy_bridge(self):
         self.assertEqual(BASE_TO_29_INSERTIONS, (2, 5, 8, 11, 14, 17, 21, 24, 27, 30, 33, 36))
         self.assertEqual(ANIMA_29_TO_38_INSERTIONS, (3, 7, 11, 15, 19, 23, 27, 31, 35, 39, 43, 47))

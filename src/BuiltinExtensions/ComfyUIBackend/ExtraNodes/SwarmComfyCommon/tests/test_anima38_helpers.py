@@ -88,28 +88,45 @@ class Anima38QwenCandidateTests(unittest.TestCase):
             with self.subTest(name=name):
                 self.assertFalse(is_qwen35_4b_candidate(name))
 
-    def test_auto_prefers_anima38_then_canonical_then_lexical(self):
+    def test_auto_selects_unique_anima38_or_canonical_preference(self):
         candidates = [
             "z/qwen35_4b-alt.safetensors",
             "qwen35_4b.safetensors",
             "z/Anima38B_base_txt.safetensors",
-            "a/anima38-custom.safetensors",
         ]
         self.assertEqual(
             select_qwen35_candidate(candidates, "auto"),
-            "a/anima38-custom.safetensors",
+            "z/Anima38B_base_txt.safetensors",
         )
         self.assertEqual(
             select_qwen35_candidate(candidates[:2], "auto"),
             "qwen35_4b.safetensors",
         )
+
+    def test_auto_selects_sole_unpreferred_qwen_candidate(self):
         self.assertEqual(
+            select_qwen35_candidate(
+                ["z/qwen3_5_4b.safetensors"],
+                "auto",
+            ),
+            "z/qwen3_5_4b.safetensors",
+        )
+
+    def test_auto_rejects_tied_qwen_priorities(self):
+        with self.assertRaisesRegex(ValueError, r"ambiguous.*Anima Qwen3.5 Encoder"):
+            select_qwen35_candidate(
+                [
+                    "z/Anima38B_base_txt.safetensors",
+                    "a/anima38-custom.safetensors",
+                    "qwen35_4b.safetensors",
+                ],
+                "auto",
+            )
+        with self.assertRaisesRegex(ValueError, r"ambiguous.*Anima Qwen3.5 Encoder"):
             select_qwen35_candidate(
                 ["z/qwen3_5_4b.safetensors", "a/qwen3.5-4b.safetensors"],
                 "auto",
-            ),
-            "a/qwen3.5-4b.safetensors",
-        )
+            )
 
     def test_auto_excludes_noncandidates_and_reports_expected_markers(self):
         with self.assertRaisesRegex(ValueError, r"qwen35_4b.*anima38"):
@@ -135,20 +152,20 @@ class Anima38AdapterDiscoveryTests(unittest.TestCase):
             ],
         )
 
-    def test_adapter_auto_prefers_anima38_then_stable_lexical(self):
+    def test_adapter_auto_selects_only_a_sole_candidate(self):
+        candidates = [adapter_tag("text_encoders", "z/semantic.safetensors")]
+        self.assertEqual(
+            select_adapter_candidate(candidates, "auto"),
+            "text_encoders::z/semantic.safetensors",
+        )
+
+    def test_adapter_auto_rejects_multiple_compatible_candidates(self):
         candidates = [
             adapter_tag("text_encoders", "z/semantic.safetensors"),
             adapter_tag("controlnet", "z/anima38B_base.safetensors"),
-            adapter_tag("text_encoders", "a/anima38-expanded.safetensors"),
         ]
-        self.assertEqual(
-            select_adapter_candidate(candidates, "auto"),
-            "text_encoders::a/anima38-expanded.safetensors",
-        )
-        self.assertEqual(
-            select_adapter_candidate(candidates[:1], "auto"),
-            "text_encoders::z/semantic.safetensors",
-        )
+        with self.assertRaisesRegex(ValueError, r"ambiguous.*Anima 3.8B Adapter"):
+            select_adapter_candidate(candidates, "auto")
 
     def test_adapter_selection_reports_missing_and_untagged_ambiguity(self):
         with self.assertRaisesRegex(ValueError, r"text_encoders.*controlnet.*architecture"):
