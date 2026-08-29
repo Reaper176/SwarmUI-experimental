@@ -111,26 +111,7 @@ public class WorkflowGeneratorSteps
             }
             (g.LoadingModel, g.LoadingClip) = g.LoadLorasForConfinement(-1, g.LoadingModel, g.LoadingClip);
             (g.LoadingModel, g.LoadingClip) = g.LoadLorasForConfinement(0, g.LoadingModel, g.LoadingClip);
-            if (g.IsRefinerStage)
-            {
-                (g.LoadingModel, g.LoadingClip) = g.LoadLorasForConfinement(T2IParamInput.SectionID_Refiner, g.LoadingModel, g.LoadingClip);
-            }
-            else if (g.IsPixelDecoderStage)
-            {
-                (g.LoadingModel, g.LoadingClip) = g.LoadLorasForConfinement(T2IParamInput.SectionID_PixelDecoder, g.LoadingModel, g.LoadingClip);
-            }
-            else if (g.IsImageToVideoSwap)
-            {
-                (g.LoadingModel, g.LoadingClip) = g.LoadLorasForConfinement(T2IParamInput.SectionID_VideoSwap, g.LoadingModel, g.LoadingClip);
-            }
-            else if (g.IsImageToVideo)
-            {
-                (g.LoadingModel, g.LoadingClip) = g.LoadLorasForConfinement(T2IParamInput.SectionID_Video, g.LoadingModel, g.LoadingClip);
-            }
-            else // Base
-            {
-                (g.LoadingModel, g.LoadingClip) = g.LoadLorasForConfinement(T2IParamInput.SectionID_BaseOnly, g.LoadingModel, g.LoadingClip);
-            }
+            (g.LoadingModel, g.LoadingClip) = g.LoadLorasForConfinement(g.LoadingModelLoraSectionID, g.LoadingModel, g.LoadingClip);
             g.LoadingClip = g.CreateHookLorasForConfinement(-1, g.LoadingClip, true);
             g.LoadingClip = g.CreateHookLorasForConfinement(0, g.LoadingClip, true);
         }, -10);
@@ -1860,6 +1841,7 @@ public class WorkflowGeneratorSteps
                     }
                     t2iModel = segmentModel;
                     g.FinalLoadedModel = segmentModel;
+                    g.FinalLoadedModelList = [segmentModel];
                     (t2iModel, model, clip, vae) = g.CreateModelLoader(t2iModel, "Refiner", sectionId: parts[0].ContextID);
                     g.FinalLoadedModel = t2iModel;
                     g.CurrentModel = model;
@@ -2217,6 +2199,7 @@ public class WorkflowGeneratorSteps
                     Generator = g,
                     VideoModel = vidModel,
                     VideoSwapModel = g.UserInput.Get(T2IParamTypes.VideoSwapModel, null),
+                    SwapContextID = T2IParamInput.SectionID_VideoSwap,
                     VideoSwapPercent = g.UserInput.Get(T2IParamTypes.VideoSwapPercent, 0.5),
                     Frames = frames,
                     VideoCFG = videoCfg,
@@ -2355,6 +2338,7 @@ public class WorkflowGeneratorSteps
                         Generator = g,
                         VideoModel = extendModel,
                         VideoSwapModel = g.UserInput.Get(T2IParamTypes.VideoExtendSwapModel, null),
+                        SwapContextID = part.ContextID,
                         VideoSwapPercent = g.UserInput.Get(T2IParamTypes.VideoExtendSwapPercent, 0.5),
                         Frames = frames,
                         VideoCFG = cfg,

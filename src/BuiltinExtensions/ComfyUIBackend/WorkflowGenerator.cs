@@ -157,6 +157,9 @@ public partial class WorkflowGenerator
     /// <summary>Anima 3.8B semantic Qwen CLIP outputs keyed by the matching model-loader cache identity.</summary>
     public Dictionary<string, JArray> Anima38SemanticClips = [];
 
+    /// <summary>Loaded model and LoRA metadata keyed by the matching model-loader cache identity.</summary>
+    public Dictionary<string, List<T2IModel>> LoadedModelLists = [];
+
     /// <summary>Last used ID, tracked to safely add new nodes with sequential IDs. Note that this starts at 100, as below 100 is reserved for constant node IDs.</summary>
     public int LastID = 100;
 
@@ -175,6 +178,12 @@ public partial class WorkflowGenerator
 
     /// <summary>Type id ('Base', 'Refiner') of the current loading model.</summary>
     public string LoadingModelType;
+
+    /// <summary>Parameter section used to configure the current loading model.</summary>
+    public int LoadingModelSectionID;
+
+    /// <summary>Confinement section whose LoRAs apply during the current model load.</summary>
+    public int LoadingModelLoraSectionID;
 
     /// <summary>If true, user-selected VAE may be wrong, so ignore it.</summary>
     public bool NoVAEOverride = false;
@@ -1206,14 +1215,20 @@ public partial class WorkflowGenerator
         if (negativeModel is null && UserInput.TryGet(T2IParamTypes.NegativeModel, out T2IModel negModel, sectionId: sectionId))
         {
             T2IModel priorLoadedModel = FinalLoadedModel;
+            WGNodeData priorCurrentModel = CurrentModel;
+            List<T2IModel> priorLoadedModelList = FinalLoadedModelList;
             try
             {
                 FinalLoadedModel = negModel;
+                FinalLoadedModelList = [negModel];
                 (_, negativeModel, _, _) = CreateModelLoader(negModel, "negative", sectionId: sectionId);
+                CurrentModel = negativeModel;
             }
             finally
             {
                 FinalLoadedModel = priorLoadedModel;
+                CurrentModel = priorCurrentModel;
+                FinalLoadedModelList = priorLoadedModelList;
             }
         }
         if (IsVideoModel())
@@ -1261,13 +1276,25 @@ public partial class WorkflowGenerator
         }
         else if (IsAnima38())
         {
-            defsampler ??= "res_multistep";
-            defscheduler ??= "beta";
+            if (explicitSampler is null)
+            {
+                defsampler = "res_multistep";
+            }
+            if (explicitScheduler is null)
+            {
+                defscheduler = "beta";
+            }
         }
         else if (IsAnima())
         {
-            defsampler ??= "er_sde";
-            defscheduler ??= "simple";
+            if (explicitSampler is null)
+            {
+                defsampler = "er_sde";
+            }
+            if (explicitScheduler is null)
+            {
+                defscheduler = "simple";
+            }
         }
         else if (IsHunyuanImageRefiner())
         {
@@ -1834,11 +1861,15 @@ public partial class WorkflowGenerator
         public int BatchLen = -1;
         public bool HasMatchedModelData = false;
         public WGNodeData Model, Vae, Clip;
+        /// <summary>Model and LoRA metadata associated with <see cref="Model"/>.</summary>
+        public List<T2IModel> ModelList;
         public JArray PosCond, NegCond;
         public string DefaultSampler = null, DefaultScheduler = null;
         public double DefaultCFG = 7;
         public bool HadSpecialCond = false;
         public int ContextID = T2IParamInput.SectionID_Video;
+        /// <summary>Parameter section used to load and sample the optional swap model.</summary>
+        public int SwapContextID = T2IParamInput.SectionID_VideoSwap;
         /// <summary>Optional final-frame image for video models that support end-frame guidance.</summary>
         public Image VideoEndFrame = null;
 
@@ -1872,9 +1903,11 @@ public partial class WorkflowGenerator
         {
             T2IModel priorLoadedModel = g.FinalLoadedModel;
             WGNodeData priorCurrentModel = g.CurrentModel;
+            List<T2IModel> priorLoadedModelList = g.FinalLoadedModelList;
             try
             {
                 g.FinalLoadedModel = VideoModel;
+                g.FinalLoadedModelList = [VideoModel];
                 (VideoModel, Model, WGNodeData clip, Vae) = g.CreateModelLoader(VideoModel, "image2video", null, true, sectionId: ContextID);
                 Clip = clip;
                 g.FinalLoadedModel = VideoModel;
@@ -1902,11 +1935,13 @@ public partial class WorkflowGenerator
                 }
                 PosCond = g.CreateConditioning(promptText, clip.Path, VideoModel, true, isVideo: true, attachImages: attachImages);
                 NegCond = g.CreateConditioning(NegativePrompt, clip.Path, VideoModel, false, isVideo: true);
+                ModelList = [.. g.FinalLoadedModelList];
             }
             finally
             {
                 g.FinalLoadedModel = priorLoadedModel;
                 g.CurrentModel = priorCurrentModel;
+                g.FinalLoadedModelList = priorLoadedModelList;
             }
         }
 
@@ -2498,6 +2533,7 @@ public partial class WorkflowGenerator
     {
         T2IModel priorLoadedModel = FinalLoadedModel;
         WGNodeData priorCurrentModel = CurrentModel;
+        List<T2IModel> priorLoadedModelList = FinalLoadedModelList;
         try
         {
             CreateImageToVideoInternal(genInfo);
@@ -2506,6 +2542,7 @@ public partial class WorkflowGenerator
         {
             FinalLoadedModel = priorLoadedModel;
             CurrentModel = priorCurrentModel;
+            FinalLoadedModelList = priorLoadedModelList;
             IsImageToVideoSwap = false;
             IsImageToVideo = false;
         }
@@ -2541,11 +2578,13 @@ public partial class WorkflowGenerator
             genInfo.PrepModelAndCond(this);
             FinalLoadedModel = genInfo.VideoModel;
             CurrentModel = genInfo.Model;
+            FinalLoadedModelList = genInfo.ModelList is null ? [genInfo.VideoModel] : [.. genInfo.ModelList];
             genInfo.PrepFullCond(this, srcImage);
             genInfo.FixMediaLen();
         }
         FinalLoadedModel = genInfo.VideoModel;
         CurrentModel = genInfo.Model;
+        FinalLoadedModelList = genInfo.ModelList is null ? [genInfo.VideoModel] : [.. genInfo.ModelList];
         genInfo.VideoCFG ??= genInfo.DefaultCFG;
         foreach (Action<ImageToVideoGenInfo> altHandler in AltImageToVideoPostHandlers)
         {
@@ -2577,11 +2616,14 @@ public partial class WorkflowGenerator
         {
             T2IModel priorSwapLoadedModel = FinalLoadedModel;
             WGNodeData priorSwapCurrentModel = CurrentModel;
+            List<T2IModel> priorSwapLoadedModelList = FinalLoadedModelList;
             try
             {
                 IsImageToVideoSwap = true;
                 FinalLoadedModel = genInfo.VideoSwapModel;
-                (T2IModel swapModel, WGNodeData swapVideoModel, WGNodeData clip, _) = CreateModelLoader(genInfo.VideoSwapModel, "image2video", null, true, sectionId: genInfo.ContextID);
+                FinalLoadedModelList = [genInfo.VideoSwapModel];
+                int swapSectionId = genInfo.SwapContextID;
+                (T2IModel swapModel, WGNodeData swapVideoModel, WGNodeData clip, _) = CreateModelLoader(genInfo.VideoSwapModel, "image2video", null, true, sectionId: swapSectionId);
                 FinalLoadedModel = swapModel;
                 CurrentModel = swapVideoModel;
                 double cfg = genInfo.VideoCFG.Value;
@@ -2592,19 +2634,23 @@ public partial class WorkflowGenerator
                 CurrentMedia = srcImage;
                 genInfo.PrepFullCond(this, srcImage);
                 genInfo.FixMediaLen();
-                explicitSampler = UserInput.Get(ComfyUIBackendExtension.SamplerParam, null, sectionId: T2IParamInput.SectionID_VideoSwap, includeBase: false) ?? explicitSampler;
-                explicitScheduler = UserInput.Get(ComfyUIBackendExtension.SchedulerParam, null, sectionId: T2IParamInput.SectionID_VideoSwap, includeBase: false) ?? explicitScheduler;
-                cfg = UserInput.GetNullable(T2IParamTypes.CFGScale, T2IParamInput.SectionID_VideoSwap, false) ?? cfg;
-                steps = UserInput.GetNullable(T2IParamTypes.Steps, T2IParamInput.SectionID_VideoSwap, false) ?? steps;
+                string swapExplicitSampler = UserInput.Get(ComfyUIBackendExtension.SamplerParam, null, sectionId: swapSectionId, includeBase: false);
+                string swapExplicitScheduler = UserInput.Get(ComfyUIBackendExtension.SchedulerParam, null, sectionId: swapSectionId, includeBase: false);
+                cfg = UserInput.GetNullable(T2IParamTypes.CFGScale, swapSectionId, false) ?? cfg;
+                steps = UserInput.GetNullable(T2IParamTypes.Steps, swapSectionId, false) ?? steps;
                 endStep = (int)Math.Round(steps * (1 - genInfo.VideoSwapPercent));
+                bool sameVideoModelClass = swapModel.ModelClass?.ID == genInfo.VideoModel.ModelClass?.ID;
+                string swapDefaultSampler = sameVideoModelClass ? genInfo.DefaultSampler : null;
+                string swapDefaultScheduler = sameVideoModelClass ? genInfo.DefaultScheduler : null;
                 // TODO: Should class-changes be allowed (must re-emit all the model-specific cond logic, maybe a vae reencoder - this is basically a refiner run)
-                samplered = CreateKSampler(swapVideoModel.Path, genInfo.PosCond, genInfo.NegCond, latent.Path, cfg, steps, endStep, 10000, genInfo.Seed + 1, false, false, sigmin: 0.002, sigmax: 1000, previews: previewType, defsampler: genInfo.DefaultSampler, defscheduler: genInfo.DefaultScheduler, hadSpecialCond: genInfo.HadSpecialCond, explicitSampler: explicitSampler, explicitScheduler: explicitScheduler, sectionId: T2IParamInput.SectionID_VideoSwap);
+                samplered = CreateKSampler(swapVideoModel.Path, genInfo.PosCond, genInfo.NegCond, latent.Path, cfg, steps, endStep, 10000, genInfo.Seed + 1, false, false, sigmin: 0.002, sigmax: 1000, previews: previewType, defsampler: swapDefaultSampler, defscheduler: swapDefaultScheduler, hadSpecialCond: genInfo.HadSpecialCond, explicitSampler: swapExplicitSampler, explicitScheduler: swapExplicitScheduler, sectionId: swapSectionId);
                 CurrentMedia = CurrentMedia.WithPath([samplered, 0]);
             }
             finally
             {
                 FinalLoadedModel = priorSwapLoadedModel;
                 CurrentModel = priorSwapCurrentModel;
+                FinalLoadedModelList = priorSwapLoadedModelList;
                 IsImageToVideoSwap = false;
             }
         }
@@ -3126,7 +3172,7 @@ public partial class WorkflowGenerator
         {
             return CreateConditioningDirect(prompt, clip, model, isPositive, id, attachImages: attachImages);
         }
-        JArray first = CreateConditioningDirect(breaks[0], clip, model, isPositive, attachImages: attachImages);
+        JArray first = CreateConditioningDirect(breaks[0], clip, model, isPositive, id, attachImages: attachImages);
         for (int i = 1; i < breaks.Length; i++)
         {
             JArray second = CreateConditioningDirect(breaks[i], clip, model, isPositive, attachImages: attachImages);

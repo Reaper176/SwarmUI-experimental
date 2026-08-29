@@ -920,7 +920,10 @@ public partial class WorkflowGenerator
     public (T2IModel, WGNodeData, WGNodeData, WGNodeData) CreateModelLoader(T2IModel model, string type, string id = null, bool noCascadeFix = false, int sectionId = 0)
     {
         ModelLoadHelpers helpers = new(this);
-        string helper = ModelLoaderCacheKey(model, type);
+        LoadingModelType = type;
+        LoadingModelSectionID = ResolveModelLoadingSection(sectionId);
+        LoadingModelLoraSectionID = ResolveModelLoraSection(sectionId);
+        string helper = ModelLoaderCacheKey(model, type, LoadingModelSectionID, noCascadeFix, NoVAEOverride, IsRefinerStage, IsPixelDecoderStage, IsImageToVideo, IsImageToVideoSwap);
         if (NodeHelpers.TryGetValue(helper, out string alreadyLoaded))
         {
             string[] parts = alreadyLoaded.SplitFast(':');
@@ -928,6 +931,14 @@ public partial class WorkflowGenerator
             LoadingClip = parts[2].Length == 0 ? null : [parts[2], int.Parse(parts[3])];
             LoadingVAE = parts[4].Length == 0 ? null : [parts[4], int.Parse(parts[5])];
             Anima38SemanticClips.TryGetValue(helper, out JArray cachedSemanticClip);
+            if (LoadedModelLists.TryGetValue(helper, out List<T2IModel> cachedModelList))
+            {
+                FinalLoadedModelList = [.. cachedModelList];
+            }
+            else
+            {
+                FinalLoadedModelList = [model];
+            }
             JArray semanticClip = cachedSemanticClip is null ? null : NodePath(cachedSemanticClip[0].ToString(), cachedSemanticClip[1].Value<int>());
             WGNodeData modelNode = new(LoadingModel, this, WGNodeData.DT_MODEL, CurrentCompat(), semanticClip);
             WGNodeData tencNode = LoadingClip is null ? null : new WGNodeData(LoadingClip, this, WGNodeData.DT_TEXTENC, CurrentCompat());
@@ -939,7 +950,6 @@ public partial class WorkflowGenerator
             return (model, modelNode, tencNode, vaeNode);
         }
         IsDifferentialDiffusion = false;
-        LoadingModelType = type;
         T2IModel altCascadeModel = null;
         if (!noCascadeFix && model.ModelClass?.ID == "stable-cascade-v1-stage-b" && model.Name.Contains("stage_b"))
         {
@@ -1671,6 +1681,7 @@ public partial class WorkflowGenerator
             throw new SwarmUserErrorException($"Model loader for {model.Name} didn't work - are you sure it has an architecture ID set properly? (Currently set to: '{model.Metadata?.ModelClassType}')");
         }
         NodeHelpers[helper] = $"{LoadingModel[0]}:{LoadingModel[1]}" + (LoadingClip is null ? "::" : $":{LoadingClip[0]}:{LoadingClip[1]}") + (LoadingVAE is null ? "::" : $":{LoadingVAE[0]}:{LoadingVAE[1]}");
+        LoadedModelLists[helper] = [.. FinalLoadedModelList];
         Anima38SemanticClips.TryGetValue(helper, out JArray finalCachedSemanticClip);
         JArray finalSemanticClip = finalCachedSemanticClip is null ? null : NodePath(finalCachedSemanticClip[0].ToString(), finalCachedSemanticClip[1].Value<int>());
         WGNodeData modelNodeData = new(LoadingModel, this, WGNodeData.DT_MODEL, CurrentCompat(), finalSemanticClip);
@@ -1680,9 +1691,57 @@ public partial class WorkflowGenerator
     }
 
     /// <summary>Builds the shared cache identity for all outputs of one model loader.</summary>
-    private static string ModelLoaderCacheKey(T2IModel model, string type)
+    private static string ModelLoaderCacheKey(T2IModel model, string type, int sectionId, bool noCascadeFix, bool noVaeOverride, bool isRefinerStage, bool isPixelDecoderStage, bool isImageToVideo, bool isImageToVideoSwap)
     {
-        return $"modelloader_{model.Name}_{type}";
+        return $"modelloader_{model.Name}_{type}_section_{sectionId}_cascade_{noCascadeFix}_novae_{noVaeOverride}_refiner_{isRefinerStage}_pixel_{isPixelDecoderStage}_video_{isImageToVideo}_swap_{isImageToVideoSwap}";
+    }
+
+    /// <summary>Resolves the effective parameter section used by model-generation adapters.</summary>
+    private int ResolveModelLoadingSection(int sectionId)
+    {
+        if (sectionId > 0)
+        {
+            return sectionId;
+        }
+        if (IsRefinerStage)
+        {
+            return T2IParamInput.SectionID_Refiner;
+        }
+        if (IsPixelDecoderStage)
+        {
+            return T2IParamInput.SectionID_PixelDecoder;
+        }
+        if (IsImageToVideoSwap)
+        {
+            return T2IParamInput.SectionID_VideoSwap;
+        }
+        if (IsImageToVideo)
+        {
+            return T2IParamInput.SectionID_Video;
+        }
+        return T2IParamInput.SectionID_BaseOnly;
+    }
+
+    /// <summary>Resolves the confinement section whose LoRAs apply during model loading.</summary>
+    private int ResolveModelLoraSection(int sectionId)
+    {
+        if (IsRefinerStage)
+        {
+            return T2IParamInput.SectionID_Refiner;
+        }
+        if (IsPixelDecoderStage)
+        {
+            return T2IParamInput.SectionID_PixelDecoder;
+        }
+        if (IsImageToVideoSwap)
+        {
+            return sectionId > 0 ? sectionId : T2IParamInput.SectionID_VideoSwap;
+        }
+        if (IsImageToVideo)
+        {
+            return sectionId > 0 ? sectionId : T2IParamInput.SectionID_Video;
+        }
+        return T2IParamInput.SectionID_BaseOnly;
     }
 
 }

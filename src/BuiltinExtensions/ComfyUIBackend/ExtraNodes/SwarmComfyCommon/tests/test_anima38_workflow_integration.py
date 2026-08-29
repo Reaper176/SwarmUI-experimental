@@ -279,6 +279,136 @@ class Anima38WorkflowIntegrationTests(unittest.TestCase):
         self.assertIn("VideoSwapModel = g.UserInput.Get(T2IParamTypes.VideoExtendSwapModel", extend)
         self.assertIn("g.CreateImageToVideo(genInfo);", extend)
 
+    def test_model_loader_cache_identity_includes_section_and_loading_state(self):
+        loader = method_body(self.model_support, "CreateModelLoader(T2IModel model")
+        cache_lookup = loader.index("NodeHelpers.TryGetValue(helper")
+        prefix = loader[:cache_lookup]
+        self.assertIn("LoadingModelType = type;", prefix)
+        self.assertIn("LoadingModelSectionID = ResolveModelLoadingSection(sectionId);", prefix)
+        self.assertIn("LoadingModelLoraSectionID = ResolveModelLoraSection(sectionId);", prefix)
+        self.assertIn(
+            "ModelLoaderCacheKey(model, type, LoadingModelSectionID, noCascadeFix, NoVAEOverride, IsRefinerStage, IsPixelDecoderStage, IsImageToVideo, IsImageToVideoSwap)",
+            prefix,
+        )
+
+        cache_key = method_body(self.model_support, "string ModelLoaderCacheKey(T2IModel model")
+        for component in (
+            "sectionId",
+            "noCascadeFix",
+            "noVaeOverride",
+            "isRefinerStage",
+            "isPixelDecoderStage",
+            "isImageToVideo",
+            "isImageToVideoSwap",
+        ):
+            with self.subTest(component=component):
+                self.assertIn(component, cache_key)
+
+        self.assertIn("LoadedModelLists.TryGetValue(helper", loader)
+        self.assertIn("FinalLoadedModelList = [.. cachedModelList]", loader)
+        self.assertIn("LoadedModelLists[helper] = [.. FinalLoadedModelList]", loader)
+
+        segment = method_body(self.steps, "void RunSegmentationProcessing(WorkflowGenerator g")
+        self.assertIn("g.FinalLoadedModelList = [segmentModel];", segment)
+        self.assertIn('CreateModelLoader(t2iModel, "Refiner", sectionId: parts[0].ContextID)', segment)
+
+        lora_section = method_body(self.model_support, "int ResolveModelLoraSection(int sectionId)")
+        self.assertLess(lora_section.index("if (IsImageToVideo)"), lora_section.index("return T2IParamInput.SectionID_BaseOnly;"))
+        model_steps = method_body(self.steps, "public static void Register()")
+        self.assertIn("g.LoadingModelLoraSectionID", model_steps)
+        self.assertNotIn("LoadLorasForConfinement(g.LoadingModelSectionID", model_steps)
+
+    def test_video_swap_uses_role_specific_section_for_load_settings_and_sampling(self):
+        self.assertIn("public int SwapContextID", self.workflow)
+        image_to_video = method_body(
+            self.workflow, "void CreateImageToVideoInternal(ImageToVideoGenInfo genInfo)"
+        )
+        swap_start = image_to_video.index("if (genInfo.VideoSwapModel is not null)", 1000)
+        swap = image_to_video[swap_start:]
+        self.assertIn("int swapSectionId = genInfo.SwapContextID;", swap)
+        self.assertIn("sectionId: swapSectionId", swap)
+        self.assertNotIn(
+            'CreateModelLoader(genInfo.VideoSwapModel, "image2video", null, true, sectionId: genInfo.ContextID)',
+            swap,
+        )
+        self.assertNotIn("sectionId: T2IParamInput.SectionID_VideoSwap", swap)
+
+        main_video = self.steps[self.steps.index("VideoModel = vidModel"):]
+        self.assertIn("SwapContextID = T2IParamInput.SectionID_VideoSwap", main_video)
+        extend_start = self.steps.index("VideoModel = extendModel")
+        extend_end = self.steps.index("g.CreateImageToVideo(genInfo);", extend_start)
+        self.assertIn("SwapContextID = part.ContextID", self.steps[extend_start:extend_end])
+
+    def test_scoped_model_lists_are_fresh_and_restored_for_negative_and_video_models(self):
+        sampler = method_body(self.workflow, "CreateKSampler(JArray model")
+        negative_start = sampler.index("T2IParamTypes.NegativeModel")
+        negative_end = sampler.index("if (IsVideoModel())", negative_start)
+        negative = sampler[negative_start:negative_end]
+        self.assertIn("List<T2IModel> priorLoadedModelList = FinalLoadedModelList;", negative)
+        self.assertIn("FinalLoadedModelList = [negModel];", negative)
+        self.assertIn("FinalLoadedModelList = priorLoadedModelList;", negative)
+
+        prep = method_body(self.workflow, "void PrepModelAndCond(WorkflowGenerator g)")
+        self.assertIn("List<T2IModel> priorLoadedModelList = g.FinalLoadedModelList;", prep)
+        self.assertIn("g.FinalLoadedModelList = [VideoModel];", prep)
+        self.assertIn("ModelList = [.. g.FinalLoadedModelList];", prep)
+        self.assertIn("g.FinalLoadedModelList = priorLoadedModelList;", prep)
+
+        wrapper = method_body(self.workflow, "void CreateImageToVideo(ImageToVideoGenInfo genInfo)")
+        self.assertIn("List<T2IModel> priorLoadedModelList = FinalLoadedModelList;", wrapper)
+        self.assertIn("FinalLoadedModelList = priorLoadedModelList;", wrapper)
+
+        internal = method_body(
+            self.workflow, "void CreateImageToVideoInternal(ImageToVideoGenInfo genInfo)"
+        )
+        self.assertIn("FinalLoadedModelList = genInfo.ModelList", internal)
+        self.assertLess(
+            internal.index("FinalLoadedModelList = genInfo.ModelList"),
+            internal.index("genInfo.PrepFullCond(this, srcImage)"),
+        )
+        swap_start = internal.index("if (genInfo.VideoSwapModel is not null)", 1000)
+        swap = internal[swap_start:]
+        self.assertIn("List<T2IModel> priorSwapLoadedModelList = FinalLoadedModelList;", swap)
+        self.assertIn("FinalLoadedModelList = [genInfo.VideoSwapModel];", swap)
+        self.assertIn("FinalLoadedModelList = priorSwapLoadedModelList;", swap)
+
+    def test_anima_sampler_defaults_override_inherited_video_defaults_only_without_explicit_input(self):
+        sampler = method_body(self.workflow, "CreateKSampler(JArray model")
+        exact_start = sampler.index("else if (IsAnima38())")
+        generic_start = sampler.index("else if (IsAnima())", exact_start)
+        exact = sampler[exact_start:generic_start]
+        generic_end = sampler.index("else if", generic_start + len("else if"))
+        generic = sampler[generic_start:generic_end]
+        self.assertIn("if (explicitSampler is null)", exact)
+        self.assertIn('defsampler = "res_multistep";', exact)
+        self.assertIn("if (explicitScheduler is null)", exact)
+        self.assertIn('defscheduler = "beta";', exact)
+        self.assertNotIn("defsampler ??=", exact)
+        self.assertIn('defsampler = "er_sde";', generic)
+        self.assertIn('defscheduler = "simple";', generic)
+
+        video = method_body(
+            self.workflow, "void CreateImageToVideoInternal(ImageToVideoGenInfo genInfo)"
+        )
+        swap_start = video.index("if (genInfo.VideoSwapModel is not null)", 1000)
+        swap = video[swap_start:]
+        self.assertIn("string swapExplicitSampler =", swap)
+        self.assertIn("string swapExplicitScheduler =", swap)
+        self.assertNotIn("?? explicitSampler", swap)
+        self.assertNotIn("?? explicitScheduler", swap)
+        self.assertIn("explicitSampler: swapExplicitSampler", swap)
+        self.assertIn("explicitScheduler: swapExplicitScheduler", swap)
+        self.assertIn("swapModel.ModelClass?.ID == genInfo.VideoModel.ModelClass?.ID", swap)
+        self.assertIn("defsampler: swapDefaultSampler", swap)
+        self.assertIn("defscheduler: swapDefaultScheduler", swap)
+
+    def test_break_conditioning_assigns_explicit_id_only_to_first_segment(self):
+        line = method_body(self.workflow, "CreateConditioningLine(string prompt")
+        first = line.index("CreateConditioningDirect(breaks[0]")
+        loop = line.index("for (int i = 1", first)
+        self.assertIn("id, attachImages", line[first:loop])
+        self.assertNotIn("id, attachImages", line[loop:])
+
     def test_exact_defaults_are_res_multistep_beta_without_overriding_explicit_values(self):
         sampler = method_body(self.workflow, "CreateKSampler(JArray model")
         exact_start = sampler.index("else if (IsAnima38())")
@@ -287,10 +417,10 @@ class Anima38WorkflowIntegrationTests(unittest.TestCase):
         generic_end = sampler.index("else if", generic_start + len("else if"))
         generic_branch = sampler[generic_start:generic_end]
 
-        self.assertIn('defsampler ??= "res_multistep";', exact_branch)
-        self.assertIn('defscheduler ??= "beta";', exact_branch)
-        self.assertIn('defsampler ??= "er_sde";', generic_branch)
-        self.assertIn('defscheduler ??= "simple";', generic_branch)
+        self.assertIn('defsampler = "res_multistep";', exact_branch)
+        self.assertIn('defscheduler = "beta";', exact_branch)
+        self.assertIn('defsampler = "er_sde";', generic_branch)
+        self.assertIn('defscheduler = "simple";', generic_branch)
         self.assertRegex(sampler, r"explicitSampler\s*\?\?")
         self.assertRegex(sampler, r"explicitScheduler\s*\?\?")
 
