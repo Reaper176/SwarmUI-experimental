@@ -82,6 +82,9 @@ public partial class WorkflowGenerator
     /// <summary>Returns true if the current model is Anima.</summary>
     public bool IsAnima() => IsModelCompatClass(T2IModelClassSorter.CompatAnima);
 
+    /// <summary>Returns true if the current model is Anima 3.8B.</summary>
+    public bool IsAnima38() => CurrentModelClass()?.ID == "anima-3_8b";
+
     /// <summary>Returns true if the current model is a Kontext model (eg Flux.1 Kontext Dev).</summary>
     public bool IsKontext()
     {
@@ -917,7 +920,7 @@ public partial class WorkflowGenerator
     public (T2IModel, WGNodeData, WGNodeData, WGNodeData) CreateModelLoader(T2IModel model, string type, string id = null, bool noCascadeFix = false, int sectionId = 0)
     {
         ModelLoadHelpers helpers = new(this);
-        string helper = $"modelloader_{model.Name}_{type}";
+        string helper = ModelLoaderCacheKey(model, type);
         if (NodeHelpers.TryGetValue(helper, out string alreadyLoaded))
         {
             string[] parts = alreadyLoaded.SplitFast(':');
@@ -927,6 +930,10 @@ public partial class WorkflowGenerator
             WGNodeData modelNode = new(LoadingModel, this, WGNodeData.DT_MODEL, CurrentCompat());
             WGNodeData tencNode = LoadingClip is null ? null : new WGNodeData(LoadingClip, this, WGNodeData.DT_TEXTENC, CurrentCompat());
             WGNodeData vaeNode = LoadingVAE is null ? null : new WGNodeData(LoadingVAE, this, WGNodeData.DT_VAE, CurrentCompat());
+            if (IsAnima38() && !Anima38SemanticClips.ContainsKey(helper))
+            {
+                throw new SwarmReadableErrorException($"Anima 3.8B semantic encoder cache is missing for model '{model.Name}'.");
+            }
             return (model, modelNode, tencNode, vaeNode);
         }
         IsDifferentialDiffusion = false;
@@ -1320,6 +1327,16 @@ public partial class WorkflowGenerator
             LoadingClip = [t5Patch, 0];
             helpers.DoVaeLoader(UserInput.SourceSession?.User?.Settings?.VAEs?.DefaultSDXLVAE, "stable-diffusion-xl-v1", "sdxl-vae");
         }
+        else if (IsAnima38())
+        {
+            helpers.LoadClip("stable_diffusion", helpers.GetQwen3_600mModel());
+            string semanticLoader = CreateNode(ComfyNodeNames.LoadAnima38Qwen35, new JObject()
+            {
+                [ComfyNodeInputNames.LoadAnima38Qwen35.QwenFilename] = UserInput.Get(ComfyUIBackendExtension.Anima38Qwen35Encoder)
+            });
+            Anima38SemanticClips[helper] = NodePath(semanticLoader, 0);
+            helpers.DoVaeLoader(UserInput.SourceSession?.User?.Settings?.VAEs?.DefaultQwenVAE, "qwen-image", "qwen-image-vae");
+        }
         else if (IsAnima())
         {
             helpers.LoadClip("stable_diffusion", helpers.GetQwen3_600mModel());
@@ -1656,5 +1673,22 @@ public partial class WorkflowGenerator
         WGNodeData tencNodeData = LoadingClip is null ? null : new WGNodeData(LoadingClip, this, WGNodeData.DT_TEXTENC, CurrentCompat());
         WGNodeData vaeNodeData = LoadingVAE is null ? null : new WGNodeData(LoadingVAE, this, WGNodeData.DT_VAE, CurrentCompat());
         return (model, modelNodeData, tencNodeData, vaeNodeData);
+    }
+
+    /// <summary>Builds the shared cache identity for all outputs of one model loader.</summary>
+    private static string ModelLoaderCacheKey(T2IModel model, string type)
+    {
+        return $"modelloader_{model.Name}_{type}";
+    }
+
+    /// <summary>Gets a fresh path to the semantic Qwen CLIP output paired with the current Anima 3.8B model loader.</summary>
+    private JArray GetAnima38SemanticClip(T2IModel model)
+    {
+        string helper = ModelLoaderCacheKey(model, LoadingModelType);
+        if (!Anima38SemanticClips.TryGetValue(helper, out JArray semanticClip))
+        {
+            throw new SwarmReadableErrorException($"Anima 3.8B semantic encoder was not loaded for model '{model?.Name ?? "unknown"}'.");
+        }
+        return NodePath(semanticClip[0].ToString(), semanticClip[1].Value<int>());
     }
 }

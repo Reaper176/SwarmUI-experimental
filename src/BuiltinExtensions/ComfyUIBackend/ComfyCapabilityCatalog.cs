@@ -9,6 +9,12 @@ public static class ComfyCapabilityCatalog
     /// <summary>Feature ID requiring the Swarm watermark node.</summary>
     public const string WatermarkFeature = "swarm_watermark";
 
+    /// <summary>Feature ID requiring the Anima 3.8B Qwen3.5 loader node.</summary>
+    public const string Anima38Qwen35NodeFeature = "comfy_anima_38_qwen35_loader";
+
+    /// <summary>Feature ID requiring the Anima 3.8B conditioning node.</summary>
+    public const string Anima38ConditioningNodeFeature = "comfy_anima_38_conditioning";
+
     /// <summary>Prefix for backend-local model-attention option feature IDs.</summary>
     public const string ModelAttentionBackendValueFeaturePrefix = "model_attention_backend_value_";
 
@@ -54,6 +60,8 @@ public static class ComfyCapabilityCatalog
             [ComfyNodeNames.KSampler] = "variation_seed",
             [ComfyNodeNames.ModelAttentionBackend] = "model_attention_backend",
             [ComfyNodeNames.EmptyMiniMaxH3LatentAV] = EmptyMiniMaxH3LatentAVFeature,
+            [ComfyNodeNames.LoadAnima38Qwen35] = Anima38Qwen35NodeFeature,
+            [ComfyNodeNames.Anima38Conditioning] = Anima38ConditioningNodeFeature,
             [ComfyNodeNames.AudioSilentMaskPrefixSuffix] = "audio_silent_mask_prefix_suffix",
             [ComfyNodeNames.Watermark] = WatermarkFeature,
             ["FreeU"] = "freeu",

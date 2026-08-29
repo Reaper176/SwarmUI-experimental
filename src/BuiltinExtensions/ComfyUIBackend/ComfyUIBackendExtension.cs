@@ -1274,6 +1274,8 @@ public class ComfyUIBackendExtension : Extension
         input.RequiredFlags.RemoveWhere(flag => flag.StartsWith(ComfyCapabilityCatalog.Anima38Qwen35ValueFeaturePrefix, StringComparison.Ordinal));
         input.RequiredFlags.RemoveWhere(flag => flag.StartsWith(ComfyCapabilityCatalog.Anima38AdapterValueFeaturePrefix, StringComparison.Ordinal));
         input.RequiredFlags.Remove(ComfyCapabilityCatalog.EmptyMiniMaxH3LatentAVFeature);
+        input.RequiredFlags.Remove(ComfyCapabilityCatalog.Anima38Qwen35NodeFeature);
+        input.RequiredFlags.Remove(ComfyCapabilityCatalog.Anima38ConditioningNodeFeature);
         if (input.TryGet(ModelAttentionBackend, out string attentionBackend))
         {
             input.RequiredFlags.Add(ComfyCapabilityCatalog.ModelAttentionBackendValueFeature(attentionBackend));
@@ -1285,6 +1287,11 @@ public class ComfyUIBackendExtension : Extension
         if (input.TryGet(Anima38Adapter, out string anima38Adapter) && anima38Adapter != "auto")
         {
             input.RequiredFlags.Add(ComfyCapabilityCatalog.Anima38AdapterValueFeature(anima38Adapter));
+        }
+        if (input.TryGet(T2IParamTypes.Model, out T2IModel mainModel) && mainModel?.ModelClass?.ID == "anima-3_8b")
+        {
+            input.RequiredFlags.Add(ComfyCapabilityCatalog.Anima38Qwen35NodeFeature);
+            input.RequiredFlags.Add(ComfyCapabilityCatalog.Anima38ConditioningNodeFeature);
         }
         static bool isMiniMaxH3(T2IParamInput input, T2IRegisteredParam<T2IModel> param)
         {

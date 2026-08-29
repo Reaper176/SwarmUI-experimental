@@ -154,6 +154,9 @@ public partial class WorkflowGenerator
     /// <summary>Mapping of any extra nodes to keep track of, Name->ID, eg "MyNode" -> "15".</summary>
     public Dictionary<string, string> NodeHelpers = [];
 
+    /// <summary>Anima 3.8B semantic Qwen CLIP outputs keyed by the matching model-loader cache identity.</summary>
+    public Dictionary<string, JArray> Anima38SemanticClips = [];
+
     /// <summary>Last used ID, tracked to safely add new nodes with sequential IDs. Note that this starts at 100, as below 100 is reserved for constant node IDs.</summary>
     public int LastID = 100;
 
@@ -1246,6 +1249,11 @@ public partial class WorkflowGenerator
         {
             defsampler ??= "res_multistep";
             defscheduler ??= "simple";
+        }
+        else if (IsAnima38())
+        {
+            defsampler ??= "res_multistep";
+            defscheduler ??= "beta";
         }
         else if (IsAnima())
         {
@@ -2792,7 +2800,20 @@ public partial class WorkflowGenerator
                 return [node, 0];
             }
         }
-        if (IsAceStep15())
+        if (IsAnima38())
+        {
+            JArray semanticClip = GetAnima38SemanticClip(model);
+            node = CreateNode(ComfyNodeNames.Anima38Conditioning, new JObject()
+            {
+                [ComfyNodeInputNames.Anima38Conditioning.SourceModel] = CurrentModel.Path,
+                [ComfyNodeInputNames.Anima38Conditioning.CLIP] = clip,
+                [ComfyNodeInputNames.Anima38Conditioning.Qwen35CLIP] = semanticClip,
+                [ComfyNodeInputNames.Anima38Conditioning.Adapter] = UserInput.Get(ComfyUIBackendExtension.Anima38Adapter),
+                [ComfyNodeInputNames.Anima38Conditioning.Prompt] = prompt,
+                [ComfyNodeInputNames.Anima38Conditioning.AdapterStrength] = UserInput.Get(ComfyUIBackendExtension.Anima38AdapterStrength)
+            }, id);
+        }
+        else if (IsAceStep15())
         {
             node = CreateNode("TextEncodeAceStepAudio1.5", new JObject()
             {
