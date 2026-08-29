@@ -504,6 +504,7 @@ public partial class WorkflowGenerator
         List<string> tencWeights = UserInput.Get(T2IParamTypes.LoraTencWeights);
         List<string> confinements = UserInput.Get(T2IParamTypes.LoraSectionConfinement);
         List<string> schedules = UserInput.Get(T2IParamTypes.LoraSchedules);
+        bool isAnima38 = IsAnima38();
         if (confinement > 0 && (confinements is null || confinements.Count == 0))
         {
             return clip;
@@ -541,12 +542,13 @@ public partial class WorkflowGenerator
             }
             float weight = weights is null || i >= weights.Count ? 1 : float.Parse(weights[i]);
             float tencWeight = tencWeights is null || i >= tencWeights.Count ? weight : float.Parse(tencWeights[i]);
-            string newId = CreateNode("CreateHookLora", new JObject()
+            string hookLoraNode = isAnima38 ? ComfyNodeNames.Anima38CreateHookLora : "CreateHookLora";
+            string newId = CreateNode(hookLoraNode, new JObject()
             {
-                ["prev_hooks"] = last,
-                ["lora_name"] = lora.ToString(ModelFolderFormat),
-                ["strength_model"] = weight,
-                ["strength_clip"] = tencWeight
+                [ComfyNodeInputNames.Anima38CreateHookLora.PrevHooks] = last,
+                [ComfyNodeInputNames.Anima38CreateHookLora.LoraName] = lora.ToString(ModelFolderFormat),
+                [ComfyNodeInputNames.Anima38CreateHookLora.StrengthModel] = weight,
+                [ComfyNodeInputNames.Anima38CreateHookLora.StrengthClip] = tencWeight
             }, GetStableDynamicID(2500, i), false);
             JArray currentHooks = [newId, 0];
             if (rawSchedule is not null)
@@ -595,6 +597,7 @@ public partial class WorkflowGenerator
         List<string> tencWeights = UserInput.Get(T2IParamTypes.LoraTencWeights);
         List<string> confinements = UserInput.Get(T2IParamTypes.LoraSectionConfinement);
         List<string> schedules = UserInput.Get(T2IParamTypes.LoraSchedules);
+        bool isAnima38 = IsAnima38();
         if (confinement > 0 && (confinements is null || confinements.Count == 0))
         {
             return (model, clip);
@@ -649,23 +652,25 @@ public partial class WorkflowGenerator
             }
             else if (CurrentCompat()?.LorasTargetTextEnc == false || tencWeight == 0)
             {
-                string newId = CreateNode("LoraLoaderModelOnly", new JObject()
+                string loaderNode = isAnima38 ? ComfyNodeNames.Anima38LoraLoaderModelOnly : "LoraLoaderModelOnly";
+                string newId = CreateNode(loaderNode, new JObject()
                 {
-                    ["model"] = model,
-                    ["lora_name"] = lora.ToString(ModelFolderFormat),
-                    ["strength_model"] = weight,
+                    [ComfyNodeInputNames.Anima38LoraLoaderModelOnly.Model] = model,
+                    [ComfyNodeInputNames.Anima38LoraLoaderModelOnly.LoraName] = lora.ToString(ModelFolderFormat),
+                    [ComfyNodeInputNames.Anima38LoraLoaderModelOnly.StrengthModel] = weight,
                 }, id, false);
                 model = [newId, 0];
             }
             else
             {
-                string newId = CreateNode("LoraLoader", new JObject()
+                string loaderNode = isAnima38 ? ComfyNodeNames.Anima38LoraLoader : "LoraLoader";
+                string newId = CreateNode(loaderNode, new JObject()
                 {
-                    ["model"] = model,
-                    ["clip"] = clip,
-                    ["lora_name"] = lora.ToString(ModelFolderFormat),
-                    ["strength_model"] = weight,
-                    ["strength_clip"] = tencWeight
+                    [ComfyNodeInputNames.Anima38LoraLoader.Model] = model,
+                    [ComfyNodeInputNames.Anima38LoraLoader.CLIP] = clip,
+                    [ComfyNodeInputNames.Anima38LoraLoader.LoraName] = lora.ToString(ModelFolderFormat),
+                    [ComfyNodeInputNames.Anima38LoraLoader.StrengthModel] = weight,
+                    [ComfyNodeInputNames.Anima38LoraLoader.StrengthClip] = tencWeight
                 }, id, false);
                 model = [newId, 0];
                 clip = [newId, 1];

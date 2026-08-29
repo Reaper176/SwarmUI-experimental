@@ -15,6 +15,15 @@ public static class ComfyCapabilityCatalog
     /// <summary>Feature ID requiring the Anima 3.8B conditioning node.</summary>
     public const string Anima38ConditioningNodeFeature = "comfy_anima_38_conditioning";
 
+    /// <summary>Feature ID requiring the Anima 3.8B LoRA loader node.</summary>
+    public const string Anima38LoraLoaderNodeFeature = "comfy_anima_38_lora_loader";
+
+    /// <summary>Feature ID requiring the Anima 3.8B model-only LoRA loader node.</summary>
+    public const string Anima38LoraLoaderModelOnlyNodeFeature = "comfy_anima_38_lora_loader_model_only";
+
+    /// <summary>Feature ID requiring the Anima 3.8B LoRA hook node.</summary>
+    public const string Anima38CreateHookLoraNodeFeature = "comfy_anima_38_create_hook_lora";
+
     /// <summary>Prefix for backend-local model-attention option feature IDs.</summary>
     public const string ModelAttentionBackendValueFeaturePrefix = "model_attention_backend_value_";
 
@@ -62,6 +71,9 @@ public static class ComfyCapabilityCatalog
             [ComfyNodeNames.EmptyMiniMaxH3LatentAV] = EmptyMiniMaxH3LatentAVFeature,
             [ComfyNodeNames.LoadAnima38Qwen35] = Anima38Qwen35NodeFeature,
             [ComfyNodeNames.Anima38Conditioning] = Anima38ConditioningNodeFeature,
+            [ComfyNodeNames.Anima38LoraLoader] = Anima38LoraLoaderNodeFeature,
+            [ComfyNodeNames.Anima38LoraLoaderModelOnly] = Anima38LoraLoaderModelOnlyNodeFeature,
+            [ComfyNodeNames.Anima38CreateHookLora] = Anima38CreateHookLoraNodeFeature,
             [ComfyNodeNames.AudioSilentMaskPrefixSuffix] = "audio_silent_mask_prefix_suffix",
             [ComfyNodeNames.Watermark] = WatermarkFeature,
             ["FreeU"] = "freeu",

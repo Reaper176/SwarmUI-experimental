@@ -478,6 +478,100 @@ class Anima38WorkflowIntegrationTests(unittest.TestCase):
         self.assertIn("RequiredFlags.Add(ComfyCapabilityCatalog.Anima38ConditioningNodeFeature)", routing)
         self.assertNotIn("CompatAnima", routing)
 
+    def test_exact_anima_lora_paths_use_bridge_nodes_without_changing_generic_fallbacks(self):
+        ordinary = method_body(self.workflow, "LoadLorasForConfinement(int confinement")
+        self.assertIn("bool isAnima38 = IsAnima38();", ordinary)
+        self.assertIn("ComfyNodeNames.Anima38LoraLoaderModelOnly", ordinary)
+        self.assertIn("ComfyNodeNames.Anima38LoraLoader", ordinary)
+        self.assertIn('"LoraLoaderModelOnly"', ordinary)
+        self.assertIn('"LoraLoader"', ordinary)
+        for input_name in (
+            "Anima38LoraLoader.Model",
+            "Anima38LoraLoader.CLIP",
+            "Anima38LoraLoader.LoraName",
+            "Anima38LoraLoader.StrengthModel",
+            "Anima38LoraLoader.StrengthClip",
+            "Anima38LoraLoaderModelOnly.Model",
+            "Anima38LoraLoaderModelOnly.LoraName",
+            "Anima38LoraLoaderModelOnly.StrengthModel",
+        ):
+            with self.subTest(input_name=input_name):
+                self.assertIn(f"ComfyNodeInputNames.{input_name}", ordinary)
+        self.assertIn("model = [newId, 0];", ordinary)
+        self.assertIn("clip = [newId, 1];", ordinary)
+        self.assertLess(
+            ordinary.index("CurrentCompat()?.LorasTargetTextEnc == false || tencWeight == 0"),
+            ordinary.index("ComfyNodeNames.Anima38LoraLoaderModelOnly"),
+        )
+        self.assertNotIn("source_block_count", ordinary)
+        self.assertNotIn("28", ordinary)
+        self.assertNotIn("40", ordinary)
+        self.assertNotIn("52", ordinary)
+
+        hooks = method_body(self.workflow, "CreateHookLorasForConfinement(int confinement")
+        self.assertIn("bool isAnima38 = IsAnima38();", hooks)
+        self.assertIn("ComfyNodeNames.Anima38CreateHookLora", hooks)
+        self.assertIn('"CreateHookLora"', hooks)
+        for input_name in (
+            "Anima38CreateHookLora.PrevHooks",
+            "Anima38CreateHookLora.LoraName",
+            "Anima38CreateHookLora.StrengthModel",
+            "Anima38CreateHookLora.StrengthClip",
+        ):
+            with self.subTest(input_name=input_name):
+                self.assertIn(f"ComfyNodeInputNames.{input_name}", hooks)
+        self.assertIn("[ComfyNodeInputNames.Anima38CreateHookLora.PrevHooks] = last", hooks)
+        self.assertIn("JArray currentHooks = [newId, 0];", hooks)
+        self.assertIn('["hooks"] = currentHooks', hooks)
+        self.assertIn("last = currentHooks;", hooks)
+
+    def test_exact_anima_lora_bridge_capabilities_are_required_only_when_loras_are_present(self):
+        bridge_capabilities = (
+            ("Anima38LoraLoader", "Anima38LoraLoaderNodeFeature"),
+            ("Anima38LoraLoaderModelOnly", "Anima38LoraLoaderModelOnlyNodeFeature"),
+            ("Anima38CreateHookLora", "Anima38CreateHookLoraNodeFeature"),
+        )
+        for node_name, feature_name in bridge_capabilities:
+            with self.subTest(node_name=node_name):
+                self.assertIn(f"public const string {feature_name}", self.capabilities)
+                self.assertIn(
+                    f"[ComfyNodeNames.{node_name}] = {feature_name}", self.capabilities
+                )
+
+        routing = method_body(self.extension, "RecomputeBackendRoutingRequirements(T2IParamInput input)")
+        self.assertRegex(
+            routing,
+            r"input\.TryGet\(T2IParamTypes\.Loras, out List<string> loras\)\s*&&\s*loras\.Count > 0",
+        )
+        exact_role_check = routing.index("bool hasAnyAnima38")
+        lora_check = routing.index("bool hasAnyLoras")
+        bridge_requirement = routing.index("if (hasAnyAnima38 && hasAnyLoras)")
+        self.assertLess(exact_role_check, bridge_requirement)
+        self.assertLess(lora_check, bridge_requirement)
+        bridge_block = routing[bridge_requirement:]
+        for _, feature_name in bridge_capabilities:
+            with self.subTest(feature_name=feature_name):
+                self.assertIn(
+                    f"RequiredFlags.Add(ComfyCapabilityCatalog.{feature_name})",
+                    bridge_block,
+                )
+
+    def test_exact_anima_rejects_lllite_before_graph_emission(self):
+        steps = method_body(self.steps, "public static void Register()")
+        anima_control_start = steps.index(
+            "controlModel.ModelClass?.CompatClass?.ID == T2IModelClassSorter.CompatAnima.ID"
+        )
+        anima_control_end = steps.index('CreateNode("ControlNetLoader"', anima_control_start)
+        anima_control = steps[anima_control_start:anima_control_end]
+        self.assertIn("if (g.IsAnima38())", anima_control)
+        guard = anima_control.index("if (g.IsAnima38())")
+        error = anima_control.index("throw new SwarmUserErrorException", guard)
+        emission = anima_control.index("CreateNode(ComfyNodeNames.AnimaLLLite", error)
+        self.assertLess(guard, error)
+        self.assertLess(error, emission)
+        self.assertIn("Anima 3.8B LLLite", anima_control[error:emission])
+        self.assertIn("block mapping is not known-safe", anima_control[error:emission])
+
 
 if __name__ == "__main__":
     unittest.main()

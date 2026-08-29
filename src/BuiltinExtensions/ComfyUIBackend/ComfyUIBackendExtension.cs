@@ -1276,6 +1276,9 @@ public class ComfyUIBackendExtension : Extension
         input.RequiredFlags.Remove(ComfyCapabilityCatalog.EmptyMiniMaxH3LatentAVFeature);
         input.RequiredFlags.Remove(ComfyCapabilityCatalog.Anima38Qwen35NodeFeature);
         input.RequiredFlags.Remove(ComfyCapabilityCatalog.Anima38ConditioningNodeFeature);
+        input.RequiredFlags.Remove(ComfyCapabilityCatalog.Anima38LoraLoaderNodeFeature);
+        input.RequiredFlags.Remove(ComfyCapabilityCatalog.Anima38LoraLoaderModelOnlyNodeFeature);
+        input.RequiredFlags.Remove(ComfyCapabilityCatalog.Anima38CreateHookLoraNodeFeature);
         if (input.TryGet(ModelAttentionBackend, out string attentionBackend))
         {
             input.RequiredFlags.Add(ComfyCapabilityCatalog.ModelAttentionBackendValueFeature(attentionBackend));
@@ -1298,7 +1301,7 @@ public class ComfyUIBackendExtension : Extension
         }
         bool hasSectionalAnima38Negative = input.SectionParamOverrides.Values.Any(section =>
             section.TryGet(T2IParamTypes.NegativeModel, out T2IModel sectionalNegativeModel) && isAnima38(sectionalNegativeModel));
-        if (hasAnima38(input, T2IParamTypes.Model)
+        bool hasAnyAnima38 = hasAnima38(input, T2IParamTypes.Model)
             || hasAnima38(input, T2IParamTypes.RefinerModel)
             || hasAnima38(input, T2IParamTypes.SegmentModel)
             || hasAnima38(input, T2IParamTypes.NegativeModel)
@@ -1306,10 +1309,18 @@ public class ComfyUIBackendExtension : Extension
             || hasAnima38(input, T2IParamTypes.VideoSwapModel)
             || hasAnima38(input, T2IParamTypes.VideoExtendModel)
             || hasAnima38(input, T2IParamTypes.VideoExtendSwapModel)
-            || hasSectionalAnima38Negative)
+            || hasSectionalAnima38Negative;
+        if (hasAnyAnima38)
         {
             input.RequiredFlags.Add(ComfyCapabilityCatalog.Anima38Qwen35NodeFeature);
             input.RequiredFlags.Add(ComfyCapabilityCatalog.Anima38ConditioningNodeFeature);
+        }
+        bool hasAnyLoras = input.TryGet(T2IParamTypes.Loras, out List<string> loras) && loras.Count > 0;
+        if (hasAnyAnima38 && hasAnyLoras)
+        {
+            input.RequiredFlags.Add(ComfyCapabilityCatalog.Anima38LoraLoaderNodeFeature);
+            input.RequiredFlags.Add(ComfyCapabilityCatalog.Anima38LoraLoaderModelOnlyNodeFeature);
+            input.RequiredFlags.Add(ComfyCapabilityCatalog.Anima38CreateHookLoraNodeFeature);
         }
         static bool isMiniMaxH3(T2IParamInput input, T2IRegisteredParam<T2IModel> param)
         {

@@ -1157,6 +1157,10 @@ public class WorkflowGeneratorSteps
                     }
                     if (controlModel.ModelClass?.CompatClass?.ID == T2IModelClassSorter.CompatAnima.ID)
                     {
+                        if (g.IsAnima38())
+                        {
+                            throw new SwarmUserErrorException("Anima 3.8B LLLite is unsupported because its block mapping is not known-safe.");
+                        }
                         JObject animaInputs = new()
                         {
                             [ComfyNodeInputNames.AnimaLLLite.Model] = g.CurrentModel.Path,
