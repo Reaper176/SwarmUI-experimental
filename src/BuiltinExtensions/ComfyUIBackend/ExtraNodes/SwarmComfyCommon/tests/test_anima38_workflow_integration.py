@@ -681,9 +681,9 @@ class Anima38WorkflowIntegrationTests(unittest.TestCase):
         explicit_branch = applicability[explicit_start:implicit_start]
         implicit_branch = applicability[implicit_start:]
         self.assertIn("T2IParamInput.SectionID_BaseOnly", explicit_branch)
-        self.assertIn("segmentContextConfinements", explicit_branch)
+        self.assertIn("segmentDynamicConfinements", explicit_branch)
         self.assertIn("segmentPhaseModel", implicit_branch)
-        self.assertIn("segmentContextConfinements", implicit_branch)
+        self.assertIn("segmentDynamicConfinements", implicit_branch)
 
     def test_schedule_aware_bridge_routing_matches_ordinary_and_hook_emission_sites(self):
         self.assertIn(
@@ -703,20 +703,19 @@ class Anima38WorkflowIntegrationTests(unittest.TestCase):
         )
         self.assertIn("ordinaryConfinements", applicability)
         self.assertIn("scheduledConfinements", applicability)
-        for role_section in (
-            "SectionID_BaseOnly",
-            "SectionID_Refiner",
-            "SectionID_Video",
-            "SectionID_VideoSwap",
-        ):
+        self.assertIn(
+            "applies(baseModel, [-1, 0, T2IParamInput.SectionID_BaseOnly], [-1, 0])",
+            applicability,
+        )
+        for role_section in ("SectionID_Refiner", "SectionID_Video", "SectionID_VideoSwap"):
             with self.subTest(role_section=role_section):
                 self.assertRegex(
                     applicability,
-                    rf"applies\([^;]+{role_section}[^;]+\[-1, 0\]",
+                    rf"\[-1, 0, T2IParamInput\.{role_section}, \.\. [^\]]+\],\s*\n\s*\[-1, 0, \.\. [^\]]+\]",
                 )
         self.assertRegex(
             applicability,
-            r"applies\(segmentPhaseModel, segmentContextConfinements, segmentContextConfinements\)",
+            r"applies\(segmentPhaseModel, segmentDynamicConfinements, segmentDynamicConfinements\)",
         )
 
     def test_negative_bridge_routing_requires_shared_actual_sampler_activity(self):
@@ -740,6 +739,92 @@ class Anima38WorkflowIntegrationTests(unittest.TestCase):
         )
         self.assertIn("GetBaseSamplerRange(input", applicability)
         self.assertIn("if (baseSamplerRange.Runs)", applicability)
+
+    def test_regional_hook_bridge_routing_uses_active_conditioning_model_contexts(self):
+        self.assertIn("public static int[] GetRegionalHookConfinements", self.workflow)
+        regional = method_body(
+            self.workflow, "public static int[] GetRegionalHookConfinements"
+        )
+        self.assertIn("PromptRegion.PartType.Object", regional)
+        self.assertIn("PromptRegion.PartType.Region", regional)
+        self.assertIn("RegionalPromptingMethod", regional)
+        self.assertIn('regionalMethod == "Attention Couple" && !isPositive', regional)
+        self.assertIn('GligenModel', regional)
+        self.assertIn("part.ContextID > 1", regional)
+        applicability = method_body(
+            self.workflow, "public static bool RequiresAnima38LoraBridge(T2IParamInput input)"
+        )
+        self.assertIn("positiveRegionalConfinements", applicability)
+        self.assertIn("negativeRegionalConfinements", applicability)
+        self.assertIn("UnsamplerPrompt", applicability)
+        self.assertIn("baseRegionalConfinements", applicability)
+        self.assertIn("refinerRegionalConfinements", applicability)
+        self.assertIn("segmentPhaseModel", applicability)
+        self.assertIn("videoModel", applicability)
+        self.assertIn("extendModel", applicability)
+        conditioning = method_body(self.workflow, "public JArray CreateConditioning(string prompt")
+        self.assertIn("GetRegionalHookConfinements(UserInput, prompt, isPositive)", conditioning)
+
+    def test_negative_bridge_routing_covers_every_sampler_section_and_refiner_exit(self):
+        applicability = method_body(
+            self.workflow, "public static bool RequiresAnima38LoraBridge(T2IParamInput input)"
+        )
+        for section in (
+            "SectionID_PixelDecoder",
+            "SectionID_SeedVR",
+            "SectionID_Refiner",
+        ):
+            with self.subTest(section=section):
+                self.assertIn(section, applicability)
+        self.assertIn("RefinerSamplerRuns(input", applicability)
+        self.assertIn("PixelDecoderSamplerRuns(input", applicability)
+        self.assertIn("SeedVRSamplerRuns(input", applicability)
+        refiner_activation = method_body(
+            self.workflow, "public static bool RefinerSamplerRuns"
+        )
+        self.assertIn('compat == "pid"', refiner_activation)
+        self.assertIn('compat == "seedvr2"', refiner_activation)
+        self.assertIn("RefinerControl", refiner_activation)
+        self.assertIn("RefinerUpscale", refiner_activation)
+        self.assertIn("RefinerUpscaleMethod", refiner_activation)
+        steps = method_body(self.steps, "public static void Register()")
+        self.assertIn("WorkflowGenerator.RefinerSamplerRuns(g.UserInput", steps)
+
+    def test_preview_termination_keeps_only_pre_preview_bridge_emission_sites(self):
+        self.assertIn("public static bool WorkflowTerminatesBeforeSampling", self.workflow)
+        termination = method_body(
+            self.workflow, "public static bool WorkflowTerminatesBeforeSampling"
+        )
+        self.assertIn("IsControlNetPreviewActive(input)", termination)
+        self.assertIn("IsSam3PointPreviewActive(input)", termination)
+        self.assertIn("IsSam3BBoxPreviewActive(input)", termination)
+        self.assertIn("IsSam3PromptPreviewActive(input)", termination)
+        control_preview = method_body(self.workflow, "public static bool IsControlNetPreviewActive")
+        self.assertIn("ControlNetPreviewOnly", control_preview)
+        self.assertIn("ResolveControlNetPreprocessor(input, i)", control_preview)
+        for helper, parameter in (
+            ("IsSam3PointPreviewActive", "Sam3PointCoordsPositive"),
+            ("IsSam3BBoxPreviewActive", "Sam3BBox"),
+            ("IsSam3PromptPreviewActive", "Sam3SegmentPrompt"),
+        ):
+            preview = method_body(self.workflow, f"public static bool {helper}")
+            self.assertIn(parameter, preview)
+            self.assertIn("InitImage", preview)
+        applicability = method_body(
+            self.workflow, "public static bool RequiresAnima38LoraBridge(T2IParamInput input)"
+        )
+        termination_check = applicability.index("WorkflowTerminatesBeforeSampling(input)")
+        base_loader_check = applicability.index("applies(baseModel")
+        base_regions_check = applicability.index("baseRegionalConfinements")
+        refiner_check = applicability.index("refinerActive")
+        self.assertLess(base_loader_check, termination_check)
+        self.assertLess(base_regions_check, termination_check)
+        self.assertLess(termination_check, refiner_check)
+        steps = method_body(self.steps, "public static void Register()")
+        self.assertIn("WorkflowGenerator.ResolveControlNetPreprocessor(g.UserInput, i)", steps)
+        self.assertIn("WorkflowGenerator.IsSam3PointPreviewActive(g.UserInput)", steps)
+        self.assertIn("WorkflowGenerator.IsSam3BBoxPreviewActive(g.UserInput)", steps)
+        self.assertIn("WorkflowGenerator.IsSam3PromptPreviewActive(g.UserInput)", steps)
 
     def test_exact_anima_rejects_lllite_before_graph_emission(self):
         steps = method_body(self.steps, "public static void Register()")

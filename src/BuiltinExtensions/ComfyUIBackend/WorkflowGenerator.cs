@@ -374,6 +374,220 @@ public partial class WorkflowGenerator
         return new(steps, startStep, endStep, noSkip);
     }
 
+    /// <summary>Returns the regional/object confinement IDs whose conditioning emits LoRA hooks.</summary>
+    public static int[] GetRegionalHookConfinements(T2IParamInput input, string prompt, bool isPositive)
+    {
+        string regionalMethod = input.Get(ComfyUIBackendExtension.RegionalPromptingMethod, "Standard");
+        if (regionalMethod == "Attention Couple" && !isPositive)
+        {
+            return [];
+        }
+        if (regionalMethod != "Attention Couple" && input.Get(ComfyUIBackendExtension.GligenModel, "None") != "None")
+        {
+            return [];
+        }
+        PromptRegion regionalizer = new(prompt ?? "");
+        return [.. regionalizer.Parts.Where(part => (part.Type == PromptRegion.PartType.Object || part.Type == PromptRegion.PartType.Region) && part.ContextID > 1).Select(part => part.ContextID).Distinct()];
+    }
+
+    /// <summary>Returns whether the selected refiner path emits a sampler.</summary>
+    public static bool RefinerSamplerRuns(T2IParamInput input, T2IModel refinerModel)
+    {
+        if (!input.TryGet(T2IParamTypes.RefinerMethod, out string _)
+            || !input.TryGet(T2IParamTypes.RefinerControl, out double refinerControl))
+        {
+            return false;
+        }
+        string compat = refinerModel?.ModelClass?.CompatClass?.ID;
+        if (compat == "pid")
+        {
+            return true;
+        }
+        bool doUpscale = input.TryGet(T2IParamTypes.RefinerUpscale, out double refineUpscale) && refineUpscale != 1;
+        string upscaleMethod = input.Get(ComfyUIBackendExtension.RefinerUpscaleMethod, "None");
+        bool exitsAfterPixelUpscale = doUpscale && refinerControl <= 0
+            && (upscaleMethod.StartsWith("pixel-") || upscaleMethod.StartsWith("model-") || upscaleMethod.StartsWith("pidmodel-"));
+        if (compat == "seedvr2")
+        {
+            return !exitsAfterPixelUpscale;
+        }
+        return !exitsAfterPixelUpscale;
+    }
+
+    /// <summary>Returns whether a SeedVR restoration sampler is emitted after generation.</summary>
+    public static bool SeedVRSamplerRuns(T2IParamInput input, bool videoActive, bool extendActive)
+    {
+        if (!input.TryGet(ComfyUIBackendExtension.SeedVRModel, out T2IModel seedVrModel) || seedVrModel is null)
+        {
+            return false;
+        }
+        return videoActive || extendActive || input.SourceSession is not null || !input.Get(T2IParamTypes.DoNotSave, false)
+            || input.Get(T2IParamTypes.Steps) != 0 || input.TryGet(T2IParamTypes.RefinerModel, out T2IModel _);
+    }
+
+    /// <summary>Returns whether any PiD pixel-decoder sampler emits in section 4.</summary>
+    public static bool PixelDecoderSamplerRuns(T2IParamInput input, T2IModel baseModel, T2IModel refinerModel, bool refinerActive, bool refinerSamplerRuns, bool segmentBeforeRefiner, bool seedVrSamplerRuns)
+    {
+        bool refinerPidUpscale = refinerActive && refinerModel?.ModelClass?.CompatClass?.ID != "pid"
+            && input.TryGet(T2IParamTypes.RefinerUpscale, out double refinerUpscale) && refinerUpscale != 1
+            && input.Get(ComfyUIBackendExtension.RefinerUpscaleMethod, "None").StartsWith("pidmodel-");
+        double seedVrScale = input.Get(ComfyUIBackendExtension.SeedVRUpscale, 1);
+        double seedVrDownscale = input.Get(ComfyUIBackendExtension.SeedVRPreDownscale, 1);
+        bool seedVrPidUpscale = seedVrSamplerRuns && seedVrDownscale > 0 && seedVrScale / seedVrDownscale != 1
+            && input.Get(ComfyUIBackendExtension.SeedVRUpscaleMethod, "pixel-lanczos").StartsWith("pidmodel-");
+        bool explicitPixelDecoder = input.TryGet(ComfyUIBackendExtension.PixelDecoderModel, out T2IModel pixelDecoder) && pixelDecoder is not null;
+        bool baseUsesImageLatent = baseModel?.ModelClass?.CompatClass?.IsText2Video != true;
+        string refinerCompat = refinerModel?.ModelClass?.CompatClass?.ID;
+        bool refinerLeavesImageLatent = refinerActive && refinerCompat != "pid" && refinerCompat != "seedvr2" && refinerSamplerRuns;
+        bool imageLatentReachesDecoder = baseUsesImageLatent && (!segmentBeforeRefiner || refinerLeavesImageLatent)
+            && (!refinerActive || refinerCompat != "pid" && refinerCompat != "seedvr2")
+            && (!refinerActive || refinerSamplerRuns);
+        return refinerPidUpscale || seedVrPidUpscale || explicitPixelDecoder && imageLatentReachesDecoder;
+    }
+
+    /// <summary>Resolves the ControlNet preprocessor selected explicitly or inferred from model metadata.</summary>
+    public static string ResolveControlNetPreprocessor(T2IParamInput input, int index)
+    {
+        if (input.TryGet(ComfyUIBackendExtension.ControlNetPreprocessorParams[index], out string preprocessor))
+        {
+            return preprocessor;
+        }
+        preprocessor = "none";
+        T2IModel controlModel = input.Get(T2IParamTypes.Controlnets[index].Model, null);
+        string wantedPreproc = controlModel?.Metadata?.Preprocessor;
+        string cnName = $"{controlModel?.Name}{controlModel?.RawFilePath.Replace('\\', '/').AfterLast('/')}".ToLowerFast();
+        if (string.IsNullOrWhiteSpace(wantedPreproc))
+        {
+            if (cnName.Contains("canny"))
+            {
+                wantedPreproc = "canny";
+            }
+            else if (cnName.Contains("depth") || cnName.Contains("midas"))
+            {
+                wantedPreproc = "depth";
+            }
+            else if (cnName.Contains("sketch"))
+            {
+                wantedPreproc = "sketch";
+            }
+            else if (cnName.Contains("scribble"))
+            {
+                wantedPreproc = "scribble";
+            }
+            else if (cnName.Contains("pose"))
+            {
+                wantedPreproc = "pose";
+            }
+        }
+        if (string.IsNullOrWhiteSpace(wantedPreproc))
+        {
+            Logs.Verbose($"No wanted preprocessor, and '{cnName}' doesn't imply any other option, skipping...");
+            return preprocessor;
+        }
+        string[] procs = [.. ComfyUIBackendExtension.ControlNetPreprocessors.Keys];
+        bool getBestFor(string phrase)
+        {
+            string result = procs.FirstOrDefault(name => name.ToLowerFast().Contains(phrase.ToLowerFast()));
+            if (result is null)
+            {
+                return false;
+            }
+            preprocessor = result;
+            return true;
+        }
+        if (wantedPreproc == "depth")
+        {
+            if (!getBestFor("midas-depthmap") && !getBestFor("depthmap") && !getBestFor("depth") && !getBestFor("midas") && !getBestFor("zoe") && !getBestFor("leres"))
+            {
+                throw new SwarmUserErrorException("No preprocessor found for depth - please install a Comfy extension that adds eg MiDaS depthmap preprocessors, or select 'none' if using a manual depthmap");
+            }
+        }
+        else if (wantedPreproc == "canny")
+        {
+            getBestFor("cannyedge");
+            if (preprocessor == "none")
+            {
+                getBestFor("canny");
+            }
+        }
+        else if (wantedPreproc == "sketch")
+        {
+            getBestFor("sketch");
+            if (preprocessor == "none")
+            {
+                getBestFor("lineart");
+            }
+            if (preprocessor == "none")
+            {
+                getBestFor("scribble");
+            }
+        }
+        else if (wantedPreproc == "pose")
+        {
+            getBestFor("openpose");
+            if (preprocessor == "none")
+            {
+                getBestFor("pose");
+            }
+        }
+        else
+        {
+            Logs.Verbose($"Wanted preprocessor {wantedPreproc} unrecognized, skipping...");
+        }
+        return preprocessor;
+    }
+
+    /// <summary>Returns whether ControlNet preprocessing terminates the workflow with a preview.</summary>
+    public static bool IsControlNetPreviewActive(T2IParamInput input)
+    {
+        if (!input.Get(T2IParamTypes.ControlNetPreviewOnly))
+        {
+            return false;
+        }
+        for (int i = 0; i < T2IParamTypes.Controlnets.Length; i++)
+        {
+            T2IParamTypes.ControlNetParamHolder controlnet = T2IParamTypes.Controlnets[i];
+            if (!input.TryGet(controlnet.Strength, out double _))
+            {
+                continue;
+            }
+            bool imageAvailable = input.TryGet(controlnet.Image, out Image _) || i == 0 && input.TryGet(T2IParamTypes.InitImage, out Image _);
+            if (!imageAvailable)
+            {
+                return false;
+            }
+            return !ResolveControlNetPreprocessor(input, i).Equals("none", StringComparison.OrdinalIgnoreCase);
+        }
+        return false;
+    }
+
+    /// <summary>Returns whether SAM3 point preview terminates before sampling.</summary>
+    public static bool IsSam3PointPreviewActive(T2IParamInput input)
+    {
+        return input.TryGet(T2IParamTypes.InitImage, out Image _)
+            && input.TryGet(ComfyUIBackendExtension.Sam3PointCoordsPositive, out string coords) && !string.IsNullOrWhiteSpace(coords) && coords != "[]";
+    }
+
+    /// <summary>Returns whether SAM3 bounding-box preview terminates before sampling.</summary>
+    public static bool IsSam3BBoxPreviewActive(T2IParamInput input)
+    {
+        return input.TryGet(T2IParamTypes.InitImage, out Image _)
+            && input.TryGet(ComfyUIBackendExtension.Sam3BBox, out string bbox) && !string.IsNullOrWhiteSpace(bbox);
+    }
+
+    /// <summary>Returns whether SAM3 prompt preview terminates before sampling.</summary>
+    public static bool IsSam3PromptPreviewActive(T2IParamInput input)
+    {
+        return input.TryGet(T2IParamTypes.InitImage, out Image _)
+            && input.TryGet(ComfyUIBackendExtension.Sam3SegmentPrompt, out string prompt) && !string.IsNullOrWhiteSpace(prompt);
+    }
+
+    /// <summary>Returns whether a preview mode stops the workflow before any sampler or later model role.</summary>
+    public static bool WorkflowTerminatesBeforeSampling(T2IParamInput input)
+    {
+        return IsControlNetPreviewActive(input) || IsSam3PointPreviewActive(input) || IsSam3BBoxPreviewActive(input) || IsSam3PromptPreviewActive(input);
+    }
+
     /// <summary>Parses one LoRA schedule keyframe.</summary>
     public LoraScheduleKeyframe ParseLoraScheduleKeyframe(string piece, string loraName)
     {
@@ -568,17 +782,44 @@ public partial class WorkflowGenerator
             return true;
         }
 
+        string positivePrompt = input.Get(T2IParamTypes.Prompt, "");
+        string negativePrompt = input.Get(T2IParamTypes.NegativePrompt, "");
+        PromptRegion parsedPrompt = new(positivePrompt);
+        PromptRegion parsedNegativePrompt = new(negativePrompt);
+        int[] positiveRegionalConfinements = GetRegionalHookConfinements(input, positivePrompt, true);
+        int[] negativeRegionalConfinements = GetRegionalHookConfinements(input, negativePrompt, false);
+        HashSet<int> baseRegionalConfinementSet = [.. positiveRegionalConfinements, .. negativeRegionalConfinements];
+        if (input.TryGet(T2IParamTypes.UnsamplerPrompt, out string unsamplerPrompt))
+        {
+            baseRegionalConfinementSet.UnionWith(GetRegionalHookConfinements(input, unsamplerPrompt, true));
+        }
+        int[] baseRegionalConfinements = [.. baseRegionalConfinementSet];
+        if (applies(baseModel, baseRegionalConfinements, baseRegionalConfinements))
+        {
+            return true;
+        }
+        if (WorkflowTerminatesBeforeSampling(input))
+        {
+            return false;
+        }
+
         bool refinerActive = input.TryGet(T2IParamTypes.RefinerMethod, out string _)
             && input.TryGet(T2IParamTypes.RefinerControl, out double _);
         T2IModel modelAfterRefiner = baseModel;
         bool standardRefinerActive = false;
+        bool refinerSamplerRuns = false;
+        T2IModel refinerModel = baseModel;
         if (refinerActive)
         {
-            T2IModel refinerModel = input.Get(T2IParamTypes.RefinerModel, null) ?? baseModel;
+            refinerModel = input.Get(T2IParamTypes.RefinerModel, null) ?? baseModel;
+            refinerSamplerRuns = RefinerSamplerRuns(input, refinerModel);
             standardRefinerActive = usesStandardRefinerLoader(refinerModel);
             if (standardRefinerActive)
             {
-                if (applies(refinerModel, [-1, 0, T2IParamInput.SectionID_Refiner], [-1, 0]))
+                int[] refinerRegionalConfinements = baseRegionalConfinements;
+                if (applies(refinerModel,
+                    [-1, 0, T2IParamInput.SectionID_Refiner, .. refinerRegionalConfinements],
+                    [-1, 0, .. refinerRegionalConfinements]))
                 {
                     return true;
                 }
@@ -586,16 +827,24 @@ public partial class WorkflowGenerator
             }
         }
 
-        PromptRegion parsedPrompt = new(input.Get(T2IParamTypes.Prompt, ""));
         PromptRegion.Part[] segmentParts = [.. parsedPrompt.Parts.Where(part => part.Type == PromptRegion.PartType.Segment)];
         if (segmentParts.Length > 0)
         {
             int[] segmentContextConfinements = [.. segmentParts.Select(part => part.ContextID)];
+            HashSet<int> segmentRegionalConfinements = [];
+            PromptRegion.Part[] negativeSegmentParts = [.. parsedNegativePrompt.Parts.Where(part => part.Type == PromptRegion.PartType.Segment)];
+            foreach (PromptRegion.Part part in segmentParts)
+            {
+                segmentRegionalConfinements.UnionWith(GetRegionalHookConfinements(input, part.Prompt, true));
+                string segmentNegativePrompt = negativeSegmentParts.FirstOrDefault(negativePart => negativePart.DataText == part.DataText)?.Prompt ?? parsedNegativePrompt.GlobalPrompt;
+                segmentRegionalConfinements.UnionWith(GetRegionalHookConfinements(input, segmentNegativePrompt, false));
+            }
+            int[] segmentDynamicConfinements = [.. segmentContextConfinements.Concat(segmentRegionalConfinements)];
             T2IModel explicitSegmentModel = input.Get(T2IParamTypes.SegmentModel, null);
             if (explicitSegmentModel is not null)
             {
-                int[] ordinarySegmentConfinements = [-1, 0, T2IParamInput.SectionID_BaseOnly, .. segmentContextConfinements];
-                int[] scheduledSegmentConfinements = [-1, 0, .. segmentContextConfinements];
+                int[] ordinarySegmentConfinements = [-1, 0, T2IParamInput.SectionID_BaseOnly, .. segmentDynamicConfinements];
+                int[] scheduledSegmentConfinements = [-1, 0, .. segmentDynamicConfinements];
                 if (applies(explicitSegmentModel, ordinarySegmentConfinements, scheduledSegmentConfinements))
                 {
                     return true;
@@ -605,7 +854,7 @@ public partial class WorkflowGenerator
             {
                 string segmentApplyAfter = input.Get(T2IParamTypes.SegmentApplyAfter, "Refiner");
                 T2IModel segmentPhaseModel = segmentApplyAfter == "Base" ? baseModel : modelAfterRefiner;
-                if (applies(segmentPhaseModel, segmentContextConfinements, segmentContextConfinements))
+                if (applies(segmentPhaseModel, segmentDynamicConfinements, segmentDynamicConfinements))
                 {
                     return true;
                 }
@@ -613,13 +862,17 @@ public partial class WorkflowGenerator
         }
 
         bool videoActive = input.TryGet(T2IParamTypes.VideoModel, out T2IModel videoModel);
-        if (videoActive && applies(videoModel, [-1, 0, T2IParamInput.SectionID_Video], [-1, 0]))
+        if (videoActive && applies(videoModel,
+            [-1, 0, T2IParamInput.SectionID_Video, .. baseRegionalConfinements],
+            [-1, 0, .. baseRegionalConfinements]))
         {
             return true;
         }
         T2IModel videoSwapModel = input.Get(T2IParamTypes.VideoSwapModel, null);
         bool videoSwapActive = videoActive && videoSwapModel is not null;
-        if (videoSwapActive && applies(videoSwapModel, [-1, 0, T2IParamInput.SectionID_VideoSwap], [-1, 0]))
+        if (videoSwapActive && applies(videoSwapModel,
+            [-1, 0, T2IParamInput.SectionID_VideoSwap, .. baseRegionalConfinements],
+            [-1, 0, .. baseRegionalConfinements]))
         {
             return true;
         }
@@ -628,13 +881,22 @@ public partial class WorkflowGenerator
         T2IModel extendModel = input.Get(T2IParamTypes.VideoExtendModel, null);
         bool extendActive = extendParts.Length > 0 && extendModel is not null;
         int[] extendConfinements = [-1, 0, .. extendParts.Select(part => part.ContextID)];
-        if (extendActive && applies(extendModel, extendConfinements, [-1, 0]))
+        HashSet<int> extendRegionalConfinements = [.. negativeRegionalConfinements];
+        foreach (PromptRegion.Part extendPart in extendParts)
+        {
+            extendRegionalConfinements.UnionWith(GetRegionalHookConfinements(input, extendPart.Prompt, true));
+        }
+        if (extendActive && applies(extendModel,
+            [.. extendConfinements.Concat(extendRegionalConfinements)],
+            [-1, 0, .. extendRegionalConfinements]))
         {
             return true;
         }
         T2IModel extendSwapModel = input.Get(T2IParamTypes.VideoExtendSwapModel, null);
         bool extendSwapActive = extendActive && extendSwapModel is not null;
-        if (extendSwapActive && applies(extendSwapModel, extendConfinements, [-1, 0]))
+        if (extendSwapActive && applies(extendSwapModel,
+            [.. extendConfinements.Concat(extendRegionalConfinements)],
+            [-1, 0, .. extendRegionalConfinements]))
         {
             return true;
         }
@@ -649,7 +911,7 @@ public partial class WorkflowGenerator
             {
                 activeSamplingSections.Add(T2IParamInput.SectionID_BaseOnly);
             }
-            if (standardRefinerActive)
+            if (refinerSamplerRuns)
             {
                 activeSamplingSections.Add(T2IParamInput.SectionID_Refiner);
             }
@@ -668,6 +930,16 @@ public partial class WorkflowGenerator
             if (extendActive)
             {
                 activeSamplingSections.UnionWith(extendParts.Select(part => part.ContextID));
+            }
+            bool seedVrSamplerRuns = SeedVRSamplerRuns(input, videoActive, extendActive);
+            if (seedVrSamplerRuns)
+            {
+                activeSamplingSections.Add(T2IParamInput.SectionID_SeedVR);
+            }
+            bool segmentBeforeRefiner = segmentParts.Length > 0 && input.Get(T2IParamTypes.SegmentApplyAfter, "Refiner") == "Base";
+            if (PixelDecoderSamplerRuns(input, baseModel, refinerModel, refinerActive, refinerSamplerRuns, segmentBeforeRefiner, seedVrSamplerRuns))
+            {
+                activeSamplingSections.Add(T2IParamInput.SectionID_PixelDecoder);
             }
             foreach (int sectionId in activeSamplingSections)
             {
@@ -3479,6 +3751,12 @@ public partial class WorkflowGenerator
     /// <summary>Creates a pending Attention Couple regional prompt plan.</summary>
     public AttentionCouplePlan CreateAttentionCouplePlan(PromptRegion regionalizer, PromptRegion.Part[] parts, JArray clip, T2IModel model, bool isPositive)
     {
+        return CreateAttentionCouplePlan(regionalizer, parts, [.. parts.Where(part => part.ContextID > 1).Select(part => part.ContextID)], clip, model, isPositive);
+    }
+
+    /// <summary>Creates a pending Attention Couple plan with pre-resolved hook confinement IDs.</summary>
+    private AttentionCouplePlan CreateAttentionCouplePlan(PromptRegion regionalizer, PromptRegion.Part[] parts, HashSet<int> hookConfinements, JArray clip, T2IModel model, bool isPositive)
+    {
         if (!isPositive)
         {
             return null;
@@ -3499,7 +3777,7 @@ public partial class WorkflowGenerator
         List<AttentionCoupleRegion> regions = [];
         foreach (PromptRegion.Part part in parts)
         {
-            JArray subClip = part.ContextID <= 1 ? clip : CreateHookLorasForConfinement(part.ContextID, clip);
+            JArray subClip = hookConfinements.Contains(part.ContextID) ? CreateHookLorasForConfinement(part.ContextID, clip) : clip;
             JArray partCond = CreateConditioningLine(part.Prompt, subClip, model, true);
             JArray regionMask = CreateRegionalPromptMask(part);
             regions.Add(new(partCond, regionMask));
@@ -3921,13 +4199,14 @@ public partial class WorkflowGenerator
         {
             return globalCond;
         }
+        HashSet<int> regionalHookConfinements = [.. GetRegionalHookConfinements(UserInput, prompt, isPositive)];
         if (UserInput.Get(ComfyUIBackendExtension.RegionalPromptingMethod, "Standard") == "Attention Couple")
         {
             if (!isPositive)
             {
                 return globalCond;
             }
-            PendingAttentionCouplePlan = CreateAttentionCouplePlan(regionalizer, parts, clip, model, true);
+            PendingAttentionCouplePlan = CreateAttentionCouplePlan(regionalizer, parts, regionalHookConfinements, clip, model, true);
             return PendingAttentionCouplePlan.BaseCond;
         }
         string gligenModel = UserInput.Get(ComfyUIBackendExtension.GligenModel, "None");
@@ -3962,7 +4241,7 @@ public partial class WorkflowGenerator
         JArray lastMergedMask = null;
         foreach (PromptRegion.Part part in parts)
         {
-            JArray subClip = part.ContextID <= 1 ? clip : CreateHookLorasForConfinement(part.ContextID, clip);
+            JArray subClip = regionalHookConfinements.Contains(part.ContextID) ? CreateHookLorasForConfinement(part.ContextID, clip) : clip;
             JArray partCond = CreateConditioningLine(part.Prompt, subClip, model, isPositive, attachImages: attachImages);
             RegionHelper region = new(partCond, CreateRegionalPromptMask(part));
             regions.Add(region);

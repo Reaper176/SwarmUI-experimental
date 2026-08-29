@@ -1021,70 +1021,7 @@ public class WorkflowGeneratorSteps
                         firstImageNode = imageNodeActual;
                     }
                     T2IModel controlModel = g.UserInput.Get(controlnetParams.Model, null);
-                    if (!g.UserInput.TryGet(ComfyUIBackendExtension.ControlNetPreprocessorParams[i], out string preprocessor))
-                    {
-                        preprocessor = "none";
-                        string wantedPreproc = controlModel?.Metadata?.Preprocessor;
-                        string cnName = $"{controlModel?.Name}{controlModel?.RawFilePath.Replace('\\', '/').AfterLast('/')}".ToLowerFast();
-                        if (string.IsNullOrWhiteSpace(wantedPreproc))
-                        {
-                            if (cnName.Contains("canny")) { wantedPreproc = "canny"; }
-                            else if (cnName.Contains("depth") || cnName.Contains("midas")) { wantedPreproc = "depth"; }
-                            else if (cnName.Contains("sketch")) { wantedPreproc = "sketch"; }
-                            else if (cnName.Contains("scribble")) { wantedPreproc = "scribble"; }
-                            else if (cnName.Contains("pose")) { wantedPreproc = "pose"; }
-                        }
-                        if (string.IsNullOrWhiteSpace(wantedPreproc))
-                        {
-                            Logs.Verbose($"No wanted preprocessor, and '{cnName}' doesn't imply any other option, skipping...");
-                        }
-                        else
-                        {
-                            string[] procs = [.. ComfyUIBackendExtension.ControlNetPreprocessors.Keys];
-                            bool getBestFor(string phrase)
-                            {
-                                string result = procs.FirstOrDefault(m => m.ToLowerFast().Contains(phrase.ToLowerFast()));
-                                if (result is not null)
-                                {
-                                    preprocessor = result;
-                                    return true;
-                                }
-                                return false;
-                            }
-                            if (wantedPreproc == "depth")
-                            {
-                                if (!getBestFor("midas-depthmap") && !getBestFor("depthmap") && !getBestFor("depth") && !getBestFor("midas") && !getBestFor("zoe") && !getBestFor("leres"))
-                                {
-                                    throw new SwarmUserErrorException("No preprocessor found for depth - please install a Comfy extension that adds eg MiDaS depthmap preprocessors, or select 'none' if using a manual depthmap");
-                                }
-                            }
-                            else if (wantedPreproc == "canny")
-                            {
-                                if (!getBestFor("cannyedge") && !getBestFor("canny"))
-                                {
-                                    preprocessor = "none";
-                                }
-                            }
-                            else if (wantedPreproc == "sketch")
-                            {
-                                if (!getBestFor("sketch") && !getBestFor("lineart") && !getBestFor("scribble"))
-                                {
-                                    preprocessor = "none";
-                                }
-                            }
-                            else if (wantedPreproc == "pose")
-                            {
-                                if (!getBestFor("openpose") && !getBestFor("pose"))
-                                {
-                                    preprocessor = "none";
-                                }
-                            }
-                            else
-                            {
-                                Logs.Verbose($"Wanted preprocessor {wantedPreproc} unrecognized, skipping...");
-                            }
-                        }
-                    }
+                    string preprocessor = WorkflowGenerator.ResolveControlNetPreprocessor(g.UserInput, i);
                     if (preprocessor.ToLowerFast() != "none")
                     {
                         if (imageNodeActual.DataType == WGNodeData.DT_VIDEO && imageNodeActual.FPS is not null)
@@ -1293,10 +1230,11 @@ public class WorkflowGeneratorSteps
         #region SAM3 Masking
         AddStep(g =>
         {
-            if (!g.UserInput.TryGet(ComfyUIBackendExtension.Sam3PointCoordsPositive, out string coords) || string.IsNullOrWhiteSpace(coords) || coords == "[]")
+            if (!WorkflowGenerator.IsSam3PointPreviewActive(g.UserInput))
             {
                 return;
             }
+            string coords = g.UserInput.Get(ComfyUIBackendExtension.Sam3PointCoordsPositive);
             string negCoords = null;
             if (g.UserInput.TryGet(ComfyUIBackendExtension.Sam3PointCoordsNegative, out string negCoordsRaw) && !string.IsNullOrWhiteSpace(negCoordsRaw) && negCoordsRaw != "[]")
             {
@@ -1349,10 +1287,11 @@ public class WorkflowGeneratorSteps
         }, -5.8);
         AddStep(g =>
         {
-            if (!g.UserInput.TryGet(ComfyUIBackendExtension.Sam3BBox, out string bboxJson) || string.IsNullOrWhiteSpace(bboxJson))
+            if (!WorkflowGenerator.IsSam3BBoxPreviewActive(g.UserInput))
             {
                 return;
             }
+            string bboxJson = g.UserInput.Get(ComfyUIBackendExtension.Sam3BBox);
             JArray imageNodeActual = g.BasicInputImage?.Path;
             if (imageNodeActual is null)
             {
@@ -1389,10 +1328,11 @@ public class WorkflowGeneratorSteps
         }, -5.7);
         AddStep(g =>
         {
-            if (!g.UserInput.TryGet(ComfyUIBackendExtension.Sam3SegmentPrompt, out string segmentPrompt) || string.IsNullOrWhiteSpace(segmentPrompt))
+            if (!WorkflowGenerator.IsSam3PromptPreviewActive(g.UserInput))
             {
                 return;
             }
+            string segmentPrompt = g.UserInput.Get(ComfyUIBackendExtension.Sam3SegmentPrompt);
             JArray imageNodeActual = g.BasicInputImage?.Path;
             if (imageNodeActual is null)
             {
@@ -1544,6 +1484,7 @@ public class WorkflowGeneratorSteps
                     }
                     loaderNodeId = "20";
                 }
+                bool refinerSamplerRuns = WorkflowGenerator.RefinerSamplerRuns(g.UserInput, refineModel);
                 if (refineModel.ModelClass?.CompatClass?.ID == "pid")
                 {
                     if (g.UserInput.Get(T2IParamTypes.OutputIntermediateImages, false))
@@ -1654,7 +1595,7 @@ public class WorkflowGeneratorSteps
                         decoded.Width = width;
                         decoded.Height = height;
                     }
-                    if (refinerControl <= 0)
+                    if (!refinerSamplerRuns)
                     {
                         g.CurrentMedia = decoded;
                         return;
@@ -1707,7 +1648,7 @@ public class WorkflowGeneratorSteps
                         decoded = decoded.WithPath(["26", 0]);
                         decoded.Width = width;
                         decoded.Height = height;
-                        if (refinerControl <= 0)
+                        if (!refinerSamplerRuns)
                         {
                             g.CurrentMedia = decoded;
                             return;
