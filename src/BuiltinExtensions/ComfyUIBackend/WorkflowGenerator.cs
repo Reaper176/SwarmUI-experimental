@@ -537,6 +537,18 @@ public partial class WorkflowGenerator
         return preprocessor;
     }
 
+    /// <summary>Returns the init image when the base workflow actually creates <see cref="BasicInputImage"/>.</summary>
+    public static bool TryGetBasicInputImage(T2IParamInput input, out Image image)
+    {
+        image = null;
+        if (!input.TryGet(T2IParamTypes.Model, out T2IModel baseModel)
+            || baseModel?.ModelClass?.CompatClass?.IsAudioModel == true)
+        {
+            return false;
+        }
+        return input.TryGet(T2IParamTypes.InitImage, out image);
+    }
+
     /// <summary>Returns whether ControlNet preprocessing terminates the workflow with a preview.</summary>
     public static bool IsControlNetPreviewActive(T2IParamInput input)
     {
@@ -551,7 +563,7 @@ public partial class WorkflowGenerator
             {
                 continue;
             }
-            bool imageAvailable = input.TryGet(controlnet.Image, out Image _) || i == 0 && input.TryGet(T2IParamTypes.InitImage, out Image _);
+            bool imageAvailable = input.TryGet(controlnet.Image, out Image _) || i == 0 && TryGetBasicInputImage(input, out Image _);
             if (!imageAvailable)
             {
                 return false;
@@ -564,21 +576,21 @@ public partial class WorkflowGenerator
     /// <summary>Returns whether SAM3 point preview terminates before sampling.</summary>
     public static bool IsSam3PointPreviewActive(T2IParamInput input)
     {
-        return input.TryGet(T2IParamTypes.InitImage, out Image _)
+        return TryGetBasicInputImage(input, out Image _)
             && input.TryGet(ComfyUIBackendExtension.Sam3PointCoordsPositive, out string coords) && !string.IsNullOrWhiteSpace(coords) && coords != "[]";
     }
 
     /// <summary>Returns whether SAM3 bounding-box preview terminates before sampling.</summary>
     public static bool IsSam3BBoxPreviewActive(T2IParamInput input)
     {
-        return input.TryGet(T2IParamTypes.InitImage, out Image _)
+        return TryGetBasicInputImage(input, out Image _)
             && input.TryGet(ComfyUIBackendExtension.Sam3BBox, out string bbox) && !string.IsNullOrWhiteSpace(bbox);
     }
 
     /// <summary>Returns whether SAM3 prompt preview terminates before sampling.</summary>
     public static bool IsSam3PromptPreviewActive(T2IParamInput input)
     {
-        return input.TryGet(T2IParamTypes.InitImage, out Image _)
+        return TryGetBasicInputImage(input, out Image _)
             && input.TryGet(ComfyUIBackendExtension.Sam3SegmentPrompt, out string prompt) && !string.IsNullOrWhiteSpace(prompt);
     }
 
@@ -788,8 +800,9 @@ public partial class WorkflowGenerator
         PromptRegion parsedNegativePrompt = new(negativePrompt);
         int[] positiveRegionalConfinements = GetRegionalHookConfinements(input, positivePrompt, true);
         int[] negativeRegionalConfinements = GetRegionalHookConfinements(input, negativePrompt, false);
-        HashSet<int> baseRegionalConfinementSet = [.. positiveRegionalConfinements, .. negativeRegionalConfinements];
-        if (input.TryGet(T2IParamTypes.UnsamplerPrompt, out string unsamplerPrompt))
+        int[] mainRegionalConfinements = [.. positiveRegionalConfinements.Concat(negativeRegionalConfinements).Distinct()];
+        HashSet<int> baseRegionalConfinementSet = [.. mainRegionalConfinements];
+        if (TryGetBasicInputImage(input, out Image _) && input.TryGet(T2IParamTypes.UnsamplerPrompt, out string unsamplerPrompt))
         {
             baseRegionalConfinementSet.UnionWith(GetRegionalHookConfinements(input, unsamplerPrompt, true));
         }
@@ -816,7 +829,7 @@ public partial class WorkflowGenerator
             standardRefinerActive = usesStandardRefinerLoader(refinerModel);
             if (standardRefinerActive)
             {
-                int[] refinerRegionalConfinements = baseRegionalConfinements;
+                int[] refinerRegionalConfinements = mainRegionalConfinements;
                 if (applies(refinerModel,
                     [-1, 0, T2IParamInput.SectionID_Refiner, .. refinerRegionalConfinements],
                     [-1, 0, .. refinerRegionalConfinements]))
@@ -863,16 +876,16 @@ public partial class WorkflowGenerator
 
         bool videoActive = input.TryGet(T2IParamTypes.VideoModel, out T2IModel videoModel);
         if (videoActive && applies(videoModel,
-            [-1, 0, T2IParamInput.SectionID_Video, .. baseRegionalConfinements],
-            [-1, 0, .. baseRegionalConfinements]))
+            [-1, 0, T2IParamInput.SectionID_Video, .. mainRegionalConfinements],
+            [-1, 0, .. mainRegionalConfinements]))
         {
             return true;
         }
         T2IModel videoSwapModel = input.Get(T2IParamTypes.VideoSwapModel, null);
         bool videoSwapActive = videoActive && videoSwapModel is not null;
         if (videoSwapActive && applies(videoSwapModel,
-            [-1, 0, T2IParamInput.SectionID_VideoSwap, .. baseRegionalConfinements],
-            [-1, 0, .. baseRegionalConfinements]))
+            [-1, 0, T2IParamInput.SectionID_VideoSwap, .. mainRegionalConfinements],
+            [-1, 0, .. mainRegionalConfinements]))
         {
             return true;
         }

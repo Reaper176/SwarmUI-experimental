@@ -809,7 +809,7 @@ class Anima38WorkflowIntegrationTests(unittest.TestCase):
         ):
             preview = method_body(self.workflow, f"public static bool {helper}")
             self.assertIn(parameter, preview)
-            self.assertIn("InitImage", preview)
+            self.assertIn("TryGetBasicInputImage(input, out Image _)", preview)
         applicability = method_body(
             self.workflow, "public static bool RequiresAnima38LoraBridge(T2IParamInput input)"
         )
@@ -825,6 +825,46 @@ class Anima38WorkflowIntegrationTests(unittest.TestCase):
         self.assertIn("WorkflowGenerator.IsSam3PointPreviewActive(g.UserInput)", steps)
         self.assertIn("WorkflowGenerator.IsSam3BBoxPreviewActive(g.UserInput)", steps)
         self.assertIn("WorkflowGenerator.IsSam3PromptPreviewActive(g.UserInput)", steps)
+
+    def test_unsampler_regional_hooks_are_active_and_base_model_only(self):
+        applicability = method_body(
+            self.workflow, "public static bool RequiresAnima38LoraBridge(T2IParamInput input)"
+        )
+        self.assertIn("mainRegionalConfinements", applicability)
+        self.assertIn("baseRegionalConfinementSet", applicability)
+        self.assertIn("TryGetBasicInputImage(input, out Image _)", applicability)
+        unsampler_check = applicability.index("T2IParamTypes.UnsamplerPrompt")
+        base_check = applicability.index("applies(baseModel, baseRegionalConfinements")
+        later_roles = applicability.index("bool refinerActive")
+        self.assertLess(unsampler_check, base_check)
+        self.assertLess(base_check, later_roles)
+        self.assertNotIn("baseRegionalConfinements", applicability[later_roles:])
+        self.assertIn("mainRegionalConfinements", applicability[later_roles:])
+
+    def test_basic_input_image_eligibility_is_shared_by_emission_and_previews(self):
+        self.assertIn("public static bool TryGetBasicInputImage", self.workflow)
+        eligibility = method_body(
+            self.workflow, "public static bool TryGetBasicInputImage"
+        )
+        self.assertIn("T2IParamTypes.Model", eligibility)
+        self.assertIn("CompatClass?.IsAudioModel", eligibility)
+        self.assertIn("T2IParamTypes.InitImage", eligibility)
+        steps = method_body(self.steps, "public static void Register()")
+        self.assertIn(
+            "WorkflowGenerator.TryGetBasicInputImage(g.UserInput, out Image img)", steps
+        )
+        control_preview = method_body(
+            self.workflow, "public static bool IsControlNetPreviewActive"
+        )
+        self.assertIn("TryGetBasicInputImage(input, out Image _)", control_preview)
+        for helper in (
+            "IsSam3PointPreviewActive",
+            "IsSam3BBoxPreviewActive",
+            "IsSam3PromptPreviewActive",
+        ):
+            preview = method_body(self.workflow, f"public static bool {helper}")
+            self.assertIn("TryGetBasicInputImage(input, out Image _)", preview)
+            self.assertNotIn("input.TryGet(T2IParamTypes.InitImage", preview)
 
     def test_exact_anima_rejects_lllite_before_graph_emission(self):
         steps = method_body(self.steps, "public static void Register()")

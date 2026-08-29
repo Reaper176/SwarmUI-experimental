@@ -389,7 +389,7 @@ public class WorkflowGeneratorSteps
         AddStep(g =>
         {
             // TODO: if g.IsAudioModel(), InitAudio?
-            if (!g.IsAudioModel() && g.UserInput.TryGet(T2IParamTypes.InitImage, out Image img))
+            if (WorkflowGenerator.TryGetBasicInputImage(g.UserInput, out Image img))
             {
                 string maskImageNode = null;
                 if (g.UserInput.TryGet(T2IParamTypes.MaskImage, out Image mask))
