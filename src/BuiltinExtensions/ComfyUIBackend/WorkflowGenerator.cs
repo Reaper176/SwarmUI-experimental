@@ -1205,7 +1205,16 @@ public partial class WorkflowGenerator
     {
         if (negativeModel is null && UserInput.TryGet(T2IParamTypes.NegativeModel, out T2IModel negModel, sectionId: sectionId))
         {
-            (_, negativeModel, _, _) = CreateModelLoader(negModel, "negative", sectionId: sectionId);
+            T2IModel priorLoadedModel = FinalLoadedModel;
+            try
+            {
+                FinalLoadedModel = negModel;
+                (_, negativeModel, _, _) = CreateModelLoader(negModel, "negative", sectionId: sectionId);
+            }
+            finally
+            {
+                FinalLoadedModel = priorLoadedModel;
+            }
         }
         if (IsVideoModel())
         {
@@ -2802,7 +2811,11 @@ public partial class WorkflowGenerator
         }
         if (IsAnima38())
         {
-            JArray semanticClip = GetAnima38SemanticClip(model);
+            if (CurrentModel is null || CurrentModel.Anima38SemanticClip is null)
+            {
+                throw new SwarmReadableErrorException($"Anima 3.8B semantic encoder was not associated with the current model '{model?.Name ?? "unknown"}'.");
+            }
+            JArray semanticClip = NodePath(CurrentModel.Anima38SemanticClip[0].ToString(), CurrentModel.Anima38SemanticClip[1].Value<int>());
             node = CreateNode(ComfyNodeNames.Anima38Conditioning, new JObject()
             {
                 [ComfyNodeInputNames.Anima38Conditioning.SourceModel] = CurrentModel.Path,
@@ -3051,12 +3064,12 @@ public partial class WorkflowGenerator
     /// <summary>Creates a "CLIPTextEncode" or equivalent node for the given input, with support for '&lt;break&gt;' syntax.</summary>
     public JArray CreateConditioningLine(string prompt, JArray clip, T2IModel model, bool isPositive, string id = null, JArray attachImages = null)
     {
-        if (Features.Contains("variation_seed"))
+        string[] breaks = prompt.Split("<break>", StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries);
+        if (Features.Contains("variation_seed") && !IsAnima38())
         {
             return CreateConditioningDirect(prompt, clip, model, isPositive, id, attachImages);
         }
-        // Backup to at least process "<break>" for if Swarm nodes are missing
-        string[] breaks = prompt.Split("<break>", StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries);
+        // Backup to at least process "<break>" for if Swarm nodes are missing, and always split for Anima 3.8B's direct conditioning node.
         if (breaks.Length <= 1)
         {
             return CreateConditioningDirect(prompt, clip, model, isPositive, id, attachImages: attachImages);

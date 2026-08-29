@@ -927,10 +927,12 @@ public partial class WorkflowGenerator
             LoadingModel = [parts[0], int.Parse(parts[1])];
             LoadingClip = parts[2].Length == 0 ? null : [parts[2], int.Parse(parts[3])];
             LoadingVAE = parts[4].Length == 0 ? null : [parts[4], int.Parse(parts[5])];
-            WGNodeData modelNode = new(LoadingModel, this, WGNodeData.DT_MODEL, CurrentCompat());
+            Anima38SemanticClips.TryGetValue(helper, out JArray cachedSemanticClip);
+            JArray semanticClip = cachedSemanticClip is null ? null : NodePath(cachedSemanticClip[0].ToString(), cachedSemanticClip[1].Value<int>());
+            WGNodeData modelNode = new(LoadingModel, this, WGNodeData.DT_MODEL, CurrentCompat(), semanticClip);
             WGNodeData tencNode = LoadingClip is null ? null : new WGNodeData(LoadingClip, this, WGNodeData.DT_TEXTENC, CurrentCompat());
             WGNodeData vaeNode = LoadingVAE is null ? null : new WGNodeData(LoadingVAE, this, WGNodeData.DT_VAE, CurrentCompat());
-            if (IsAnima38() && !Anima38SemanticClips.ContainsKey(helper))
+            if (IsAnima38() && semanticClip is null)
             {
                 throw new SwarmReadableErrorException($"Anima 3.8B semantic encoder cache is missing for model '{model.Name}'.");
             }
@@ -1669,7 +1671,9 @@ public partial class WorkflowGenerator
             throw new SwarmUserErrorException($"Model loader for {model.Name} didn't work - are you sure it has an architecture ID set properly? (Currently set to: '{model.Metadata?.ModelClassType}')");
         }
         NodeHelpers[helper] = $"{LoadingModel[0]}:{LoadingModel[1]}" + (LoadingClip is null ? "::" : $":{LoadingClip[0]}:{LoadingClip[1]}") + (LoadingVAE is null ? "::" : $":{LoadingVAE[0]}:{LoadingVAE[1]}");
-        WGNodeData modelNodeData = new(LoadingModel, this, WGNodeData.DT_MODEL, CurrentCompat());
+        Anima38SemanticClips.TryGetValue(helper, out JArray finalCachedSemanticClip);
+        JArray finalSemanticClip = finalCachedSemanticClip is null ? null : NodePath(finalCachedSemanticClip[0].ToString(), finalCachedSemanticClip[1].Value<int>());
+        WGNodeData modelNodeData = new(LoadingModel, this, WGNodeData.DT_MODEL, CurrentCompat(), finalSemanticClip);
         WGNodeData tencNodeData = LoadingClip is null ? null : new WGNodeData(LoadingClip, this, WGNodeData.DT_TEXTENC, CurrentCompat());
         WGNodeData vaeNodeData = LoadingVAE is null ? null : new WGNodeData(LoadingVAE, this, WGNodeData.DT_VAE, CurrentCompat());
         return (model, modelNodeData, tencNodeData, vaeNodeData);
@@ -1681,14 +1685,4 @@ public partial class WorkflowGenerator
         return $"modelloader_{model.Name}_{type}";
     }
 
-    /// <summary>Gets a fresh path to the semantic Qwen CLIP output paired with the current Anima 3.8B model loader.</summary>
-    private JArray GetAnima38SemanticClip(T2IModel model)
-    {
-        string helper = ModelLoaderCacheKey(model, LoadingModelType);
-        if (!Anima38SemanticClips.TryGetValue(helper, out JArray semanticClip))
-        {
-            throw new SwarmReadableErrorException($"Anima 3.8B semantic encoder was not loaded for model '{model?.Name ?? "unknown"}'.");
-        }
-        return NodePath(semanticClip[0].ToString(), semanticClip[1].Value<int>());
-    }
 }

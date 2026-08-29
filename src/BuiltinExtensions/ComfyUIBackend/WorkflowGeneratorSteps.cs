@@ -2004,6 +2004,7 @@ public class WorkflowGeneratorSteps
                         newClip = g.CreateHookLorasForConfinement(part.ContextID, newClip, true);
                         model = model.WithPath(newModel);
                         clip = clip.WithPath(newClip);
+                        g.CurrentModel = model;
                     }
                     JArray prompt = g.CreateConditioning(part.Prompt, clip.Path, t2iModel, true);
                     string neg = negativeParts.FirstOrDefault(p => p.DataText == part.DataText)?.Prompt ?? negativeRegion.GlobalPrompt;

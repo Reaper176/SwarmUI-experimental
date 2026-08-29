@@ -10,7 +10,7 @@ using SwarmUI.Utils;
 namespace SwarmUI.Builtin_ComfyUIBackend;
 
 /// <summary>Represents data from a node output in <see cref="WorkflowGenerator"/>.</summary>
-public class WGNodeData(JArray _path, WorkflowGenerator _gen, string _dataType, T2IModelCompatClass _compat)
+public class WGNodeData(JArray _path, WorkflowGenerator _gen, string _dataType, T2IModelCompatClass _compat, JArray _anima38SemanticClip = null)
 {
     public static string DT_IMAGE = "IMAGE", DT_LATENT_IMAGE = "LATENT_IMAGE",
         DT_MODEL = "MODEL", DT_TEXTENC = "TEXTENC", DT_VAE = "VAE", DT_AUDIOVAE = "AUDIOVAE",
@@ -35,6 +35,9 @@ public class WGNodeData(JArray _path, WorkflowGenerator _gen, string _dataType, 
 
     /// <summary>If known and relevant (eg latent), what class of models this is compatible with.</summary>
     public T2IModelCompatClass Compat = _compat;
+
+    /// <summary>The semantic Qwen CLIP paired with an Anima 3.8B model, retained across model path copies.</summary>
+    public JArray Anima38SemanticClip { get; } = _anima38SemanticClip;
 
     /// <summary>Returns true if this data has the same compat class as given.</summary>
     public bool IsCompat(T2IModelCompatClass clazz) => Compat is not null && clazz.ID == Compat.ID;

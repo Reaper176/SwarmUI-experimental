@@ -1288,7 +1288,25 @@ public class ComfyUIBackendExtension : Extension
         {
             input.RequiredFlags.Add(ComfyCapabilityCatalog.Anima38AdapterValueFeature(anima38Adapter));
         }
-        if (input.TryGet(T2IParamTypes.Model, out T2IModel mainModel) && mainModel?.ModelClass?.ID == "anima-3_8b")
+        static bool isAnima38(T2IModel model)
+        {
+            return model?.ModelClass?.ID == "anima-3_8b";
+        }
+        static bool hasAnima38(T2IParamInput input, T2IRegisteredParam<T2IModel> param)
+        {
+            return input.TryGet(param, out T2IModel model) && isAnima38(model);
+        }
+        bool hasSectionalAnima38Negative = input.SectionParamOverrides.Values.Any(section =>
+            section.TryGet(T2IParamTypes.NegativeModel, out T2IModel sectionalNegativeModel) && isAnima38(sectionalNegativeModel));
+        if (hasAnima38(input, T2IParamTypes.Model)
+            || hasAnima38(input, T2IParamTypes.RefinerModel)
+            || hasAnima38(input, T2IParamTypes.SegmentModel)
+            || hasAnima38(input, T2IParamTypes.NegativeModel)
+            || hasAnima38(input, T2IParamTypes.VideoModel)
+            || hasAnima38(input, T2IParamTypes.VideoSwapModel)
+            || hasAnima38(input, T2IParamTypes.VideoExtendModel)
+            || hasAnima38(input, T2IParamTypes.VideoExtendSwapModel)
+            || hasSectionalAnima38Negative)
         {
             input.RequiredFlags.Add(ComfyCapabilityCatalog.Anima38Qwen35NodeFeature);
             input.RequiredFlags.Add(ComfyCapabilityCatalog.Anima38ConditioningNodeFeature);
