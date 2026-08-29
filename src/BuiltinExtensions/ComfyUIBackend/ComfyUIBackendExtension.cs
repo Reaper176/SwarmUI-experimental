@@ -387,7 +387,14 @@ public class ComfyUIBackendExtension : Extension
         if (owner is ComfyUIAPIAbstractBackend
             || owner is SwarmSwarmBackend remote && remote.LinkedRemoteBackendType?.StartsWith("comfyui_") == true)
         {
-            ComfyCapabilityRegistry.Remove(owner);
+            lock (ValueAssignmentLocker)
+            {
+                Anima38ChoiceRegistry.Aggregate aggregate = Anima38Choices.Remove(owner);
+                SharedValueCandidate sharedCandidate = MergeSharedValueDelta(new());
+                ApplyAnima38Choices(sharedCandidate, aggregate);
+                PublishSharedValues(sharedCandidate);
+                ComfyCapabilityRegistry.Remove(owner);
+            }
         }
         if (owner is SwarmSwarmBackend swarm)
         {
@@ -409,6 +416,9 @@ public class ComfyUIBackendExtension : Extension
 
     /// <summary>Accumulated backend-local value capabilities published through the legacy object-info facade.</summary>
     private static FrozenSet<string> LegacyObjectInfoFeatures = Array.Empty<string>().ToFrozenSet();
+
+    /// <summary>Owner-aware Anima 3.8B choice state synchronized by <see cref="ValueAssignmentLocker"/>.</summary>
+    private static readonly Anima38ChoiceRegistry Anima38Choices = new();
 
     /// <summary>Backend-local shared values parsed without reading or mutating published aggregate state.</summary>
     private sealed class SharedValueDelta
@@ -578,16 +588,6 @@ public class ComfyUIBackendExtension : Extension
         }
     }
 
-    /// <summary>Merges backend-discovered Anima 3.8B choices into a stable, de-duplicated list beginning with automatic selection.</summary>
-    /// <param name="current">The latest published aggregate choices.</param>
-    /// <param name="discovered">Choices discovered from one backend.</param>
-    /// <returns>The deterministic merged choice list.</returns>
-    private static List<string> MergeAnima38Choices(IEnumerable<string> current, IEnumerable<string> discovered)
-    {
-        HashSet<string> merged = new(current.Concat(discovered).Where(value => !string.IsNullOrWhiteSpace(value) && value != "auto"), StringComparer.Ordinal);
-        return ["auto", .. merged.OrderBy(value => value, StringComparer.OrdinalIgnoreCase).ThenBy(value => value, StringComparer.Ordinal)];
-    }
-
     /// <summary>Builds a backend-local delta for shared values discovered in raw ComfyUI object info.</summary>
     /// <param name="rawObjectInfo">The raw ComfyUI object-info response to parse.</param>
     /// <returns>A backend-local shared-value delta that has not read or changed published state.</returns>
@@ -669,7 +669,7 @@ public class ComfyUIBackendExtension : Extension
         delta.Anima38Adapters = ReadOptionalStringChoices(rawObjectInfo, ComfyNodeNames.Anima38Conditioning, ComfyNodeInputNames.Anima38Conditioning.Adapter);
         foreach ((string key, JToken data) in rawObjectInfo)
         {
-            if (data["category"].ToString() == "image/preprocessors")
+            if (data is JObject dataObject && $"{dataObject["category"]}" == "image/preprocessors")
             {
                 delta.ControlNetPreprocessors[key] = data;
             }
@@ -711,8 +711,8 @@ public class ComfyUIBackendExtension : Extension
             ControlnetUnionTypes = [.. ControlnetUnionTypes],
             SetClipDevices = [.. SetClipDevices],
             ModelAttentionBackends = [.. ModelAttentionBackends],
-            Anima38Qwen35Encoders = [.. Anima38Qwen35Encoders],
-            Anima38Adapters = [.. Anima38Adapters],
+            Anima38Qwen35Encoders = ["auto"],
+            Anima38Adapters = ["auto"],
             ControlNetPreprocessors = new(delta.ControlNetPreprocessors)
         };
         T2IParamTypes.ConcatDropdownValsClean(ref candidate.UpscalerModels, delta.UpscalerModels);
@@ -739,9 +739,16 @@ public class ComfyUIBackendExtension : Extension
         T2IParamTypes.ConcatDropdownValsClean(ref candidate.ControlnetUnionTypes, delta.ControlnetUnionTypes);
         T2IParamTypes.ConcatDropdownValsClean(ref candidate.SetClipDevices, delta.SetClipDevices);
         T2IParamTypes.ConcatDropdownValsClean(ref candidate.ModelAttentionBackends, delta.ModelAttentionBackends);
-        candidate.Anima38Qwen35Encoders = MergeAnima38Choices(candidate.Anima38Qwen35Encoders, delta.Anima38Qwen35Encoders);
-        candidate.Anima38Adapters = MergeAnima38Choices(candidate.Anima38Adapters, delta.Anima38Adapters);
         return candidate;
+    }
+
+    /// <summary>Applies a current-owner Anima 3.8B aggregate to a shared-value publication candidate.</summary>
+    /// <param name="candidate">The shared-value candidate being prepared.</param>
+    /// <param name="aggregate">The fresh current-owner Anima choices.</param>
+    private static void ApplyAnima38Choices(SharedValueCandidate candidate, Anima38ChoiceRegistry.Aggregate aggregate)
+    {
+        candidate.Anima38Qwen35Encoders = aggregate.Qwen;
+        candidate.Anima38Adapters = aggregate.Adapters;
     }
 
     /// <summary>Publishes a fully built shared-value candidate.</summary>
@@ -797,10 +804,14 @@ public class ComfyUIBackendExtension : Extension
             accumulatedNodeTypes.UnionWith(rawNodeTypes);
             FrozenSet<string> frozenAccumulatedNodeTypes = accumulatedNodeTypes.ToFrozenSet();
             HashSet<string> accumulatedValueFeatures = [.. LegacyObjectInfoFeatures];
+            accumulatedValueFeatures.RemoveWhere(feature => feature.StartsWith(ComfyCapabilityCatalog.Anima38Qwen35ValueFeaturePrefix, StringComparison.Ordinal));
+            accumulatedValueFeatures.RemoveWhere(feature => feature.StartsWith(ComfyCapabilityCatalog.Anima38AdapterValueFeaturePrefix, StringComparison.Ordinal));
             accumulatedValueFeatures.UnionWith(rawValueFeatures);
             FrozenSet<string> frozenAccumulatedValueFeatures = accumulatedValueFeatures.ToFrozenSet();
             SharedValueCandidate sharedCandidate = MergeSharedValueDelta(sharedDelta);
             ComfyCapabilityRegistry.RegistryCandidate capabilityCandidate = ComfyCapabilityRegistry.PreparePublish(LegacyObjectInfoOwner, frozenAccumulatedNodeTypes, "/", frozenAccumulatedValueFeatures);
+            Anima38ChoiceRegistry.Aggregate aggregate = Anima38Choices.Replace(LegacyObjectInfoOwner, sharedDelta.Anima38Qwen35Encoders, sharedDelta.Anima38Adapters);
+            ApplyAnima38Choices(sharedCandidate, aggregate);
             PublishSharedValues(sharedCandidate);
             ComfyCapabilityRegistry.Commit(capabilityCandidate);
             LegacyObjectInfoNodeTypes = frozenAccumulatedNodeTypes;
@@ -836,6 +847,8 @@ public class ComfyUIBackendExtension : Extension
             }
             SharedValueCandidate sharedCandidate = MergeSharedValueDelta(sharedDelta);
             ComfyCapabilityRegistry.RegistryCandidate capabilityCandidate = ComfyCapabilityRegistry.PreparePublish(owner, frozenNodeTypes, modelFolderFormat, backendValueFeatures);
+            Anima38ChoiceRegistry.Aggregate aggregate = Anima38Choices.Replace(owner, sharedDelta.Anima38Qwen35Encoders, sharedDelta.Anima38Adapters);
+            ApplyAnima38Choices(sharedCandidate, aggregate);
             PublishSharedValues(sharedCandidate);
             ComfyCapabilityRegistry.Commit(capabilityCandidate);
             RunRawObjectInfoParsers(rawObjectInfo);
