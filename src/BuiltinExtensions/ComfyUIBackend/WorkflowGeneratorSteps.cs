@@ -1431,32 +1431,11 @@ public class WorkflowGeneratorSteps
         #region Sampler
         AddStep(g =>
         {
-            int steps = g.UserInput.Get(T2IParamTypes.Steps);
-            bool noSkip = false;
-            if (steps < 0)
-            {
-                noSkip = true;
-                steps = 0;
-            }
-            int startStep = 0;
-            int endStep = 10000;
-            if (g.UserInput.TryGet(T2IParamTypes.InitImage, out Image _) && g.UserInput.TryGet(T2IParamTypes.InitImageCreativity, out double creativity))
-            {
-                startStep = (int)Math.Round(steps * (1 - creativity));
-            }
-            else if (g.UserInput.TryGet(T2IParamTypes.DenoiseStrength, out double denoiseStrength))
-            {
-                denoiseStrength = Math.Max(0, Math.Min(100, denoiseStrength));
-                startStep = (int)Math.Round(steps * (1 - denoiseStrength / 100));
-            }
-            if (g.UserInput.TryGet(T2IParamTypes.RefinerMethod, out string method) && method == "StepSwap" && g.UserInput.TryGet(T2IParamTypes.RefinerControl, out double refinerControl))
-            {
-                endStep = (int)Math.Round(steps * (1 - refinerControl));
-            }
-            if (g.UserInput.TryGet(T2IParamTypes.EndStepsEarly, out double endEarly))
-            {
-                endStep = (int)(steps * (1 - endEarly));
-            }
+            WorkflowGenerator.BaseSamplerRange baseSamplerRange = WorkflowGenerator.GetBaseSamplerRange(g.UserInput, g.IsPiD());
+            int steps = baseSamplerRange.Steps;
+            bool noSkip = baseSamplerRange.NoSkip;
+            int startStep = baseSamplerRange.StartStep;
+            int endStep = baseSamplerRange.EndStep;
             if (g.IsPiD())
             {
                 (WGNodeData pidLatent, string pidFormat) = g.CreatePidCompatLatent(g.FinalLoadedModel, g.CurrentMedia, g.CurrentVae);

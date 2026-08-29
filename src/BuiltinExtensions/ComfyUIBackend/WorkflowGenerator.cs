@@ -309,8 +309,21 @@ public partial class WorkflowGenerator
     /// <summary>Represents a parsed LoRA schedule and whether any transition is interpolated.</summary>
     public record struct LoraScheduleParseResult(List<LoraScheduleSegment> Segments, bool IsInterpolated);
 
+    /// <summary>Effective main-sampler step range after applying shared input rules.</summary>
+    public record struct BaseSamplerRange(int Steps, int StartStep, int EndStep, bool NoSkip)
+    {
+        /// <summary>Whether the main workflow invokes its sampler.</summary>
+        public readonly bool Runs => Steps > 0 && Math.Min(EndStep, Steps) > StartStep;
+    }
+
     /// <summary>Gets a LoRA schedule entry, or null if the LoRA has no schedule.</summary>
     public string GetLoraScheduleAt(List<string> schedules, int index)
+    {
+        return ResolveLoraScheduleAt(schedules, index);
+    }
+
+    /// <summary>Gets a LoRA schedule entry without requiring a workflow generator instance.</summary>
+    private static string ResolveLoraScheduleAt(IReadOnlyList<string> schedules, int index)
     {
         if (schedules is null || index >= schedules.Count)
         {
@@ -322,6 +335,43 @@ public partial class WorkflowGenerator
             return null;
         }
         return schedule;
+    }
+
+    /// <summary>Resolves the main sampler range exactly as workflow generation does.</summary>
+    public static BaseSamplerRange GetBaseSamplerRange(T2IParamInput input, bool isPiD)
+    {
+        int steps = input.Get(T2IParamTypes.Steps);
+        bool noSkip = false;
+        if (steps < 0)
+        {
+            noSkip = true;
+            steps = 0;
+        }
+        int startStep = 0;
+        int endStep = 10000;
+        if (input.TryGet(T2IParamTypes.InitImage, out Image _) && input.TryGet(T2IParamTypes.InitImageCreativity, out double creativity))
+        {
+            startStep = (int)Math.Round(steps * (1 - creativity));
+        }
+        else if (input.TryGet(T2IParamTypes.DenoiseStrength, out double denoiseStrength))
+        {
+            denoiseStrength = Math.Max(0, Math.Min(100, denoiseStrength));
+            startStep = (int)Math.Round(steps * (1 - denoiseStrength / 100));
+        }
+        if (input.TryGet(T2IParamTypes.RefinerMethod, out string method) && method == "StepSwap" && input.TryGet(T2IParamTypes.RefinerControl, out double refinerControl))
+        {
+            endStep = (int)Math.Round(steps * (1 - refinerControl));
+        }
+        if (input.TryGet(T2IParamTypes.EndStepsEarly, out double endEarly))
+        {
+            endStep = (int)(steps * (1 - endEarly));
+        }
+        if (isPiD)
+        {
+            startStep = 0;
+            endStep = 10000;
+        }
+        return new(steps, startStep, endStep, noSkip);
     }
 
     /// <summary>Parses one LoRA schedule keyframe.</summary>
@@ -474,16 +524,19 @@ public partial class WorkflowGenerator
         return targetConfinements.Contains(confinement);
     }
 
-    /// <summary>Returns whether any selected LoRA is emitted by one of the given confinement passes.</summary>
-    public static bool HasLoraForConfinements(T2IParamInput input, params int[] targetConfinements)
+    /// <summary>Returns whether any selected LoRA is emitted by the ordinary or scheduled confinement passes.</summary>
+    public static bool HasLoraForEmission(T2IParamInput input, int[] ordinaryConfinements, int[] scheduledConfinements)
     {
         if (!input.TryGet(T2IParamTypes.Loras, out List<string> loras) || loras.Count == 0)
         {
             return false;
         }
         List<string> confinements = input.Get(T2IParamTypes.LoraSectionConfinement);
+        List<string> schedules = input.Get(T2IParamTypes.LoraSchedules);
         for (int i = 0; i < loras.Count; i++)
         {
+            bool scheduled = ResolveLoraScheduleAt(schedules, i) is not null;
+            int[] targetConfinements = scheduled ? scheduledConfinements : ordinaryConfinements;
             if (LoraAppliesToConfinements(confinements, i, targetConfinements))
             {
                 return true;
@@ -504,13 +557,13 @@ public partial class WorkflowGenerator
             string compat = model?.ModelClass?.CompatClass?.ID;
             return compat != "pid" && compat != "seedvr2";
         }
-        bool applies(T2IModel model, params int[] roleConfinements)
+        bool applies(T2IModel model, int[] ordinaryConfinements, int[] scheduledConfinements)
         {
-            return isAnima38(model) && HasLoraForConfinements(input, roleConfinements);
+            return isAnima38(model) && HasLoraForEmission(input, ordinaryConfinements, scheduledConfinements);
         }
 
         T2IModel baseModel = input.Get(T2IParamTypes.Model, null);
-        if (applies(baseModel, -1, 0, T2IParamInput.SectionID_BaseOnly))
+        if (applies(baseModel, [-1, 0, T2IParamInput.SectionID_BaseOnly], [-1, 0]))
         {
             return true;
         }
@@ -525,7 +578,7 @@ public partial class WorkflowGenerator
             standardRefinerActive = usesStandardRefinerLoader(refinerModel);
             if (standardRefinerActive)
             {
-                if (applies(refinerModel, -1, 0, T2IParamInput.SectionID_Refiner))
+                if (applies(refinerModel, [-1, 0, T2IParamInput.SectionID_Refiner], [-1, 0]))
                 {
                     return true;
                 }
@@ -537,22 +590,36 @@ public partial class WorkflowGenerator
         PromptRegion.Part[] segmentParts = [.. parsedPrompt.Parts.Where(part => part.Type == PromptRegion.PartType.Segment)];
         if (segmentParts.Length > 0)
         {
-            T2IModel segmentModel = input.Get(T2IParamTypes.SegmentModel, null) ?? modelAfterRefiner;
-            int[] segmentConfinements = [-1, 0, .. segmentParts.Select(part => part.ContextID)];
-            if (applies(segmentModel, segmentConfinements))
+            int[] segmentContextConfinements = [.. segmentParts.Select(part => part.ContextID)];
+            T2IModel explicitSegmentModel = input.Get(T2IParamTypes.SegmentModel, null);
+            if (explicitSegmentModel is not null)
             {
-                return true;
+                int[] ordinarySegmentConfinements = [-1, 0, T2IParamInput.SectionID_BaseOnly, .. segmentContextConfinements];
+                int[] scheduledSegmentConfinements = [-1, 0, .. segmentContextConfinements];
+                if (applies(explicitSegmentModel, ordinarySegmentConfinements, scheduledSegmentConfinements))
+                {
+                    return true;
+                }
+            }
+            else
+            {
+                string segmentApplyAfter = input.Get(T2IParamTypes.SegmentApplyAfter, "Refiner");
+                T2IModel segmentPhaseModel = segmentApplyAfter == "Base" ? baseModel : modelAfterRefiner;
+                if (applies(segmentPhaseModel, segmentContextConfinements, segmentContextConfinements))
+                {
+                    return true;
+                }
             }
         }
 
         bool videoActive = input.TryGet(T2IParamTypes.VideoModel, out T2IModel videoModel);
-        if (videoActive && applies(videoModel, -1, 0, T2IParamInput.SectionID_Video))
+        if (videoActive && applies(videoModel, [-1, 0, T2IParamInput.SectionID_Video], [-1, 0]))
         {
             return true;
         }
         T2IModel videoSwapModel = input.Get(T2IParamTypes.VideoSwapModel, null);
         bool videoSwapActive = videoActive && videoSwapModel is not null;
-        if (videoSwapActive && applies(videoSwapModel, -1, 0, T2IParamInput.SectionID_VideoSwap))
+        if (videoSwapActive && applies(videoSwapModel, [-1, 0, T2IParamInput.SectionID_VideoSwap], [-1, 0]))
         {
             return true;
         }
@@ -561,13 +628,13 @@ public partial class WorkflowGenerator
         T2IModel extendModel = input.Get(T2IParamTypes.VideoExtendModel, null);
         bool extendActive = extendParts.Length > 0 && extendModel is not null;
         int[] extendConfinements = [-1, 0, .. extendParts.Select(part => part.ContextID)];
-        if (extendActive && applies(extendModel, extendConfinements))
+        if (extendActive && applies(extendModel, extendConfinements, [-1, 0]))
         {
             return true;
         }
         T2IModel extendSwapModel = input.Get(T2IParamTypes.VideoExtendSwapModel, null);
         bool extendSwapActive = extendActive && extendSwapModel is not null;
-        if (extendSwapActive && applies(extendSwapModel, extendConfinements))
+        if (extendSwapActive && applies(extendSwapModel, extendConfinements, [-1, 0]))
         {
             return true;
         }
@@ -575,7 +642,13 @@ public partial class WorkflowGenerator
         bool includeNegativeLoras = input.Get(T2IParamTypes.NegativeModelIncludeLoras, true);
         if (includeNegativeLoras)
         {
-            HashSet<int> activeSamplingSections = [T2IParamInput.SectionID_BaseOnly];
+            HashSet<int> activeSamplingSections = [];
+            bool baseIsPiD = baseModel?.ModelClass?.CompatClass?.ID == "pid";
+            BaseSamplerRange baseSamplerRange = GetBaseSamplerRange(input, baseIsPiD);
+            if (baseSamplerRange.Runs)
+            {
+                activeSamplingSections.Add(T2IParamInput.SectionID_BaseOnly);
+            }
             if (standardRefinerActive)
             {
                 activeSamplingSections.Add(T2IParamInput.SectionID_Refiner);
@@ -599,7 +672,7 @@ public partial class WorkflowGenerator
             foreach (int sectionId in activeSamplingSections)
             {
                 if (input.TryGet(T2IParamTypes.NegativeModel, out T2IModel negativeModel, sectionId: sectionId)
-                    && applies(negativeModel, -1, 0, sectionId))
+                    && applies(negativeModel, [-1, 0, sectionId], [-1, 0]))
                 {
                     return true;
                 }

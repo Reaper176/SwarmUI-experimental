@@ -583,7 +583,7 @@ class Anima38WorkflowIntegrationTests(unittest.TestCase):
         ):
             with self.subTest(section=section):
                 self.assertIn(section, applicability)
-        self.assertIn("HasLoraForConfinements", applicability)
+        self.assertIn("HasLoraForEmission", applicability)
         self.assertIn("segmentParts.Length > 0", applicability)
         self.assertIn("extendParts.Length > 0", applicability)
         self.assertIn("videoActive", applicability)
@@ -602,10 +602,15 @@ class Anima38WorkflowIntegrationTests(unittest.TestCase):
             "public static bool LoraAppliesToConfinements(IReadOnlyList<string> confinements",
         )
         self.assertIn("GetLoraConfinementAt(confinements, index)", applies_to_confinement)
+        self.assertIn(
+            "public static bool HasLoraForEmission(T2IParamInput input",
+            self.workflow,
+        )
         has_lora = method_body(
-            self.workflow, "public static bool HasLoraForConfinements(T2IParamInput input"
+            self.workflow, "public static bool HasLoraForEmission(T2IParamInput input"
         )
         self.assertIn("LoraAppliesToConfinements(confinements, i", has_lora)
+        self.assertIn("ResolveLoraScheduleAt(schedules, i) is not null", has_lora)
         ordinary = method_body(self.workflow, "LoadLorasForConfinement(int confinement")
         hooks = method_body(self.workflow, "CreateHookLorasForConfinement(int confinement")
         self.assertIn("LoraAppliesToConfinements(confinements, i, confinement)", ordinary)
@@ -661,6 +666,80 @@ class Anima38WorkflowIntegrationTests(unittest.TestCase):
         for case, fragment in positive_paths.items():
             with self.subTest(case=case):
                 self.assertIn(fragment, applicability)
+
+    def test_segment_bridge_routing_matches_phase_model_and_explicit_loader_passes(self):
+        applicability = method_body(
+            self.workflow, "public static bool RequiresAnima38LoraBridge(T2IParamInput input)"
+        )
+        self.assertIn('string segmentApplyAfter = input.Get(T2IParamTypes.SegmentApplyAfter, "Refiner")', applicability)
+        self.assertIn(
+            'T2IModel segmentPhaseModel = segmentApplyAfter == "Base" ? baseModel : modelAfterRefiner',
+            applicability,
+        )
+        explicit_start = applicability.index("if (explicitSegmentModel is not null)")
+        implicit_start = applicability.index("else", explicit_start)
+        explicit_branch = applicability[explicit_start:implicit_start]
+        implicit_branch = applicability[implicit_start:]
+        self.assertIn("T2IParamInput.SectionID_BaseOnly", explicit_branch)
+        self.assertIn("segmentContextConfinements", explicit_branch)
+        self.assertIn("segmentPhaseModel", implicit_branch)
+        self.assertIn("segmentContextConfinements", implicit_branch)
+
+    def test_schedule_aware_bridge_routing_matches_ordinary_and_hook_emission_sites(self):
+        self.assertIn(
+            "public string GetLoraScheduleAt(List<string> schedules, int index)",
+            self.workflow,
+        )
+        self.assertIn(
+            "private static string ResolveLoraScheduleAt(IReadOnlyList<string> schedules",
+            self.workflow,
+        )
+        schedule = method_body(
+            self.workflow, "private static string ResolveLoraScheduleAt(IReadOnlyList<string> schedules"
+        )
+        self.assertIn('schedule.Equals("none", StringComparison.OrdinalIgnoreCase)', schedule)
+        applicability = method_body(
+            self.workflow, "public static bool RequiresAnima38LoraBridge(T2IParamInput input)"
+        )
+        self.assertIn("ordinaryConfinements", applicability)
+        self.assertIn("scheduledConfinements", applicability)
+        for role_section in (
+            "SectionID_BaseOnly",
+            "SectionID_Refiner",
+            "SectionID_Video",
+            "SectionID_VideoSwap",
+        ):
+            with self.subTest(role_section=role_section):
+                self.assertRegex(
+                    applicability,
+                    rf"applies\([^;]+{role_section}[^;]+\[-1, 0\]",
+                )
+        self.assertRegex(
+            applicability,
+            r"applies\(segmentPhaseModel, segmentContextConfinements, segmentContextConfinements\)",
+        )
+
+    def test_negative_bridge_routing_requires_shared_actual_sampler_activity(self):
+        self.assertIn("public static BaseSamplerRange GetBaseSamplerRange", self.workflow)
+        sampler_range = method_body(self.workflow, "public static BaseSamplerRange GetBaseSamplerRange")
+        for condition in (
+            "InitImageCreativity",
+            "DenoiseStrength",
+            "RefinerMethod",
+            "RefinerControl",
+            "EndStepsEarly",
+        ):
+            with self.subTest(condition=condition):
+                self.assertIn(condition, sampler_range)
+        sampler_range_record = method_body(self.workflow, "public record struct BaseSamplerRange")
+        self.assertIn("Math.Min(EndStep, Steps) > StartStep", sampler_range_record)
+        model_steps = method_body(self.steps, "public static void Register()")
+        self.assertIn("WorkflowGenerator.GetBaseSamplerRange(g.UserInput, g.IsPiD())", model_steps)
+        applicability = method_body(
+            self.workflow, "public static bool RequiresAnima38LoraBridge(T2IParamInput input)"
+        )
+        self.assertIn("GetBaseSamplerRange(input", applicability)
+        self.assertIn("if (baseSamplerRange.Runs)", applicability)
 
     def test_exact_anima_rejects_lllite_before_graph_emission(self):
         steps = method_body(self.steps, "public static void Register()")
