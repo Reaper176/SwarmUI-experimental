@@ -318,6 +318,28 @@ class Anima38WorkflowIntegrationTests(unittest.TestCase):
         self.assertIn("g.LoadingModelLoraSectionID", model_steps)
         self.assertNotIn("LoadLorasForConfinement(g.LoadingModelSectionID", model_steps)
 
+    def test_negative_loader_uses_positive_segment_section_for_confined_loras(self):
+        lora_section = method_body(self.model_support, "int ResolveModelLoraSection(int sectionId)")
+        negative_branch = 'if (LoadingModelType == "negative" && sectionId > 0)'
+        self.assertIn(negative_branch, lora_section)
+        self.assertLess(
+            lora_section.index("if (IsImageToVideo)"),
+            lora_section.index(negative_branch),
+        )
+        self.assertLess(
+            lora_section.index(negative_branch),
+            lora_section.index("return T2IParamInput.SectionID_BaseOnly;"),
+        )
+        self.assertIn("return sectionId;", lora_section[lora_section.index(negative_branch):])
+
+        sampler = method_body(self.workflow, "CreateKSampler(JArray model")
+        negative_start = sampler.index("T2IParamTypes.NegativeModel")
+        negative_end = sampler.index("if (IsVideoModel())", negative_start)
+        self.assertIn(
+            'CreateModelLoader(negModel, "negative", sectionId: sectionId)',
+            sampler[negative_start:negative_end],
+        )
+
     def test_video_swap_uses_role_specific_section_for_load_settings_and_sampling(self):
         self.assertIn("public int SwapContextID", self.workflow)
         image_to_video = method_body(

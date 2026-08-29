@@ -1741,6 +1741,10 @@ public partial class WorkflowGenerator
         {
             return sectionId > 0 ? sectionId : T2IParamInput.SectionID_Video;
         }
+        if (LoadingModelType == "negative" && sectionId > 0)
+        {
+            return sectionId;
+        }
         return T2IParamInput.SectionID_BaseOnly;
     }
 
