@@ -129,6 +129,23 @@ class Anima38RegistrationTests(unittest.TestCase):
                     rf"ComfyCapabilityCatalog\.{feature_stem}ValueFeature",
                 )
 
+    def test_anima_parameter_scope_uses_exact_model_architecture(self):
+        frontend_source = (REPOSITORY_ROOT / "src/wwwroot/js/genpage/main.js").read_text(
+            encoding="utf-8"
+        )
+
+        exact_scope_block = """    if (currentModelHelper.curArch == 'anima-3_8b') {
+        addMe.push('anima-3_8b');
+    }
+    else {
+        removeMe.push('anima-3_8b');
+    }"""
+        self.assertIn(exact_scope_block, frontend_source)
+        self.assertNotIn(
+            "doAnyArchFeature(['anima-3_8b'], 'anima-3_8b');",
+            frontend_source,
+        )
+
 
 if __name__ == "__main__":
     unittest.main()
