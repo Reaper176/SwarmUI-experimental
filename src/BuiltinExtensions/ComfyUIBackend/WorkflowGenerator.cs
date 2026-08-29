@@ -1870,32 +1870,44 @@ public partial class WorkflowGenerator
 
         public void PrepModelAndCond(WorkflowGenerator g)
         {
-            g.FinalLoadedModel = VideoModel;
-            (VideoModel, Model, WGNodeData clip, Vae) = g.CreateModelLoader(VideoModel, "image2video", null, true, sectionId: ContextID);
-            Clip = clip;
-            string promptText = Prompt;
-            if (VideoModel.ModelClass?.ID == "hunyuan-video-i2v" || VideoModel.ModelClass?.ID == "hunyuan-video-i2v-v2")
+            T2IModel priorLoadedModel = g.FinalLoadedModel;
+            WGNodeData priorCurrentModel = g.CurrentModel;
+            try
             {
-                g.CurrentMedia = g.CurrentMedia.AsRawImage(g.CurrentVae);
-                promptText = $"<image:{g.CurrentMedia.Path[0]},{g.CurrentMedia.Path[1]}>{Prompt}";
-            }
-            JArray attachImages = null;
-            if (VideoModel.ModelClass?.CompatClass?.ID == T2IModelClassSorter.CompatMiniMaxH3.ID)
-            {
-                attachImages = Generator.CurrentMedia.Path;
-                if (VideoEndImage is not null)
+                g.FinalLoadedModel = VideoModel;
+                (VideoModel, Model, WGNodeData clip, Vae) = g.CreateModelLoader(VideoModel, "image2video", null, true, sectionId: ContextID);
+                Clip = clip;
+                g.FinalLoadedModel = VideoModel;
+                g.CurrentModel = Model;
+                string promptText = Prompt;
+                if (VideoModel.ModelClass?.ID == "hunyuan-video-i2v" || VideoModel.ModelClass?.ID == "hunyuan-video-i2v-v2")
                 {
-                    WGNodeData endFrame = g.LoadImage(VideoEndImage, "${videoendframe}", false);
-                    string batched = g.CreateNode("BatchImagesNode", new JObject()
-                    {
-                        ["images.image0"] = attachImages,
-                        ["images.image1"] = endFrame.Path
-                    });
-                    attachImages = [batched, 0];
+                    g.CurrentMedia = g.CurrentMedia.AsRawImage(g.CurrentVae);
+                    promptText = $"<image:{g.CurrentMedia.Path[0]},{g.CurrentMedia.Path[1]}>{Prompt}";
                 }
+                JArray attachImages = null;
+                if (VideoModel.ModelClass?.CompatClass?.ID == T2IModelClassSorter.CompatMiniMaxH3.ID)
+                {
+                    attachImages = Generator.CurrentMedia.Path;
+                    if (VideoEndImage is not null)
+                    {
+                        WGNodeData endFrame = g.LoadImage(VideoEndImage, "${videoendframe}", false);
+                        string batched = g.CreateNode("BatchImagesNode", new JObject()
+                        {
+                            ["images.image0"] = attachImages,
+                            ["images.image1"] = endFrame.Path
+                        });
+                        attachImages = [batched, 0];
+                    }
+                }
+                PosCond = g.CreateConditioning(promptText, clip.Path, VideoModel, true, isVideo: true, attachImages: attachImages);
+                NegCond = g.CreateConditioning(NegativePrompt, clip.Path, VideoModel, false, isVideo: true);
             }
-            PosCond = g.CreateConditioning(promptText, clip.Path, VideoModel, true, isVideo: true, attachImages: attachImages);
-            NegCond = g.CreateConditioning(NegativePrompt, clip.Path, VideoModel, false, isVideo: true);
+            finally
+            {
+                g.FinalLoadedModel = priorLoadedModel;
+                g.CurrentModel = priorCurrentModel;
+            }
         }
 
         public void PrepFullCond(WorkflowGenerator g, WGNodeData origSrcImg)
@@ -2484,6 +2496,24 @@ public partial class WorkflowGenerator
     /// <summary>Creates the execution logic for an Image-To-Video model.</summary>
     public void CreateImageToVideo(ImageToVideoGenInfo genInfo)
     {
+        T2IModel priorLoadedModel = FinalLoadedModel;
+        WGNodeData priorCurrentModel = CurrentModel;
+        try
+        {
+            CreateImageToVideoInternal(genInfo);
+        }
+        finally
+        {
+            FinalLoadedModel = priorLoadedModel;
+            CurrentModel = priorCurrentModel;
+            IsImageToVideoSwap = false;
+            IsImageToVideo = false;
+        }
+    }
+
+    /// <summary>Creates image-to-video nodes while the public wrapper owns model-context restoration.</summary>
+    private void CreateImageToVideoInternal(ImageToVideoGenInfo genInfo)
+    {
         IsImageToVideo = true;
         CurrentMedia = CurrentMedia.AsRawImage(CurrentVae);
         string scaled = CreateNode("ImageScale", new JObject()
@@ -2509,9 +2539,13 @@ public partial class WorkflowGenerator
         if (!genInfo.HasMatchedModelData)
         {
             genInfo.PrepModelAndCond(this);
+            FinalLoadedModel = genInfo.VideoModel;
+            CurrentModel = genInfo.Model;
             genInfo.PrepFullCond(this, srcImage);
             genInfo.FixMediaLen();
         }
+        FinalLoadedModel = genInfo.VideoModel;
+        CurrentModel = genInfo.Model;
         genInfo.VideoCFG ??= genInfo.DefaultCFG;
         foreach (Action<ImageToVideoGenInfo> altHandler in AltImageToVideoPostHandlers)
         {
@@ -2541,25 +2575,38 @@ public partial class WorkflowGenerator
         WGNodeData latent = CurrentMedia;
         if (genInfo.VideoSwapModel is not null)
         {
-            IsImageToVideoSwap = true;
-            (T2IModel swapModel, WGNodeData swapVideoModel, WGNodeData clip, _) = CreateModelLoader(genInfo.VideoSwapModel, "image2video", null, true, sectionId: genInfo.ContextID);
-            double cfg = genInfo.VideoCFG.Value;
-            int steps = genInfo.Steps;
-            genInfo.PosCond = CreateConditioning(genInfo.Prompt, clip.Path, swapModel, true, isVideo: true, isVideoSwap: true);
-            genInfo.NegCond = CreateConditioning(genInfo.NegativePrompt, clip.Path, swapModel, false, isVideo: true, isVideoSwap: true);
-            genInfo.HasFixedMediaLen = false;
-            CurrentMedia = srcImage;
-            genInfo.PrepFullCond(this, srcImage);
-            genInfo.FixMediaLen();
-            explicitSampler = UserInput.Get(ComfyUIBackendExtension.SamplerParam, null, sectionId: T2IParamInput.SectionID_VideoSwap, includeBase: false) ?? explicitSampler;
-            explicitScheduler = UserInput.Get(ComfyUIBackendExtension.SchedulerParam, null, sectionId: T2IParamInput.SectionID_VideoSwap, includeBase: false) ?? explicitScheduler;
-            cfg = UserInput.GetNullable(T2IParamTypes.CFGScale, T2IParamInput.SectionID_VideoSwap, false) ?? cfg;
-            steps = UserInput.GetNullable(T2IParamTypes.Steps, T2IParamInput.SectionID_VideoSwap, false) ?? steps;
-            endStep = (int)Math.Round(steps * (1 - genInfo.VideoSwapPercent));
-            // TODO: Should class-changes be allowed (must re-emit all the model-specific cond logic, maybe a vae reencoder - this is basically a refiner run)
-            samplered = CreateKSampler(swapVideoModel.Path, genInfo.PosCond, genInfo.NegCond, latent.Path, cfg, steps, endStep, 10000, genInfo.Seed + 1, false, false, sigmin: 0.002, sigmax: 1000, previews: previewType, defsampler: genInfo.DefaultSampler, defscheduler: genInfo.DefaultScheduler, hadSpecialCond: genInfo.HadSpecialCond, explicitSampler: explicitSampler, explicitScheduler: explicitScheduler, sectionId: T2IParamInput.SectionID_VideoSwap);
-            CurrentMedia = CurrentMedia.WithPath([samplered, 0]);
-            IsImageToVideoSwap = false;
+            T2IModel priorSwapLoadedModel = FinalLoadedModel;
+            WGNodeData priorSwapCurrentModel = CurrentModel;
+            try
+            {
+                IsImageToVideoSwap = true;
+                FinalLoadedModel = genInfo.VideoSwapModel;
+                (T2IModel swapModel, WGNodeData swapVideoModel, WGNodeData clip, _) = CreateModelLoader(genInfo.VideoSwapModel, "image2video", null, true, sectionId: genInfo.ContextID);
+                FinalLoadedModel = swapModel;
+                CurrentModel = swapVideoModel;
+                double cfg = genInfo.VideoCFG.Value;
+                int steps = genInfo.Steps;
+                genInfo.PosCond = CreateConditioning(genInfo.Prompt, clip.Path, swapModel, true, isVideo: true, isVideoSwap: true);
+                genInfo.NegCond = CreateConditioning(genInfo.NegativePrompt, clip.Path, swapModel, false, isVideo: true, isVideoSwap: true);
+                genInfo.HasFixedMediaLen = false;
+                CurrentMedia = srcImage;
+                genInfo.PrepFullCond(this, srcImage);
+                genInfo.FixMediaLen();
+                explicitSampler = UserInput.Get(ComfyUIBackendExtension.SamplerParam, null, sectionId: T2IParamInput.SectionID_VideoSwap, includeBase: false) ?? explicitSampler;
+                explicitScheduler = UserInput.Get(ComfyUIBackendExtension.SchedulerParam, null, sectionId: T2IParamInput.SectionID_VideoSwap, includeBase: false) ?? explicitScheduler;
+                cfg = UserInput.GetNullable(T2IParamTypes.CFGScale, T2IParamInput.SectionID_VideoSwap, false) ?? cfg;
+                steps = UserInput.GetNullable(T2IParamTypes.Steps, T2IParamInput.SectionID_VideoSwap, false) ?? steps;
+                endStep = (int)Math.Round(steps * (1 - genInfo.VideoSwapPercent));
+                // TODO: Should class-changes be allowed (must re-emit all the model-specific cond logic, maybe a vae reencoder - this is basically a refiner run)
+                samplered = CreateKSampler(swapVideoModel.Path, genInfo.PosCond, genInfo.NegCond, latent.Path, cfg, steps, endStep, 10000, genInfo.Seed + 1, false, false, sigmin: 0.002, sigmax: 1000, previews: previewType, defsampler: genInfo.DefaultSampler, defscheduler: genInfo.DefaultScheduler, hadSpecialCond: genInfo.HadSpecialCond, explicitSampler: explicitSampler, explicitScheduler: explicitScheduler, sectionId: T2IParamInput.SectionID_VideoSwap);
+                CurrentMedia = CurrentMedia.WithPath([samplered, 0]);
+            }
+            finally
+            {
+                FinalLoadedModel = priorSwapLoadedModel;
+                CurrentModel = priorSwapCurrentModel;
+                IsImageToVideoSwap = false;
+            }
         }
         if (genInfo.DoFirstFrameLatentSwap is not null) // This is some weird jank hack that kan5 i2v needs
         {
@@ -2590,7 +2637,6 @@ public partial class WorkflowGenerator
             });
             CurrentMedia = CurrentMedia.WithPath([trimNode, 0]);
         }
-        IsImageToVideo = false;
     }
 
     /// <summary>Creates an image preprocessor node.</summary>
@@ -2740,7 +2786,18 @@ public partial class WorkflowGenerator
     {
         string tokenNormalization = UserInput.Get(T2IParamTypes.PromptTokenNormalization, "none");
         string weightInterpretation = UserInput.Get(T2IParamTypes.PromptWeightInterpretation, "comfy");
-        string trackerId = $"__cond_direct____{clip[0]}_{clip[1]}_{isPositive}_{tokenNormalization}_{weightInterpretation}____{prompt}_{attachImages}";
+        JArray semanticClip = null;
+        string anima38TrackerContext = "";
+        if (IsAnima38())
+        {
+            if (CurrentModel is null || CurrentModel.Anima38SemanticClip is null)
+            {
+                throw new SwarmReadableErrorException($"Anima 3.8B semantic encoder was not associated with the current model '{model?.Name ?? "unknown"}'.");
+            }
+            semanticClip = NodePath(CurrentModel.Anima38SemanticClip[0].ToString(), CurrentModel.Anima38SemanticClip[1].Value<int>());
+            anima38TrackerContext = $"__anima38_model_{CurrentModel.Path[0]}_{CurrentModel.Path[1]}_semantic_{semanticClip[0]}_{semanticClip[1]}";
+        }
+        string trackerId = $"__cond_direct____{clip[0]}_{clip[1]}_{isPositive}_{tokenNormalization}_{weightInterpretation}____{prompt}_{attachImages}{anima38TrackerContext}";
         if (id is null && NodeHelpers.TryGetValue(trackerId, out string nodeId))
         {
             return [nodeId, 0];
@@ -2811,11 +2868,6 @@ public partial class WorkflowGenerator
         }
         if (IsAnima38())
         {
-            if (CurrentModel is null || CurrentModel.Anima38SemanticClip is null)
-            {
-                throw new SwarmReadableErrorException($"Anima 3.8B semantic encoder was not associated with the current model '{model?.Name ?? "unknown"}'.");
-            }
-            JArray semanticClip = NodePath(CurrentModel.Anima38SemanticClip[0].ToString(), CurrentModel.Anima38SemanticClip[1].Value<int>());
             node = CreateNode(ComfyNodeNames.Anima38Conditioning, new JObject()
             {
                 [ComfyNodeInputNames.Anima38Conditioning.SourceModel] = CurrentModel.Path,

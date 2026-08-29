@@ -203,6 +203,82 @@ class Anima38WorkflowIntegrationTests(unittest.TestCase):
         self.assertIn("finally", negative_load)
         self.assertIn("FinalLoadedModel = priorLoadedModel", negative_load)
 
+    def test_conditioning_cache_keys_exact_anima_by_model_and_semantic_edges(self):
+        conditioning = method_body(self.workflow, "CreateConditioningDirect(string prompt")
+        cache_lookup = conditioning.index("NodeHelpers.TryGetValue(trackerId")
+        exact_context = conditioning.index("string anima38TrackerContext")
+        tracker = conditioning.index("string trackerId")
+        self.assertLess(exact_context, tracker)
+        self.assertLess(tracker, cache_lookup)
+        context_block = conditioning[exact_context:tracker]
+        for edge in (
+            "CurrentModel.Path[0]",
+            "CurrentModel.Path[1]",
+            "semanticClip[0]",
+            "semanticClip[1]",
+        ):
+            with self.subTest(edge=edge):
+                self.assertIn(edge, context_block)
+        self.assertIn("{anima38TrackerContext}", conditioning[tracker:cache_lookup])
+        self.assertLess(
+            context_block.index("if (IsAnima38())"),
+            context_block.rindex("anima38TrackerContext ="),
+        )
+        self.assertRegex(
+            context_block,
+            r'string anima38TrackerContext\s*=\s*"";',
+        )
+
+    def test_video_conditioning_scopes_loaded_model_context_and_restores_it(self):
+        prep = method_body(self.workflow, "void PrepModelAndCond(WorkflowGenerator g)")
+        self.assertIn("T2IModel priorLoadedModel = g.FinalLoadedModel;", prep)
+        self.assertIn("WGNodeData priorCurrentModel = g.CurrentModel;", prep)
+        self.assertIn("try", prep)
+        self.assertIn("g.CurrentModel = Model;", prep)
+        self.assertLess(
+            prep.index("g.CurrentModel = Model;"),
+            prep.index("PosCond = g.CreateConditioning"),
+        )
+        finally_start = prep.index("finally")
+        self.assertIn("g.FinalLoadedModel = priorLoadedModel;", prep[finally_start:])
+        self.assertIn("g.CurrentModel = priorCurrentModel;", prep[finally_start:])
+
+        image_to_video_wrapper = method_body(
+            self.workflow, "void CreateImageToVideo(ImageToVideoGenInfo genInfo)"
+        )
+        self.assertIn("CreateImageToVideoInternal(genInfo);", image_to_video_wrapper)
+        outer_finally = image_to_video_wrapper.rindex("finally")
+        self.assertIn("FinalLoadedModel = priorLoadedModel;", image_to_video_wrapper[outer_finally:])
+        self.assertIn("CurrentModel = priorCurrentModel;", image_to_video_wrapper[outer_finally:])
+
+        image_to_video = method_body(
+            self.workflow, "void CreateImageToVideoInternal(ImageToVideoGenInfo genInfo)"
+        )
+        self.assertLess(
+            image_to_video.index("CurrentModel = genInfo.Model;"),
+            image_to_video.index("CreateKSampler(genInfo.Model.Path"),
+        )
+        swap_start = image_to_video.index("if (genInfo.VideoSwapModel is not null)", 1000)
+        swap = image_to_video[swap_start:]
+        self.assertIn("T2IModel priorSwapLoadedModel = FinalLoadedModel;", swap)
+        self.assertIn("WGNodeData priorSwapCurrentModel = CurrentModel;", swap)
+        self.assertIn("FinalLoadedModel = swapModel;", swap)
+        self.assertIn("CurrentModel = swapVideoModel;", swap)
+        self.assertLess(
+            swap.index("CurrentModel = swapVideoModel;"),
+            swap.index("genInfo.PosCond = CreateConditioning"),
+        )
+        swap_finally = swap.index("finally")
+        self.assertIn("FinalLoadedModel = priorSwapLoadedModel;", swap[swap_finally:])
+        self.assertIn("CurrentModel = priorSwapCurrentModel;", swap[swap_finally:])
+
+        extend_start = self.steps.index("T2IModel extendModel =")
+        extend_end = self.steps.index("g.CurrentMedia = g.CurrentMedia.AsRawImage(genInfo.Vae);", extend_start)
+        extend = self.steps[extend_start:extend_end]
+        self.assertIn("VideoModel = extendModel", extend)
+        self.assertIn("VideoSwapModel = g.UserInput.Get(T2IParamTypes.VideoExtendSwapModel", extend)
+        self.assertIn("g.CreateImageToVideo(genInfo);", extend)
+
     def test_exact_defaults_are_res_multistep_beta_without_overriding_explicit_values(self):
         sampler = method_body(self.workflow, "CreateKSampler(JArray model")
         exact_start = sampler.index("else if (IsAnima38())")
