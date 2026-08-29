@@ -1,0 +1,191 @@
+using System;
+using System.Collections;
+using System.Collections.Generic;
+using System.Linq;
+using System.Reflection;
+using SwarmUI.Builtin_ComfyUIBackend;
+using SwarmUI.Media;
+using SwarmUI.Text2Image;
+using SwarmUI.Utils;
+
+internal static class Anima38LoraRequirementHarness
+{
+    private static readonly BindingFlags StaticNonPublic = BindingFlags.Static | BindingFlags.NonPublic;
+
+    private static T2IModel Model(string id, bool targetsTextEncoder = true)
+    {
+        return new(null, "", "model.safetensors", id)
+        {
+            ModelClass = new T2IModelClass
+            {
+                ID = id,
+                CompatClass = new T2IModelCompatClass { ID = id, LorasTargetTextEnc = targetsTextEncoder }
+            }
+        };
+    }
+
+    private static object PredictValue(T2IModel model, bool emitted, bool hook, bool clipAvailable, float textEncoderStrength)
+    {
+        Type workflowType = typeof(WorkflowGenerator);
+        MethodInfo select = workflowType.GetMethod("SelectLoraNodeKind", StaticNonPublic)
+            ?? throw new InvalidOperationException("SelectLoraNodeKind is missing or public.");
+        MethodInfo requirement = workflowType.GetMethod("GetAnima38LoraNodeRequirement", StaticNonPublic)
+            ?? throw new InvalidOperationException("GetAnima38LoraNodeRequirement is missing or public.");
+        object kind = select.Invoke(null, [model, hook, clipAvailable, textEncoderStrength]);
+        return requirement.Invoke(null, [model, emitted, kind]);
+    }
+
+    private static string Predict(T2IModel model, bool emitted, bool hook, bool clipAvailable, float textEncoderStrength)
+    {
+        return PredictValue(model, emitted, hook, clipAvailable, textEncoderStrength).ToString();
+    }
+
+    private static T2IRegisteredParam<string> TestStringParam(string id, string defaultValue)
+    {
+        return new(new T2IParamType(id, "test-only", defaultValue, ID: id, SharpType: typeof(string)));
+    }
+
+    private static T2IRegisteredParam<double> TestDoubleParam(string id, string defaultValue)
+    {
+        return new(new T2IParamType(id, "test-only", defaultValue, ID: id, SharpType: typeof(double)));
+    }
+
+    private static T2IRegisteredParam<T2IModel> TestModelParam(string id)
+    {
+        return new(new T2IParamType(id, "test-only", "None", ID: id, SharpType: typeof(T2IModel)));
+    }
+
+    private static T2IParamInput Request(T2IModel model, string[] confinements, string[] schedules, string[] textEncoderWeights)
+    {
+        T2IParamInput input = new(null);
+        input.Set(T2IParamTypes.Model, model);
+        if (confinements is not null)
+        {
+            input.Set(T2IParamTypes.Loras, [.. confinements]);
+            input.Set(T2IParamTypes.LoraWeights, [.. confinements.Select(_ => "1")]);
+            input.Set(T2IParamTypes.LoraTencWeights, [.. textEncoderWeights]);
+            input.Set(T2IParamTypes.LoraSectionConfinement, [.. confinements]);
+            input.Set(T2IParamTypes.LoraSchedules, [.. schedules]);
+        }
+        input.Set(T2IParamTypes.NegativeModelIncludeLoras, false);
+        return input;
+    }
+
+    private static string[] Capabilities(object requirement)
+    {
+        MethodInfo mapper = typeof(ComfyUIBackendExtension).GetMethod("GetAnima38LoraCapabilityRequirements", StaticNonPublic)
+            ?? throw new InvalidOperationException("GetAnima38LoraCapabilityRequirements is missing or public.");
+        return [.. ((IEnumerable)mapper.Invoke(null, [requirement])).Cast<string>()];
+    }
+
+    private static T2IParamInput WithRefiner(T2IParamInput input, T2IModel refiner, bool active)
+    {
+        input.Set(T2IParamTypes.RefinerModel, refiner);
+        if (active)
+        {
+            input.Set(T2IParamTypes.RefinerMethod, "StepSwap");
+            input.Set(T2IParamTypes.RefinerControl, 0.2);
+        }
+        return input;
+    }
+
+    private static T2IParamInput WithSamPreview(T2IParamInput input)
+    {
+        input.Set(T2IParamTypes.InitImage, new Image([], MediaType.ImagePng));
+        input.Set(ComfyUIBackendExtension.Sam3PointCoordsPositive, "[[1,1]]");
+        return input;
+    }
+
+    private static T2IParamInput WithNegative(T2IParamInput input, T2IModel negative, int steps)
+    {
+        input.Set(T2IParamTypes.NegativeModel, negative);
+        input.Set(T2IParamTypes.NegativeModelIncludeLoras, true);
+        input.Set(T2IParamTypes.Steps, steps);
+        return input;
+    }
+
+    public static int Main()
+    {
+        T2IParamTypes.RegisterDefaults();
+        ComfyUIBackendExtension.RegionalPromptingMethod = TestStringParam("testregionalmethod", "Standard");
+        ComfyUIBackendExtension.GligenModel = TestStringParam("testgligenmodel", "None");
+        ComfyUIBackendExtension.Sam3PointCoordsPositive = TestStringParam("testsam3points", "");
+        ComfyUIBackendExtension.RefinerUpscaleMethod = TestStringParam("testrefinerupscalemethod", "None");
+        ComfyUIBackendExtension.SeedVRModel = TestModelParam("testseedvrmodel");
+        ComfyUIBackendExtension.SeedVRUpscale = TestDoubleParam("testseedvrupscale", "1");
+        ComfyUIBackendExtension.SeedVRPreDownscale = TestDoubleParam("testseedvrpredownscale", "1");
+        ComfyUIBackendExtension.SeedVRUpscaleMethod = TestStringParam("testseedvrupscalemethod", "pixel-lanczos");
+        ComfyUIBackendExtension.PixelDecoderModel = TestModelParam("testpixeldecodermodel");
+        T2IModel exact = Model("anima-3_8b");
+        T2IModel exactModelOnly = Model("anima-3_8b", false);
+        T2IModel generic = Model("anima");
+        (string Name, string Actual, string Expected)[] cases =
+        [
+            ("full-only", Predict(exact, true, false, true, 1), "FullLoader"),
+            ("model-only-no-clip", Predict(exact, true, false, false, 1), "ModelOnlyLoader"),
+            ("model-only-compat", Predict(exactModelOnly, true, false, true, 1), "ModelOnlyLoader"),
+            ("model-only-zero-text-strength", Predict(exact, true, false, true, 0), "ModelOnlyLoader"),
+            ("hook-only", Predict(exact, true, true, true, 1), "HookLoader"),
+            ("inactive-confinement", Predict(exact, false, false, true, 1), "None"),
+            ("generic", Predict(generic, true, false, true, 1), "None")
+        ];
+        foreach ((string name, string actual, string expected) in cases)
+        {
+            if (actual != expected)
+            {
+                Console.Error.WriteLine($"{name}: expected {expected}, got {actual}");
+                return 1;
+            }
+        }
+        object full = PredictValue(exact, true, false, true, 1);
+        object hook = PredictValue(exact, true, true, true, 1);
+        object mixed = Enum.ToObject(full.GetType(), Convert.ToInt32(full) | Convert.ToInt32(hook));
+        if (mixed.ToString() != "FullLoader, HookLoader")
+        {
+            Console.Error.WriteLine($"mixed: expected FullLoader, HookLoader, got {mixed}");
+            return 1;
+        }
+        (string Name, T2IParamInput Input, string Expected)[] requestCases =
+        [
+            ("request-full-only", Request(exact, ["-1"], ["none"], ["1"]), "FullLoader"),
+            ("request-model-only", Request(exact, ["-1"], ["none"], ["0"]), "ModelOnlyLoader"),
+            ("request-hook-only", Request(exact, ["-1"], ["0:1"], ["1"]), "HookLoader"),
+            ("request-mixed", Request(exact, ["-1", "-1"], ["none", "0:1"], ["1", "1"]), "FullLoader, HookLoader"),
+            ("request-inactive-confinement", Request(exact, ["1"], ["none"], ["1"]), "None"),
+            ("request-no-lora", Request(exact, null, null, null), "None"),
+            ("request-generic", Request(generic, ["-1"], ["none"], ["1"]), "None"),
+            ("request-active-refiner", WithRefiner(Request(generic, ["-1"], ["none"], ["1"]), exact, true), "FullLoader"),
+            ("request-inactive-refiner", WithRefiner(Request(generic, ["-1"], ["none"], ["1"]), exact, false), "None"),
+            ("request-preview-cuts-off-refiner", WithSamPreview(WithRefiner(Request(generic, ["-1"], ["none"], ["1"]), exact, true)), "None"),
+            ("request-preview-keeps-base-loader", WithSamPreview(Request(exact, ["-1"], ["none"], ["1"])), "FullLoader"),
+            ("request-active-negative", WithNegative(Request(generic, ["-1"], ["none"], ["1"]), exact, 20), "FullLoader"),
+            ("request-inactive-negative", WithNegative(Request(generic, ["-1"], ["none"], ["1"]), exact, 0), "None")
+        ];
+        foreach ((string name, T2IParamInput input, string expected) in requestCases)
+        {
+            object predicted = typeof(WorkflowGenerator).GetMethod("GetRequiredAnima38LoraNodes", StaticNonPublic).Invoke(null, [input]);
+            string actual = predicted.ToString();
+            if (actual != expected)
+            {
+                Console.Error.WriteLine($"{name}: expected {expected}, got {actual}");
+                return 1;
+            }
+            string[] capabilities = Capabilities(predicted);
+            string[] expectedCapabilities = expected == "None"
+                ? []
+                : [.. expected.Split(", ").Select(value => value switch
+                {
+                    "FullLoader" => "comfy_anima_38_lora_loader",
+                    "ModelOnlyLoader" => "comfy_anima_38_lora_loader_model_only",
+                    "HookLoader" => "comfy_anima_38_create_hook_lora",
+                    _ => throw new InvalidOperationException(value)
+                })];
+            if (!capabilities.SequenceEqual(expectedCapabilities))
+            {
+                Console.Error.WriteLine($"{name} capabilities: expected {string.Join(", ", expectedCapabilities)}, got {string.Join(", ", capabilities)}");
+                return 1;
+            }
+        }
+        return 0;
+    }
+}

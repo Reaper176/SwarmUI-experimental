@@ -1,5 +1,8 @@
 import pathlib
 import re
+import shutil
+import subprocess
+import tempfile
 import unittest
 
 
@@ -25,6 +28,9 @@ EXTENSION_PATH = (
 CAPABILITY_PATH = (
     REPOSITORY_ROOT
     / "src/BuiltinExtensions/ComfyUIBackend/ComfyCapabilityCatalog.cs"
+)
+REQUIREMENT_HARNESS_PATH = pathlib.Path(__file__).with_name(
+    "Anima38LoraRequirementHarness.cs.txt"
 )
 
 
@@ -480,7 +486,7 @@ class Anima38WorkflowIntegrationTests(unittest.TestCase):
 
     def test_exact_anima_lora_paths_use_bridge_nodes_without_changing_generic_fallbacks(self):
         ordinary = method_body(self.workflow, "LoadLorasForConfinement(int confinement")
-        self.assertIn("bool isAnima38 = IsAnima38();", ordinary)
+        self.assertIn("SelectLoraNodeKind(FinalLoadedModel", ordinary)
         self.assertIn("ComfyNodeNames.Anima38LoraLoaderModelOnly", ordinary)
         self.assertIn("ComfyNodeNames.Anima38LoraLoader", ordinary)
         self.assertIn('"LoraLoaderModelOnly"', ordinary)
@@ -500,7 +506,7 @@ class Anima38WorkflowIntegrationTests(unittest.TestCase):
         self.assertIn("model = [newId, 0];", ordinary)
         self.assertIn("clip = [newId, 1];", ordinary)
         self.assertLess(
-            ordinary.index("CurrentCompat()?.LorasTargetTextEnc == false || tencWeight == 0"),
+            ordinary.index("kind == LoraNodeKind.ModelOnlyLoader"),
             ordinary.index("ComfyNodeNames.Anima38LoraLoaderModelOnly"),
         )
         self.assertNotIn("source_block_count", ordinary)
@@ -509,7 +515,7 @@ class Anima38WorkflowIntegrationTests(unittest.TestCase):
         self.assertNotIn("52", ordinary)
 
         hooks = method_body(self.workflow, "CreateHookLorasForConfinement(int confinement")
-        self.assertIn("bool isAnima38 = IsAnima38();", hooks)
+        self.assertIn("SelectLoraNodeKind(FinalLoadedModel", hooks)
         self.assertIn("ComfyNodeNames.Anima38CreateHookLora", hooks)
         self.assertIn('"CreateHookLora"', hooks)
         for input_name in (
@@ -539,19 +545,29 @@ class Anima38WorkflowIntegrationTests(unittest.TestCase):
                 )
 
         routing = method_body(self.extension, "RecomputeBackendRoutingRequirements(T2IParamInput input)")
-        self.assertIn("WorkflowGenerator.RequiresAnima38LoraBridge(input)", routing)
+        self.assertIn("WorkflowGenerator.GetRequiredAnima38LoraNodes(input)", routing)
         self.assertNotIn("hasAnyAnima38 && hasAnyLoras", routing)
-        bridge_requirement = routing.index("WorkflowGenerator.RequiresAnima38LoraBridge(input)")
+        bridge_requirement = routing.index("WorkflowGenerator.GetRequiredAnima38LoraNodes(input)")
         bridge_block = routing[bridge_requirement:]
-        for _, feature_name in bridge_capabilities:
+        capability_mapper = method_body(
+            self.extension, "private static string[] GetAnima38LoraCapabilityRequirements"
+        )
+        for (_, feature_name), requirement_name in zip(
+            bridge_capabilities, ("FullLoader", "ModelOnlyLoader", "HookLoader")
+        ):
             with self.subTest(feature_name=feature_name):
                 self.assertIn(
-                    f"RequiredFlags.Add(ComfyCapabilityCatalog.{feature_name})",
-                    bridge_block,
+                    f"HasFlag(WorkflowGenerator.Anima38LoraNodeRequirement.{requirement_name})",
+                    capability_mapper,
                 )
+                self.assertIn(
+                    f"features.Add(ComfyCapabilityCatalog.{feature_name})",
+                    capability_mapper,
+                )
+        self.assertIn("GetAnima38LoraCapabilityRequirements(animaLoraRequirements)", bridge_block)
 
         applicability = method_body(
-            self.workflow, "public static bool RequiresAnima38LoraBridge(T2IParamInput input)"
+            self.workflow, "internal static Anima38LoraNodeRequirement GetRequiredAnima38LoraNodes(T2IParamInput input)"
         )
         for activation_rule in (
             "NegativeModelIncludeLoras",
@@ -583,34 +599,28 @@ class Anima38WorkflowIntegrationTests(unittest.TestCase):
         ):
             with self.subTest(section=section):
                 self.assertIn(section, applicability)
-        self.assertIn("HasLoraForEmission", applicability)
+        self.assertIn("addOrdinary", applicability)
+        self.assertIn("addHooks", applicability)
         self.assertIn("segmentParts.Length > 0", applicability)
         self.assertIn("extendParts.Length > 0", applicability)
         self.assertIn("videoActive", applicability)
         self.assertIn("includeNegativeLoras", applicability)
 
         confinement = method_body(
-            self.workflow, "public static int GetLoraConfinementAt(IReadOnlyList<string> confinements"
+            self.workflow, "private static int GetLoraConfinementAt(IReadOnlyList<string> confinements"
         )
         self.assertIn("int.Parse(confinements[index])", confinement)
         self.assertIn(
-            "public static bool LoraAppliesToConfinements(IReadOnlyList<string> confinements",
+            "private static bool LoraAppliesToConfinements(IReadOnlyList<string> confinements",
             self.workflow,
         )
         applies_to_confinement = method_body(
             self.workflow,
-            "public static bool LoraAppliesToConfinements(IReadOnlyList<string> confinements",
+            "private static bool LoraAppliesToConfinements(IReadOnlyList<string> confinements",
         )
         self.assertIn("GetLoraConfinementAt(confinements, index)", applies_to_confinement)
-        self.assertIn(
-            "public static bool HasLoraForEmission(T2IParamInput input",
-            self.workflow,
-        )
-        has_lora = method_body(
-            self.workflow, "public static bool HasLoraForEmission(T2IParamInput input"
-        )
-        self.assertIn("LoraAppliesToConfinements(confinements, i", has_lora)
-        self.assertIn("ResolveLoraScheduleAt(schedules, i) is not null", has_lora)
+        self.assertIn("ResolveLoraScheduleAt(schedules, i)", applicability)
+        self.assertIn("LoraAppliesToConfinements(confinements, i", applicability)
         ordinary = method_body(self.workflow, "LoadLorasForConfinement(int confinement")
         hooks = method_body(self.workflow, "CreateHookLorasForConfinement(int confinement")
         self.assertIn("LoraAppliesToConfinements(confinements, i, confinement)", ordinary)
@@ -618,11 +628,11 @@ class Anima38WorkflowIntegrationTests(unittest.TestCase):
 
     def test_bridge_routing_excludes_inapplicable_exact_roles(self):
         self.assertIn(
-            "public static bool RequiresAnima38LoraBridge(T2IParamInput input)",
+            "internal static Anima38LoraNodeRequirement GetRequiredAnima38LoraNodes(T2IParamInput input)",
             self.workflow,
         )
         applicability = method_body(
-            self.workflow, "public static bool RequiresAnima38LoraBridge(T2IParamInput input)"
+            self.workflow, "internal static Anima38LoraNodeRequirement GetRequiredAnima38LoraNodes(T2IParamInput input)"
         )
         cases = {
             "negative LoRAs disabled": (
@@ -649,11 +659,11 @@ class Anima38WorkflowIntegrationTests(unittest.TestCase):
 
     def test_bridge_routing_includes_active_exact_roles_with_applicable_loras(self):
         self.assertIn(
-            "public static bool RequiresAnima38LoraBridge(T2IParamInput input)",
+            "internal static Anima38LoraNodeRequirement GetRequiredAnima38LoraNodes(T2IParamInput input)",
             self.workflow,
         )
         applicability = method_body(
-            self.workflow, "public static bool RequiresAnima38LoraBridge(T2IParamInput input)"
+            self.workflow, "internal static Anima38LoraNodeRequirement GetRequiredAnima38LoraNodes(T2IParamInput input)"
         )
         positive_paths = {
             "base": "SectionID_BaseOnly",
@@ -669,7 +679,7 @@ class Anima38WorkflowIntegrationTests(unittest.TestCase):
 
     def test_segment_bridge_routing_matches_phase_model_and_explicit_loader_passes(self):
         applicability = method_body(
-            self.workflow, "public static bool RequiresAnima38LoraBridge(T2IParamInput input)"
+            self.workflow, "internal static Anima38LoraNodeRequirement GetRequiredAnima38LoraNodes(T2IParamInput input)"
         )
         self.assertIn('string segmentApplyAfter = input.Get(T2IParamTypes.SegmentApplyAfter, "Refiner")', applicability)
         self.assertIn(
@@ -681,9 +691,9 @@ class Anima38WorkflowIntegrationTests(unittest.TestCase):
         explicit_branch = applicability[explicit_start:implicit_start]
         implicit_branch = applicability[implicit_start:]
         self.assertIn("T2IParamInput.SectionID_BaseOnly", explicit_branch)
-        self.assertIn("segmentDynamicConfinements", explicit_branch)
+        self.assertIn("segmentContextConfinements", explicit_branch)
         self.assertIn("segmentPhaseModel", implicit_branch)
-        self.assertIn("segmentDynamicConfinements", implicit_branch)
+        self.assertIn("segmentContextConfinements", implicit_branch)
 
     def test_schedule_aware_bridge_routing_matches_ordinary_and_hook_emission_sites(self):
         self.assertIn(
@@ -699,28 +709,19 @@ class Anima38WorkflowIntegrationTests(unittest.TestCase):
         )
         self.assertIn('schedule.Equals("none", StringComparison.OrdinalIgnoreCase)', schedule)
         applicability = method_body(
-            self.workflow, "public static bool RequiresAnima38LoraBridge(T2IParamInput input)"
+            self.workflow, "internal static Anima38LoraNodeRequirement GetRequiredAnima38LoraNodes(T2IParamInput input)"
         )
-        self.assertIn("ordinaryConfinements", applicability)
-        self.assertIn("scheduledConfinements", applicability)
-        self.assertIn(
-            "applies(baseModel, [-1, 0, T2IParamInput.SectionID_BaseOnly], [-1, 0])",
-            applicability,
-        )
+        self.assertIn("addLoader(baseModel, T2IParamInput.SectionID_BaseOnly)", applicability)
+        self.assertIn("addHooks(baseModel, false, baseRegionalConfinements)", applicability)
         for role_section in ("SectionID_Refiner", "SectionID_Video", "SectionID_VideoSwap"):
             with self.subTest(role_section=role_section):
-                self.assertRegex(
-                    applicability,
-                    rf"\[-1, 0, T2IParamInput\.{role_section}, \.\. [^\]]+\],\s*\n\s*\[-1, 0, \.\. [^\]]+\]",
-                )
-        self.assertRegex(
-            applicability,
-            r"applies\(segmentPhaseModel, segmentDynamicConfinements, segmentDynamicConfinements\)",
-        )
+                self.assertIn(f"T2IParamInput.{role_section}", applicability)
+        self.assertIn("addOrdinary(segmentPhaseModel", applicability)
+        self.assertIn("addHooks(segmentPhaseModel", applicability)
 
     def test_negative_bridge_routing_requires_shared_actual_sampler_activity(self):
-        self.assertIn("public static BaseSamplerRange GetBaseSamplerRange", self.workflow)
-        sampler_range = method_body(self.workflow, "public static BaseSamplerRange GetBaseSamplerRange")
+        self.assertIn("internal static BaseSamplerRange GetBaseSamplerRange", self.workflow)
+        sampler_range = method_body(self.workflow, "internal static BaseSamplerRange GetBaseSamplerRange")
         for condition in (
             "InitImageCreativity",
             "DenoiseStrength",
@@ -730,20 +731,20 @@ class Anima38WorkflowIntegrationTests(unittest.TestCase):
         ):
             with self.subTest(condition=condition):
                 self.assertIn(condition, sampler_range)
-        sampler_range_record = method_body(self.workflow, "public record struct BaseSamplerRange")
+        sampler_range_record = method_body(self.workflow, "internal record struct BaseSamplerRange")
         self.assertIn("Math.Min(EndStep, Steps) > StartStep", sampler_range_record)
         model_steps = method_body(self.steps, "public static void Register()")
         self.assertIn("WorkflowGenerator.GetBaseSamplerRange(g.UserInput, g.IsPiD())", model_steps)
         applicability = method_body(
-            self.workflow, "public static bool RequiresAnima38LoraBridge(T2IParamInput input)"
+            self.workflow, "internal static Anima38LoraNodeRequirement GetRequiredAnima38LoraNodes(T2IParamInput input)"
         )
         self.assertIn("GetBaseSamplerRange(input", applicability)
         self.assertIn("if (baseSamplerRange.Runs)", applicability)
 
     def test_regional_hook_bridge_routing_uses_active_conditioning_model_contexts(self):
-        self.assertIn("public static int[] GetRegionalHookConfinements", self.workflow)
+        self.assertIn("private static int[] GetRegionalHookConfinements", self.workflow)
         regional = method_body(
-            self.workflow, "public static int[] GetRegionalHookConfinements"
+            self.workflow, "private static int[] GetRegionalHookConfinements"
         )
         self.assertIn("PromptRegion.PartType.Object", regional)
         self.assertIn("PromptRegion.PartType.Region", regional)
@@ -752,13 +753,13 @@ class Anima38WorkflowIntegrationTests(unittest.TestCase):
         self.assertIn('GligenModel', regional)
         self.assertIn("part.ContextID > 1", regional)
         applicability = method_body(
-            self.workflow, "public static bool RequiresAnima38LoraBridge(T2IParamInput input)"
+            self.workflow, "internal static Anima38LoraNodeRequirement GetRequiredAnima38LoraNodes(T2IParamInput input)"
         )
         self.assertIn("positiveRegionalConfinements", applicability)
         self.assertIn("negativeRegionalConfinements", applicability)
         self.assertIn("UnsamplerPrompt", applicability)
         self.assertIn("baseRegionalConfinements", applicability)
-        self.assertIn("refinerRegionalConfinements", applicability)
+        self.assertIn("addHooks(refinerModel, false, mainRegionalConfinements)", applicability)
         self.assertIn("segmentPhaseModel", applicability)
         self.assertIn("videoModel", applicability)
         self.assertIn("extendModel", applicability)
@@ -767,7 +768,7 @@ class Anima38WorkflowIntegrationTests(unittest.TestCase):
 
     def test_negative_bridge_routing_covers_every_sampler_section_and_refiner_exit(self):
         applicability = method_body(
-            self.workflow, "public static bool RequiresAnima38LoraBridge(T2IParamInput input)"
+            self.workflow, "internal static Anima38LoraNodeRequirement GetRequiredAnima38LoraNodes(T2IParamInput input)"
         )
         for section in (
             "SectionID_PixelDecoder",
@@ -780,7 +781,7 @@ class Anima38WorkflowIntegrationTests(unittest.TestCase):
         self.assertIn("PixelDecoderSamplerRuns(input", applicability)
         self.assertIn("SeedVRSamplerRuns(input", applicability)
         refiner_activation = method_body(
-            self.workflow, "public static bool RefinerSamplerRuns"
+            self.workflow, "internal static bool RefinerSamplerRuns"
         )
         self.assertIn('compat == "pid"', refiner_activation)
         self.assertIn('compat == "seedvr2"', refiner_activation)
@@ -791,15 +792,15 @@ class Anima38WorkflowIntegrationTests(unittest.TestCase):
         self.assertIn("WorkflowGenerator.RefinerSamplerRuns(g.UserInput", steps)
 
     def test_preview_termination_keeps_only_pre_preview_bridge_emission_sites(self):
-        self.assertIn("public static bool WorkflowTerminatesBeforeSampling", self.workflow)
+        self.assertIn("private static bool WorkflowTerminatesBeforeSampling", self.workflow)
         termination = method_body(
-            self.workflow, "public static bool WorkflowTerminatesBeforeSampling"
+            self.workflow, "private static bool WorkflowTerminatesBeforeSampling"
         )
         self.assertIn("IsControlNetPreviewActive(input)", termination)
         self.assertIn("IsSam3PointPreviewActive(input)", termination)
         self.assertIn("IsSam3BBoxPreviewActive(input)", termination)
         self.assertIn("IsSam3PromptPreviewActive(input)", termination)
-        control_preview = method_body(self.workflow, "public static bool IsControlNetPreviewActive")
+        control_preview = method_body(self.workflow, "private static bool IsControlNetPreviewActive")
         self.assertIn("ControlNetPreviewOnly", control_preview)
         self.assertIn("ResolveControlNetPreprocessor(input, i)", control_preview)
         for helper, parameter in (
@@ -807,14 +808,14 @@ class Anima38WorkflowIntegrationTests(unittest.TestCase):
             ("IsSam3BBoxPreviewActive", "Sam3BBox"),
             ("IsSam3PromptPreviewActive", "Sam3SegmentPrompt"),
         ):
-            preview = method_body(self.workflow, f"public static bool {helper}")
+            preview = method_body(self.workflow, f"internal static bool {helper}")
             self.assertIn(parameter, preview)
             self.assertIn("TryGetBasicInputImage(input, out Image _)", preview)
         applicability = method_body(
-            self.workflow, "public static bool RequiresAnima38LoraBridge(T2IParamInput input)"
+            self.workflow, "internal static Anima38LoraNodeRequirement GetRequiredAnima38LoraNodes(T2IParamInput input)"
         )
         termination_check = applicability.index("WorkflowTerminatesBeforeSampling(input)")
-        base_loader_check = applicability.index("applies(baseModel")
+        base_loader_check = applicability.index("addLoader(baseModel")
         base_regions_check = applicability.index("baseRegionalConfinements")
         refiner_check = applicability.index("refinerActive")
         self.assertLess(base_loader_check, termination_check)
@@ -828,13 +829,13 @@ class Anima38WorkflowIntegrationTests(unittest.TestCase):
 
     def test_unsampler_regional_hooks_are_active_and_base_model_only(self):
         applicability = method_body(
-            self.workflow, "public static bool RequiresAnima38LoraBridge(T2IParamInput input)"
+            self.workflow, "internal static Anima38LoraNodeRequirement GetRequiredAnima38LoraNodes(T2IParamInput input)"
         )
         self.assertIn("mainRegionalConfinements", applicability)
         self.assertIn("baseRegionalConfinementSet", applicability)
         self.assertIn("TryGetBasicInputImage(input, out Image _)", applicability)
         unsampler_check = applicability.index("T2IParamTypes.UnsamplerPrompt")
-        base_check = applicability.index("applies(baseModel, baseRegionalConfinements")
+        base_check = applicability.index("addHooks(baseModel, false, baseRegionalConfinements")
         later_roles = applicability.index("bool refinerActive")
         self.assertLess(unsampler_check, base_check)
         self.assertLess(base_check, later_roles)
@@ -842,9 +843,9 @@ class Anima38WorkflowIntegrationTests(unittest.TestCase):
         self.assertIn("mainRegionalConfinements", applicability[later_roles:])
 
     def test_basic_input_image_eligibility_is_shared_by_emission_and_previews(self):
-        self.assertIn("public static bool TryGetBasicInputImage", self.workflow)
+        self.assertIn("internal static bool TryGetBasicInputImage", self.workflow)
         eligibility = method_body(
-            self.workflow, "public static bool TryGetBasicInputImage"
+            self.workflow, "internal static bool TryGetBasicInputImage"
         )
         self.assertIn("T2IParamTypes.Model", eligibility)
         self.assertIn("CompatClass?.IsAudioModel", eligibility)
@@ -854,7 +855,7 @@ class Anima38WorkflowIntegrationTests(unittest.TestCase):
             "WorkflowGenerator.TryGetBasicInputImage(g.UserInput, out Image img)", steps
         )
         control_preview = method_body(
-            self.workflow, "public static bool IsControlNetPreviewActive"
+            self.workflow, "private static bool IsControlNetPreviewActive"
         )
         self.assertIn("TryGetBasicInputImage(input, out Image _)", control_preview)
         for helper in (
@@ -862,7 +863,7 @@ class Anima38WorkflowIntegrationTests(unittest.TestCase):
             "IsSam3BBoxPreviewActive",
             "IsSam3PromptPreviewActive",
         ):
-            preview = method_body(self.workflow, f"public static bool {helper}")
+            preview = method_body(self.workflow, f"internal static bool {helper}")
             self.assertIn("TryGetBasicInputImage(input, out Image _)", preview)
             self.assertNotIn("input.TryGet(T2IParamTypes.InitImage", preview)
 
@@ -881,6 +882,55 @@ class Anima38WorkflowIntegrationTests(unittest.TestCase):
         self.assertLess(error, emission)
         self.assertIn("Anima 3.8B LLLite", anima_control[error:emission])
         self.assertIn("block mapping is not known-safe", anima_control[error:emission])
+
+    def test_exact_lora_requirement_prediction_uses_production_csharp_decisions(self):
+        output_dir = REPOSITORY_ROOT / "src/bin/Debug/net8.0"
+        swarm_dll = output_dir / "SwarmUI.dll"
+        self.assertTrue(swarm_dll.exists(), "Build SwarmUI before running the C# behavior harness")
+        sdk_root = pathlib.Path("/usr/share/dotnet/sdk")
+        compiler = sorted(sdk_root.glob("*/Roslyn/bincore/csc.dll"))[-1]
+        reference_roots = [
+            pathlib.Path("/usr/share/dotnet/packs/Microsoft.NETCore.App.Ref"),
+            pathlib.Path.home() / ".nuget/packages/microsoft.netcore.app.ref",
+        ]
+        reference_dirs = [
+            path for root in reference_roots for path in root.glob("*/ref/net8.0")
+        ]
+        reference_dir = sorted(reference_dirs)[-1]
+        with tempfile.TemporaryDirectory(prefix="anima38-routing-") as temp_raw:
+            temp_dir = pathlib.Path(temp_raw)
+            harness_dll = temp_dir / "Anima38LoraRequirementHarness.dll"
+            compile_command = [
+                "dotnet",
+                str(compiler),
+                "-noconfig",
+                "-nostdlib",
+                "-langversion:latest",
+                "-target:exe",
+                f"-out:{harness_dll}",
+                *[f"-r:{path}" for path in sorted(reference_dir.glob("*.dll"))],
+                f"-r:{swarm_dll}",
+                str(REQUIREMENT_HARNESS_PATH),
+            ]
+            compiled = subprocess.run(compile_command, capture_output=True, text=True)
+            self.assertEqual(compiled.returncode, 0, compiled.stdout + compiled.stderr)
+            for source in output_dir.glob("*.dll"):
+                shutil.copy2(source, temp_dir / source.name)
+            executed = subprocess.run(
+                [
+                    "dotnet",
+                    "exec",
+                    "--runtimeconfig",
+                    str(output_dir / "SwarmUI.runtimeconfig.json"),
+                    "--depsfile",
+                    str(output_dir / "SwarmUI.deps.json"),
+                    str(harness_dll),
+                ],
+                cwd=temp_dir,
+                capture_output=True,
+                text=True,
+            )
+            self.assertEqual(executed.returncode, 0, executed.stdout + executed.stderr)
 
 
 if __name__ == "__main__":

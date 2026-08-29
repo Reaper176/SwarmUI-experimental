@@ -310,7 +310,7 @@ public partial class WorkflowGenerator
     public record struct LoraScheduleParseResult(List<LoraScheduleSegment> Segments, bool IsInterpolated);
 
     /// <summary>Effective main-sampler step range after applying shared input rules.</summary>
-    public record struct BaseSamplerRange(int Steps, int StartStep, int EndStep, bool NoSkip)
+    internal record struct BaseSamplerRange(int Steps, int StartStep, int EndStep, bool NoSkip)
     {
         /// <summary>Whether the main workflow invokes its sampler.</summary>
         public readonly bool Runs => Steps > 0 && Math.Min(EndStep, Steps) > StartStep;
@@ -338,7 +338,7 @@ public partial class WorkflowGenerator
     }
 
     /// <summary>Resolves the main sampler range exactly as workflow generation does.</summary>
-    public static BaseSamplerRange GetBaseSamplerRange(T2IParamInput input, bool isPiD)
+    internal static BaseSamplerRange GetBaseSamplerRange(T2IParamInput input, bool isPiD)
     {
         int steps = input.Get(T2IParamTypes.Steps);
         bool noSkip = false;
@@ -375,7 +375,7 @@ public partial class WorkflowGenerator
     }
 
     /// <summary>Returns the regional/object confinement IDs whose conditioning emits LoRA hooks.</summary>
-    public static int[] GetRegionalHookConfinements(T2IParamInput input, string prompt, bool isPositive)
+    private static int[] GetRegionalHookConfinements(T2IParamInput input, string prompt, bool isPositive)
     {
         string regionalMethod = input.Get(ComfyUIBackendExtension.RegionalPromptingMethod, "Standard");
         if (regionalMethod == "Attention Couple" && !isPositive)
@@ -391,7 +391,7 @@ public partial class WorkflowGenerator
     }
 
     /// <summary>Returns whether the selected refiner path emits a sampler.</summary>
-    public static bool RefinerSamplerRuns(T2IParamInput input, T2IModel refinerModel)
+    internal static bool RefinerSamplerRuns(T2IParamInput input, T2IModel refinerModel)
     {
         if (!input.TryGet(T2IParamTypes.RefinerMethod, out string _)
             || !input.TryGet(T2IParamTypes.RefinerControl, out double refinerControl))
@@ -415,7 +415,7 @@ public partial class WorkflowGenerator
     }
 
     /// <summary>Returns whether a SeedVR restoration sampler is emitted after generation.</summary>
-    public static bool SeedVRSamplerRuns(T2IParamInput input, bool videoActive, bool extendActive)
+    private static bool SeedVRSamplerRuns(T2IParamInput input, bool videoActive, bool extendActive)
     {
         if (!input.TryGet(ComfyUIBackendExtension.SeedVRModel, out T2IModel seedVrModel) || seedVrModel is null)
         {
@@ -426,7 +426,7 @@ public partial class WorkflowGenerator
     }
 
     /// <summary>Returns whether any PiD pixel-decoder sampler emits in section 4.</summary>
-    public static bool PixelDecoderSamplerRuns(T2IParamInput input, T2IModel baseModel, T2IModel refinerModel, bool refinerActive, bool refinerSamplerRuns, bool segmentBeforeRefiner, bool seedVrSamplerRuns)
+    private static bool PixelDecoderSamplerRuns(T2IParamInput input, T2IModel baseModel, T2IModel refinerModel, bool refinerActive, bool refinerSamplerRuns, bool segmentBeforeRefiner, bool seedVrSamplerRuns)
     {
         bool refinerPidUpscale = refinerActive && refinerModel?.ModelClass?.CompatClass?.ID != "pid"
             && input.TryGet(T2IParamTypes.RefinerUpscale, out double refinerUpscale) && refinerUpscale != 1
@@ -446,7 +446,7 @@ public partial class WorkflowGenerator
     }
 
     /// <summary>Resolves the ControlNet preprocessor selected explicitly or inferred from model metadata.</summary>
-    public static string ResolveControlNetPreprocessor(T2IParamInput input, int index)
+    internal static string ResolveControlNetPreprocessor(T2IParamInput input, int index)
     {
         if (input.TryGet(ComfyUIBackendExtension.ControlNetPreprocessorParams[index], out string preprocessor))
         {
@@ -538,7 +538,7 @@ public partial class WorkflowGenerator
     }
 
     /// <summary>Returns the init image when the base workflow actually creates <see cref="BasicInputImage"/>.</summary>
-    public static bool TryGetBasicInputImage(T2IParamInput input, out Image image)
+    internal static bool TryGetBasicInputImage(T2IParamInput input, out Image image)
     {
         image = null;
         if (!input.TryGet(T2IParamTypes.Model, out T2IModel baseModel)
@@ -550,7 +550,7 @@ public partial class WorkflowGenerator
     }
 
     /// <summary>Returns whether ControlNet preprocessing terminates the workflow with a preview.</summary>
-    public static bool IsControlNetPreviewActive(T2IParamInput input)
+    private static bool IsControlNetPreviewActive(T2IParamInput input)
     {
         if (!input.Get(T2IParamTypes.ControlNetPreviewOnly))
         {
@@ -574,28 +574,28 @@ public partial class WorkflowGenerator
     }
 
     /// <summary>Returns whether SAM3 point preview terminates before sampling.</summary>
-    public static bool IsSam3PointPreviewActive(T2IParamInput input)
+    internal static bool IsSam3PointPreviewActive(T2IParamInput input)
     {
         return TryGetBasicInputImage(input, out Image _)
             && input.TryGet(ComfyUIBackendExtension.Sam3PointCoordsPositive, out string coords) && !string.IsNullOrWhiteSpace(coords) && coords != "[]";
     }
 
     /// <summary>Returns whether SAM3 bounding-box preview terminates before sampling.</summary>
-    public static bool IsSam3BBoxPreviewActive(T2IParamInput input)
+    internal static bool IsSam3BBoxPreviewActive(T2IParamInput input)
     {
         return TryGetBasicInputImage(input, out Image _)
             && input.TryGet(ComfyUIBackendExtension.Sam3BBox, out string bbox) && !string.IsNullOrWhiteSpace(bbox);
     }
 
     /// <summary>Returns whether SAM3 prompt preview terminates before sampling.</summary>
-    public static bool IsSam3PromptPreviewActive(T2IParamInput input)
+    internal static bool IsSam3PromptPreviewActive(T2IParamInput input)
     {
         return TryGetBasicInputImage(input, out Image _)
             && input.TryGet(ComfyUIBackendExtension.Sam3SegmentPrompt, out string prompt) && !string.IsNullOrWhiteSpace(prompt);
     }
 
     /// <summary>Returns whether a preview mode stops the workflow before any sampler or later model role.</summary>
-    public static bool WorkflowTerminatesBeforeSampling(T2IParamInput input)
+    private static bool WorkflowTerminatesBeforeSampling(T2IParamInput input)
     {
         return IsControlNetPreviewActive(input) || IsSam3PointPreviewActive(input) || IsSam3BBoxPreviewActive(input) || IsSam3PromptPreviewActive(input);
     }
@@ -734,7 +734,7 @@ public partial class WorkflowGenerator
     }
 
     /// <summary>Gets the confinement assigned to one LoRA, defaulting to the unconfined pass.</summary>
-    public static int GetLoraConfinementAt(IReadOnlyList<string> confinements, int index)
+    private static int GetLoraConfinementAt(IReadOnlyList<string> confinements, int index)
     {
         if (confinements is null || confinements.Count <= index)
         {
@@ -744,55 +744,127 @@ public partial class WorkflowGenerator
     }
 
     /// <summary>Returns whether one LoRA is emitted by any of the given confinement passes.</summary>
-    public static bool LoraAppliesToConfinements(IReadOnlyList<string> confinements, int index, params int[] targetConfinements)
+    private static bool LoraAppliesToConfinements(IReadOnlyList<string> confinements, int index, params int[] targetConfinements)
     {
         int confinement = GetLoraConfinementAt(confinements, index);
         return targetConfinements.Contains(confinement);
     }
 
-    /// <summary>Returns whether any selected LoRA is emitted by the ordinary or scheduled confinement passes.</summary>
-    public static bool HasLoraForEmission(T2IParamInput input, int[] ordinaryConfinements, int[] scheduledConfinements)
+    /// <summary>The concrete LoRA node selected for one emission.</summary>
+    private enum LoraNodeKind
+    {
+        FullLoader,
+        ModelOnlyLoader,
+        HookLoader
+    }
+
+    /// <summary>Exact Anima 3.8B bridge nodes that a workflow can emit.</summary>
+    [Flags]
+    internal enum Anima38LoraNodeRequirement
+    {
+        /// <summary>No Anima 3.8B LoRA bridge node is emitted.</summary>
+        None = 0,
+        /// <summary>The model-and-CLIP bridge loader is emitted.</summary>
+        FullLoader = 1,
+        /// <summary>The model-only bridge loader is emitted.</summary>
+        ModelOnlyLoader = 2,
+        /// <summary>The scheduled or conditioning-hook bridge loader is emitted.</summary>
+        HookLoader = 4
+    }
+
+    /// <summary>Selects the concrete LoRA node kind using the same model, CLIP, and strength semantics as graph emission.</summary>
+    private static LoraNodeKind SelectLoraNodeKind(T2IModel model, bool hook, bool clipAvailable, float textEncoderStrength)
+    {
+        if (hook)
+        {
+            return LoraNodeKind.HookLoader;
+        }
+        return model?.ModelClass?.CompatClass?.LorasTargetTextEnc == false || !clipAvailable || textEncoderStrength == 0
+            ? LoraNodeKind.ModelOnlyLoader
+            : LoraNodeKind.FullLoader;
+    }
+
+    /// <summary>Maps an emitted node kind to its exact Anima 3.8B bridge requirement.</summary>
+    private static Anima38LoraNodeRequirement GetAnima38LoraNodeRequirement(T2IModel model, bool emitted, LoraNodeKind kind)
+    {
+        if (!emitted || model?.ModelClass?.ID != "anima-3_8b")
+        {
+            return Anima38LoraNodeRequirement.None;
+        }
+        return kind switch
+        {
+            LoraNodeKind.FullLoader => Anima38LoraNodeRequirement.FullLoader,
+            LoraNodeKind.ModelOnlyLoader => Anima38LoraNodeRequirement.ModelOnlyLoader,
+            LoraNodeKind.HookLoader => Anima38LoraNodeRequirement.HookLoader,
+            _ => Anima38LoraNodeRequirement.None
+        };
+    }
+
+    /// <summary>Returns the exact Anima 3.8B LoRA bridge nodes emitted by active workflow roles.</summary>
+    internal static Anima38LoraNodeRequirement GetRequiredAnima38LoraNodes(T2IParamInput input)
     {
         if (!input.TryGet(T2IParamTypes.Loras, out List<string> loras) || loras.Count == 0)
         {
-            return false;
+            return Anima38LoraNodeRequirement.None;
         }
+        List<string> weights = input.Get(T2IParamTypes.LoraWeights);
+        List<string> textEncoderWeights = input.Get(T2IParamTypes.LoraTencWeights);
         List<string> confinements = input.Get(T2IParamTypes.LoraSectionConfinement);
         List<string> schedules = input.Get(T2IParamTypes.LoraSchedules);
-        for (int i = 0; i < loras.Count; i++)
+        Anima38LoraNodeRequirement requirements = Anima38LoraNodeRequirement.None;
+        float textEncoderStrength(int index)
         {
-            bool scheduled = ResolveLoraScheduleAt(schedules, i) is not null;
-            int[] targetConfinements = scheduled ? scheduledConfinements : ordinaryConfinements;
-            if (LoraAppliesToConfinements(confinements, i, targetConfinements))
+            float modelStrength = weights is null || index >= weights.Count ? 1 : float.Parse(weights[index]);
+            return textEncoderWeights is null || index >= textEncoderWeights.Count ? modelStrength : float.Parse(textEncoderWeights[index]);
+        }
+        void addOrdinary(T2IModel model, bool clipAvailable, params int[] targetConfinements)
+        {
+            if (model?.ModelClass?.ID != "anima-3_8b")
             {
-                return true;
+                return;
+            }
+            for (int i = 0; i < loras.Count; i++)
+            {
+                bool emitted = ResolveLoraScheduleAt(schedules, i) is null && LoraAppliesToConfinements(confinements, i, targetConfinements);
+                if (!emitted)
+                {
+                    continue;
+                }
+                LoraNodeKind kind = SelectLoraNodeKind(model, false, clipAvailable, textEncoderStrength(i));
+                requirements |= GetAnima38LoraNodeRequirement(model, emitted, kind);
             }
         }
-        return false;
-    }
-
-    /// <summary>Returns whether an active Anima 3.8B workflow role can emit at least one selected LoRA.</summary>
-    public static bool RequiresAnima38LoraBridge(T2IParamInput input)
-    {
-        static bool isAnima38(T2IModel model)
+        void addHooks(T2IModel model, bool scheduledOnly, params int[] targetConfinements)
         {
-            return model?.ModelClass?.ID == "anima-3_8b";
+            if (model?.ModelClass?.ID != "anima-3_8b")
+            {
+                return;
+            }
+            for (int i = 0; i < loras.Count; i++)
+            {
+                bool scheduled = ResolveLoraScheduleAt(schedules, i) is not null;
+                bool emitted = (!scheduledOnly || scheduled) && LoraAppliesToConfinements(confinements, i, targetConfinements);
+                if (!emitted)
+                {
+                    continue;
+                }
+                LoraNodeKind kind = SelectLoraNodeKind(model, true, true, 0);
+                requirements |= GetAnima38LoraNodeRequirement(model, emitted, kind);
+            }
+        }
+        void addLoader(T2IModel model, int roleConfinement)
+        {
+            addOrdinary(model, true, -1, 0, roleConfinement);
+            addHooks(model, true, -1, 0);
         }
         static bool usesStandardRefinerLoader(T2IModel model)
         {
             string compat = model?.ModelClass?.CompatClass?.ID;
             return compat != "pid" && compat != "seedvr2";
         }
-        bool applies(T2IModel model, int[] ordinaryConfinements, int[] scheduledConfinements)
-        {
-            return isAnima38(model) && HasLoraForEmission(input, ordinaryConfinements, scheduledConfinements);
-        }
 
         T2IModel baseModel = input.Get(T2IParamTypes.Model, null);
-        if (applies(baseModel, [-1, 0, T2IParamInput.SectionID_BaseOnly], [-1, 0]))
-        {
-            return true;
-        }
+        addLoader(baseModel, T2IParamInput.SectionID_BaseOnly);
 
         string positivePrompt = input.Get(T2IParamTypes.Prompt, "");
         string negativePrompt = input.Get(T2IParamTypes.NegativePrompt, "");
@@ -807,13 +879,10 @@ public partial class WorkflowGenerator
             baseRegionalConfinementSet.UnionWith(GetRegionalHookConfinements(input, unsamplerPrompt, true));
         }
         int[] baseRegionalConfinements = [.. baseRegionalConfinementSet];
-        if (applies(baseModel, baseRegionalConfinements, baseRegionalConfinements))
-        {
-            return true;
-        }
+        addHooks(baseModel, false, baseRegionalConfinements);
         if (WorkflowTerminatesBeforeSampling(input))
         {
-            return false;
+            return requirements;
         }
 
         bool refinerActive = input.TryGet(T2IParamTypes.RefinerMethod, out string _)
@@ -829,13 +898,8 @@ public partial class WorkflowGenerator
             standardRefinerActive = usesStandardRefinerLoader(refinerModel);
             if (standardRefinerActive)
             {
-                int[] refinerRegionalConfinements = mainRegionalConfinements;
-                if (applies(refinerModel,
-                    [-1, 0, T2IParamInput.SectionID_Refiner, .. refinerRegionalConfinements],
-                    [-1, 0, .. refinerRegionalConfinements]))
-                {
-                    return true;
-                }
+                addLoader(refinerModel, T2IParamInput.SectionID_Refiner);
+                addHooks(refinerModel, false, mainRegionalConfinements);
                 modelAfterRefiner = refinerModel;
             }
         }
@@ -852,42 +916,36 @@ public partial class WorkflowGenerator
                 string segmentNegativePrompt = negativeSegmentParts.FirstOrDefault(negativePart => negativePart.DataText == part.DataText)?.Prompt ?? parsedNegativePrompt.GlobalPrompt;
                 segmentRegionalConfinements.UnionWith(GetRegionalHookConfinements(input, segmentNegativePrompt, false));
             }
-            int[] segmentDynamicConfinements = [.. segmentContextConfinements.Concat(segmentRegionalConfinements)];
             T2IModel explicitSegmentModel = input.Get(T2IParamTypes.SegmentModel, null);
             if (explicitSegmentModel is not null)
             {
-                int[] ordinarySegmentConfinements = [-1, 0, T2IParamInput.SectionID_BaseOnly, .. segmentDynamicConfinements];
-                int[] scheduledSegmentConfinements = [-1, 0, .. segmentDynamicConfinements];
-                if (applies(explicitSegmentModel, ordinarySegmentConfinements, scheduledSegmentConfinements))
-                {
-                    return true;
-                }
+                addLoader(explicitSegmentModel, T2IParamInput.SectionID_BaseOnly);
+                addOrdinary(explicitSegmentModel, true, segmentContextConfinements);
+                addHooks(explicitSegmentModel, true, segmentContextConfinements);
+                addHooks(explicitSegmentModel, false, [.. segmentRegionalConfinements]);
             }
             else
             {
                 string segmentApplyAfter = input.Get(T2IParamTypes.SegmentApplyAfter, "Refiner");
                 T2IModel segmentPhaseModel = segmentApplyAfter == "Base" ? baseModel : modelAfterRefiner;
-                if (applies(segmentPhaseModel, segmentDynamicConfinements, segmentDynamicConfinements))
-                {
-                    return true;
-                }
+                addOrdinary(segmentPhaseModel, true, segmentContextConfinements);
+                addHooks(segmentPhaseModel, true, segmentContextConfinements);
+                addHooks(segmentPhaseModel, false, [.. segmentRegionalConfinements]);
             }
         }
 
         bool videoActive = input.TryGet(T2IParamTypes.VideoModel, out T2IModel videoModel);
-        if (videoActive && applies(videoModel,
-            [-1, 0, T2IParamInput.SectionID_Video, .. mainRegionalConfinements],
-            [-1, 0, .. mainRegionalConfinements]))
+        if (videoActive)
         {
-            return true;
+            addLoader(videoModel, T2IParamInput.SectionID_Video);
+            addHooks(videoModel, false, mainRegionalConfinements);
         }
         T2IModel videoSwapModel = input.Get(T2IParamTypes.VideoSwapModel, null);
         bool videoSwapActive = videoActive && videoSwapModel is not null;
-        if (videoSwapActive && applies(videoSwapModel,
-            [-1, 0, T2IParamInput.SectionID_VideoSwap, .. mainRegionalConfinements],
-            [-1, 0, .. mainRegionalConfinements]))
+        if (videoSwapActive)
         {
-            return true;
+            addLoader(videoSwapModel, T2IParamInput.SectionID_VideoSwap);
+            addHooks(videoSwapModel, false, mainRegionalConfinements);
         }
 
         PromptRegion.Part[] extendParts = [.. parsedPrompt.Parts.Where(part => part.Type == PromptRegion.PartType.Extend)];
@@ -899,19 +957,19 @@ public partial class WorkflowGenerator
         {
             extendRegionalConfinements.UnionWith(GetRegionalHookConfinements(input, extendPart.Prompt, true));
         }
-        if (extendActive && applies(extendModel,
-            [.. extendConfinements.Concat(extendRegionalConfinements)],
-            [-1, 0, .. extendRegionalConfinements]))
+        if (extendActive)
         {
-            return true;
+            addOrdinary(extendModel, true, extendConfinements);
+            addHooks(extendModel, true, -1, 0);
+            addHooks(extendModel, false, [.. extendRegionalConfinements]);
         }
         T2IModel extendSwapModel = input.Get(T2IParamTypes.VideoExtendSwapModel, null);
         bool extendSwapActive = extendActive && extendSwapModel is not null;
-        if (extendSwapActive && applies(extendSwapModel,
-            [.. extendConfinements.Concat(extendRegionalConfinements)],
-            [-1, 0, .. extendRegionalConfinements]))
+        if (extendSwapActive)
         {
-            return true;
+            addOrdinary(extendSwapModel, true, extendConfinements);
+            addHooks(extendSwapModel, true, -1, 0);
+            addHooks(extendSwapModel, false, [.. extendRegionalConfinements]);
         }
 
         bool includeNegativeLoras = input.Get(T2IParamTypes.NegativeModelIncludeLoras, true);
@@ -957,13 +1015,13 @@ public partial class WorkflowGenerator
             foreach (int sectionId in activeSamplingSections)
             {
                 if (input.TryGet(T2IParamTypes.NegativeModel, out T2IModel negativeModel, sectionId: sectionId)
-                    && applies(negativeModel, [-1, 0, sectionId], [-1, 0]))
+                    && negativeModel is not null)
                 {
-                    return true;
+                    addLoader(negativeModel, sectionId);
                 }
             }
         }
-        return false;
+        return requirements;
     }
 
     /// <summary>Creates a CreateHookKeyframe chain for a parsed LoRA schedule.</summary>
@@ -1013,7 +1071,6 @@ public partial class WorkflowGenerator
         List<string> tencWeights = UserInput.Get(T2IParamTypes.LoraTencWeights);
         List<string> confinements = UserInput.Get(T2IParamTypes.LoraSectionConfinement);
         List<string> schedules = UserInput.Get(T2IParamTypes.LoraSchedules);
-        bool isAnima38 = IsAnima38();
         if (confinement > 0 && (confinements is null || confinements.Count == 0))
         {
             return clip;
@@ -1046,7 +1103,9 @@ public partial class WorkflowGenerator
             }
             float weight = weights is null || i >= weights.Count ? 1 : float.Parse(weights[i]);
             float tencWeight = tencWeights is null || i >= tencWeights.Count ? weight : float.Parse(tencWeights[i]);
-            string hookLoraNode = isAnima38 ? ComfyNodeNames.Anima38CreateHookLora : "CreateHookLora";
+            LoraNodeKind kind = SelectLoraNodeKind(FinalLoadedModel, true, clip is not null, tencWeight);
+            bool requiresAnimaBridge = GetAnima38LoraNodeRequirement(FinalLoadedModel, true, kind) == Anima38LoraNodeRequirement.HookLoader;
+            string hookLoraNode = requiresAnimaBridge ? ComfyNodeNames.Anima38CreateHookLora : "CreateHookLora";
             string newId = CreateNode(hookLoraNode, new JObject()
             {
                 [ComfyNodeInputNames.Anima38CreateHookLora.PrevHooks] = last,
@@ -1101,7 +1160,6 @@ public partial class WorkflowGenerator
         List<string> tencWeights = UserInput.Get(T2IParamTypes.LoraTencWeights);
         List<string> confinements = UserInput.Get(T2IParamTypes.LoraSectionConfinement);
         List<string> schedules = UserInput.Get(T2IParamTypes.LoraSchedules);
-        bool isAnima38 = IsAnima38();
         if (confinement > 0 && (confinements is null || confinements.Count == 0))
         {
             return (model, clip);
@@ -1138,6 +1196,7 @@ public partial class WorkflowGenerator
             float tencWeight = tencWeights is null || i >= tencWeights.Count ? weight : float.Parse(tencWeights[i]);
             string id = GetStableDynamicID(2000, i);
             string specialFormat = FinalLoadedModel?.Metadata?.SpecialFormat;
+            LoraNodeKind kind = SelectLoraNodeKind(FinalLoadedModel, false, clip is not null, tencWeight);
             if (IsFlux() && (specialFormat == "nunchaku" || specialFormat == "nunchaku-fp4"))
             {
                 // This is dirty to use this alt node, but it seems required for Nunchaku.
@@ -1149,9 +1208,10 @@ public partial class WorkflowGenerator
                 }, id, false);
                 model = [newId, 0];
             }
-            else if (CurrentCompat()?.LorasTargetTextEnc == false || tencWeight == 0)
+            else if (kind == LoraNodeKind.ModelOnlyLoader)
             {
-                string loaderNode = isAnima38 ? ComfyNodeNames.Anima38LoraLoaderModelOnly : "LoraLoaderModelOnly";
+                bool requiresAnimaBridge = GetAnima38LoraNodeRequirement(FinalLoadedModel, true, kind) == Anima38LoraNodeRequirement.ModelOnlyLoader;
+                string loaderNode = requiresAnimaBridge ? ComfyNodeNames.Anima38LoraLoaderModelOnly : "LoraLoaderModelOnly";
                 string newId = CreateNode(loaderNode, new JObject()
                 {
                     [ComfyNodeInputNames.Anima38LoraLoaderModelOnly.Model] = model,
@@ -1162,7 +1222,8 @@ public partial class WorkflowGenerator
             }
             else
             {
-                string loaderNode = isAnima38 ? ComfyNodeNames.Anima38LoraLoader : "LoraLoader";
+                bool requiresAnimaBridge = GetAnima38LoraNodeRequirement(FinalLoadedModel, true, kind) == Anima38LoraNodeRequirement.FullLoader;
+                string loaderNode = requiresAnimaBridge ? ComfyNodeNames.Anima38LoraLoader : "LoraLoader";
                 string newId = CreateNode(loaderNode, new JObject()
                 {
                     [ComfyNodeInputNames.Anima38LoraLoader.Model] = model,

@@ -1315,11 +1315,10 @@ public class ComfyUIBackendExtension : Extension
             input.RequiredFlags.Add(ComfyCapabilityCatalog.Anima38Qwen35NodeFeature);
             input.RequiredFlags.Add(ComfyCapabilityCatalog.Anima38ConditioningNodeFeature);
         }
-        if (WorkflowGenerator.RequiresAnima38LoraBridge(input))
+        WorkflowGenerator.Anima38LoraNodeRequirement animaLoraRequirements = WorkflowGenerator.GetRequiredAnima38LoraNodes(input);
+        foreach (string feature in GetAnima38LoraCapabilityRequirements(animaLoraRequirements))
         {
-            input.RequiredFlags.Add(ComfyCapabilityCatalog.Anima38LoraLoaderNodeFeature);
-            input.RequiredFlags.Add(ComfyCapabilityCatalog.Anima38LoraLoaderModelOnlyNodeFeature);
-            input.RequiredFlags.Add(ComfyCapabilityCatalog.Anima38CreateHookLoraNodeFeature);
+            input.RequiredFlags.Add(feature);
         }
         static bool isMiniMaxH3(T2IParamInput input, T2IRegisteredParam<T2IModel> param)
         {
@@ -1329,6 +1328,25 @@ public class ComfyUIBackendExtension : Extension
         {
             input.RequiredFlags.Add(ComfyCapabilityCatalog.EmptyMiniMaxH3LatentAVFeature);
         }
+    }
+
+    /// <summary>Maps exact emitted Anima 3.8B LoRA bridge nodes to backend capability IDs.</summary>
+    private static string[] GetAnima38LoraCapabilityRequirements(WorkflowGenerator.Anima38LoraNodeRequirement requirements)
+    {
+        List<string> features = [];
+        if (requirements.HasFlag(WorkflowGenerator.Anima38LoraNodeRequirement.FullLoader))
+        {
+            features.Add(ComfyCapabilityCatalog.Anima38LoraLoaderNodeFeature);
+        }
+        if (requirements.HasFlag(WorkflowGenerator.Anima38LoraNodeRequirement.ModelOnlyLoader))
+        {
+            features.Add(ComfyCapabilityCatalog.Anima38LoraLoaderModelOnlyNodeFeature);
+        }
+        if (requirements.HasFlag(WorkflowGenerator.Anima38LoraNodeRequirement.HookLoader))
+        {
+            features.Add(ComfyCapabilityCatalog.Anima38CreateHookLoraNodeFeature);
+        }
+        return [.. features];
     }
 
     /// <summary>Registers backend types that must exist before saved backend entries can load.</summary>
