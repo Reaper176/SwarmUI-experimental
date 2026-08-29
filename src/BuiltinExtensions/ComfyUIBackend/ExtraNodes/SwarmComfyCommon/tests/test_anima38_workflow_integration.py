@@ -525,7 +525,7 @@ class Anima38WorkflowIntegrationTests(unittest.TestCase):
         self.assertIn('["hooks"] = currentHooks', hooks)
         self.assertIn("last = currentHooks;", hooks)
 
-    def test_exact_anima_lora_bridge_capabilities_are_required_only_when_loras_are_present(self):
+    def test_exact_anima_lora_bridge_capabilities_follow_shared_workflow_applicability(self):
         bridge_capabilities = (
             ("Anima38LoraLoader", "Anima38LoraLoaderNodeFeature"),
             ("Anima38LoraLoaderModelOnly", "Anima38LoraLoaderModelOnlyNodeFeature"),
@@ -539,15 +539,9 @@ class Anima38WorkflowIntegrationTests(unittest.TestCase):
                 )
 
         routing = method_body(self.extension, "RecomputeBackendRoutingRequirements(T2IParamInput input)")
-        self.assertRegex(
-            routing,
-            r"input\.TryGet\(T2IParamTypes\.Loras, out List<string> loras\)\s*&&\s*loras\.Count > 0",
-        )
-        exact_role_check = routing.index("bool hasAnyAnima38")
-        lora_check = routing.index("bool hasAnyLoras")
-        bridge_requirement = routing.index("if (hasAnyAnima38 && hasAnyLoras)")
-        self.assertLess(exact_role_check, bridge_requirement)
-        self.assertLess(lora_check, bridge_requirement)
+        self.assertIn("WorkflowGenerator.RequiresAnima38LoraBridge(input)", routing)
+        self.assertNotIn("hasAnyAnima38 && hasAnyLoras", routing)
+        bridge_requirement = routing.index("WorkflowGenerator.RequiresAnima38LoraBridge(input)")
         bridge_block = routing[bridge_requirement:]
         for _, feature_name in bridge_capabilities:
             with self.subTest(feature_name=feature_name):
@@ -555,6 +549,118 @@ class Anima38WorkflowIntegrationTests(unittest.TestCase):
                     f"RequiredFlags.Add(ComfyCapabilityCatalog.{feature_name})",
                     bridge_block,
                 )
+
+        applicability = method_body(
+            self.workflow, "public static bool RequiresAnima38LoraBridge(T2IParamInput input)"
+        )
+        for activation_rule in (
+            "NegativeModelIncludeLoras",
+            "RefinerMethod",
+            "RefinerControl",
+            "PromptRegion.PartType.Segment",
+            "PromptRegion.PartType.Extend",
+            "VideoModel",
+        ):
+            with self.subTest(activation_rule=activation_rule):
+                self.assertIn(activation_rule, applicability)
+        for role in (
+            "Model",
+            "RefinerModel",
+            "SegmentModel",
+            "NegativeModel",
+            "VideoModel",
+            "VideoSwapModel",
+            "VideoExtendModel",
+            "VideoExtendSwapModel",
+        ):
+            with self.subTest(role=role):
+                self.assertIn(f"T2IParamTypes.{role}", applicability)
+        for section in (
+            "SectionID_BaseOnly",
+            "SectionID_Refiner",
+            "SectionID_Video",
+            "SectionID_VideoSwap",
+        ):
+            with self.subTest(section=section):
+                self.assertIn(section, applicability)
+        self.assertIn("HasLoraForConfinements", applicability)
+        self.assertIn("segmentParts.Length > 0", applicability)
+        self.assertIn("extendParts.Length > 0", applicability)
+        self.assertIn("videoActive", applicability)
+        self.assertIn("includeNegativeLoras", applicability)
+
+        confinement = method_body(
+            self.workflow, "public static int GetLoraConfinementAt(IReadOnlyList<string> confinements"
+        )
+        self.assertIn("int.Parse(confinements[index])", confinement)
+        self.assertIn(
+            "public static bool LoraAppliesToConfinements(IReadOnlyList<string> confinements",
+            self.workflow,
+        )
+        applies_to_confinement = method_body(
+            self.workflow,
+            "public static bool LoraAppliesToConfinements(IReadOnlyList<string> confinements",
+        )
+        self.assertIn("GetLoraConfinementAt(confinements, index)", applies_to_confinement)
+        has_lora = method_body(
+            self.workflow, "public static bool HasLoraForConfinements(T2IParamInput input"
+        )
+        self.assertIn("LoraAppliesToConfinements(confinements, i", has_lora)
+        ordinary = method_body(self.workflow, "LoadLorasForConfinement(int confinement")
+        hooks = method_body(self.workflow, "CreateHookLorasForConfinement(int confinement")
+        self.assertIn("LoraAppliesToConfinements(confinements, i, confinement)", ordinary)
+        self.assertIn("LoraAppliesToConfinements(confinements, i, confinement)", hooks)
+
+    def test_bridge_routing_excludes_inapplicable_exact_roles(self):
+        self.assertIn(
+            "public static bool RequiresAnima38LoraBridge(T2IParamInput input)",
+            self.workflow,
+        )
+        applicability = method_body(
+            self.workflow, "public static bool RequiresAnima38LoraBridge(T2IParamInput input)"
+        )
+        cases = {
+            "negative LoRAs disabled": (
+                "includeNegativeLoras",
+                "if (includeNegativeLoras)",
+            ),
+            "refiner-only LoRA cannot reach exact base": (
+                "SectionID_BaseOnly",
+                "SectionID_Refiner",
+            ),
+            "selected segment model is inactive without segments": (
+                "segmentParts.Length > 0",
+                "SegmentModel",
+            ),
+            "selected extend model is inactive without extend blocks": (
+                "extendParts.Length > 0",
+                "VideoExtendModel",
+            ),
+        }
+        for case, expected in cases.items():
+            with self.subTest(case=case):
+                for fragment in expected:
+                    self.assertIn(fragment, applicability)
+
+    def test_bridge_routing_includes_active_exact_roles_with_applicable_loras(self):
+        self.assertIn(
+            "public static bool RequiresAnima38LoraBridge(T2IParamInput input)",
+            self.workflow,
+        )
+        applicability = method_body(
+            self.workflow, "public static bool RequiresAnima38LoraBridge(T2IParamInput input)"
+        )
+        positive_paths = {
+            "base": "SectionID_BaseOnly",
+            "included negative": "includeNegativeLoras",
+            "refiner": "refinerActive",
+            "segment": "segmentParts",
+            "video": "videoActive",
+            "extend": "extendParts",
+        }
+        for case, fragment in positive_paths.items():
+            with self.subTest(case=case):
+                self.assertIn(fragment, applicability)
 
     def test_exact_anima_rejects_lllite_before_graph_emission(self):
         steps = method_body(self.steps, "public static void Register()")

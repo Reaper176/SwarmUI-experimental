@@ -1315,8 +1315,7 @@ public class ComfyUIBackendExtension : Extension
             input.RequiredFlags.Add(ComfyCapabilityCatalog.Anima38Qwen35NodeFeature);
             input.RequiredFlags.Add(ComfyCapabilityCatalog.Anima38ConditioningNodeFeature);
         }
-        bool hasAnyLoras = input.TryGet(T2IParamTypes.Loras, out List<string> loras) && loras.Count > 0;
-        if (hasAnyAnima38 && hasAnyLoras)
+        if (WorkflowGenerator.RequiresAnima38LoraBridge(input))
         {
             input.RequiredFlags.Add(ComfyCapabilityCatalog.Anima38LoraLoaderNodeFeature);
             input.RequiredFlags.Add(ComfyCapabilityCatalog.Anima38LoraLoaderModelOnlyNodeFeature);

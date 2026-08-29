@@ -457,6 +457,157 @@ public partial class WorkflowGenerator
         return Math.Clamp(keyframes, 2, 20);
     }
 
+    /// <summary>Gets the confinement assigned to one LoRA, defaulting to the unconfined pass.</summary>
+    public static int GetLoraConfinementAt(IReadOnlyList<string> confinements, int index)
+    {
+        if (confinements is null || confinements.Count <= index)
+        {
+            return -1;
+        }
+        return int.Parse(confinements[index]);
+    }
+
+    /// <summary>Returns whether one LoRA is emitted by any of the given confinement passes.</summary>
+    public static bool LoraAppliesToConfinements(IReadOnlyList<string> confinements, int index, params int[] targetConfinements)
+    {
+        int confinement = GetLoraConfinementAt(confinements, index);
+        return targetConfinements.Contains(confinement);
+    }
+
+    /// <summary>Returns whether any selected LoRA is emitted by one of the given confinement passes.</summary>
+    public static bool HasLoraForConfinements(T2IParamInput input, params int[] targetConfinements)
+    {
+        if (!input.TryGet(T2IParamTypes.Loras, out List<string> loras) || loras.Count == 0)
+        {
+            return false;
+        }
+        List<string> confinements = input.Get(T2IParamTypes.LoraSectionConfinement);
+        for (int i = 0; i < loras.Count; i++)
+        {
+            if (LoraAppliesToConfinements(confinements, i, targetConfinements))
+            {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /// <summary>Returns whether an active Anima 3.8B workflow role can emit at least one selected LoRA.</summary>
+    public static bool RequiresAnima38LoraBridge(T2IParamInput input)
+    {
+        static bool isAnima38(T2IModel model)
+        {
+            return model?.ModelClass?.ID == "anima-3_8b";
+        }
+        static bool usesStandardRefinerLoader(T2IModel model)
+        {
+            string compat = model?.ModelClass?.CompatClass?.ID;
+            return compat != "pid" && compat != "seedvr2";
+        }
+        bool applies(T2IModel model, params int[] roleConfinements)
+        {
+            return isAnima38(model) && HasLoraForConfinements(input, roleConfinements);
+        }
+
+        T2IModel baseModel = input.Get(T2IParamTypes.Model, null);
+        if (applies(baseModel, -1, 0, T2IParamInput.SectionID_BaseOnly))
+        {
+            return true;
+        }
+
+        bool refinerActive = input.TryGet(T2IParamTypes.RefinerMethod, out string _)
+            && input.TryGet(T2IParamTypes.RefinerControl, out double _);
+        T2IModel modelAfterRefiner = baseModel;
+        bool standardRefinerActive = false;
+        if (refinerActive)
+        {
+            T2IModel refinerModel = input.Get(T2IParamTypes.RefinerModel, null) ?? baseModel;
+            standardRefinerActive = usesStandardRefinerLoader(refinerModel);
+            if (standardRefinerActive)
+            {
+                if (applies(refinerModel, -1, 0, T2IParamInput.SectionID_Refiner))
+                {
+                    return true;
+                }
+                modelAfterRefiner = refinerModel;
+            }
+        }
+
+        PromptRegion parsedPrompt = new(input.Get(T2IParamTypes.Prompt, ""));
+        PromptRegion.Part[] segmentParts = [.. parsedPrompt.Parts.Where(part => part.Type == PromptRegion.PartType.Segment)];
+        if (segmentParts.Length > 0)
+        {
+            T2IModel segmentModel = input.Get(T2IParamTypes.SegmentModel, null) ?? modelAfterRefiner;
+            int[] segmentConfinements = [-1, 0, .. segmentParts.Select(part => part.ContextID)];
+            if (applies(segmentModel, segmentConfinements))
+            {
+                return true;
+            }
+        }
+
+        bool videoActive = input.TryGet(T2IParamTypes.VideoModel, out T2IModel videoModel);
+        if (videoActive && applies(videoModel, -1, 0, T2IParamInput.SectionID_Video))
+        {
+            return true;
+        }
+        T2IModel videoSwapModel = input.Get(T2IParamTypes.VideoSwapModel, null);
+        bool videoSwapActive = videoActive && videoSwapModel is not null;
+        if (videoSwapActive && applies(videoSwapModel, -1, 0, T2IParamInput.SectionID_VideoSwap))
+        {
+            return true;
+        }
+
+        PromptRegion.Part[] extendParts = [.. parsedPrompt.Parts.Where(part => part.Type == PromptRegion.PartType.Extend)];
+        T2IModel extendModel = input.Get(T2IParamTypes.VideoExtendModel, null);
+        bool extendActive = extendParts.Length > 0 && extendModel is not null;
+        int[] extendConfinements = [-1, 0, .. extendParts.Select(part => part.ContextID)];
+        if (extendActive && applies(extendModel, extendConfinements))
+        {
+            return true;
+        }
+        T2IModel extendSwapModel = input.Get(T2IParamTypes.VideoExtendSwapModel, null);
+        bool extendSwapActive = extendActive && extendSwapModel is not null;
+        if (extendSwapActive && applies(extendSwapModel, extendConfinements))
+        {
+            return true;
+        }
+
+        bool includeNegativeLoras = input.Get(T2IParamTypes.NegativeModelIncludeLoras, true);
+        if (includeNegativeLoras)
+        {
+            HashSet<int> activeSamplingSections = [T2IParamInput.SectionID_BaseOnly];
+            if (standardRefinerActive)
+            {
+                activeSamplingSections.Add(T2IParamInput.SectionID_Refiner);
+            }
+            if (segmentParts.Length > 0)
+            {
+                activeSamplingSections.UnionWith(segmentParts.Select(part => part.ContextID));
+            }
+            if (videoActive)
+            {
+                activeSamplingSections.Add(T2IParamInput.SectionID_Video);
+            }
+            if (videoSwapActive)
+            {
+                activeSamplingSections.Add(T2IParamInput.SectionID_VideoSwap);
+            }
+            if (extendActive)
+            {
+                activeSamplingSections.UnionWith(extendParts.Select(part => part.ContextID));
+            }
+            foreach (int sectionId in activeSamplingSections)
+            {
+                if (input.TryGet(T2IParamTypes.NegativeModel, out T2IModel negativeModel, sectionId: sectionId)
+                    && applies(negativeModel, -1, 0, sectionId))
+                {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
     /// <summary>Creates a CreateHookKeyframe chain for a parsed LoRA schedule.</summary>
     public JArray CreateHookKeyframesForLoraSchedule(LoraScheduleParseResult schedule, int loraIndex)
     {
@@ -514,12 +665,7 @@ public partial class WorkflowGenerator
         JArray last = null;
         for (int i = 0; i < loras.Count; i++)
         {
-            int confinementId = -1;
-            if (confinements is not null && confinements.Count > i)
-            {
-                confinementId = int.Parse(confinements[i]);
-            }
-            if (confinementId != confinement)
+            if (!LoraAppliesToConfinements(confinements, i, confinement))
             {
                 continue;
             }
@@ -606,12 +752,7 @@ public partial class WorkflowGenerator
         T2IModelHandler loraHandler = Program.T2IModelSets["LoRA"];
         for (int i = 0; i < loras.Count; i++)
         {
-            int confinementId = -1;
-            if (confinements is not null && confinements.Count > i)
-            {
-                confinementId = int.Parse(confinements[i]);
-            }
-            if (confinementId != confinement)
+            if (!LoraAppliesToConfinements(confinements, i, confinement))
             {
                 continue;
             }
