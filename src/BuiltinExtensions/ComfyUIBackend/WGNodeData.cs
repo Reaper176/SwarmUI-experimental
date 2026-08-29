@@ -12,6 +12,12 @@ namespace SwarmUI.Builtin_ComfyUIBackend;
 /// <summary>Represents data from a node output in <see cref="WorkflowGenerator"/>.</summary>
 public class WGNodeData(JArray _path, WorkflowGenerator _gen, string _dataType, T2IModelCompatClass _compat, JArray _anima38SemanticClip = null)
 {
+    /// <summary>Constructs node data without an Anima 3.8B semantic CLIP, preserving the original public constructor ABI.</summary>
+    public WGNodeData(JArray path, WorkflowGenerator gen, string dataType, T2IModelCompatClass compat)
+        : this(path, gen, dataType, compat, null)
+    {
+    }
+
     public static string DT_IMAGE = "IMAGE", DT_LATENT_IMAGE = "LATENT_IMAGE",
         DT_MODEL = "MODEL", DT_TEXTENC = "TEXTENC", DT_VAE = "VAE", DT_AUDIOVAE = "AUDIOVAE",
         DT_VIDEO = "VIDEO", DT_LATENT_VIDEO = "LATENT_VIDEO",

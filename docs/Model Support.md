@@ -560,6 +560,16 @@ For upscaling with SD3, the `Refiner Do Tiling` parameter is highly recommended 
     - **Sampler:** Defaults to `ER-SDE-Solver`, but all common samplers work. They officially recommend also trying out `Euler Ancestral` or `DPM++ 2M SDE`
     - **Scheduler:** Default is fine (`Simple`), or you can experiment at will. The model is adaptable.
 
+### Anima 3.8B
+
+- Swarm automatically recognizes 52-block Anima 3.8B checkpoints and uses their native conditioning path. In addition to the usual Anima Qwen 3 0.6B encoder and Qwen Image VAE, this requires a Qwen3.5 4B semantic encoder and a progressive adapter tagged with the `anima_progressive_qwen35_cross_adapter_v1` architecture metadata.
+    - Put the Qwen3.5 encoder in your text encoder/Clip model area. The progressive adapter may be stored with either text encoders or ControlNets.
+    - The advanced `Anima Qwen3.5 Encoder` and `Anima 3.8B Adapter` selectors default to `auto`. Swarm validates and discovers compatible assets; use the manual selectors if discovery is ambiguous. Adapter values are tagged by their source area, such as `text_encoders::` or `controlnet::`.
+    - Restart all Comfy backends after updating Swarm so the new Anima nodes and model choices are loaded.
+- Prompts support normal booru-style tags and natural language, including an explicit `Description:` section when desired. Swarm passes the prompt through raw and does not add or synthesize a description.
+- Anima 3.8B supports native 52-block LoRAs. It also transparently maps 40-block Anima 2.9B and 28-block Anima Base LoRAs onto the 52-block layout. Anima LLLite is intentionally unsupported on 3.8B because a safe block mapping is not known.
+- **Recommended starting point:** about one megapixel (for example `832x1216`), CFG `7` to `8`, and `28` to `50` steps. `res_multistep` with the `beta` scheduler are the model-specific defaults when enhanced inference settings are enabled; the other values are recommendations, not enforced settings.
+
 # HiDream-O1
 
 ![img](/docs/images/models/hidreamo1.jpg)

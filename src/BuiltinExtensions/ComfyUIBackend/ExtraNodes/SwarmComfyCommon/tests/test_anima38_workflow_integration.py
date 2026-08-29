@@ -1,5 +1,4 @@
 import pathlib
-import re
 import shutil
 import subprocess
 import tempfile
@@ -31,6 +30,9 @@ CAPABILITY_PATH = (
 )
 REQUIREMENT_HARNESS_PATH = pathlib.Path(__file__).with_name(
     "Anima38LoraRequirementHarness.cs.txt"
+)
+NODE_DATA_CONSTRUCTOR_HARNESS_PATH = pathlib.Path(__file__).with_name(
+    "WGNodeDataConstructorHarness.cs.txt"
 )
 
 
@@ -208,6 +210,58 @@ class Anima38WorkflowIntegrationTests(unittest.TestCase):
         self.assertIn("FinalLoadedModel = negModel", negative_load)
         self.assertIn("finally", negative_load)
         self.assertIn("FinalLoadedModel = priorLoadedModel", negative_load)
+
+    def test_wg_node_data_preserves_four_argument_constructor_abi(self):
+        output_dir = REPOSITORY_ROOT / "src/bin/Debug/net8.0"
+        swarm_dll = output_dir / "SwarmUI.dll"
+        newtonsoft_dll = output_dir / "Newtonsoft.Json.dll"
+        self.assertTrue(swarm_dll.exists(), "Build SwarmUI before running the constructor ABI harness")
+        self.assertTrue(newtonsoft_dll.exists(), "Build SwarmUI before running the constructor ABI harness")
+        sdk_root = pathlib.Path("/usr/share/dotnet/sdk")
+        compiler = sorted(sdk_root.glob("*/Roslyn/bincore/csc.dll"))[-1]
+        reference_roots = [
+            pathlib.Path("/usr/share/dotnet/packs/Microsoft.NETCore.App.Ref"),
+            pathlib.Path.home() / ".nuget/packages/microsoft.netcore.app.ref",
+        ]
+        reference_dirs = [
+            path for root in reference_roots for path in root.glob("*/ref/net8.0")
+        ]
+        reference_dir = sorted(reference_dirs)[-1]
+        with tempfile.TemporaryDirectory(prefix="anima38-node-data-abi-") as temp_raw:
+            temp_dir = pathlib.Path(temp_raw)
+            harness_dll = temp_dir / "WGNodeDataConstructorHarness.dll"
+            compile_command = [
+                "dotnet",
+                str(compiler),
+                "-noconfig",
+                "-nostdlib",
+                "-langversion:latest",
+                "-target:exe",
+                f"-out:{harness_dll}",
+                *[f"-r:{path}" for path in sorted(reference_dir.glob("*.dll"))],
+                f"-r:{swarm_dll}",
+                f"-r:{newtonsoft_dll}",
+                str(NODE_DATA_CONSTRUCTOR_HARNESS_PATH),
+            ]
+            compiled = subprocess.run(compile_command, capture_output=True, text=True)
+            self.assertEqual(compiled.returncode, 0, compiled.stdout + compiled.stderr)
+            for source in output_dir.glob("*.dll"):
+                shutil.copy2(source, temp_dir / source.name)
+            executed = subprocess.run(
+                [
+                    "dotnet",
+                    "exec",
+                    "--runtimeconfig",
+                    str(output_dir / "SwarmUI.runtimeconfig.json"),
+                    "--depsfile",
+                    str(output_dir / "SwarmUI.deps.json"),
+                    str(harness_dll),
+                ],
+                cwd=temp_dir,
+                capture_output=True,
+                text=True,
+            )
+            self.assertEqual(executed.returncode, 0, executed.stdout + executed.stderr)
 
     def test_conditioning_cache_keys_exact_anima_by_model_and_semantic_edges(self):
         conditioning = method_body(self.workflow, "CreateConditioningDirect(string prompt")

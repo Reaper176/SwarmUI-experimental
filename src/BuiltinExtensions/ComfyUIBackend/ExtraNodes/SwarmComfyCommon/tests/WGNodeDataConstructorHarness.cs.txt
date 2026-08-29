@@ -1,0 +1,20 @@
+using System;
+using System.Linq;
+using System.Reflection;
+using SwarmUI.Builtin_ComfyUIBackend;
+
+internal static class WGNodeDataConstructorHarness
+{
+    private static int Main()
+    {
+        ConstructorInfo[] constructors = typeof(WGNodeData).GetConstructors();
+        ConstructorInfo fourArgument = constructors.SingleOrDefault(constructor => constructor.GetParameters().Length == 4);
+        ConstructorInfo fiveArgument = constructors.SingleOrDefault(constructor => constructor.GetParameters().Length == 5);
+        if (fourArgument is null || fiveArgument is null)
+        {
+            return 1;
+        }
+        WGNodeData legacy = (WGNodeData)fourArgument.Invoke([null, null, "MODEL", null]);
+        return legacy.Anima38SemanticClip is null ? 0 : 2;
+    }
+}
