@@ -3,6 +3,7 @@ using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
+using Newtonsoft.Json.Linq;
 using SwarmUI.Builtin_ComfyUIBackend;
 using SwarmUI.Text2Image;
 
@@ -66,6 +67,37 @@ internal static class Anima38AutoCapabilityHarness
         return [.. input.RequiredFlags];
     }
 
+    private static JObject ChoiceNode(string inputName, params string[] choices)
+    {
+        JArray requiredValue = [];
+        requiredValue.Add(new JArray(choices));
+        return new JObject
+        {
+            ["input"] = new JObject
+            {
+                ["required"] = new JObject
+                {
+                    [inputName] = requiredValue
+                }
+            }
+        };
+    }
+
+    private static JObject LegacyObjectInfo(string[] qwen, string[] adapters)
+    {
+        return new JObject
+        {
+            [ComfyNodeNames.LoadAnima38Qwen35] = ChoiceNode(
+                ComfyNodeInputNames.LoadAnima38Qwen35.QwenFilename,
+                qwen
+            ),
+            [ComfyNodeNames.Anima38Conditioning] = ChoiceNode(
+                ComfyNodeInputNames.Anima38Conditioning.Adapter,
+                adapters
+            )
+        };
+    }
+
     public static int Main()
     {
         HashSet<string> preferred = OwnerFeatures(
@@ -110,6 +142,28 @@ internal static class Anima38AutoCapabilityHarness
             true
         );
         ExpectAuto("missing assets", OwnerFeatures(["auto"], ["auto"]), false, false);
+
+        ComfyCapabilityRegistry.Initialize();
+        ComfyUIBackendExtension.AssignValuesFromRaw(LegacyObjectInfo(
+            ["auto", "Anima38B_base_txt.safetensors"],
+            ["auto", "controlnet::adapter.safetensors"]
+        ));
+        ExpectAuto(
+            "legacy refresh initially resolvable",
+            [.. ComfyCapabilityRegistry.GetAggregateSnapshot()],
+            true,
+            true
+        );
+        ComfyUIBackendExtension.AssignValuesFromRaw(LegacyObjectInfo(
+            ["auto", "Anima38B_a.safetensors", "Anima38B_b.safetensors"],
+            ["auto"]
+        ));
+        ExpectAuto(
+            "legacy refresh drops stale auto capabilities",
+            [.. ComfyCapabilityRegistry.GetAggregateSnapshot()],
+            false,
+            false
+        );
 
         T2IParamTypes.RegisterDefaults();
         ComfyUIBackendExtension.ModelAttentionBackend = StringParam("test-model-attention");

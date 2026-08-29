@@ -853,6 +853,8 @@ public class ComfyUIBackendExtension : Extension
             HashSet<string> accumulatedValueFeatures = [.. LegacyObjectInfoFeatures];
             accumulatedValueFeatures.RemoveWhere(feature => feature.StartsWith(ComfyCapabilityCatalog.Anima38Qwen35ValueFeaturePrefix, StringComparison.Ordinal));
             accumulatedValueFeatures.RemoveWhere(feature => feature.StartsWith(ComfyCapabilityCatalog.Anima38AdapterValueFeaturePrefix, StringComparison.Ordinal));
+            accumulatedValueFeatures.Remove(ComfyCapabilityCatalog.Anima38Qwen35AutoFeature);
+            accumulatedValueFeatures.Remove(ComfyCapabilityCatalog.Anima38AdapterAutoFeature);
             accumulatedValueFeatures.UnionWith(rawValueFeatures);
             FrozenSet<string> frozenAccumulatedValueFeatures = accumulatedValueFeatures.ToFrozenSet();
             SharedValueCandidate sharedCandidate = MergeSharedValueDelta(sharedDelta);

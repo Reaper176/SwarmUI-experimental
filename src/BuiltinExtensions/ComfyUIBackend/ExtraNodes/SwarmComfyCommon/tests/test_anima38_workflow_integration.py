@@ -293,6 +293,7 @@ class Anima38WorkflowIntegrationTests(unittest.TestCase):
                 f"-out:{harness_dll}",
                 *[f"-r:{path}" for path in sorted(reference_dir.glob("*.dll"))],
                 f"-r:{swarm_dll}",
+                f"-r:{output_dir / 'Newtonsoft.Json.dll'}",
                 str(AUTO_CAPABILITY_HARNESS_PATH),
             ]
             compiled = subprocess.run(compile_command, capture_output=True, text=True)
