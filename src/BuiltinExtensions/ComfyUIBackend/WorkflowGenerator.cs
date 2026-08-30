@@ -2179,7 +2179,8 @@ public partial class WorkflowGenerator
             inputs[ComfyNodeInputNames.KSampler.Rho] = UserInput.Get(T2IParamTypes.SamplerRho, 7);
             inputs[ComfyNodeInputNames.KSampler.Previews] = UserInput.Get(T2IParamTypes.NoPreviews) ? "none" : previews ?? DefaultPreviews;
             inputs[ComfyNodeInputNames.KSampler.TileSample] = doTiled;
-            inputs[ComfyNodeInputNames.KSampler.TileSize] = FinalLoadedModel.StandardWidth <= 0 ? 768 : FinalLoadedModel.StandardWidth;
+            int automaticTileSize = FinalLoadedModel.StandardWidth <= 0 ? 768 : FinalLoadedModel.StandardWidth;
+            inputs[ComfyNodeInputNames.KSampler.TileSize] = doTiled ? UserInput.Get(T2IParamTypes.RefinerTileSize, automaticTileSize) : automaticTileSize;
             if (UserInput.TryGet(ComfyUIBackendExtension.DetailDaemonAmount, out double detailDaemonAmount))
             {
                 string detailDaemonOptions = CreateNode(ComfyNodeNames.DetailDaemonOptions, new JObject()
