@@ -1,0 +1,79 @@
+using Newtonsoft.Json.Linq;
+using SwarmUI.Text2Image;
+using System;
+
+internal static class Anima38ClassificationHarness
+{
+    /// <summary>Creates the minimal tensor descriptor needed by model classification predicates.</summary>
+    private static JObject TensorDescriptor()
+    {
+        return new JObject
+        {
+            ["shape"] = new JArray(1)
+        };
+    }
+
+    /// <summary>Creates a representative Cosmos Predict2 Text2Image 14B safetensors header.</summary>
+    private static JObject CosmosHeader(bool declareArchitecture)
+    {
+        const string cosmosId = "nvidia-cosmos-predict2-t2i-14b";
+        JObject header = new()
+        {
+            ["net.blocks.0.adaln_modulation_cross_attn.1.weight"] = TensorDescriptor(),
+            ["net.pos_embedder.dim_temporal_range"] = TensorDescriptor(),
+            ["net.x_embedder.proj.1.weight"] = TensorDescriptor(),
+            ["net.blocks.35.adaln_modulation_mlp.2.weight"] = TensorDescriptor()
+        };
+        if (declareArchitecture)
+        {
+            header["__metadata__"] = new JObject
+            {
+                ["modelspec.architecture"] = cosmosId
+            };
+        }
+        return header;
+    }
+
+    /// <summary>Creates an Anima 3.8B header that also carries representative Cosmos tensor names.</summary>
+    private static JObject Anima38Header(bool declareArchitecture)
+    {
+        JObject header = CosmosHeader(declareArchitecture);
+        header["net.t_embedder.1.linear_2.weight"] = TensorDescriptor();
+        header["net.llm_adapter.blocks.0.self_attn.v_proj.weight"] = TensorDescriptor();
+        header["net.blocks.27.adaln_modulation_cross_attn.2.weight"] = TensorDescriptor();
+        header["net.blocks.51.adaln_modulation_cross_attn.2.weight"] = TensorDescriptor();
+        return header;
+    }
+
+    /// <summary>Identifies the production model class for a synthetic safetensors model and header.</summary>
+    private static string Identify(JObject header)
+    {
+        T2IModel model = new(null, null, "classification.safetensors", "classification");
+        return T2IModelClassSorter.IdentifyClassFor(model, header, "Stable-Diffusion")?.ID;
+    }
+
+    /// <summary>Throws when production classification differs from the expected model class.</summary>
+    private static void AssertClass(string scenario, JObject header, string expected)
+    {
+        string actual = Identify(header);
+        if (actual != expected)
+        {
+            throw new InvalidOperationException($"{scenario}: expected '{expected}', but production resolved '{actual ?? "null"}'.");
+        }
+    }
+
+    /// <summary>Validates Anima 3.8B and genuine Cosmos classification with and without declared metadata.</summary>
+    private static int Main()
+    {
+        const string cosmosId = "nvidia-cosmos-predict2-t2i-14b";
+        if (T2IModelClassSorter.ModelClasses.Count == 0)
+        {
+            T2IModelClassSorter.Init();
+        }
+        AssertClass("Anima 3.8B with declared Cosmos metadata", Anima38Header(true), "anima-3_8b");
+        AssertClass("Anima 3.8B without metadata", Anima38Header(false), "anima-3_8b");
+        AssertClass("Genuine Cosmos with declared Cosmos metadata", CosmosHeader(true), cosmosId);
+        AssertClass("Genuine Cosmos without metadata", CosmosHeader(false), cosmosId);
+        return 0;
+    }
+}
