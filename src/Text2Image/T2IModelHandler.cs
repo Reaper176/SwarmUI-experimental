@@ -530,9 +530,9 @@ public class T2IModelHandler
     }
 
     /// <summary>Returns whether a stale cache recheck produced a classifier decision safe to persist.</summary>
-    private static bool ShouldReplaceStaleModelClassCache(bool isStaleCacheRecheck, T2IModelClass classifierDecision)
+    private static bool ShouldReplaceStaleModelClassCache(bool isStaleCacheRecheck, bool modelHeaderLoaded, T2IModelClass classifierDecision)
     {
-        return !isStaleCacheRecheck || classifierDecision is not null;
+        return !isStaleCacheRecheck || (modelHeaderLoaded && classifierDecision is not null);
     }
 
     /// <summary>Force-load the metadata for a model.</summary>
@@ -591,13 +591,16 @@ public class T2IModelHandler
             JObject headerData = [];
             JObject metaHeader = [];
             string textEncs = null;
+            bool modelHeaderLoaded = false;
             if (model.Name.EndsWith(".safetensors") || model.Name.EndsWith(".sft") || model.Name.EndsWith(".gguf"))
             {
                 try
                 {
-                    headerData = T2IModel.GetMetadataHeaderFrom(model.RawFilePath);
-                    if (headerData is not null)
+                    JObject loadedHeaderData = T2IModel.GetMetadataHeaderFrom(model.RawFilePath);
+                    if (loadedHeaderData is not null)
                     {
+                        headerData = loadedHeaderData;
+                        modelHeaderLoaded = true;
                         metaHeader = headerData["__metadata__"] as JObject ?? [];
                         textEncs = "";
                         string[] keys = [.. headerData.Properties().Select(p => p.Name).Where(k => k.StartsWith("text_encoders."))];
@@ -856,7 +859,7 @@ public class T2IModelHandler
                 TextEncoders = textEncs,
                 SpecialFormat = limitLength(pickBest(metaHeader?.Value<string>("modelspec.special_format"), metaHeader?.Value<string>("special_format"), specialFormat), basicLimit)
             };
-            if (ShouldReplaceStaleModelClassCache(recheckStaleModelClass, clazz))
+            if (ShouldReplaceStaleModelClassCache(recheckStaleModelClass, modelHeaderLoaded, clazz))
             {
                 metadata = refreshedMetadata;
                 lock (MetadataLock)

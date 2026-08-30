@@ -87,8 +87,8 @@ internal static class Anima38ClassificationHarness
             ?? throw new InvalidOperationException("T2IModelHandler.IsModelClassCacheStale was not found.");
         MethodInfo advanceMethod = typeof(T2IModelHandler).GetMethod("ShouldAdvanceModelClassCacheRevisionWithoutClassification", BindingFlags.NonPublic | BindingFlags.Static)
             ?? throw new InvalidOperationException("T2IModelHandler.ShouldAdvanceModelClassCacheRevisionWithoutClassification was not found.");
-        MethodInfo replaceMethod = typeof(T2IModelHandler).GetMethod("ShouldReplaceStaleModelClassCache", BindingFlags.NonPublic | BindingFlags.Static)
-            ?? throw new InvalidOperationException("T2IModelHandler.ShouldReplaceStaleModelClassCache was not found.");
+        MethodInfo replaceMethod = typeof(T2IModelHandler).GetMethod("ShouldReplaceStaleModelClassCache", BindingFlags.NonPublic | BindingFlags.Static, null, [typeof(bool), typeof(bool), typeof(T2IModelClass)], null)
+            ?? throw new InvalidOperationException("T2IModelHandler.ShouldReplaceStaleModelClassCache with model-header provenance was not found.");
         PropertyInfo metadataRevision = typeof(T2IModelHandler.ModelMetadataStore).GetProperty("ModelClassRevision")
             ?? throw new InvalidOperationException("ModelMetadataStore.ModelClassRevision was not found.");
         int currentRevision = (int)revisionField.GetRawConstantValue();
@@ -122,12 +122,13 @@ internal static class Anima38ClassificationHarness
             throw new InvalidOperationException($"Unexpected unclassified revision policy: stale Cosmos={advanceStaleCosmos}, fresh Cosmos={advanceFreshCosmos}, stale Anima={advanceStaleAnima}.");
         }
         T2IModelClass cosmosClass = T2IModelClassSorter.ModelClasses["nvidia-cosmos-predict2-t2i-14b"];
-        bool replaceAfterFailure = (bool)replaceMethod.Invoke(null, [true, null]);
-        bool replaceAfterSuccess = (bool)replaceMethod.Invoke(null, [true, cosmosClass]);
-        bool replaceNormalNull = (bool)replaceMethod.Invoke(null, [false, null]);
-        if (replaceAfterFailure || !replaceAfterSuccess || !replaceNormalNull)
+        bool replaceWithoutModelHeader = (bool)replaceMethod.Invoke(null, [true, false, cosmosClass]);
+        bool replaceAfterSuccess = (bool)replaceMethod.Invoke(null, [true, true, cosmosClass]);
+        bool replaceAfterNullClass = (bool)replaceMethod.Invoke(null, [true, true, null]);
+        bool replaceNormalNull = (bool)replaceMethod.Invoke(null, [false, false, null]);
+        if (replaceWithoutModelHeader || !replaceAfterSuccess || replaceAfterNullClass || !replaceNormalNull)
         {
-            throw new InvalidOperationException($"Unexpected stale replacement policy: failed refresh={replaceAfterFailure}, successful refresh={replaceAfterSuccess}, normal null classification={replaceNormalNull}.");
+            throw new InvalidOperationException($"Unexpected stale replacement policy: missing model header={replaceWithoutModelHeader}, successful refresh={replaceAfterSuccess}, null classifier={replaceAfterNullClass}, normal null classification={replaceNormalNull}.");
         }
         MethodInfo resetMetadata = typeof(T2IModelHandler).GetMethod(nameof(T2IModelHandler.ResetMetadataFrom))
             ?? throw new InvalidOperationException("T2IModelHandler.ResetMetadataFrom was not found.");
