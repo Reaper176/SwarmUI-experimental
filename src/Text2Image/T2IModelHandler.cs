@@ -535,6 +535,18 @@ public class T2IModelHandler
         return !isStaleCacheRecheck || (modelHeaderLoaded && classifierDecision is not null);
     }
 
+    /// <summary>Selects the classifier decision that may be persisted for a metadata cache refresh.</summary>
+    private static T2IModelClass SelectModelClassForCache(bool isStaleCacheRecheck, T2IModelClass modelHeaderClass, T2IModelClass combinedClass)
+    {
+        return isStaleCacheRecheck ? modelHeaderClass : combinedClass;
+    }
+
+    /// <summary>Returns whether this model format supports loading a tensor header for classification.</summary>
+    private static bool CanReadModelHeaderForClassification(string modelName)
+    {
+        return modelName.EndsWith(".safetensors") || modelName.EndsWith(".sft") || modelName.EndsWith(".gguf");
+    }
+
     /// <summary>Force-load the metadata for a model.</summary>
     public void LoadMetadata(T2IModel model)
     {
@@ -576,7 +588,8 @@ public class T2IModelHandler
         {
             metadata = null;
         }
-        bool recheckStaleModelClass = IsModelClassCacheStale(metadata);
+        bool canReadModelHeader = CanReadModelHeaderForClassification(model.Name);
+        bool recheckStaleModelClass = canReadModelHeader && IsModelClassCacheStale(metadata);
         if (recheckStaleModelClass)
         {
             Logs.Debug($"Rechecking stale model classification for {model.Name}");
@@ -592,7 +605,7 @@ public class T2IModelHandler
             JObject metaHeader = [];
             string textEncs = null;
             bool modelHeaderLoaded = false;
-            if (model.Name.EndsWith(".safetensors") || model.Name.EndsWith(".sft") || model.Name.EndsWith(".gguf"))
+            if (canReadModelHeader)
             {
                 try
                 {
@@ -615,6 +628,9 @@ public class T2IModelHandler
                     Logs.Warning($"Failed to load embedded metadata header for {model.Name}, continuing with sidecar metadata only:\n{ex.ReadableString()}");
                 }
             }
+            T2IModelClass modelHeaderClass = recheckStaleModelClass && modelHeaderLoaded
+                ? T2IModelClassSorter.IdentifyClassFor(model, headerData, ModelType)
+                : null;
             foreach (string altSuffix in AltModelMetadataJsonFileSuffixes)
             {
                 if (File.Exists(altModelPrefix + altSuffix))
@@ -708,7 +724,8 @@ public class T2IModelHandler
                 }
             }
             string altTriggerPhrase = triggerPhrases.JoinString(", ");
-            T2IModelClass clazz = T2IModelClassSorter.IdentifyClassFor(model, headerData, ModelType);
+            T2IModelClass combinedClass = T2IModelClassSorter.IdentifyClassFor(model, headerData, ModelType);
+            T2IModelClass clazz = SelectModelClassForCache(recheckStaleModelClass, modelHeaderClass, combinedClass);
             string specialFormat = null;
             foreach (string key in headerData.Properties().Select(p => p.Name))
             {

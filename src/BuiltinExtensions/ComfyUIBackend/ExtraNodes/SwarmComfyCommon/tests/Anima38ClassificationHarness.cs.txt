@@ -46,6 +46,17 @@ internal static class Anima38ClassificationHarness
         return header;
     }
 
+    /// <summary>Creates an older generic Anima header without the Anima 3.8B depth marker.</summary>
+    private static JObject GenericAnimaHeader()
+    {
+        return new JObject
+        {
+            ["net.t_embedder.1.linear_2.weight"] = TensorDescriptor(),
+            ["net.llm_adapter.blocks.0.self_attn.v_proj.weight"] = TensorDescriptor(),
+            ["net.blocks.27.adaln_modulation_cross_attn.2.weight"] = TensorDescriptor()
+        };
+    }
+
     /// <summary>Identifies the production model class for a synthetic safetensors model and header.</summary>
     private static string Identify(JObject header)
     {
@@ -89,6 +100,10 @@ internal static class Anima38ClassificationHarness
             ?? throw new InvalidOperationException("T2IModelHandler.ShouldAdvanceModelClassCacheRevisionWithoutClassification was not found.");
         MethodInfo replaceMethod = typeof(T2IModelHandler).GetMethod("ShouldReplaceStaleModelClassCache", BindingFlags.NonPublic | BindingFlags.Static, null, [typeof(bool), typeof(bool), typeof(T2IModelClass)], null)
             ?? throw new InvalidOperationException("T2IModelHandler.ShouldReplaceStaleModelClassCache with model-header provenance was not found.");
+        MethodInfo selectMethod = typeof(T2IModelHandler).GetMethod("SelectModelClassForCache", BindingFlags.NonPublic | BindingFlags.Static, null, [typeof(bool), typeof(T2IModelClass), typeof(T2IModelClass)], null)
+            ?? throw new InvalidOperationException("T2IModelHandler.SelectModelClassForCache was not found.");
+        MethodInfo readableMethod = typeof(T2IModelHandler).GetMethod("CanReadModelHeaderForClassification", BindingFlags.NonPublic | BindingFlags.Static)
+            ?? throw new InvalidOperationException("T2IModelHandler.CanReadModelHeaderForClassification was not found.");
         PropertyInfo metadataRevision = typeof(T2IModelHandler.ModelMetadataStore).GetProperty("ModelClassRevision")
             ?? throw new InvalidOperationException("ModelMetadataStore.ModelClassRevision was not found.");
         int currentRevision = (int)revisionField.GetRawConstantValue();
@@ -122,6 +137,14 @@ internal static class Anima38ClassificationHarness
             throw new InvalidOperationException($"Unexpected unclassified revision policy: stale Cosmos={advanceStaleCosmos}, fresh Cosmos={advanceFreshCosmos}, stale Anima={advanceStaleAnima}.");
         }
         T2IModelClass cosmosClass = T2IModelClassSorter.ModelClasses["nvidia-cosmos-predict2-t2i-14b"];
+        T2IModelClass animaClass = T2IModelClassSorter.ModelClasses["anima-3_8b"];
+        T2IModelClass staleSidecarOnly = (T2IModelClass)selectMethod.Invoke(null, [true, null, cosmosClass]);
+        T2IModelClass staleRawAnima = (T2IModelClass)selectMethod.Invoke(null, [true, animaClass, cosmosClass]);
+        T2IModelClass normalCombined = (T2IModelClass)selectMethod.Invoke(null, [false, animaClass, cosmosClass]);
+        if (staleSidecarOnly is not null || staleRawAnima?.ID != "anima-3_8b" || normalCombined?.ID != "nvidia-cosmos-predict2-t2i-14b")
+        {
+            throw new InvalidOperationException($"Unexpected cache class selection: stale sidecar-only={staleSidecarOnly?.ID ?? "null"}, stale raw Anima={staleRawAnima?.ID ?? "null"}, normal combined={normalCombined?.ID ?? "null"}.");
+        }
         bool replaceWithoutModelHeader = (bool)replaceMethod.Invoke(null, [true, false, cosmosClass]);
         bool replaceAfterSuccess = (bool)replaceMethod.Invoke(null, [true, true, cosmosClass]);
         bool replaceAfterNullClass = (bool)replaceMethod.Invoke(null, [true, true, null]);
@@ -129,6 +152,14 @@ internal static class Anima38ClassificationHarness
         if (replaceWithoutModelHeader || !replaceAfterSuccess || replaceAfterNullClass || !replaceNormalNull)
         {
             throw new InvalidOperationException($"Unexpected stale replacement policy: missing model header={replaceWithoutModelHeader}, successful refresh={replaceAfterSuccess}, null classifier={replaceAfterNullClass}, normal null classification={replaceNormalNull}.");
+        }
+        bool readsSafetensors = (bool)readableMethod.Invoke(null, ["model.safetensors"]);
+        bool readsSft = (bool)readableMethod.Invoke(null, ["model.sft"]);
+        bool readsGguf = (bool)readableMethod.Invoke(null, ["model.gguf"]);
+        bool readsEngine = (bool)readableMethod.Invoke(null, ["model.engine"]);
+        if (!readsSafetensors || !readsSft || !readsGguf || readsEngine)
+        {
+            throw new InvalidOperationException($"Unexpected model-header format policy: safetensors={readsSafetensors}, sft={readsSft}, gguf={readsGguf}, engine={readsEngine}.");
         }
         MethodInfo resetMetadata = typeof(T2IModelHandler).GetMethod(nameof(T2IModelHandler.ResetMetadataFrom))
             ?? throw new InvalidOperationException("T2IModelHandler.ResetMetadataFrom was not found.");
@@ -138,9 +169,9 @@ internal static class Anima38ClassificationHarness
         {
             throw new InvalidOperationException("ResetMetadataFrom does not preserve classifier revision provenance.");
         }
-        if (!CallsMethod(loadMetadata, staleMethod) || !CallsMethod(loadMetadata, replaceMethod))
+        if (!CallsMethod(loadMetadata, staleMethod) || !CallsMethod(loadMetadata, selectMethod) || !CallsMethod(loadMetadata, replaceMethod) || !CallsMethod(loadMetadata, readableMethod))
         {
-            throw new InvalidOperationException("LoadMetadata does not wire stale-cache detection and guarded replacement together.");
+            throw new InvalidOperationException("LoadMetadata does not wire stale-cache detection, raw-header selection, and guarded replacement together.");
         }
     }
 
@@ -156,6 +187,13 @@ internal static class Anima38ClassificationHarness
         AssertClass("Anima 3.8B without metadata", Anima38Header(false), "anima-3_8b");
         AssertClass("Genuine Cosmos with declared Cosmos metadata", CosmosHeader(true), cosmosId);
         AssertClass("Genuine Cosmos without metadata", CosmosHeader(false), cosmosId);
+        AssertClass("Older generic Anima", GenericAnimaHeader(), "anima");
+        JObject differentlyDeclaredAnima = Anima38Header(false);
+        differentlyDeclaredAnima["__metadata__"] = new JObject
+        {
+            ["modelspec.architecture"] = "stable-diffusion-v3-medium"
+        };
+        AssertClass("Anima tensor signature with a different known architecture", differentlyDeclaredAnima, "stable-diffusion-v3-medium");
         VerifyCacheRevision();
         return 0;
     }
