@@ -17,6 +17,27 @@ public class T2IModelClassSorter
     /// <summary>Remaps for known typos or alternate labelings.</summary>
     public static Dictionary<string, string> Remaps = [];
 
+    private static bool HasModelKey(JObject header, string key)
+    {
+        return header.ContainsKey(key)
+            || header.ContainsKey($"diffusion_model.{key}")
+            || header.ContainsKey($"model.diffusion_model.{key}")
+            || header.ContainsKey($"net.{key}")
+            || header.ContainsKey($"transformer.{key}");
+    }
+
+    private static bool IsAnima(JObject header)
+    {
+        return HasModelKey(header, "t_embedder.1.linear_2.weight")
+            && HasModelKey(header, "llm_adapter.blocks.0.self_attn.v_proj.weight")
+            && HasModelKey(header, "blocks.27.adaln_modulation_cross_attn.2.weight");
+    }
+
+    private static bool IsAnima38(JObject header)
+    {
+        return IsAnima(header) && HasModelKey(header, "blocks.51.adaln_modulation_cross_attn.2.weight");
+    }
+
     /// <summary>Register a new model class to the sorter.</summary>
     public static T2IModelClass Register(T2IModelClass clazz)
     {
@@ -123,7 +144,7 @@ public class T2IModelClassSorter
     public static void Init()
     {
         // TODO: This is exponential, but we could instead eg prestrip these prefixes to reduce the exponentiality
-        bool hasKey(JObject h, string key) => h.ContainsKey(key) || h.ContainsKey($"diffusion_model.{key}") || h.ContainsKey($"model.diffusion_model.{key}") || h.ContainsKey($"net.{key}") || h.ContainsKey($"transformer.{key}");
+        bool hasKey(JObject h, string key) => HasModelKey(h, key);
         bool hasLoraKey(JObject h, string key) => hasKey(h, $"{key}.lora_A.weight") || hasKey(h, $"{key}.lora_A") || hasKey(h, $"{key}.lora_A.default.weight") || hasKey(h, $"{key}.lora_up.weight") || hasKey(h, $"{key}.lora.up.weight") || hasKey(h, $"{key}.lokr_w1") || hasKey(h, $"lora_unet_{key.Replace('.', '_')}.lora_up.weight");
         bool tryGetKey(JObject h, string key, out JToken tok) => h.TryGetValue(key, out tok) || h.TryGetValue($"diffusion_model.{key}", out tok) || h.TryGetValue($"model.diffusion_model.{key}", out tok);
         bool IsAlt(JObject h) => h.ContainsKey("cond_stage_model.roberta.embeddings.word_embeddings.weight");
@@ -221,7 +242,11 @@ public class T2IModelClassSorter
         bool isCosmos14b(JObject h) => h.TryGetValue("net.blocks.block0.blocks.0.adaLN_modulation.1.weight", out JToken jtok) && jtok["shape"].ToArray()[^1].Value<long>() == 5120;
         bool isCosmosVae(JObject h) => h.ContainsKey("decoder.unpatcher3d._arange");
         bool isCosmosPredict2_2B(JObject h) => h.ContainsKey("norm_out.linear_1.weight") && h.ContainsKey("time_embed.t_embedder.linear_1.weight") && h.ContainsKey("transformer_blocks.27.norm3.linear_2.weight");
-        bool isCosmosPredict2_14B(JObject h) => h.ContainsKey("net.blocks.0.adaln_modulation_cross_attn.1.weight") && h.ContainsKey("net.pos_embedder.dim_temporal_range") && h.ContainsKey("net.x_embedder.proj.1.weight") && h.ContainsKey("net.blocks.35.adaln_modulation_mlp.2.weight");
+        bool isCosmosPredict2_14B(JObject h) => h.ContainsKey("net.blocks.0.adaln_modulation_cross_attn.1.weight")
+            && h.ContainsKey("net.pos_embedder.dim_temporal_range")
+            && h.ContainsKey("net.x_embedder.proj.1.weight")
+            && h.ContainsKey("net.blocks.35.adaln_modulation_mlp.2.weight")
+            && !IsAnima(h);
         bool isLumina2(JObject h) => hasKey(h, "cap_embedder.0.weight");
         bool isZImage(JObject h) => (hasKey(h, "context_refiner.0.attention.k_norm.weight") || hasKey(h, "context_refiner.0.attention.norm_k.weight")) && hasKey(h, "layers.0.adaLN_modulation.0.bias");
         bool isZetaChroma(JObject h) => hasKey(h, "dec_net.input_embedder.embedder.0.bias") && hasKey(h, "__x0__");
@@ -275,8 +300,6 @@ public class T2IModelClassSorter
         bool isKan5VidLite(JObject h) => tryGetKan5IdKey(h, out JToken tok) && tok["shape"].ToArray()[0].Value<long>() == 1792;
         bool isKan5ImgLite(JObject h) => tryGetKan5IdKey(h, out JToken tok) && tok["shape"].ToArray()[0].Value<long>() == 2560;
         bool isKan5VidPro(JObject h) => tryGetKan5IdKey(h, out JToken tok) && tok["shape"].ToArray()[0].Value<long>() == 4096;
-        bool isAnima(JObject h) => hasKey(h, "t_embedder.1.linear_2.weight") && hasKey(h, "llm_adapter.blocks.0.self_attn.v_proj.weight") && hasKey(h, "blocks.27.adaln_modulation_cross_attn.2.weight");
-        bool isAnima38(JObject h) => isAnima(h) && hasKey(h, "blocks.51.adaln_modulation_cross_attn.2.weight");
         bool isAnimaLora(JObject h) => (hasLoraKey(h, "llm_adapter.blocks.5.self_attn.v_proj") && hasLoraKey(h, "blocks.27.self_attn.v_proj") && hasLoraKey(h, "blocks.27.adaln_modulation_cross_attn.1"))
                                     || (hasLoraKey(h, "lora_unet_blocks_27_self_attn_v_proj") && hasLoraKey(h, "lora_unet_blocks_27_cross_attn_output_proj") && hasLoraKey(h, "lora_unet_blocks_27_mlp_layer2"));
         bool isAnimaControlnet(JObject h) => h.ContainsKey("lllite_dit_blocks_0_self_attn_q_proj.depth_embed") && h.ContainsKey("lllite_dit_blocks_0_self_attn_q_proj.cond_to_film.weight") && h.ContainsKey("lllite_dit_blocks_27_self_attn_q_proj.up.weight");
@@ -875,11 +898,11 @@ public class T2IModelClassSorter
         // Classification expectations: 52-block Anima models resolve to anima-3_8b, while older/generic Anima models continue to resolve to anima.
         Register(new() { ID = "anima-3_8b", CompatClass = CompatAnima, Name = "Anima 3.8B", StandardWidth = 1024, StandardHeight = 1024, IsThisModelOfClass = (m, h) =>
         {
-            return isAnima38(h);
+            return IsAnima38(h);
         }});
         Register(new() { ID = "anima", CompatClass = CompatAnima, Name = "Anima", StandardWidth = 1024, StandardHeight = 1024, IsThisModelOfClass = (m, h) =>
         {
-            return isAnima(h) && !isAnima38(h);
+            return IsAnima(h) && !IsAnima38(h);
         }});
         Register(new() { ID = "anima/lora", CompatClass = CompatAnima, Name = "Anima LoRA", StandardWidth = 1024, StandardHeight = 1024, IsThisModelOfClass = (m, h) =>
         {
@@ -1054,7 +1077,12 @@ public class T2IModelClassSorter
             {
                 arch = remapTo.ToLowerFast();
             }
-            if (ModelClasses.TryGetValue(arch, out T2IModelClass clazz))
+            bool isMisdeclaredAnima = arch == CompatCosmosPredict2_14b.ID && IsAnima(header);
+            if (isMisdeclaredAnima)
+            {
+                Logs.Debug($"{modelType} Model {model.Name} declares Cosmos Predict2 14B but has an Anima tensor signature; using tensor classification");
+            }
+            else if (ModelClasses.TryGetValue(arch, out T2IModelClass clazz))
             {
                 if ((width == clazz.StandardWidth && height == clazz.StandardHeight) || (width <= 0 && height <= 0))
                 {
