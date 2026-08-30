@@ -432,13 +432,17 @@ public class T2IModelHandler
             {
                 model.Metadata ??= new();
                 ModelMetadataStore metadata = model.Metadata;
+                bool advanceModelClassRevision = ShouldAdvanceModelClassCacheRevisionWithoutClassification(metadata);
                 metadata.ModelFileVersion = modified;
                 metadata.ModelSidecarFingerprint = sidecarFingerprint;
                 metadata.ModelName = perFolder ? fileName : model.RawFilePath;
                 metadata.Title = model.Title;
                 metadata.Description = model.Description;
                 metadata.ModelClassType = model.ModelClass?.ID;
-                metadata.ModelClassRevision = ModelClassCacheRevision;
+                if (advanceModelClassRevision)
+                {
+                    metadata.ModelClassRevision = ModelClassCacheRevision;
+                }
                 metadata.StandardWidth = model.StandardWidth;
                 metadata.StandardHeight = model.StandardHeight;
                 lock (MetadataLock)
@@ -519,6 +523,18 @@ public class T2IModelHandler
             && metadata.ModelClassType == T2IModelClassSorter.CompatCosmosPredict2_14b.ID;
     }
 
+    /// <summary>Returns whether a generic metadata update may advance the cached classifier revision.</summary>
+    private static bool ShouldAdvanceModelClassCacheRevisionWithoutClassification(ModelMetadataStore metadata)
+    {
+        return !IsModelClassCacheStale(metadata);
+    }
+
+    /// <summary>Returns whether a stale cache recheck produced a classifier decision safe to persist.</summary>
+    private static bool ShouldReplaceStaleModelClassCache(bool isStaleCacheRecheck, T2IModelClass classifierDecision)
+    {
+        return !isStaleCacheRecheck || classifierDecision is not null;
+    }
+
     /// <summary>Force-load the metadata for a model.</summary>
     public void LoadMetadata(T2IModel model)
     {
@@ -560,12 +576,12 @@ public class T2IModelHandler
         {
             metadata = null;
         }
-        if (IsModelClassCacheStale(metadata))
+        bool recheckStaleModelClass = IsModelClassCacheStale(metadata);
+        if (recheckStaleModelClass)
         {
             Logs.Debug($"Rechecking stale model classification for {model.Name}");
-            metadata = null;
         }
-        if (metadata is null || metadata.ModelFileVersion != modified || metadata.ModelSidecarFingerprint != sidecarFingerprint)
+        if (metadata is null || metadata.ModelFileVersion != modified || metadata.ModelSidecarFingerprint != sidecarFingerprint || recheckStaleModelClass)
         {
             string autoImg = GetAutoFormatImage(model);
             if (autoImg is not null)
@@ -810,7 +826,7 @@ public class T2IModelHandler
                 return nonNull;
             }
             const int basicLimit = 4096;
-            metadata = new()
+            ModelMetadataStore refreshedMetadata = new()
             {
                 ModelFileVersion = modified,
                 ModelSidecarFingerprint = sidecarFingerprint,
@@ -840,16 +856,20 @@ public class T2IModelHandler
                 TextEncoders = textEncs,
                 SpecialFormat = limitLength(pickBest(metaHeader?.Value<string>("modelspec.special_format"), metaHeader?.Value<string>("special_format"), specialFormat), basicLimit)
             };
-            lock (MetadataLock)
+            if (ShouldReplaceStaleModelClassCache(recheckStaleModelClass, clazz))
             {
-                try
+                metadata = refreshedMetadata;
+                lock (MetadataLock)
                 {
-                    cache.Metadata.Upsert(metadata);
-                }
-                catch (Exception ex)
-                {
-                    Logs.Warning($"Error handling metadata database for model {model.RawFilePath}: {ex.ReadableString()}");
-                    cache.HadNewError();
+                    try
+                    {
+                        cache.Metadata.Upsert(metadata);
+                    }
+                    catch (Exception ex)
+                    {
+                        Logs.Warning($"Error handling metadata database for model {model.RawFilePath}: {ex.ReadableString()}");
+                        cache.HadNewError();
+                    }
                 }
             }
         }

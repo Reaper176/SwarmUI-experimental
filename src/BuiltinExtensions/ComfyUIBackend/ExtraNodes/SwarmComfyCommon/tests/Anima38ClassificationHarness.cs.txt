@@ -63,6 +63,21 @@ internal static class Anima38ClassificationHarness
         }
     }
 
+    /// <summary>Returns whether one compiled method directly calls another.</summary>
+    private static bool CallsMethod(MethodInfo caller, MethodInfo callee)
+    {
+        byte[] instructions = caller.GetMethodBody()?.GetILAsByteArray()
+            ?? throw new InvalidOperationException($"{caller.Name} has no method body.");
+        for (int i = 0; i <= instructions.Length - 5; i++)
+        {
+            if (instructions[i] == 0x28 && BitConverter.ToInt32(instructions, i + 1) == callee.MetadataToken)
+            {
+                return true;
+            }
+        }
+        return false;
+    }
+
     /// <summary>Validates targeted revision invalidation for cached Cosmos classifications.</summary>
     private static void VerifyCacheRevision()
     {
@@ -70,6 +85,10 @@ internal static class Anima38ClassificationHarness
             ?? throw new InvalidOperationException("T2IModelHandler.ModelClassCacheRevision was not found.");
         MethodInfo staleMethod = typeof(T2IModelHandler).GetMethod("IsModelClassCacheStale", BindingFlags.NonPublic | BindingFlags.Static)
             ?? throw new InvalidOperationException("T2IModelHandler.IsModelClassCacheStale was not found.");
+        MethodInfo advanceMethod = typeof(T2IModelHandler).GetMethod("ShouldAdvanceModelClassCacheRevisionWithoutClassification", BindingFlags.NonPublic | BindingFlags.Static)
+            ?? throw new InvalidOperationException("T2IModelHandler.ShouldAdvanceModelClassCacheRevisionWithoutClassification was not found.");
+        MethodInfo replaceMethod = typeof(T2IModelHandler).GetMethod("ShouldReplaceStaleModelClassCache", BindingFlags.NonPublic | BindingFlags.Static)
+            ?? throw new InvalidOperationException("T2IModelHandler.ShouldReplaceStaleModelClassCache was not found.");
         PropertyInfo metadataRevision = typeof(T2IModelHandler.ModelMetadataStore).GetProperty("ModelClassRevision")
             ?? throw new InvalidOperationException("ModelMetadataStore.ModelClassRevision was not found.");
         int currentRevision = (int)revisionField.GetRawConstantValue();
@@ -94,6 +113,33 @@ internal static class Anima38ClassificationHarness
         if (!staleCosmosResult || freshCosmosResult || staleAnimaResult)
         {
             throw new InvalidOperationException($"Unexpected cache revision policy: stale Cosmos={staleCosmosResult}, fresh Cosmos={freshCosmosResult}, stale Anima={staleAnimaResult}.");
+        }
+        bool advanceStaleCosmos = (bool)advanceMethod.Invoke(null, [staleCosmos]);
+        bool advanceFreshCosmos = (bool)advanceMethod.Invoke(null, [freshCosmos]);
+        bool advanceStaleAnima = (bool)advanceMethod.Invoke(null, [staleAnima]);
+        if (advanceStaleCosmos || !advanceFreshCosmos || !advanceStaleAnima)
+        {
+            throw new InvalidOperationException($"Unexpected unclassified revision policy: stale Cosmos={advanceStaleCosmos}, fresh Cosmos={advanceFreshCosmos}, stale Anima={advanceStaleAnima}.");
+        }
+        T2IModelClass cosmosClass = T2IModelClassSorter.ModelClasses["nvidia-cosmos-predict2-t2i-14b"];
+        bool replaceAfterFailure = (bool)replaceMethod.Invoke(null, [true, null]);
+        bool replaceAfterSuccess = (bool)replaceMethod.Invoke(null, [true, cosmosClass]);
+        bool replaceNormalNull = (bool)replaceMethod.Invoke(null, [false, null]);
+        if (replaceAfterFailure || !replaceAfterSuccess || !replaceNormalNull)
+        {
+            throw new InvalidOperationException($"Unexpected stale replacement policy: failed refresh={replaceAfterFailure}, successful refresh={replaceAfterSuccess}, normal null classification={replaceNormalNull}.");
+        }
+        MethodInfo resetMetadata = typeof(T2IModelHandler).GetMethod(nameof(T2IModelHandler.ResetMetadataFrom))
+            ?? throw new InvalidOperationException("T2IModelHandler.ResetMetadataFrom was not found.");
+        MethodInfo loadMetadata = typeof(T2IModelHandler).GetMethod(nameof(T2IModelHandler.LoadMetadata))
+            ?? throw new InvalidOperationException("T2IModelHandler.LoadMetadata was not found.");
+        if (!CallsMethod(resetMetadata, advanceMethod))
+        {
+            throw new InvalidOperationException("ResetMetadataFrom does not preserve classifier revision provenance.");
+        }
+        if (!CallsMethod(loadMetadata, staleMethod) || !CallsMethod(loadMetadata, replaceMethod))
+        {
+            throw new InvalidOperationException("LoadMetadata does not wire stale-cache detection and guarded replacement together.");
         }
     }
 
