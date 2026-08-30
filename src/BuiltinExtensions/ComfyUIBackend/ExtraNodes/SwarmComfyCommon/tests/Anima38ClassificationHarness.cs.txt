@@ -1,6 +1,7 @@
 using Newtonsoft.Json.Linq;
 using SwarmUI.Text2Image;
 using System;
+using System.Reflection;
 
 internal static class Anima38ClassificationHarness
 {
@@ -62,6 +63,40 @@ internal static class Anima38ClassificationHarness
         }
     }
 
+    /// <summary>Validates targeted revision invalidation for cached Cosmos classifications.</summary>
+    private static void VerifyCacheRevision()
+    {
+        FieldInfo revisionField = typeof(T2IModelHandler).GetField("ModelClassCacheRevision", BindingFlags.NonPublic | BindingFlags.Static)
+            ?? throw new InvalidOperationException("T2IModelHandler.ModelClassCacheRevision was not found.");
+        MethodInfo staleMethod = typeof(T2IModelHandler).GetMethod("IsModelClassCacheStale", BindingFlags.NonPublic | BindingFlags.Static)
+            ?? throw new InvalidOperationException("T2IModelHandler.IsModelClassCacheStale was not found.");
+        PropertyInfo metadataRevision = typeof(T2IModelHandler.ModelMetadataStore).GetProperty("ModelClassRevision")
+            ?? throw new InvalidOperationException("ModelMetadataStore.ModelClassRevision was not found.");
+        int currentRevision = (int)revisionField.GetRawConstantValue();
+        T2IModelHandler.ModelMetadataStore staleCosmos = new()
+        {
+            ModelClassType = "nvidia-cosmos-predict2-t2i-14b"
+        };
+        T2IModelHandler.ModelMetadataStore freshCosmos = new()
+        {
+            ModelClassType = "nvidia-cosmos-predict2-t2i-14b"
+        };
+        T2IModelHandler.ModelMetadataStore staleAnima = new()
+        {
+            ModelClassType = "anima-3_8b"
+        };
+        metadataRevision.SetValue(staleCosmos, currentRevision - 1);
+        metadataRevision.SetValue(freshCosmos, currentRevision);
+        metadataRevision.SetValue(staleAnima, currentRevision - 1);
+        bool staleCosmosResult = (bool)staleMethod.Invoke(null, [staleCosmos]);
+        bool freshCosmosResult = (bool)staleMethod.Invoke(null, [freshCosmos]);
+        bool staleAnimaResult = (bool)staleMethod.Invoke(null, [staleAnima]);
+        if (!staleCosmosResult || freshCosmosResult || staleAnimaResult)
+        {
+            throw new InvalidOperationException($"Unexpected cache revision policy: stale Cosmos={staleCosmosResult}, fresh Cosmos={freshCosmosResult}, stale Anima={staleAnimaResult}.");
+        }
+    }
+
     /// <summary>Validates Anima 3.8B and genuine Cosmos classification with and without declared metadata.</summary>
     private static int Main()
     {
@@ -74,6 +109,7 @@ internal static class Anima38ClassificationHarness
         AssertClass("Anima 3.8B without metadata", Anima38Header(false), "anima-3_8b");
         AssertClass("Genuine Cosmos with declared Cosmos metadata", CosmosHeader(true), cosmosId);
         AssertClass("Genuine Cosmos without metadata", CosmosHeader(false), cosmosId);
+        VerifyCacheRevision();
         return 0;
     }
 }

@@ -14,6 +14,9 @@ namespace SwarmUI.Text2Image;
 /// <summary>Central manager for Text2Image models.</summary>
 public class T2IModelHandler
 {
+    /// <summary>Revision of model-class cache decisions that require targeted re-evaluation.</summary>
+    private const int ModelClassCacheRevision = 1;
+
     /// <summary>All models known to this handler.</summary>
     public ConcurrentDictionary<string, T2IModel> Models = new();
 
@@ -108,6 +111,9 @@ public class T2IModelHandler
         public string ModelSidecarFingerprint { get; set; }
 
         public string ModelClassType { get; set; }
+
+        /// <summary>Revision of the classifier decision stored for this model.</summary>
+        public int ModelClassRevision { get; set; }
 
         public string Title { get; set; }
 
@@ -432,6 +438,7 @@ public class T2IModelHandler
                 metadata.Title = model.Title;
                 metadata.Description = model.Description;
                 metadata.ModelClassType = model.ModelClass?.ID;
+                metadata.ModelClassRevision = ModelClassCacheRevision;
                 metadata.StandardWidth = model.StandardWidth;
                 metadata.StandardHeight = model.StandardHeight;
                 lock (MetadataLock)
@@ -504,6 +511,14 @@ public class T2IModelHandler
     /// <summary>Model compat-class IDs that have variable text encoder content.</summary>
     public static HashSet<string> VariableTextEncModelClasses = ["stable-diffusion-v3-medium", "stable-diffusion-v3.5-large", "stable-diffusion-v3.5-medium", "flux-1"];
 
+    /// <summary>Returns whether a cached model classification requires targeted re-evaluation.</summary>
+    private static bool IsModelClassCacheStale(ModelMetadataStore metadata)
+    {
+        return metadata is not null
+            && metadata.ModelClassRevision < ModelClassCacheRevision
+            && metadata.ModelClassType == T2IModelClassSorter.CompatCosmosPredict2_14b.ID;
+    }
+
     /// <summary>Force-load the metadata for a model.</summary>
     public void LoadMetadata(T2IModel model)
     {
@@ -543,6 +558,11 @@ public class T2IModelHandler
         }
         if (metadata is not null && metadata.TextEncoders is null && VariableTextEncModelClasses.Contains(metadata.ModelClassType))
         {
+            metadata = null;
+        }
+        if (IsModelClassCacheStale(metadata))
+        {
+            Logs.Debug($"Rechecking stale model classification for {model.Name}");
             metadata = null;
         }
         if (metadata is null || metadata.ModelFileVersion != modified || metadata.ModelSidecarFingerprint != sidecarFingerprint)
@@ -798,6 +818,7 @@ public class T2IModelHandler
                 TimeCreated = new DateTimeOffset(File.GetCreationTimeUtc(model.RawFilePath)).ToUnixTimeMilliseconds(),
                 ModelName = modelCacheId,
                 ModelClassType = clazz?.ID,
+                ModelClassRevision = ModelClassCacheRevision,
                 Title = limitLength(pickBest(metaHeader?.Value<string>("modelspec.title"), metaHeader?.Value<string>("title"), altName, fileName.BeforeLast('.')), basicLimit),
                 Author = limitLength(pickBest(metaHeader?.Value<string>("modelspec.author"), metaHeader?.Value<string>("author")), basicLimit),
                 Description = limitLength(pickBest(metaHeader?.Value<string>("modelspec.description"), metaHeader?.Value<string>("description"), altDescription), 1024 * 1024 * 4),
