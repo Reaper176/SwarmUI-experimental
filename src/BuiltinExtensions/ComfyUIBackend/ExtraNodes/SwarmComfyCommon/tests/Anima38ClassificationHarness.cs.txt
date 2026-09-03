@@ -331,6 +331,32 @@ internal static class Anima38ClassificationHarness
                 ["lora_unet_up_blocks_24_attentions_0_transformer_blocks_0_attn1_to_q.lora_up.weight"] = TensorDescriptor()
             },
             null);
+        AssertLoraClass(
+            "Incomplete sparse Anima cross-attention LoRA",
+            KohyaAnimaHeader(
+                ".lora_up.weight",
+                "blocks.27.cross_attn.k_proj",
+                "blocks.27.cross_attn.q_proj",
+                "blocks.27.cross_attn.v_proj"),
+            null);
+        AssertLoraClass(
+            "Incomplete sparse Anima self-attention and MLP LoRA",
+            KohyaAnimaHeader(
+                ".lora_up.weight",
+                "blocks.27.self_attn.k_proj",
+                "blocks.27.self_attn.q_proj",
+                "blocks.27.self_attn.v_proj",
+                "blocks.27.self_attn.output_proj",
+                "blocks.27.mlp.layer1"),
+            null);
+        AssertLoraClass(
+            "Incomplete remapped block-39 Anima LoRA",
+            new JObject
+            {
+                ["diffusion_model.blocks.39.self_attn.v_proj.lora_A.weight"] = TensorDescriptor(),
+                ["diffusion_model.blocks.39.adaln_modulation_cross_attn.1.lora_A.weight"] = TensorDescriptor()
+            },
+            null);
         VerifyCacheRevision();
         return 0;
     }
