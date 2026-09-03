@@ -15,7 +15,7 @@ namespace SwarmUI.Text2Image;
 public class T2IModelHandler
 {
     /// <summary>Revision of model-class cache decisions that require targeted re-evaluation.</summary>
-    private const int ModelClassCacheRevision = 2;
+    private const int ModelClassCacheRevision = 3;
 
     /// <summary>All models known to this handler.</summary>
     public ConcurrentDictionary<string, T2IModel> Models = new();
