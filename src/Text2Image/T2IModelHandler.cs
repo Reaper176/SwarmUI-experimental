@@ -15,7 +15,7 @@ namespace SwarmUI.Text2Image;
 public class T2IModelHandler
 {
     /// <summary>Revision of model-class cache decisions that require targeted re-evaluation.</summary>
-    private const int ModelClassCacheRevision = 1;
+    private const int ModelClassCacheRevision = 2;
 
     /// <summary>All models known to this handler.</summary>
     public ConcurrentDictionary<string, T2IModel> Models = new();
@@ -432,7 +432,7 @@ public class T2IModelHandler
             {
                 model.Metadata ??= new();
                 ModelMetadataStore metadata = model.Metadata;
-                bool advanceModelClassRevision = ShouldAdvanceModelClassCacheRevisionWithoutClassification(metadata);
+                bool advanceModelClassRevision = ShouldAdvanceModelClassCacheRevisionWithoutClassification(metadata, ModelType);
                 metadata.ModelFileVersion = modified;
                 metadata.ModelSidecarFingerprint = sidecarFingerprint;
                 metadata.ModelName = perFolder ? fileName : model.RawFilePath;
@@ -516,17 +516,18 @@ public class T2IModelHandler
     public static HashSet<string> VariableTextEncModelClasses = ["stable-diffusion-v3-medium", "stable-diffusion-v3.5-large", "stable-diffusion-v3.5-medium", "flux-1"];
 
     /// <summary>Returns whether a cached model classification requires targeted re-evaluation.</summary>
-    private static bool IsModelClassCacheStale(ModelMetadataStore metadata)
+    private static bool IsModelClassCacheStale(ModelMetadataStore metadata, string modelType)
     {
         return metadata is not null
             && metadata.ModelClassRevision < ModelClassCacheRevision
-            && metadata.ModelClassType == T2IModelClassSorter.CompatCosmosPredict2_14b.ID;
+            && (metadata.ModelClassType == T2IModelClassSorter.CompatCosmosPredict2_14b.ID
+                || (modelType == "LoRA" && string.IsNullOrWhiteSpace(metadata.ModelClassType)));
     }
 
     /// <summary>Returns whether a generic metadata update may advance the cached classifier revision.</summary>
-    private static bool ShouldAdvanceModelClassCacheRevisionWithoutClassification(ModelMetadataStore metadata)
+    private static bool ShouldAdvanceModelClassCacheRevisionWithoutClassification(ModelMetadataStore metadata, string modelType)
     {
-        return !IsModelClassCacheStale(metadata);
+        return !IsModelClassCacheStale(metadata, modelType);
     }
 
     /// <summary>Returns whether a stale cache recheck produced a classifier decision safe to persist.</summary>
@@ -589,7 +590,7 @@ public class T2IModelHandler
             metadata = null;
         }
         bool canReadModelHeader = CanReadModelHeaderForClassification(model.Name);
-        bool recheckStaleModelClass = canReadModelHeader && IsModelClassCacheStale(metadata);
+        bool recheckStaleModelClass = canReadModelHeader && IsModelClassCacheStale(metadata, ModelType);
         if (recheckStaleModelClass)
         {
             Logs.Debug($"Rechecking stale model classification for {model.Name}");

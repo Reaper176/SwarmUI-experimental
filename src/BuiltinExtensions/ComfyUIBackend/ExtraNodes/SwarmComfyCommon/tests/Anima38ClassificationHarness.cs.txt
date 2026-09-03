@@ -127,10 +127,10 @@ internal static class Anima38ClassificationHarness
     {
         FieldInfo revisionField = typeof(T2IModelHandler).GetField("ModelClassCacheRevision", BindingFlags.NonPublic | BindingFlags.Static)
             ?? throw new InvalidOperationException("T2IModelHandler.ModelClassCacheRevision was not found.");
-        MethodInfo staleMethod = typeof(T2IModelHandler).GetMethod("IsModelClassCacheStale", BindingFlags.NonPublic | BindingFlags.Static)
-            ?? throw new InvalidOperationException("T2IModelHandler.IsModelClassCacheStale was not found.");
-        MethodInfo advanceMethod = typeof(T2IModelHandler).GetMethod("ShouldAdvanceModelClassCacheRevisionWithoutClassification", BindingFlags.NonPublic | BindingFlags.Static)
-            ?? throw new InvalidOperationException("T2IModelHandler.ShouldAdvanceModelClassCacheRevisionWithoutClassification was not found.");
+        MethodInfo staleMethod = typeof(T2IModelHandler).GetMethod("IsModelClassCacheStale", BindingFlags.NonPublic | BindingFlags.Static, null, [typeof(T2IModelHandler.ModelMetadataStore), typeof(string)], null)
+            ?? throw new InvalidOperationException("T2IModelHandler.IsModelClassCacheStale with model type was not found.");
+        MethodInfo advanceMethod = typeof(T2IModelHandler).GetMethod("ShouldAdvanceModelClassCacheRevisionWithoutClassification", BindingFlags.NonPublic | BindingFlags.Static, null, [typeof(T2IModelHandler.ModelMetadataStore), typeof(string)], null)
+            ?? throw new InvalidOperationException("T2IModelHandler.ShouldAdvanceModelClassCacheRevisionWithoutClassification with model type was not found.");
         MethodInfo replaceMethod = typeof(T2IModelHandler).GetMethod("ShouldReplaceStaleModelClassCache", BindingFlags.NonPublic | BindingFlags.Static, null, [typeof(bool), typeof(bool), typeof(T2IModelClass)], null)
             ?? throw new InvalidOperationException("T2IModelHandler.ShouldReplaceStaleModelClassCache with model-header provenance was not found.");
         MethodInfo selectMethod = typeof(T2IModelHandler).GetMethod("SelectModelClassForCache", BindingFlags.NonPublic | BindingFlags.Static, null, [typeof(bool), typeof(T2IModelClass), typeof(T2IModelClass)], null)
@@ -152,22 +152,39 @@ internal static class Anima38ClassificationHarness
         {
             ModelClassType = "anima-3_8b"
         };
+        T2IModelHandler.ModelMetadataStore staleNullLora = new();
+        T2IModelHandler.ModelMetadataStore freshNullLora = new();
         metadataRevision.SetValue(staleCosmos, currentRevision - 1);
         metadataRevision.SetValue(freshCosmos, currentRevision);
         metadataRevision.SetValue(staleAnima, currentRevision - 1);
-        bool staleCosmosResult = (bool)staleMethod.Invoke(null, [staleCosmos]);
-        bool freshCosmosResult = (bool)staleMethod.Invoke(null, [freshCosmos]);
-        bool staleAnimaResult = (bool)staleMethod.Invoke(null, [staleAnima]);
-        if (!staleCosmosResult || freshCosmosResult || staleAnimaResult)
+        metadataRevision.SetValue(staleNullLora, currentRevision - 1);
+        metadataRevision.SetValue(freshNullLora, currentRevision);
+        bool isStale(T2IModelHandler.ModelMetadataStore metadata, string modelType)
         {
-            throw new InvalidOperationException($"Unexpected cache revision policy: stale Cosmos={staleCosmosResult}, fresh Cosmos={freshCosmosResult}, stale Anima={staleAnimaResult}.");
+            return (bool)staleMethod.Invoke(null, [metadata, modelType]);
         }
-        bool advanceStaleCosmos = (bool)advanceMethod.Invoke(null, [staleCosmos]);
-        bool advanceFreshCosmos = (bool)advanceMethod.Invoke(null, [freshCosmos]);
-        bool advanceStaleAnima = (bool)advanceMethod.Invoke(null, [staleAnima]);
-        if (advanceStaleCosmos || !advanceFreshCosmos || !advanceStaleAnima)
+        bool staleCosmosResult = isStale(staleCosmos, "Stable-Diffusion");
+        bool freshCosmosResult = isStale(freshCosmos, "Stable-Diffusion");
+        bool staleAnimaResult = isStale(staleAnima, "Stable-Diffusion");
+        bool staleNullLoraResult = isStale(staleNullLora, "LoRA");
+        bool staleNullCheckpointResult = isStale(staleNullLora, "Stable-Diffusion");
+        bool freshNullLoraResult = isStale(freshNullLora, "LoRA");
+        if (!staleCosmosResult || freshCosmosResult || staleAnimaResult || !staleNullLoraResult || staleNullCheckpointResult || freshNullLoraResult)
         {
-            throw new InvalidOperationException($"Unexpected unclassified revision policy: stale Cosmos={advanceStaleCosmos}, fresh Cosmos={advanceFreshCosmos}, stale Anima={advanceStaleAnima}.");
+            throw new InvalidOperationException($"Unexpected model-class cache policy: stale Cosmos={staleCosmosResult}, fresh Cosmos={freshCosmosResult}, stale Anima={staleAnimaResult}, stale null LoRA={staleNullLoraResult}, stale null checkpoint={staleNullCheckpointResult}, fresh null LoRA={freshNullLoraResult}.");
+        }
+        bool mayAdvance(T2IModelHandler.ModelMetadataStore metadata, string modelType)
+        {
+            return (bool)advanceMethod.Invoke(null, [metadata, modelType]);
+        }
+        bool advanceStaleCosmos = mayAdvance(staleCosmos, "Stable-Diffusion");
+        bool advanceFreshCosmos = mayAdvance(freshCosmos, "Stable-Diffusion");
+        bool advanceStaleAnima = mayAdvance(staleAnima, "Stable-Diffusion");
+        bool advanceStaleNullLora = mayAdvance(staleNullLora, "LoRA");
+        bool advanceStaleNullCheckpoint = mayAdvance(staleNullLora, "Stable-Diffusion");
+        if (advanceStaleCosmos || !advanceFreshCosmos || !advanceStaleAnima || advanceStaleNullLora || !advanceStaleNullCheckpoint)
+        {
+            throw new InvalidOperationException($"Unexpected unclassified revision policy: stale Cosmos={advanceStaleCosmos}, fresh Cosmos={advanceFreshCosmos}, stale Anima={advanceStaleAnima}, stale null LoRA={advanceStaleNullLora}, stale null checkpoint={advanceStaleNullCheckpoint}.");
         }
         T2IModelClass cosmosClass = T2IModelClassSorter.ModelClasses["nvidia-cosmos-predict2-t2i-14b"];
         T2IModelClass animaClass = T2IModelClassSorter.ModelClasses["anima-3_8b"];
