@@ -57,17 +57,50 @@ internal static class Anima38ClassificationHarness
         };
     }
 
+    /// <summary>Creates an Anima LoRA header using one maintained tensor-key convention.</summary>
+    private static JObject AnimaLoraHeader(string prefix, string suffix, bool includeMlp = true)
+    {
+        string key(string semanticName)
+        {
+            if (prefix == "lora_unet_")
+            {
+                return $"{prefix}{semanticName.Replace('.', '_')}{suffix}";
+            }
+            return $"{prefix}{semanticName}{suffix}";
+        }
+        JObject header = new()
+        {
+            [key("blocks.27.self_attn.v_proj")] = TensorDescriptor(),
+            [key("blocks.27.cross_attn.output_proj")] = TensorDescriptor()
+        };
+        if (includeMlp)
+        {
+            header[key("blocks.27.mlp.layer2")] = TensorDescriptor();
+        }
+        return header;
+    }
+
     /// <summary>Identifies the production model class for a synthetic safetensors model and header.</summary>
-    private static string Identify(JObject header)
+    private static string Identify(JObject header, string modelType = "Stable-Diffusion")
     {
         T2IModel model = new(null, null, "classification.safetensors", "classification");
-        return T2IModelClassSorter.IdentifyClassFor(model, header, "Stable-Diffusion")?.ID;
+        return T2IModelClassSorter.IdentifyClassFor(model, header, modelType)?.ID;
     }
 
     /// <summary>Throws when production classification differs from the expected model class.</summary>
     private static void AssertClass(string scenario, JObject header, string expected)
     {
         string actual = Identify(header);
+        if (actual != expected)
+        {
+            throw new InvalidOperationException($"{scenario}: expected '{expected}', but production resolved '{actual ?? "null"}'.");
+        }
+    }
+
+    /// <summary>Asserts the class produced for a representative LoRA header.</summary>
+    private static void AssertLoraClass(string scenario, JObject header, string expected)
+    {
+        string actual = Identify(header, "LoRA");
         if (actual != expected)
         {
             throw new InvalidOperationException($"{scenario}: expected '{expected}', but production resolved '{actual ?? "null"}'.");
@@ -194,6 +227,22 @@ internal static class Anima38ClassificationHarness
             ["modelspec.architecture"] = "stable-diffusion-v3-medium"
         };
         AssertClass("Anima tensor signature with a different known architecture", differentlyDeclaredAnima, "stable-diffusion-v3-medium");
+        AssertLoraClass(
+            "Anima Diffusers LoRA",
+            AnimaLoraHeader("diffusion_model.", ".lora_A.weight"),
+            "anima/lora");
+        AssertLoraClass(
+            "Anima nested Diffusers LoRA",
+            AnimaLoraHeader("model.diffusion_model.", ".lora_A.default.weight"),
+            "anima/lora");
+        AssertLoraClass(
+            "Anima Kohya LoRA",
+            AnimaLoraHeader("lora_unet_", ".lora_up.weight"),
+            "anima/lora");
+        AssertLoraClass(
+            "Incomplete Anima-like LoRA",
+            AnimaLoraHeader("diffusion_model.", ".lora_A.weight", false),
+            null);
         VerifyCacheRevision();
         return 0;
     }
