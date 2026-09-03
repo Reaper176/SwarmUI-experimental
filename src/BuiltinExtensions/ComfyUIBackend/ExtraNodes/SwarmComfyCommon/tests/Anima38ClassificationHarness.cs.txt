@@ -5,12 +5,34 @@ using System.Reflection;
 
 internal static class Anima38ClassificationHarness
 {
-    /// <summary>Creates the minimal tensor descriptor needed by model classification predicates.</summary>
-    private static JObject TensorDescriptor()
+    /// <summary>Creates a tensor descriptor with the requested shape.</summary>
+    private static JObject TensorDescriptor(params long[] shape)
+    {
+        long[] actualShape = shape.Length == 0 ? [1] : shape;
+        return new JObject
+        {
+            ["shape"] = new JArray(actualShape)
+        };
+    }
+
+    /// <summary>Creates a representative flattened Diffusers LoRA tensor.</summary>
+    private static JObject SingleLoraTensor(string semanticName, params long[] shape)
     {
         return new JObject
         {
-            ["shape"] = new JArray(1)
+            [$"lora_unet_{semanticName.Replace('.', '_')}.lora_up.weight"] = TensorDescriptor(shape)
+        };
+    }
+
+    /// <summary>Creates the dimensional signature of the Flux.2 Klein 4B outpaint LoRA.</summary>
+    private static JObject Flux2Klein4BOutpaintHeader()
+    {
+        return new JObject
+        {
+            ["diffusion_model.double_blocks.4.img_attn.proj.lora_A.weight"] = TensorDescriptor(16, 3072),
+            ["diffusion_model.double_stream_modulation_img.lin.lora_B.weight"] = TensorDescriptor(18432, 16),
+            ["diffusion_model.single_blocks.19.linear2.lora_A.weight"] = TensorDescriptor(16, 12288),
+            ["diffusion_model.txt_in.lora_A.weight"] = TensorDescriptor(16, 7680)
         };
     }
 
@@ -419,6 +441,59 @@ internal static class Anima38ClassificationHarness
                 ["diffusion_model.blocks.39.self_attn.v_proj.lora_A.weight"] = TensorDescriptor(),
                 ["diffusion_model.blocks.39.adaln_modulation_cross_attn.1.lora_A.weight"] = TensorDescriptor()
             },
+            null);
+        AssertLoraClass(
+            "Pony sidecar LoRA",
+            WithBaseModel(SingleLoraTensor("down_blocks.0.attentions.0.transformer_blocks.0.attn1.to_q"), "pOnY"),
+            "stable-diffusion-xl-v1-base/lora");
+        AssertLoraClass(
+            "Illustrious sidecar LyCORIS LoRA",
+            WithBaseModel(new JObject
+            {
+                ["lora_unet_down_blocks_0_attentions_0_transformer_blocks_0_attn1_to_q.a1.weight"] = TensorDescriptor()
+            }, "iLlUsTrIoUs"),
+            "stable-diffusion-xl-v1-base/lora");
+        AssertLoraClass(
+            "SD 1.5 sidecar LoRA",
+            WithBaseModel(SingleLoraTensor("down_blocks.0.attentions.0.transformer_blocks.0.attn1.to_q"), "sD 1.5"),
+            "stable-diffusion-v1/lora");
+        AssertLoraClass(
+            "Metadata-free SDXL multi-transformer-block LoRA",
+            SingleLoraTensor("down_blocks.1.attentions.0.transformer_blocks.1.attn1.to_q"),
+            "stable-diffusion-xl-v1-base/lora");
+        AssertLoraClass(
+            "Metadata-free SD 1.5 fourth-up-block LoRA",
+            SingleLoraTensor("up_blocks.3.attentions.2.transformer_blocks.0.attn2.to_v"),
+            "stable-diffusion-v1/lora");
+        AssertLoraClass("Flux.2 Klein 4B dimensional LoRA", Flux2Klein4BOutpaintHeader(), "flux.2-klein-4b/lora");
+        JObject flux2Klein9B = Flux2Klein4BOutpaintHeader();
+        flux2Klein9B["diffusion_model.double_stream_modulation_img.lin.lora_B.weight"] = TensorDescriptor(24576, 16);
+        flux2Klein9B["diffusion_model.single_blocks.23.linear1.lora_A.weight"] = TensorDescriptor(16, 4096);
+        AssertLoraClass("Flux.2 Klein 9B is not 4B", flux2Klein9B, null);
+        JObject flux2Dev = Flux2Klein4BOutpaintHeader();
+        flux2Dev["diffusion_model.double_stream_modulation_img.lin.lora_B.weight"] = TensorDescriptor(36864, 16);
+        flux2Dev["diffusion_model.single_blocks.47.linear2.lora_A.weight"] = TensorDescriptor(16, 16384);
+        AssertLoraClass("Flux.2 Dev is not Klein 4B", flux2Dev, "flux.2-dev/lora");
+        AssertLoraClass(
+            "BaseModel does not turn IP-Adapter into LoRA",
+            WithBaseModel(new JObject
+            {
+                ["image_proj.proj.weight"] = TensorDescriptor(3072, 1024),
+                ["ip_adapter.1.to_k_ip.weight"] = TensorDescriptor(320, 768)
+            }, "SD 1.5"),
+            null);
+        AssertLoraClass(
+            "Anima dual-KV style network is not a LoRA",
+            new JObject
+            {
+                ["__metadata__"] = new JObject { ["modelspec.architecture"] = "anima-preview/style-dual-kv-network" },
+                ["style_kv_dit_blocks_0_self_attn.out_down.weight"] = TensorDescriptor(16, 2048),
+                ["style_kv_dit_blocks_27_self_attn.out_up.weight"] = TensorDescriptor(2048, 16)
+            },
+            null);
+        AssertLoraClass(
+            "Ambiguous sparse SD-family LoRA",
+            SingleLoraTensor("down_blocks.0.attentions.0.transformer_blocks.0.attn1.to_q"),
             null);
         VerifyCacheRevision();
         return 0;
