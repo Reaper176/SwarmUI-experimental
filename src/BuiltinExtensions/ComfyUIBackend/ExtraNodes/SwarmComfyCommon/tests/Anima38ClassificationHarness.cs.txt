@@ -91,6 +91,13 @@ internal static class Anima38ClassificationHarness
         return header;
     }
 
+    /// <summary>Adds an external base-model declaration to a representative LoRA header.</summary>
+    private static JObject WithBaseModel(JObject header, string baseModel = "Anima")
+    {
+        header["BaseModel"] = baseModel;
+        return header;
+    }
+
     /// <summary>Identifies the production model class for a synthetic safetensors model and header.</summary>
     private static string Identify(JObject header, string modelType = "Stable-Diffusion")
     {
@@ -144,8 +151,8 @@ internal static class Anima38ClassificationHarness
             ?? throw new InvalidOperationException("T2IModelHandler.ShouldAdvanceModelClassCacheRevisionWithoutClassification with model type was not found.");
         MethodInfo replaceMethod = typeof(T2IModelHandler).GetMethod("ShouldReplaceStaleModelClassCache", BindingFlags.NonPublic | BindingFlags.Static, null, [typeof(bool), typeof(bool), typeof(T2IModelClass)], null)
             ?? throw new InvalidOperationException("T2IModelHandler.ShouldReplaceStaleModelClassCache with model-header provenance was not found.");
-        MethodInfo selectMethod = typeof(T2IModelHandler).GetMethod("SelectModelClassForCache", BindingFlags.NonPublic | BindingFlags.Static, null, [typeof(bool), typeof(T2IModelClass), typeof(T2IModelClass)], null)
-            ?? throw new InvalidOperationException("T2IModelHandler.SelectModelClassForCache was not found.");
+        MethodInfo selectMethod = typeof(T2IModelHandler).GetMethod("SelectModelClassForCache", BindingFlags.NonPublic | BindingFlags.Static, null, [typeof(bool), typeof(bool), typeof(T2IModelClass), typeof(T2IModelClass)], null)
+            ?? throw new InvalidOperationException("T2IModelHandler.SelectModelClassForCache with stale-class provenance was not found.");
         MethodInfo readableMethod = typeof(T2IModelHandler).GetMethod("CanReadModelHeaderForClassification", BindingFlags.NonPublic | BindingFlags.Static)
             ?? throw new InvalidOperationException("T2IModelHandler.CanReadModelHeaderForClassification was not found.");
         PropertyInfo metadataRevision = typeof(T2IModelHandler.ModelMetadataStore).GetProperty("ModelClassRevision")
@@ -203,12 +210,14 @@ internal static class Anima38ClassificationHarness
         }
         T2IModelClass cosmosClass = T2IModelClassSorter.ModelClasses["nvidia-cosmos-predict2-t2i-14b"];
         T2IModelClass animaClass = T2IModelClassSorter.ModelClasses["anima-3_8b"];
-        T2IModelClass staleSidecarOnly = (T2IModelClass)selectMethod.Invoke(null, [true, null, cosmosClass]);
-        T2IModelClass staleRawAnima = (T2IModelClass)selectMethod.Invoke(null, [true, animaClass, cosmosClass]);
-        T2IModelClass normalCombined = (T2IModelClass)selectMethod.Invoke(null, [false, animaClass, cosmosClass]);
-        if (staleSidecarOnly is not null || staleRawAnima?.ID != "anima-3_8b" || normalCombined?.ID != "nvidia-cosmos-predict2-t2i-14b")
+        T2IModelClass animaLoraClass = T2IModelClassSorter.ModelClasses["anima/lora"];
+        T2IModelClass staleSidecarOnly = (T2IModelClass)selectMethod.Invoke(null, [true, false, null, cosmosClass]);
+        T2IModelClass staleRawAnima = (T2IModelClass)selectMethod.Invoke(null, [true, false, animaClass, cosmosClass]);
+        T2IModelClass staleUnknownSidecar = (T2IModelClass)selectMethod.Invoke(null, [true, true, null, animaLoraClass]);
+        T2IModelClass normalCombined = (T2IModelClass)selectMethod.Invoke(null, [false, false, animaClass, cosmosClass]);
+        if (staleSidecarOnly is not null || staleRawAnima?.ID != "anima-3_8b" || staleUnknownSidecar?.ID != "anima/lora" || normalCombined?.ID != "nvidia-cosmos-predict2-t2i-14b")
         {
-            throw new InvalidOperationException($"Unexpected cache class selection: stale sidecar-only={staleSidecarOnly?.ID ?? "null"}, stale raw Anima={staleRawAnima?.ID ?? "null"}, normal combined={normalCombined?.ID ?? "null"}.");
+            throw new InvalidOperationException($"Unexpected cache class selection: stale sidecar-only={staleSidecarOnly?.ID ?? "null"}, stale raw Anima={staleRawAnima?.ID ?? "null"}, stale unknown sidecar={staleUnknownSidecar?.ID ?? "null"}, normal combined={normalCombined?.ID ?? "null"}.");
         }
         bool replaceWithoutModelHeader = (bool)replaceMethod.Invoke(null, [true, false, cosmosClass]);
         bool replaceAfterSuccess = (bool)replaceMethod.Invoke(null, [true, true, cosmosClass]);
@@ -273,39 +282,39 @@ internal static class Anima38ClassificationHarness
             "anima/lora");
         AssertLoraClass(
             "Sparse Anima cross-attention LoRA",
-            KohyaAnimaHeader(
+            WithBaseModel(KohyaAnimaHeader(
                 ".lora_up.weight",
                 "blocks.27.cross_attn.k_proj",
                 "blocks.27.cross_attn.q_proj",
                 "blocks.27.cross_attn.v_proj",
-                "blocks.27.cross_attn.output_proj"),
+                "blocks.27.cross_attn.output_proj")),
             "anima/lora");
         AssertLoraClass(
             "Sparse Anima self-attention and MLP LoRA",
-            KohyaAnimaHeader(
+            WithBaseModel(KohyaAnimaHeader(
                 ".lora_up.weight",
                 "blocks.27.self_attn.k_proj",
                 "blocks.27.self_attn.q_proj",
                 "blocks.27.self_attn.v_proj",
                 "blocks.27.self_attn.output_proj",
                 "blocks.27.mlp.layer1",
-                "blocks.27.mlp.layer2"),
+                "blocks.27.mlp.layer2")),
             "anima/lora");
         AssertLoraClass(
             "Anima LoHa",
-            KohyaAnimaHeader(
+            WithBaseModel(KohyaAnimaHeader(
                 ".hada_w1_a",
                 "blocks.27.self_attn.v_proj",
                 "blocks.27.cross_attn.output_proj",
-                "blocks.27.mlp.layer2"),
+                "blocks.27.mlp.layer2")),
             "anima/lora");
         AssertLoraClass(
             "Anima LoKr",
-            KohyaAnimaHeader(
+            WithBaseModel(KohyaAnimaHeader(
                 ".lokr_w1",
                 "blocks.27.self_attn.v_proj",
                 "blocks.27.cross_attn.output_proj",
-                "blocks.27.mlp.layer2"),
+                "blocks.27.mlp.layer2")),
             "anima/lora");
         AssertLoraClass(
             "Remapped block-39 Anima LoRA",
@@ -330,6 +339,33 @@ internal static class Anima38ClassificationHarness
             {
                 ["lora_unet_up_blocks_24_attentions_0_transformer_blocks_0_attn1_to_q.lora_up.weight"] = TensorDescriptor()
             },
+            null);
+        AssertLoraClass(
+            "Sidecar-identified up-block Anima LoRA",
+            WithBaseModel(new JObject
+            {
+                ["lora_unet_up_blocks_24_attentions_0_transformer_blocks_0_attn1_to_q.lora_up.weight"] = TensorDescriptor()
+            }),
+            "anima/lora");
+        AssertLoraClass(
+            "Metadata-free complete sparse cross-attention LoRA",
+            KohyaAnimaHeader(
+                ".lora_up.weight",
+                "blocks.27.cross_attn.k_proj",
+                "blocks.27.cross_attn.q_proj",
+                "blocks.27.cross_attn.v_proj",
+                "blocks.27.cross_attn.output_proj"),
+            null);
+        AssertLoraClass(
+            "Non-Anima sidecar sparse cross-attention LoRA",
+            WithBaseModel(
+                KohyaAnimaHeader(
+                    ".lora_up.weight",
+                    "blocks.27.cross_attn.k_proj",
+                    "blocks.27.cross_attn.q_proj",
+                    "blocks.27.cross_attn.v_proj",
+                    "blocks.27.cross_attn.output_proj"),
+                "Cosmos Predict2"),
             null);
         AssertLoraClass(
             "Incomplete sparse Anima cross-attention LoRA",
