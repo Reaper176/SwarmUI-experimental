@@ -345,7 +345,7 @@ internal static class Anima38ClassificationHarness
             WithBaseModel(new JObject
             {
                 ["lora_unet_up_blocks_24_attentions_0_transformer_blocks_0_attn1_to_q.lora_up.weight"] = TensorDescriptor()
-            }),
+            }, "aNiMa"),
             "anima/lora");
         AssertLoraClass(
             "Metadata-free complete sparse cross-attention LoRA",
@@ -355,6 +355,33 @@ internal static class Anima38ClassificationHarness
                 "blocks.27.cross_attn.q_proj",
                 "blocks.27.cross_attn.v_proj",
                 "blocks.27.cross_attn.output_proj"),
+            null);
+        AssertLoraClass(
+            "Metadata-free complete sparse self-attention and MLP LoRA",
+            KohyaAnimaHeader(
+                ".lora_up.weight",
+                "blocks.27.self_attn.k_proj",
+                "blocks.27.self_attn.q_proj",
+                "blocks.27.self_attn.v_proj",
+                "blocks.27.self_attn.output_proj",
+                "blocks.27.mlp.layer1",
+                "blocks.27.mlp.layer2"),
+            null);
+        AssertLoraClass(
+            "Metadata-free Anima LoHa",
+            KohyaAnimaHeader(
+                ".hada_w1_a",
+                "blocks.27.self_attn.v_proj",
+                "blocks.27.cross_attn.output_proj",
+                "blocks.27.mlp.layer2"),
+            null);
+        AssertLoraClass(
+            "Metadata-free Anima LoKr",
+            KohyaAnimaHeader(
+                ".lokr_w1",
+                "blocks.27.self_attn.v_proj",
+                "blocks.27.cross_attn.output_proj",
+                "blocks.27.mlp.layer2"),
             null);
         AssertLoraClass(
             "Non-Anima sidecar sparse cross-attention LoRA",
