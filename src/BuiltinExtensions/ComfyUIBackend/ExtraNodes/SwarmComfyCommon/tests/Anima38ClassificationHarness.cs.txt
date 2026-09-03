@@ -80,6 +80,17 @@ internal static class Anima38ClassificationHarness
         return header;
     }
 
+    /// <summary>Creates a flattened Kohya header containing the requested semantic Anima modules.</summary>
+    private static JObject KohyaAnimaHeader(string suffix, params string[] semanticNames)
+    {
+        JObject header = new();
+        foreach (string semanticName in semanticNames)
+        {
+            header[$"lora_unet_{semanticName.Replace('.', '_')}{suffix}"] = TensorDescriptor();
+        }
+        return header;
+    }
+
     /// <summary>Identifies the production model class for a synthetic safetensors model and header.</summary>
     private static string Identify(JObject header, string modelType = "Stable-Diffusion")
     {
@@ -140,9 +151,9 @@ internal static class Anima38ClassificationHarness
         PropertyInfo metadataRevision = typeof(T2IModelHandler.ModelMetadataStore).GetProperty("ModelClassRevision")
             ?? throw new InvalidOperationException("ModelMetadataStore.ModelClassRevision was not found.");
         int currentRevision = (int)revisionField.GetRawConstantValue();
-        if (currentRevision != 2)
+        if (currentRevision != 3)
         {
-            throw new InvalidOperationException($"Expected model-class cache revision 2 for unknown LoRA migration coverage, found {currentRevision}.");
+            throw new InvalidOperationException($"Expected model-class cache revision 3 for additional unknown LoRA migration coverage, found {currentRevision}.");
         }
         T2IModelHandler.ModelMetadataStore staleCosmos = new()
         {
@@ -261,8 +272,64 @@ internal static class Anima38ClassificationHarness
             AnimaLoraHeader("lora_unet_", ".lora_up.weight"),
             "anima/lora");
         AssertLoraClass(
+            "Sparse Anima cross-attention LoRA",
+            KohyaAnimaHeader(
+                ".lora_up.weight",
+                "blocks.27.cross_attn.k_proj",
+                "blocks.27.cross_attn.q_proj",
+                "blocks.27.cross_attn.v_proj",
+                "blocks.27.cross_attn.output_proj"),
+            "anima/lora");
+        AssertLoraClass(
+            "Sparse Anima self-attention and MLP LoRA",
+            KohyaAnimaHeader(
+                ".lora_up.weight",
+                "blocks.27.self_attn.k_proj",
+                "blocks.27.self_attn.q_proj",
+                "blocks.27.self_attn.v_proj",
+                "blocks.27.self_attn.output_proj",
+                "blocks.27.mlp.layer1",
+                "blocks.27.mlp.layer2"),
+            "anima/lora");
+        AssertLoraClass(
+            "Anima LoHa",
+            KohyaAnimaHeader(
+                ".hada_w1_a",
+                "blocks.27.self_attn.v_proj",
+                "blocks.27.cross_attn.output_proj",
+                "blocks.27.mlp.layer2"),
+            "anima/lora");
+        AssertLoraClass(
+            "Anima LoKr",
+            KohyaAnimaHeader(
+                ".lokr_w1",
+                "blocks.27.self_attn.v_proj",
+                "blocks.27.cross_attn.output_proj",
+                "blocks.27.mlp.layer2"),
+            "anima/lora");
+        AssertLoraClass(
+            "Remapped block-39 Anima LoRA",
+            new JObject
+            {
+                ["diffusion_model.llm_adapter.blocks.5.self_attn.v_proj.lora_A.weight"] = TensorDescriptor(),
+                ["diffusion_model.blocks.39.self_attn.v_proj.lora_A.weight"] = TensorDescriptor(),
+                ["diffusion_model.blocks.39.adaln_modulation_cross_attn.1.lora_A.weight"] = TensorDescriptor()
+            },
+            "anima/lora");
+        AssertLoraClass(
             "Incomplete Anima-like LoRA",
             AnimaLoraHeader("diffusion_model.", ".lora_A.weight", false),
+            null);
+        AssertLoraClass(
+            "Single Anima-like cross-attention module",
+            KohyaAnimaHeader(".lora_up.weight", "blocks.27.cross_attn.output_proj"),
+            null);
+        AssertLoraClass(
+            "Unidentified up-block LoRA",
+            new JObject
+            {
+                ["lora_unet_up_blocks_24_attentions_0_transformer_blocks_0_attn1_to_q.lora_up.weight"] = TensorDescriptor()
+            },
             null);
         VerifyCacheRevision();
         return 0;
