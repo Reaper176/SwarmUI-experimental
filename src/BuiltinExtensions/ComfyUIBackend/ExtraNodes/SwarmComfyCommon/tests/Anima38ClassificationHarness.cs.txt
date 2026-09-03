@@ -122,7 +122,7 @@ internal static class Anima38ClassificationHarness
         return false;
     }
 
-    /// <summary>Validates targeted revision invalidation for cached Cosmos classifications.</summary>
+    /// <summary>Validates targeted revision invalidation for cached Cosmos and unknown LoRA classifications.</summary>
     private static void VerifyCacheRevision()
     {
         FieldInfo revisionField = typeof(T2IModelHandler).GetField("ModelClassCacheRevision", BindingFlags.NonPublic | BindingFlags.Static)
@@ -140,6 +140,10 @@ internal static class Anima38ClassificationHarness
         PropertyInfo metadataRevision = typeof(T2IModelHandler.ModelMetadataStore).GetProperty("ModelClassRevision")
             ?? throw new InvalidOperationException("ModelMetadataStore.ModelClassRevision was not found.");
         int currentRevision = (int)revisionField.GetRawConstantValue();
+        if (currentRevision != 2)
+        {
+            throw new InvalidOperationException($"Expected model-class cache revision 2 for unknown LoRA migration coverage, found {currentRevision}.");
+        }
         T2IModelHandler.ModelMetadataStore staleCosmos = new()
         {
             ModelClassType = "nvidia-cosmos-predict2-t2i-14b"
