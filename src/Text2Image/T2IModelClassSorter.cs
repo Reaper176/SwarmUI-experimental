@@ -145,8 +145,7 @@ public class T2IModelClassSorter
     {
         // TODO: This is exponential, but we could instead eg prestrip these prefixes to reduce the exponentiality
         bool hasKey(JObject h, string key) => HasModelKey(h, key);
-        bool hasLoraKey(JObject h, string key) => hasKey(h, $"{key}.lora_A.weight") || hasKey(h, $"{key}.lora_A") || hasKey(h, $"{key}.lora_A.default.weight") || hasKey(h, $"{key}.lora_up.weight") || hasKey(h, $"{key}.lora.up.weight") || hasKey(h, $"{key}.lokr_w1")
-            || hasKey(h, $"lora_unet_{key.Replace('.', '_')}.lora_up.weight") || hasKey(h, $"lora_unet_{key.Replace('.', '_')}.lokr_w1") || hasKey(h, $"lora_unet_{key.Replace('.', '_')}.hada_w1_a");
+        bool hasLoraKey(JObject h, string key) => hasKey(h, $"{key}.lora_A.weight") || hasKey(h, $"{key}.lora_A") || hasKey(h, $"{key}.lora_A.default.weight") || hasKey(h, $"{key}.lora_up.weight") || hasKey(h, $"{key}.lora.up.weight") || hasKey(h, $"{key}.lokr_w1") || hasKey(h, $"lora_unet_{key.Replace('.', '_')}.lora_up.weight");
         bool tryGetKey(JObject h, string key, out JToken tok) => h.TryGetValue(key, out tok) || h.TryGetValue($"diffusion_model.{key}", out tok) || h.TryGetValue($"model.diffusion_model.{key}", out tok);
         bool IsAlt(JObject h) => h.ContainsKey("cond_stage_model.roberta.embeddings.word_embeddings.weight");
         bool isV1(JObject h) => h.ContainsKey("cond_stage_model.transformer.text_model.embeddings.position_ids") || h.ContainsKey("cond_stage_model.transformer.embeddings.position_ids");
@@ -301,11 +300,12 @@ public class T2IModelClassSorter
         bool isKan5VidLite(JObject h) => tryGetKan5IdKey(h, out JToken tok) && tok["shape"].ToArray()[0].Value<long>() == 1792;
         bool isKan5ImgLite(JObject h) => tryGetKan5IdKey(h, out JToken tok) && tok["shape"].ToArray()[0].Value<long>() == 2560;
         bool isKan5VidPro(JObject h) => tryGetKan5IdKey(h, out JToken tok) && tok["shape"].ToArray()[0].Value<long>() == 4096;
+        bool hasAnimaBaseModel(JObject h) => string.Equals(h.Value<string>("BaseModel"), "Anima", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(h["__metadata__"]?.Value<string>("BaseModel"), "Anima", StringComparison.OrdinalIgnoreCase);
         bool isAnimaLora(JObject h) => (hasLoraKey(h, "llm_adapter.blocks.5.self_attn.v_proj") && hasLoraKey(h, "blocks.27.self_attn.v_proj") && hasLoraKey(h, "blocks.27.adaln_modulation_cross_attn.1"))
                                     || (hasLoraKey(h, "blocks.27.self_attn.v_proj") && hasLoraKey(h, "blocks.27.cross_attn.output_proj") && hasLoraKey(h, "blocks.27.mlp.layer2"))
-                                    || (hasLoraKey(h, "blocks.27.cross_attn.k_proj") && hasLoraKey(h, "blocks.27.cross_attn.q_proj") && hasLoraKey(h, "blocks.27.cross_attn.v_proj") && hasLoraKey(h, "blocks.27.cross_attn.output_proj"))
-                                    || (hasLoraKey(h, "blocks.27.self_attn.k_proj") && hasLoraKey(h, "blocks.27.self_attn.q_proj") && hasLoraKey(h, "blocks.27.self_attn.v_proj") && hasLoraKey(h, "blocks.27.self_attn.output_proj") && hasLoraKey(h, "blocks.27.mlp.layer1") && hasLoraKey(h, "blocks.27.mlp.layer2"))
-                                    || (hasLoraKey(h, "llm_adapter.blocks.5.self_attn.v_proj") && hasLoraKey(h, "blocks.39.self_attn.v_proj") && hasLoraKey(h, "blocks.39.adaln_modulation_cross_attn.1"));
+                                    || (hasLoraKey(h, "llm_adapter.blocks.5.self_attn.v_proj") && hasLoraKey(h, "blocks.39.self_attn.v_proj") && hasLoraKey(h, "blocks.39.adaln_modulation_cross_attn.1"))
+                                    || hasAnimaBaseModel(h);
         bool isAnimaControlnet(JObject h) => h.ContainsKey("lllite_dit_blocks_0_self_attn_q_proj.depth_embed") && h.ContainsKey("lllite_dit_blocks_0_self_attn_q_proj.cond_to_film.weight") && h.ContainsKey("lllite_dit_blocks_27_self_attn_q_proj.up.weight");
         bool isLongcat(JObject h) => hasKey(h, "double_blocks.0.txt_attn.norm.query_norm.weight") && hasKey(h, "time_in.out_layer.weight") && hasKey(h, "final_layer.adaLN_modulation.1.weight") && hasKey(h, "double_blocks.0.txt_mod.lin.weight");
         // Audio models
