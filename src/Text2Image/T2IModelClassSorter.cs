@@ -211,7 +211,7 @@ public class T2IModelClassSorter
         bool isFlux2Dev(JObject h) => tryGetFlux2Tok(h, out JToken tok) && (tok["shape"].ToArray()[0].Value<long>() == 36864 || tok["shape"].ToArray()[1].Value<long>() == 36864); // ggufs sometimes have this shape backwards
         bool isFlux2Klein4B(JObject h) => tryGetFlux2Tok(h, out JToken tok) && (tok["shape"].ToArray()[0].Value<long>() == 18432 || tok["shape"].ToArray()[1].Value<long>() == 18432);
         bool isFlux2Klein9B(JObject h) => tryGetFlux2Tok(h, out JToken tok) && (tok["shape"].ToArray()[0].Value<long>() == 24576 || tok["shape"].ToArray()[1].Value<long>() == 24576);
-        bool hasShapeDimension(JToken tok, int index, long expected) => tok["shape"] is JArray shape && shape.Count > index && shape[index].Type == JTokenType.Integer && shape[index].Value<long>() == expected;
+        bool hasShapeDimension(JToken tok, int index, long expected) => tok is JObject descriptor && descriptor["shape"] is JArray shape && shape.Count > index && shape[index].Type == JTokenType.Integer && shape[index].Value<long>() == expected;
         bool isFlux2Klein4BDimensionalLora(JObject h)
         {
             return tryGetKey(h, "double_stream_modulation_img.lin.lora_B.weight", out JToken modulation)

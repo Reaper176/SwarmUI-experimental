@@ -36,6 +36,18 @@ internal static class Anima38ClassificationHarness
         };
     }
 
+    /// <summary>Creates a malformed Flux.2 Klein 4B-like LoRA header with a scalar modulation descriptor.</summary>
+    private static JObject MalformedFlux2Klein4BHeader()
+    {
+        return new JObject
+        {
+            ["diffusion_model.double_blocks.4.img_attn.proj.lora_A.weight"] = TensorDescriptor(16, 3072),
+            ["diffusion_model.double_stream_modulation_img.lin.lora_B.weight"] = new JValue(18432),
+            ["diffusion_model.single_blocks.19.linear2.lora_A.weight"] = TensorDescriptor(16, 12288),
+            ["diffusion_model.txt_in.lora_A.weight"] = TensorDescriptor(16, 7680)
+        };
+    }
+
     /// <summary>Creates the shared and 9B-specific tensor signature of a Flux.2 Klein 9B LoRA.</summary>
     private static JObject Flux2Klein9BHeader()
     {
@@ -511,6 +523,13 @@ internal static class Anima38ClassificationHarness
             SingleLoraTensor("up_blocks.3.attentions.2.transformer_blocks.0.attn2.to_v"),
             "stable-diffusion-v1/lora");
         AssertLoraClass("Flux.2 Klein 4B dimensional LoRA", Flux2Klein4BOutpaintHeader(), "flux.2-klein-4b/lora");
+        AssertLoraClass("Malformed Flux.2 Klein 4B-like LoRA", MalformedFlux2Klein4BHeader(), null);
+        JObject flux1 = new()
+        {
+            ["transformer.single_transformer_blocks.0.attn.to_k.lora_A.weight"] = TensorDescriptor(16, 3072)
+        };
+        AssertLoraClass("Flux.1 LoRA", flux1, "Flux.1-dev/lora");
+        AssertDoesNotMatchClass("Flux.1 LoRA is not Flux.2 Klein 4B", flux1, "flux.2-klein-4b/lora");
         JObject flux2Klein9B = Flux2Klein9BHeader();
         AssertLoraClass("Flux.2 Klein 9B", flux2Klein9B, "flux.2-klein-9b/lora");
         AssertDoesNotMatchClass("Flux.2 Klein 9B is not 4B", flux2Klein9B, "flux.2-klein-4b/lora");
