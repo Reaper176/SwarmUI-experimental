@@ -536,10 +536,14 @@ public class T2IModelHandler
         return !isStaleCacheRecheck || (modelHeaderLoaded && classifierDecision is not null);
     }
 
-    /// <summary>Selects the classifier decision that may be persisted for a metadata cache refresh.</summary>
-    private static T2IModelClass SelectModelClassForCache(bool isStaleCacheRecheck, T2IModelClass modelHeaderClass, T2IModelClass combinedClass)
+    /// <summary>Selects the classifier decision to persist, preserving combined metadata when a stale unknown class lacks a model header.</summary>
+    private static T2IModelClass SelectModelClassForCache(bool recheckStaleModelClass, bool staleModelClassWasUnknown, T2IModelClass modelHeaderClass, T2IModelClass combinedClass)
     {
-        return isStaleCacheRecheck ? modelHeaderClass : combinedClass;
+        if (recheckStaleModelClass && !staleModelClassWasUnknown)
+        {
+            return modelHeaderClass;
+        }
+        return combinedClass;
     }
 
     /// <summary>Returns whether this model format supports loading a tensor header for classification.</summary>
@@ -591,6 +595,7 @@ public class T2IModelHandler
         }
         bool canReadModelHeader = CanReadModelHeaderForClassification(model.Name);
         bool recheckStaleModelClass = canReadModelHeader && IsModelClassCacheStale(metadata, ModelType);
+        bool staleModelClassWasUnknown = recheckStaleModelClass && string.IsNullOrWhiteSpace(metadata.ModelClassType);
         if (recheckStaleModelClass)
         {
             Logs.Debug($"Rechecking stale model classification for {model.Name}");
@@ -726,7 +731,7 @@ public class T2IModelHandler
             }
             string altTriggerPhrase = triggerPhrases.JoinString(", ");
             T2IModelClass combinedClass = T2IModelClassSorter.IdentifyClassFor(model, headerData, ModelType);
-            T2IModelClass clazz = SelectModelClassForCache(recheckStaleModelClass, modelHeaderClass, combinedClass);
+            T2IModelClass clazz = SelectModelClassForCache(recheckStaleModelClass, staleModelClassWasUnknown, modelHeaderClass, combinedClass);
             string specialFormat = null;
             foreach (string key in headerData.Properties().Select(p => p.Name))
             {
