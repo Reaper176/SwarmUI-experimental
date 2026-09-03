@@ -2,336 +2,212 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Classify the observed sparse, LyCORIS, and remapped Anima LoRA layouts without using filenames or misclassifying structurally unidentified files.
+**Goal:** Use explicit Anima sidecar metadata and a strong remapped tensor signature to classify the warned LoRAs without confusing sparse Cosmos LoRAs.
 
-**Architecture:** Expand the existing semantic LoRA-key helper for flattened Kohya LoHa/LoKr suffixes, then add separate multi-tensor Anima signatures for sparse cross-attention, sparse self-attention/MLP, and remapped block-39 exports. Advance the targeted unknown-LoRA cache revision so revision-2 misses are reconsidered once.
+**Architecture:** Keep complete tensor classification, add a narrowly scoped `BaseModel: Anima` LoRA predicate for combined metadata, and let stale unknown LoRAs use combined metadata while stale non-null Cosmos corrections remain raw-header-only. Advance the targeted cache revision so revision-2 misses are reconsidered once.
 
-**Tech Stack:** C# 12, .NET 8, Newtonsoft.Json `JObject`, the existing manual Anima classification harness, Git.
+**Tech Stack:** C# 12, .NET 8, Newtonsoft.Json `JObject`, existing manual classification harness, Git.
 
 ---
 
-## File Map
-
-- `src/Text2Image/T2IModelClassSorter.cs`: production tensor-key normalization and Anima LoRA signatures.
-- `src/Text2Image/T2IModelHandler.cs`: targeted classifier-cache migration revision.
-- `src/BuiltinExtensions/ComfyUIBackend/ExtraNodes/SwarmComfyCommon/tests/Anima38ClassificationHarness.cs.txt`: production-facing regression cases and cache-policy assertions.
-
-### Task 1: Add failing regression cases for the observed layouts
+### Task 1: Correct the regression harness for metadata-backed classification
 
 **Files:**
 - Modify: `src/BuiltinExtensions/ComfyUIBackend/ExtraNodes/SwarmComfyCommon/tests/Anima38ClassificationHarness.cs.txt`
 
-- [ ] **Step 1: Add a generic flattened Kohya header helper**
-
-Add this helper after `AnimaLoraHeader`:
+- [ ] Add this helper after `KohyaAnimaHeader`:
 
 ```csharp
-    /// <summary>Creates a flattened Kohya header containing the requested semantic Anima modules.</summary>
-    private static JObject KohyaAnimaHeader(string suffix, params string[] semanticNames)
+    /// <summary>Adds an external base-model declaration to a representative LoRA header.</summary>
+    private static JObject WithBaseModel(JObject header, string baseModel = "Anima")
     {
-        JObject header = new();
-        foreach (string semanticName in semanticNames)
-        {
-            header[$"lora_unet_{semanticName.Replace('.', '_')}{suffix}"] = TensorDescriptor();
-        }
+        header["BaseModel"] = baseModel;
         return header;
     }
 ```
 
-- [ ] **Step 2: Add positive sparse and LyCORIS cases**
+- [ ] Wrap the sparse cross, sparse self/MLP, LoHa, LoKr, and unusual
+`up_blocks_24` positive headers in `WithBaseModel(...)`. Change the unusual
+scenario name to `Sidecar-identified up-block Anima LoRA` and expect
+`anima/lora`.
 
-Add these assertions after the existing complete Kohya assertion:
+- [ ] Preserve metadata-free null cases for the single sparse module,
+incomplete sparse signatures, incomplete block-39 signature, and unusual
+`up_blocks_24` header. Add a complete four-projection sparse cross header
+without `BaseModel` expecting null, plus the same header wrapped in
+`WithBaseModel(..., "Cosmos Predict2")` expecting null.
 
-```csharp
-        AssertLoraClass(
-            "Sparse Anima cross-attention LoRA",
-            KohyaAnimaHeader(
-                ".lora_up.weight",
-                "blocks.27.cross_attn.k_proj",
-                "blocks.27.cross_attn.q_proj",
-                "blocks.27.cross_attn.v_proj",
-                "blocks.27.cross_attn.output_proj"),
-            "anima/lora");
-        AssertLoraClass(
-            "Sparse Anima self-attention and MLP LoRA",
-            KohyaAnimaHeader(
-                ".lora_up.weight",
-                "blocks.27.self_attn.k_proj",
-                "blocks.27.self_attn.q_proj",
-                "blocks.27.self_attn.v_proj",
-                "blocks.27.self_attn.output_proj",
-                "blocks.27.mlp.layer1",
-                "blocks.27.mlp.layer2"),
-            "anima/lora");
-        AssertLoraClass(
-            "Anima LoHa",
-            KohyaAnimaHeader(
-                ".hada_w1_a",
-                "blocks.27.self_attn.v_proj",
-                "blocks.27.cross_attn.output_proj",
-                "blocks.27.mlp.layer2"),
-            "anima/lora");
-        AssertLoraClass(
-            "Anima LoKr",
-            KohyaAnimaHeader(
-                ".lokr_w1",
-                "blocks.27.self_attn.v_proj",
-                "blocks.27.cross_attn.output_proj",
-                "blocks.27.mlp.layer2"),
-            "anima/lora");
-```
+- [ ] Keep the remapped block-39 positive unchanged because its LLM-adapter
+marker is raw-header evidence.
 
-- [ ] **Step 3: Add the remapped block-39 case**
-
-Add this assertion with the other positives:
+- [ ] Change the reflected `SelectModelClassForCache` signature to:
 
 ```csharp
-        AssertLoraClass(
-            "Remapped block-39 Anima LoRA",
-            new JObject
-            {
-                ["diffusion_model.llm_adapter.blocks.5.self_attn.v_proj.lora_A.weight"] = TensorDescriptor(),
-                ["diffusion_model.blocks.39.self_attn.v_proj.lora_A.weight"] = TensorDescriptor(),
-                ["diffusion_model.blocks.39.adaln_modulation_cross_attn.1.lora_A.weight"] = TensorDescriptor()
-            },
-            "anima/lora");
+[typeof(bool), typeof(bool), typeof(T2IModelClass), typeof(T2IModelClass)]
 ```
 
-- [ ] **Step 4: Add sparse and unrelated negative cases**
-
-Keep the existing incomplete two-key negative and add:
+Update cache selection assertions to verify:
 
 ```csharp
-        AssertLoraClass(
-            "Single Anima-like cross-attention module",
-            KohyaAnimaHeader(".lora_up.weight", "blocks.27.cross_attn.output_proj"),
-            null);
-        AssertLoraClass(
-            "Unidentified up-block LoRA",
-            new JObject
-            {
-                ["lora_unet_up_blocks_24_attentions_0_transformer_blocks_0_attn1_to_q.lora_up.weight"] = TensorDescriptor()
-            },
-            null);
+T2IModelClass staleSidecarOnly = (T2IModelClass)selectMethod.Invoke(null, [true, false, null, cosmosClass]);
+T2IModelClass staleRawAnima = (T2IModelClass)selectMethod.Invoke(null, [true, false, animaClass, cosmosClass]);
+T2IModelClass staleUnknownSidecar = (T2IModelClass)selectMethod.Invoke(null, [true, true, null, animaLoraClass]);
+T2IModelClass normalCombined = (T2IModelClass)selectMethod.Invoke(null, [false, false, animaClass, cosmosClass]);
 ```
 
-The second negative represents the structural evidence available in `modelo_1mb2.safetensors`; do not use its filename or directory in production logic.
+Require `staleSidecarOnly` null, `staleRawAnima` equal `anima-3_8b`,
+`staleUnknownSidecar` equal `anima/lora`, and `normalCombined` equal Cosmos.
+Resolve `animaLoraClass` from `ModelClasses["anima/lora"]`.
 
-- [ ] **Step 5: Pin the next cache migration**
-
-In `VerifyCacheRevision`, change the explicit revision assertion from 2 to 3 and update its message:
-
-```csharp
-        if (currentRevision != 3)
-        {
-            throw new InvalidOperationException($"Expected model-class cache revision 3 for additional unknown LoRA migration coverage, found {currentRevision}.");
-        }
-```
-
-Because stale records use `currentRevision - 1`, this makes the harness exercise revision 2 to revision 3 without changing the existing stale-policy matrix.
-
-- [ ] **Step 6: Run permitted static checks**
+- [ ] Run the direct harness. Expected RED: a metadata-backed positive resolves
+null because production does not yet consume `BaseModel`, or reflection cannot
+find the planned four-argument selection helper.
 
 ```bash
-git diff --check -- src/BuiltinExtensions/ComfyUIBackend/ExtraNodes/SwarmComfyCommon/tests/Anima38ClassificationHarness.cs.txt
-git diff -- src/BuiltinExtensions/ComfyUIBackend/ExtraNodes/SwarmComfyCommon/tests/Anima38ClassificationHarness.cs.txt
+python3 src/BuiltinExtensions/ComfyUIBackend/ExtraNodes/SwarmComfyCommon/tests/test_anima38_classification.py -v
 ```
 
-Expected: only the helper, five positive layout cases, two negatives, and the revision-3 expectation are added.
-
-- [ ] **Step 7: Commit the failing coverage**
+- [ ] Run `git diff --check`, inspect the diff, and commit only the harness:
 
 ```bash
 git add -- src/BuiltinExtensions/ComfyUIBackend/ExtraNodes/SwarmComfyCommon/tests/Anima38ClassificationHarness.cs.txt
-git commit -m "test: cover additional Anima LoRA layouts"
+git commit -m "test: require metadata-backed Anima classification"
 ```
 
-- [ ] **Step 8: Maintainer verifies RED**
-
-The agent must not run tests under `AGENTS.md`. Reaper176 runs:
-
-```bash
-python3 -m unittest src/BuiltinExtensions/ComfyUIBackend/ExtraNodes/SwarmComfyCommon/tests/test_anima38_classification.py -v
-```
-
-Expected: failure begins at an added positive because the production classifier does not yet recognize the layout. If it errors for compilation/setup reasons instead, correct the harness before production work.
-
-### Task 2: Expand semantic key matching and Anima signatures
+### Task 2: Implement safe metadata and remapped-layout classification
 
 **Files:**
-- Modify: `src/Text2Image/T2IModelClassSorter.cs:148,303-304`
-- Test: `src/BuiltinExtensions/ComfyUIBackend/ExtraNodes/SwarmComfyCommon/tests/Anima38ClassificationHarness.cs.txt`
+- Modify: `src/Text2Image/T2IModelClassSorter.cs`
 
-- [ ] **Step 1: Recognize flattened Kohya LoHa and LoKr module keys**
+- [ ] Remove the rejected flattened `.lokr_w1` and `.hada_w1_a` additions from
+`hasLoraKey`. Remove the rejected block-27 sparse cross and sparse self/MLP
+branches from `isAnimaLora`.
 
-Extend only the end of `hasLoraKey`:
-
-```csharp
-        bool hasLoraKey(JObject h, string key) => hasKey(h, $"{key}.lora_A.weight") || hasKey(h, $"{key}.lora_A") || hasKey(h, $"{key}.lora_A.default.weight") || hasKey(h, $"{key}.lora_up.weight") || hasKey(h, $"{key}.lora.up.weight") || hasKey(h, $"{key}.lokr_w1")
-            || hasKey(h, $"lora_unet_{key.Replace('.', '_')}.lora_up.weight") || hasKey(h, $"lora_unet_{key.Replace('.', '_')}.lokr_w1") || hasKey(h, $"lora_unet_{key.Replace('.', '_')}.hada_w1_a");
-```
-
-Do not generalize to arbitrary suffixes. The two additions correspond to observed LyCORIS module markers.
-
-- [ ] **Step 2: Add the three multi-tensor Anima signatures**
-
-Extend `isAnimaLora` while preserving its first two branches:
+- [ ] Add a local metadata predicate near `isAnimaLora`:
 
 ```csharp
-        bool isAnimaLora(JObject h) => (hasLoraKey(h, "llm_adapter.blocks.5.self_attn.v_proj") && hasLoraKey(h, "blocks.27.self_attn.v_proj") && hasLoraKey(h, "blocks.27.adaln_modulation_cross_attn.1"))
-                                    || (hasLoraKey(h, "blocks.27.self_attn.v_proj") && hasLoraKey(h, "blocks.27.cross_attn.output_proj") && hasLoraKey(h, "blocks.27.mlp.layer2"))
-                                    || (hasLoraKey(h, "blocks.27.cross_attn.k_proj") && hasLoraKey(h, "blocks.27.cross_attn.q_proj") && hasLoraKey(h, "blocks.27.cross_attn.v_proj") && hasLoraKey(h, "blocks.27.cross_attn.output_proj"))
-                                    || (hasLoraKey(h, "blocks.27.self_attn.k_proj") && hasLoraKey(h, "blocks.27.self_attn.q_proj") && hasLoraKey(h, "blocks.27.self_attn.v_proj") && hasLoraKey(h, "blocks.27.self_attn.output_proj") && hasLoraKey(h, "blocks.27.mlp.layer1") && hasLoraKey(h, "blocks.27.mlp.layer2"))
-                                    || (hasLoraKey(h, "llm_adapter.blocks.5.self_attn.v_proj") && hasLoraKey(h, "blocks.39.self_attn.v_proj") && hasLoraKey(h, "blocks.39.adaln_modulation_cross_attn.1"));
+        bool hasAnimaBaseModel(JObject h) => string.Equals(h.Value<string>("BaseModel"), "Anima", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(h["__metadata__"]?.Value<string>("BaseModel"), "Anima", StringComparison.OrdinalIgnoreCase);
 ```
 
-- [ ] **Step 3: Trace every observed family statically**
+- [ ] Keep the pre-existing block-27 branches and the new strong remapped
+branch, then add metadata as the final branch:
 
-Confirm from source:
-
-```text
-standard sparse cross-attention -> four block-27 cross-attention checks
-standard sparse self/MLP -> four self-attention plus two MLP checks
-flattened LoHa -> lora_unet_<semantic>.hada_w1_a
-flattened LoKr -> lora_unet_<semantic>.lokr_w1
-remapped Diffusers -> LLM-adapter plus block-39 checks
-single cross-attention module -> no branch can match
-unrelated up_blocks_* key -> no branch can match
+```csharp
+                                    || (hasLoraKey(h, "llm_adapter.blocks.5.self_attn.v_proj") && hasLoraKey(h, "blocks.39.self_attn.v_proj") && hasLoraKey(h, "blocks.39.adaln_modulation_cross_attn.1"))
+                                    || hasAnimaBaseModel(h);
 ```
 
-- [ ] **Step 4: Run permitted static checks**
+Do not add filename/directory inference or accept other `BaseModel` values.
+
+- [ ] Run focused formatter and whitespace checks, then run the direct harness.
+Expected: classification cases pass; failure is limited to the not-yet-updated
+four-argument selection helper or revision 3.
 
 ```bash
 dotnet format src/SwarmUI.csproj --no-restore --verify-no-changes --include src/Text2Image/T2IModelClassSorter.cs
 git diff --check -- src/Text2Image/T2IModelClassSorter.cs
-git diff -- src/Text2Image/T2IModelClassSorter.cs
+python3 src/BuiltinExtensions/ComfyUIBackend/ExtraNodes/SwarmComfyCommon/tests/test_anima38_classification.py -v
 ```
 
-Expected: formatter and whitespace checks exit 0; only the helper suffixes and three predicate branches change.
-
-- [ ] **Step 5: Commit the classifier expansion**
+- [ ] Commit only the sorter:
 
 ```bash
 git add -- src/Text2Image/T2IModelClassSorter.cs
-git commit -m "fix: recognize additional Anima LoRA layouts"
+git commit -m "fix: use Anima base-model metadata for LoRAs"
 ```
 
-- [ ] **Step 6: Maintainer verifies classifier GREEN and cache RED**
-
-Reaper176 reruns:
-
-```bash
-python3 -m unittest src/BuiltinExtensions/ComfyUIBackend/ExtraNodes/SwarmComfyCommon/tests/test_anima38_classification.py -v
-```
-
-Expected: all new and existing classifier cases pass; the harness then fails because production cache revision is still 2 while the harness requires 3.
-
-### Task 3: Re-evaluate revision-2 unknown LoRAs once
+### Task 3: Permit combined metadata only for stale unknowns
 
 **Files:**
-- Modify: `src/Text2Image/T2IModelHandler.cs:18`
-- Test: `src/BuiltinExtensions/ComfyUIBackend/ExtraNodes/SwarmComfyCommon/tests/Anima38ClassificationHarness.cs.txt`
+- Modify: `src/Text2Image/T2IModelHandler.cs`
 
-- [ ] **Step 1: Advance the classifier cache revision**
-
-Change only:
+- [ ] Change `SelectModelClassForCache` to:
 
 ```csharp
-    /// <summary>Revision of model-class cache decisions that require targeted re-evaluation.</summary>
-    private const int ModelClassCacheRevision = 3;
+    private static T2IModelClass SelectModelClassForCache(bool recheckStaleModelClass, bool staleModelClassWasUnknown, T2IModelClass modelHeaderClass, T2IModelClass combinedClass)
+    {
+        if (recheckStaleModelClass && !staleModelClassWasUnknown)
+        {
+            return modelHeaderClass;
+        }
+        return combinedClass;
+    }
 ```
 
-Do not change `IsModelClassCacheStale`, `ShouldAdvanceModelClassCacheRevisionWithoutClassification`, `ShouldReplaceStaleModelClassCache`, or `SelectModelClassForCache`. Their existing model-type and raw-header guards implement the approved policy.
+- [ ] Immediately after `recheckStaleModelClass` is calculated, add:
 
-- [ ] **Step 2: Trace the migration statically**
-
-Confirm:
-
-```text
-revision 2 + null class + LoRA handler + recognized new layout
-  -> stale -> raw header classification -> non-null replacement -> revision 3
-
-revision 2 + null class + Stable-Diffusion handler
-  -> not stale -> no forced recheck
-
-revision 2 + null class + LoRA handler + modelo_1mb2-style header
-  -> stale -> null classification -> no replacement -> revision remains 2
-
-revision 3 + null class + LoRA handler
-  -> not stale -> no repeated recheck
+```csharp
+        bool staleModelClassWasUnknown = recheckStaleModelClass && string.IsNullOrWhiteSpace(metadata.ModelClassType);
 ```
 
-- [ ] **Step 3: Run permitted static checks**
+Pass that boolean to `SelectModelClassForCache` at its production call site.
+Do not weaken `ShouldReplaceStaleModelClassCache`; it must still require a
+successfully loaded raw header and a non-null selected class.
+
+- [ ] Run formatter, whitespace check, and harness. Expected: all selection and
+classification assertions pass; only revision 3 remains RED.
 
 ```bash
 dotnet format src/SwarmUI.csproj --no-restore --verify-no-changes --include src/Text2Image/T2IModelHandler.cs
 git diff --check -- src/Text2Image/T2IModelHandler.cs
-git diff -- src/Text2Image/T2IModelHandler.cs
+python3 src/BuiltinExtensions/ComfyUIBackend/ExtraNodes/SwarmComfyCommon/tests/test_anima38_classification.py -v
 ```
 
-Expected: the only production change in this task is `2` to `3`.
+- [ ] Commit only the handler:
 
-- [ ] **Step 4: Commit the migration**
+```bash
+git add -- src/Text2Image/T2IModelHandler.cs
+git commit -m "fix: refresh unknown LoRAs from combined metadata"
+```
+
+### Task 4: Advance the targeted cache revision and verify GREEN
+
+**Files:**
+- Modify: `src/Text2Image/T2IModelHandler.cs:18`
+
+- [ ] Change only `ModelClassCacheRevision` from 2 to 3. Preserve all stale,
+selection, and guarded-replacement logic from Task 3.
+
+- [ ] Run the complete direct harness:
+
+```bash
+python3 src/BuiltinExtensions/ComfyUIBackend/ExtraNodes/SwarmComfyCommon/tests/test_anima38_classification.py -v
+```
+
+Expected: one test passes with `OK`.
+
+- [ ] Run focused formatter and cumulative static checks:
+
+```bash
+dotnet format src/SwarmUI.csproj --no-restore --verify-no-changes --include src/Text2Image/T2IModelClassSorter.cs src/Text2Image/T2IModelHandler.cs
+git diff --check 0e999ae3..HEAD
+git diff --name-status 0e999ae3..HEAD
+```
+
+Expected: implementation scope is the sorter, handler, and existing harness.
+
+- [ ] Commit the revision change:
 
 ```bash
 git add -- src/Text2Image/T2IModelHandler.cs
 git commit -m "fix: refresh additional unknown LoRA classes"
 ```
 
-- [ ] **Step 5: Maintainer verifies GREEN**
+### Task 5: Final review and live validation
 
-Reaper176 runs:
+- [ ] Obtain final cumulative specification and code-quality reviews. Resolve
+all Critical and Important findings.
 
-```bash
-python3 -m unittest src/BuiltinExtensions/ComfyUIBackend/ExtraNodes/SwarmComfyCommon/tests/test_anima38_classification.py -v
-```
+- [ ] Merge to `master`, rebuild/restart SwarmUI, and refresh the LoRA list.
+The reported files with `BaseModel: Anima` sidecars and the remapped block-39
+file must resolve to `anima/lora`. Metadata-free sparse Cosmos-compatible
+headers must remain unclassified.
 
-Expected: all existing Anima/Cosmos cases, all new layout cases, both new negatives, and the revision-3 cache matrix pass with `OK`.
-
-### Task 4: Final static review and live-validation handoff
-
-**Files:**
-- Review: `src/Text2Image/T2IModelClassSorter.cs`
-- Review: `src/Text2Image/T2IModelHandler.cs`
-- Review: `src/BuiltinExtensions/ComfyUIBackend/ExtraNodes/SwarmComfyCommon/tests/Anima38ClassificationHarness.cs.txt`
-
-- [ ] **Step 1: Verify final formatting, whitespace, and scope**
-
-```bash
-dotnet format src/SwarmUI.csproj --no-restore --verify-no-changes --include src/Text2Image/T2IModelClassSorter.cs src/Text2Image/T2IModelHandler.cs
-git diff --check 0e999ae3..HEAD
-git diff --name-status 0e999ae3..HEAD
-git log --oneline 0e999ae3..HEAD
-```
-
-Expected: only the two production files and existing harness changed; commits are focused; checks exit 0.
-
-- [ ] **Step 2: Reconfirm the unidentified negative has no fallback**
+- [ ] Confirm no filename or directory fallback exists:
 
 ```bash
 rg -n "modelo_1mb2|Models/Lora/anima|RawFilePath.*anima|Name.*anima" src/Text2Image/T2IModelClassSorter.cs
 ```
 
-Expected: no filename or directory classification rule was added.
-
-- [ ] **Step 3: Perform final code review**
-
-Review the cumulative diff against the approved design, focusing on false-positive risk, preservation of existing signatures, LyCORIS suffix scope, and cache retry behavior. Resolve all Critical and Important findings before handoff.
-
-- [ ] **Step 4: Maintainer performs live validation**
-
-After merging, Reaper176 rebuilds/restarts through Stability Matrix and refreshes the LoRA list. Confirm these families resolve to `anima/lora`:
-
-```text
-Anima-2.9B_Turbo-BF16.safetensors
-dksnpromax_v1d_epoch19.safetensors
-Skin-tone-Slider-Anima.safetensors
-ThighsSliderAnima4.safetensors
-Fat-mons-Slider7.safetensors
-Testicle-slider4.safetensors
-dksnpromax_v1_epoch50.safetensors
-suujiniku_v1_epoch40.safetensors
-hagi_v1.safetensors
-```
-
-The repeated warnings for those evidence-backed layouts must disappear. `modelo_1mb2.safetensors` remains unmatched unless future evidence identifies its actual architecture.
+Expected: no match introduced by this implementation.
