@@ -237,9 +237,9 @@ internal static class Anima38ClassificationHarness
         PropertyInfo metadataRevision = typeof(T2IModelHandler.ModelMetadataStore).GetProperty("ModelClassRevision")
             ?? throw new InvalidOperationException("ModelMetadataStore.ModelClassRevision was not found.");
         int currentRevision = (int)revisionField.GetRawConstantValue();
-        if (currentRevision != 3)
+        if (currentRevision != 4)
         {
-            throw new InvalidOperationException($"Expected model-class cache revision 3 for additional unknown LoRA migration coverage, found {currentRevision}.");
+            throw new InvalidOperationException($"Expected model-class cache revision 4 for additional unknown LoRA migration coverage, found {currentRevision}.");
         }
         T2IModelHandler.ModelMetadataStore staleCosmos = new()
         {
