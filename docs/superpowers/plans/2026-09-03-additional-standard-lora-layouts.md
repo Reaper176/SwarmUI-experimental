@@ -16,7 +16,7 @@
 - Modify: `src/BuiltinExtensions/ComfyUIBackend/ExtraNodes/SwarmComfyCommon/tests/Anima38ClassificationHarness.cs.txt`
 - Test: `src/BuiltinExtensions/ComfyUIBackend/ExtraNodes/SwarmComfyCommon/tests/test_anima38_classification.py`
 
-- [ ] **Step 1: Add shaped tensor and fixture helpers**
+- [ ] **Step 1: Add shaped tensor, fixture, and direct-predicate helpers**
 
 Replace `TensorDescriptor()` with a `params long[]` form and add focused fixtures:
 
@@ -51,6 +51,63 @@ private static JObject Flux2Klein4BOutpaintHeader()
         ["diffusion_model.txt_in.lora_A.weight"] = TensorDescriptor(16, 7680)
     };
 }
+
+/// <summary>Creates a malformed Flux.2 Klein 4B-like LoRA header with a scalar modulation descriptor.</summary>
+private static JObject MalformedFlux2Klein4BHeader()
+{
+    return new JObject
+    {
+        ["diffusion_model.double_blocks.4.img_attn.proj.lora_A.weight"] = TensorDescriptor(16, 3072),
+        ["diffusion_model.double_stream_modulation_img.lin.lora_B.weight"] = new JValue(18432),
+        ["diffusion_model.single_blocks.19.linear2.lora_A.weight"] = TensorDescriptor(16, 12288),
+        ["diffusion_model.txt_in.lora_A.weight"] = TensorDescriptor(16, 7680)
+    };
+}
+
+/// <summary>Creates the shared and 9B-specific tensor signature of a Flux.2 Klein 9B LoRA.</summary>
+private static JObject Flux2Klein9BHeader()
+{
+    return new JObject
+    {
+        ["diffusion_model.double_blocks.4.img_attn.proj.lora_A.weight"] = TensorDescriptor(),
+        ["diffusion_model.double_blocks.4.txt_mlp.2.lora_A.weight"] = TensorDescriptor(),
+        ["diffusion_model.single_blocks.18.linear1.lora_A.weight"] = TensorDescriptor(),
+        ["diffusion_model.single_blocks.19.linear2.lora_A.weight"] = TensorDescriptor(),
+        ["diffusion_model.single_blocks.23.linear1.lora_A.weight"] = TensorDescriptor(),
+        ["diffusion_model.double_stream_modulation_img.lin.lora_B.weight"] = TensorDescriptor(24576, 16)
+    };
+}
+
+/// <summary>Creates the dimensional signature of a Flux.2 Dev LoRA.</summary>
+private static JObject Flux2DevHeader()
+{
+    return new JObject
+    {
+        ["diffusion_model.double_stream_modulation_img.lin.lora_B.weight"] = TensorDescriptor(36864, 16),
+        ["diffusion_model.single_blocks.47.linear2.lora_A.weight"] = TensorDescriptor(16, 16384)
+    };
+}
+
+/// <summary>Adds a nested external base-model declaration to a representative LoRA header.</summary>
+private static JObject WithNestedBaseModel(JObject header, string baseModel)
+{
+    header["__metadata__"] = new JObject
+    {
+        ["BaseModel"] = baseModel
+    };
+    return header;
+}
+
+/// <summary>Throws when a model-class predicate directly matches a synthetic header.</summary>
+private static void AssertDoesNotMatchClass(string scenario, JObject header, string classId)
+{
+    T2IModelClass modelClass = T2IModelClassSorter.ModelClasses[classId];
+    T2IModel model = new(null, null, "classification.safetensors", "classification");
+    if (modelClass.IsThisModelOfClass(model, header))
+    {
+        throw new InvalidOperationException($"{scenario}: predicate '{classId}' unexpectedly matched.");
+    }
+}
 ```
 
 - [ ] **Step 2: Add positive SD-family cases**
@@ -64,7 +121,7 @@ AssertLoraClass(
     "stable-diffusion-xl-v1-base/lora");
 AssertLoraClass(
     "Illustrious sidecar LyCORIS LoRA",
-    WithBaseModel(new JObject
+    WithNestedBaseModel(new JObject
     {
         ["lora_unet_down_blocks_0_attentions_0_transformer_blocks_0_attn1_to_q.a1.weight"] = TensorDescriptor()
     }, "iLlUsTrIoUs"),
@@ -83,18 +140,23 @@ AssertLoraClass(
     "stable-diffusion-v1/lora");
 ```
 
-- [ ] **Step 3: Add Flux.2 positive and separation cases**
+- [ ] **Step 3: Add Flux.2 positive, malformed-descriptor, and separation cases**
 
 ```csharp
 AssertLoraClass("Flux.2 Klein 4B dimensional LoRA", Flux2Klein4BOutpaintHeader(), "flux.2-klein-4b/lora");
-JObject flux2Klein9B = Flux2Klein4BOutpaintHeader();
-flux2Klein9B["diffusion_model.double_stream_modulation_img.lin.lora_B.weight"] = TensorDescriptor(24576, 16);
-flux2Klein9B["diffusion_model.single_blocks.23.linear1.lora_A.weight"] = TensorDescriptor(16, 4096);
-AssertLoraClass("Flux.2 Klein 9B is not 4B", flux2Klein9B, null);
-JObject flux2Dev = Flux2Klein4BOutpaintHeader();
-flux2Dev["diffusion_model.double_stream_modulation_img.lin.lora_B.weight"] = TensorDescriptor(36864, 16);
-flux2Dev["diffusion_model.single_blocks.47.linear2.lora_A.weight"] = TensorDescriptor(16, 16384);
-AssertLoraClass("Flux.2 Dev is not Klein 4B", flux2Dev, "flux.2-dev/lora");
+AssertLoraClass("Malformed Flux.2 Klein 4B-like LoRA", MalformedFlux2Klein4BHeader(), null);
+JObject flux1 = new()
+{
+    ["transformer.single_transformer_blocks.0.attn.to_k.lora_A.weight"] = TensorDescriptor(16, 3072)
+};
+AssertLoraClass("Flux.1 LoRA", flux1, "Flux.1-dev/lora");
+AssertDoesNotMatchClass("Flux.1 LoRA is not Flux.2 Klein 4B", flux1, "flux.2-klein-4b/lora");
+JObject flux2Klein9B = Flux2Klein9BHeader();
+AssertLoraClass("Flux.2 Klein 9B", flux2Klein9B, "flux.2-klein-9b/lora");
+AssertDoesNotMatchClass("Flux.2 Klein 9B is not 4B", flux2Klein9B, "flux.2-klein-4b/lora");
+JObject flux2Dev = Flux2DevHeader();
+AssertLoraClass("Flux.2 Dev", flux2Dev, "flux.2-dev/lora");
+AssertDoesNotMatchClass("Flux.2 Dev is not Klein 4B", flux2Dev, "flux.2-klein-4b/lora");
 ```
 
 - [ ] **Step 4: Add excluded-format and ambiguity cases**
@@ -180,17 +242,23 @@ bool isXLLora(JObject h) => h.ContainsKey("lora_unet_output_blocks_5_1_transform
 
 Place `hasBaseModel` before the first predicate that uses it. Do not add title, path, or filename matching. Do not broaden `hasLoraKey` globally.
 
-- [ ] **Step 3: Add the Flux.2 Klein 4B dimensional signature**
+- [ ] **Step 3: Add the Flux.2 Klein 4B dimensional signature safely**
 
 Add a local predicate next to the existing Flux.2 helpers:
 
 ```csharp
+bool hasShapeDimension(JToken tok, int index, long expected) => tok is JObject descriptor
+    && descriptor["shape"] is JArray shape
+    && shape.Count > index
+    && shape[index].Type == JTokenType.Integer
+    && shape[index].Value<long>() == expected;
+
 bool isFlux2Klein4BDimensionalLora(JObject h)
 {
     return tryGetKey(h, "double_stream_modulation_img.lin.lora_B.weight", out JToken modulation)
-        && modulation["shape"].ToArray()[0].Value<long>() == 18432
+        && hasShapeDimension(modulation, 0, 18432)
         && tryGetKey(h, "txt_in.lora_A.weight", out JToken textInput)
-        && textInput["shape"].ToArray()[1].Value<long>() == 7680
+        && hasShapeDimension(textInput, 1, 7680)
         && hasLoraKey(h, "double_blocks.4.img_attn.proj")
         && hasLoraKey(h, "single_blocks.19.linear2");
 }
@@ -206,7 +274,7 @@ bool isFlux2KleinLora(JObject h) => (hasLoraKey(h, "double_blocks.4.img_attn.pro
     || isFlux2Klein4BDimensionalLora(h);
 ```
 
-The existing 9B and Dev exclusions remain unchanged.
+Do not directly index a descriptor's `shape`: `hasShapeDimension` must reject scalar, absent, short, and non-integer descriptors. The malformed-descriptor regression in Task 1 is the RED case for this robustness requirement. The existing 9B and Dev exclusions remain unchanged.
 
 - [ ] **Step 4: Run the harness and verify classifier GREEN**
 
