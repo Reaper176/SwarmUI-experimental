@@ -147,9 +147,13 @@ public class T2IModelClassSorter
         bool hasKey(JObject h, string key) => HasModelKey(h, key);
         bool hasLoraKey(JObject h, string key) => hasKey(h, $"{key}.lora_A.weight") || hasKey(h, $"{key}.lora_A") || hasKey(h, $"{key}.lora_A.default.weight") || hasKey(h, $"{key}.lora_up.weight") || hasKey(h, $"{key}.lora.up.weight") || hasKey(h, $"{key}.lokr_w1") || hasKey(h, $"lora_unet_{key.Replace('.', '_')}.lora_up.weight");
         bool tryGetKey(JObject h, string key, out JToken tok) => h.TryGetValue(key, out tok) || h.TryGetValue($"diffusion_model.{key}", out tok) || h.TryGetValue($"model.diffusion_model.{key}", out tok);
+        bool hasBaseModel(JObject h, string expected) => string.Equals(h.Value<string>("BaseModel"), expected, StringComparison.OrdinalIgnoreCase)
+            || string.Equals(h["__metadata__"]?.Value<string>("BaseModel"), expected, StringComparison.OrdinalIgnoreCase);
         bool IsAlt(JObject h) => h.ContainsKey("cond_stage_model.roberta.embeddings.word_embeddings.weight");
         bool isV1(JObject h) => h.ContainsKey("cond_stage_model.transformer.text_model.embeddings.position_ids") || h.ContainsKey("cond_stage_model.transformer.embeddings.position_ids");
-        bool isV1Lora(JObject h) => h.ContainsKey("lora_unet_up_blocks_3_attentions_2_transformer_blocks_0_ff_net_2.lora_up.weight");
+        bool isV1Lora(JObject h) => h.ContainsKey("lora_unet_up_blocks_3_attentions_2_transformer_blocks_0_ff_net_2.lora_up.weight")
+            || hasLoraKey(h, "up_blocks.3.attentions.2.transformer_blocks.0.attn2.to_v")
+            || hasBaseModel(h, "SD 1.5");
         bool isV1CNet(JObject h) => h.ContainsKey("input_blocks.1.0.emb_layers.1.bias") || h.ContainsKey("control_model.input_blocks.1.0.emb_layers.1.bias");
         bool isV2(JObject h) => h.ContainsKey("cond_stage_model.model.ln_final.bias");
         bool isV2Depth(JObject h) => h.ContainsKey("depth_model.model.pretrained.act_postprocess3.0.project.0.bias");
@@ -159,7 +163,10 @@ public class T2IModelClassSorter
         bool isXL09Refiner(JObject h) => h.ContainsKey("conditioner.embedders.0.model.ln_final.bias");
         bool isXLLora(JObject h) => h.ContainsKey("lora_unet_output_blocks_5_1_transformer_blocks_1_ff_net_2.lora_up.weight") || h.ContainsKey("lora_unet_down_blocks_2_attentions_1_transformer_blocks_9_attn2_to_v.lora_up.weight")
             // Whatever trainer emits this wonky key, also has emitted te1 for Flux (???) sometimes, so needs a separate guard.
-            || (h.ContainsKey("lora_te1_text_model_encoder_layers_0_self_attn_v_proj.lora_up.weight") && !h.ContainsKey("lora_unet_double_blocks_0_img_attn_proj.lora_down.weight") && !h.ContainsKey("lora_unet_single_blocks_0_linear1.lora_down.weight"));
+            || (h.ContainsKey("lora_te1_text_model_encoder_layers_0_self_attn_v_proj.lora_up.weight") && !h.ContainsKey("lora_unet_double_blocks_0_img_attn_proj.lora_down.weight") && !h.ContainsKey("lora_unet_single_blocks_0_linear1.lora_down.weight"))
+            || hasLoraKey(h, "down_blocks.1.attentions.0.transformer_blocks.1.attn1.to_q")
+            || hasBaseModel(h, "Pony")
+            || hasBaseModel(h, "Illustrious");
         bool isXLControlnet(JObject h) => h.ContainsKey("controlnet_down_blocks.0.bias");
         bool isSVD(JObject h) => h.ContainsKey("model.diffusion_model.input_blocks.1.0.time_stack.emb_layers.1.bias");
         bool isControlLora(JObject h) => h.ContainsKey("lora_controlnet");
@@ -204,7 +211,18 @@ public class T2IModelClassSorter
         bool isFlux2Dev(JObject h) => tryGetFlux2Tok(h, out JToken tok) && (tok["shape"].ToArray()[0].Value<long>() == 36864 || tok["shape"].ToArray()[1].Value<long>() == 36864); // ggufs sometimes have this shape backwards
         bool isFlux2Klein4B(JObject h) => tryGetFlux2Tok(h, out JToken tok) && (tok["shape"].ToArray()[0].Value<long>() == 18432 || tok["shape"].ToArray()[1].Value<long>() == 18432);
         bool isFlux2Klein9B(JObject h) => tryGetFlux2Tok(h, out JToken tok) && (tok["shape"].ToArray()[0].Value<long>() == 24576 || tok["shape"].ToArray()[1].Value<long>() == 24576);
-        bool isFlux2KleinLora(JObject h) => hasLoraKey(h, "double_blocks.4.img_attn.proj") && hasLoraKey(h, "double_blocks.4.txt_mlp.2") && hasLoraKey(h, "single_blocks.18.linear1") && hasLoraKey(h, "single_blocks.19.linear2");
+        bool hasShapeDimension(JToken tok, int index, long expected) => tok["shape"] is JArray shape && shape.Count > index && shape[index].Type == JTokenType.Integer && shape[index].Value<long>() == expected;
+        bool isFlux2Klein4BDimensionalLora(JObject h)
+        {
+            return tryGetKey(h, "double_stream_modulation_img.lin.lora_B.weight", out JToken modulation)
+                && hasShapeDimension(modulation, 0, 18432)
+                && tryGetKey(h, "txt_in.lora_A.weight", out JToken textInput)
+                && hasShapeDimension(textInput, 1, 7680)
+                && hasLoraKey(h, "double_blocks.4.img_attn.proj")
+                && hasLoraKey(h, "single_blocks.19.linear2");
+        }
+        bool isFlux2KleinLora(JObject h) => (hasLoraKey(h, "double_blocks.4.img_attn.proj") && hasLoraKey(h, "double_blocks.4.txt_mlp.2") && hasLoraKey(h, "single_blocks.18.linear1") && hasLoraKey(h, "single_blocks.19.linear2"))
+            || isFlux2Klein4BDimensionalLora(h);
         bool isFlux2Klein9BLora(JObject h) => hasLoraKey(h, "single_blocks.23.linear1");
         bool isFlux2DevLora(JObject h) => hasLoraKey(h, "single_blocks.47.linear2");
         bool isLens(JObject h) => h.ContainsKey("transformer_blocks.0.attn.norm_added_q.weight") && h.ContainsKey("transformer_blocks.0.img_mlp.w1.weight");
@@ -300,12 +318,10 @@ public class T2IModelClassSorter
         bool isKan5VidLite(JObject h) => tryGetKan5IdKey(h, out JToken tok) && tok["shape"].ToArray()[0].Value<long>() == 1792;
         bool isKan5ImgLite(JObject h) => tryGetKan5IdKey(h, out JToken tok) && tok["shape"].ToArray()[0].Value<long>() == 2560;
         bool isKan5VidPro(JObject h) => tryGetKan5IdKey(h, out JToken tok) && tok["shape"].ToArray()[0].Value<long>() == 4096;
-        bool hasAnimaBaseModel(JObject h) => string.Equals(h.Value<string>("BaseModel"), "Anima", StringComparison.OrdinalIgnoreCase)
-            || string.Equals(h["__metadata__"]?.Value<string>("BaseModel"), "Anima", StringComparison.OrdinalIgnoreCase);
         bool isAnimaLora(JObject h) => (hasLoraKey(h, "llm_adapter.blocks.5.self_attn.v_proj") && hasLoraKey(h, "blocks.27.self_attn.v_proj") && hasLoraKey(h, "blocks.27.adaln_modulation_cross_attn.1"))
                                     || (hasLoraKey(h, "blocks.27.self_attn.v_proj") && hasLoraKey(h, "blocks.27.cross_attn.output_proj") && hasLoraKey(h, "blocks.27.mlp.layer2"))
                                     || (hasLoraKey(h, "llm_adapter.blocks.5.self_attn.v_proj") && hasLoraKey(h, "blocks.39.self_attn.v_proj") && hasLoraKey(h, "blocks.39.adaln_modulation_cross_attn.1"))
-                                    || hasAnimaBaseModel(h);
+                                    || hasBaseModel(h, "Anima");
         bool isAnimaControlnet(JObject h) => h.ContainsKey("lllite_dit_blocks_0_self_attn_q_proj.depth_embed") && h.ContainsKey("lllite_dit_blocks_0_self_attn_q_proj.cond_to_film.weight") && h.ContainsKey("lllite_dit_blocks_27_self_attn_q_proj.up.weight");
         bool isLongcat(JObject h) => hasKey(h, "double_blocks.0.txt_attn.norm.query_norm.weight") && hasKey(h, "time_in.out_layer.weight") && hasKey(h, "final_layer.adaLN_modulation.1.weight") && hasKey(h, "double_blocks.0.txt_mod.lin.weight");
         // Audio models
