@@ -36,6 +36,30 @@ internal static class Anima38ClassificationHarness
         };
     }
 
+    /// <summary>Creates the shared and 9B-specific tensor signature of a Flux.2 Klein 9B LoRA.</summary>
+    private static JObject Flux2Klein9BHeader()
+    {
+        return new JObject
+        {
+            ["diffusion_model.double_blocks.4.img_attn.proj.lora_A.weight"] = TensorDescriptor(),
+            ["diffusion_model.double_blocks.4.txt_mlp.2.lora_A.weight"] = TensorDescriptor(),
+            ["diffusion_model.single_blocks.18.linear1.lora_A.weight"] = TensorDescriptor(),
+            ["diffusion_model.single_blocks.19.linear2.lora_A.weight"] = TensorDescriptor(),
+            ["diffusion_model.single_blocks.23.linear1.lora_A.weight"] = TensorDescriptor(),
+            ["diffusion_model.double_stream_modulation_img.lin.lora_B.weight"] = TensorDescriptor(24576, 16)
+        };
+    }
+
+    /// <summary>Creates the dimensional signature of a Flux.2 Dev LoRA.</summary>
+    private static JObject Flux2DevHeader()
+    {
+        return new JObject
+        {
+            ["diffusion_model.double_stream_modulation_img.lin.lora_B.weight"] = TensorDescriptor(36864, 16),
+            ["diffusion_model.single_blocks.47.linear2.lora_A.weight"] = TensorDescriptor(16, 16384)
+        };
+    }
+
     /// <summary>Creates a representative Cosmos Predict2 Text2Image 14B safetensors header.</summary>
     private static JObject CosmosHeader(bool declareArchitecture)
     {
@@ -120,6 +144,16 @@ internal static class Anima38ClassificationHarness
         return header;
     }
 
+    /// <summary>Adds a nested external base-model declaration to a representative LoRA header.</summary>
+    private static JObject WithNestedBaseModel(JObject header, string baseModel)
+    {
+        header["__metadata__"] = new JObject
+        {
+            ["BaseModel"] = baseModel
+        };
+        return header;
+    }
+
     /// <summary>Identifies the production model class for a synthetic safetensors model and header.</summary>
     private static string Identify(JObject header, string modelType = "Stable-Diffusion")
     {
@@ -144,6 +178,17 @@ internal static class Anima38ClassificationHarness
         if (actual != expected)
         {
             throw new InvalidOperationException($"{scenario}: expected '{expected}', but production resolved '{actual ?? "null"}'.");
+        }
+    }
+
+    /// <summary>Throws when a model-class predicate directly matches a synthetic header.</summary>
+    private static void AssertDoesNotMatchClass(string scenario, JObject header, string classId)
+    {
+        T2IModelClass modelClass = T2IModelClassSorter.ModelClasses[classId];
+        T2IModel model = new(null, null, "classification.safetensors", "classification");
+        if (modelClass.IsThisModelOfClass(model, header))
+        {
+            throw new InvalidOperationException($"{scenario}: predicate '{classId}' unexpectedly matched.");
         }
     }
 
@@ -448,7 +493,7 @@ internal static class Anima38ClassificationHarness
             "stable-diffusion-xl-v1-base/lora");
         AssertLoraClass(
             "Illustrious sidecar LyCORIS LoRA",
-            WithBaseModel(new JObject
+            WithNestedBaseModel(new JObject
             {
                 ["lora_unet_down_blocks_0_attentions_0_transformer_blocks_0_attn1_to_q.a1.weight"] = TensorDescriptor()
             }, "iLlUsTrIoUs"),
@@ -466,14 +511,12 @@ internal static class Anima38ClassificationHarness
             SingleLoraTensor("up_blocks.3.attentions.2.transformer_blocks.0.attn2.to_v"),
             "stable-diffusion-v1/lora");
         AssertLoraClass("Flux.2 Klein 4B dimensional LoRA", Flux2Klein4BOutpaintHeader(), "flux.2-klein-4b/lora");
-        JObject flux2Klein9B = Flux2Klein4BOutpaintHeader();
-        flux2Klein9B["diffusion_model.double_stream_modulation_img.lin.lora_B.weight"] = TensorDescriptor(24576, 16);
-        flux2Klein9B["diffusion_model.single_blocks.23.linear1.lora_A.weight"] = TensorDescriptor(16, 4096);
-        AssertLoraClass("Flux.2 Klein 9B is not 4B", flux2Klein9B, null);
-        JObject flux2Dev = Flux2Klein4BOutpaintHeader();
-        flux2Dev["diffusion_model.double_stream_modulation_img.lin.lora_B.weight"] = TensorDescriptor(36864, 16);
-        flux2Dev["diffusion_model.single_blocks.47.linear2.lora_A.weight"] = TensorDescriptor(16, 16384);
-        AssertLoraClass("Flux.2 Dev is not Klein 4B", flux2Dev, "flux.2-dev/lora");
+        JObject flux2Klein9B = Flux2Klein9BHeader();
+        AssertLoraClass("Flux.2 Klein 9B", flux2Klein9B, "flux.2-klein-9b/lora");
+        AssertDoesNotMatchClass("Flux.2 Klein 9B is not 4B", flux2Klein9B, "flux.2-klein-4b/lora");
+        JObject flux2Dev = Flux2DevHeader();
+        AssertLoraClass("Flux.2 Dev", flux2Dev, "flux.2-dev/lora");
+        AssertDoesNotMatchClass("Flux.2 Dev is not Klein 4B", flux2Dev, "flux.2-klein-4b/lora");
         AssertLoraClass(
             "BaseModel does not turn IP-Adapter into LoRA",
             WithBaseModel(new JObject
