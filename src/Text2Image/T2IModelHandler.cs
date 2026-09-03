@@ -536,7 +536,7 @@ public class T2IModelHandler
         return !isStaleCacheRecheck || (modelHeaderLoaded && classifierDecision is not null);
     }
 
-    /// <summary>Selects the classifier decision to persist, preserving combined metadata when a stale unknown class lacks a model header.</summary>
+    /// <summary>Uses combined metadata for ordinary refreshes and stale unknown classes; stale known classes use raw-header classification.</summary>
     private static T2IModelClass SelectModelClassForCache(bool recheckStaleModelClass, bool staleModelClassWasUnknown, T2IModelClass modelHeaderClass, T2IModelClass combinedClass)
     {
         if (recheckStaleModelClass && !staleModelClassWasUnknown)
