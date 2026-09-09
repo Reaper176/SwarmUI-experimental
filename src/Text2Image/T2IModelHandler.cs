@@ -15,7 +15,7 @@ namespace SwarmUI.Text2Image;
 public class T2IModelHandler
 {
     /// <summary>Revision of model-class cache decisions that require targeted re-evaluation.</summary>
-    private const int ModelClassCacheRevision = 4;
+    private const int ModelClassCacheRevision = 5;
 
     /// <summary>All models known to this handler.</summary>
     public ConcurrentDictionary<string, T2IModel> Models = new();
@@ -330,6 +330,10 @@ public class T2IModelHandler
                 UnathorizedAccessSet.Clear();
             }
             WriteSpecialCharacterReport();
+            if (!SpecialCharacterReportPaths.IsEmpty)
+            {
+                Logs.Warning($"Found {SpecialCharacterReportPaths.Count} {ModelType} file or folder paths containing special characters that may cause parsing issues. Review '{SpecialCharacterReportPath}' for the full path list.");
+            }
         }
         catch (Exception e)
         {
@@ -635,7 +639,7 @@ public class T2IModelHandler
                 }
             }
             T2IModelClass modelHeaderClass = recheckStaleModelClass && modelHeaderLoaded
-                ? T2IModelClassSorter.IdentifyClassFor(model, headerData, ModelType)
+                ? T2IModelClassSorter.IdentifyClassFor(model, headerData, ModelType, false)
                 : null;
             foreach (string altSuffix in AltModelMetadataJsonFileSuffixes)
             {
@@ -882,7 +886,10 @@ public class T2IModelHandler
                 TextEncoders = textEncs,
                 SpecialFormat = limitLength(pickBest(metaHeader?.Value<string>("modelspec.special_format"), metaHeader?.Value<string>("special_format"), specialFormat), basicLimit)
             };
-            if (ShouldReplaceStaleModelClassCache(recheckStaleModelClass, modelHeaderLoaded, clazz))
+            // A successfully rechecked unknown class is a completed decision for this revision.
+            // Preserve known cached classes when classification fails, and retry unreadable headers.
+            bool completedUnknownRecheck = staleModelClassWasUnknown && modelHeaderLoaded;
+            if (completedUnknownRecheck || ShouldReplaceStaleModelClassCache(recheckStaleModelClass, modelHeaderLoaded, clazz))
             {
                 metadata = refreshedMetadata;
                 lock (MetadataLock)
@@ -1012,7 +1019,7 @@ public class T2IModelHandler
                     }
                     Logs.Warning($"Failed to load metadata for {fullFilename}:\n{ex.ReadableString()}");
                 }
-                model.AutoWarn();
+                model.AutoWarn(true);
             }
             else if (T2IModel.LegacyModelExtensions.Contains(fn.AfterLast('.')))
             {
@@ -1023,7 +1030,7 @@ public class T2IModelHandler
                 };
                 model.PreviewImage = GetAutoFormatImage(model) ?? model.PreviewImage;
                 dict[fullFilename] = model;
-                model.AutoWarn();
+                model.AutoWarn(true);
             }
         });
     }

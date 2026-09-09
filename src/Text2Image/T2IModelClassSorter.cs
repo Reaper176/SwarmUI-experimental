@@ -38,6 +38,13 @@ public class T2IModelClassSorter
         return IsAnima(header) && HasModelKey(header, "blocks.51.adaln_modulation_cross_attn.2.weight");
     }
 
+    /// <summary>Recognizes the complete four-tensor GLoRA layout used by the backend weight adapter.</summary>
+    private static bool HasGLoRAWeights(JObject header, string key)
+    {
+        return header.ContainsKey($"{key}.a1.weight") && header.ContainsKey($"{key}.a2.weight")
+            && header.ContainsKey($"{key}.b1.weight") && header.ContainsKey($"{key}.b2.weight");
+    }
+
     /// <summary>Register a new model class to the sorter.</summary>
     public static T2IModelClass Register(T2IModelClass clazz)
     {
@@ -145,7 +152,8 @@ public class T2IModelClassSorter
     {
         // TODO: This is exponential, but we could instead eg prestrip these prefixes to reduce the exponentiality
         bool hasKey(JObject h, string key) => HasModelKey(h, key);
-        bool hasLoraKey(JObject h, string key) => hasKey(h, $"{key}.lora_A.weight") || hasKey(h, $"{key}.lora_A") || hasKey(h, $"{key}.lora_A.default.weight") || hasKey(h, $"{key}.lora_up.weight") || hasKey(h, $"{key}.lora.up.weight") || hasKey(h, $"{key}.lokr_w1") || hasKey(h, $"lora_unet_{key.Replace('.', '_')}.lora_up.weight");
+        bool hasLoraKey(JObject h, string key) => hasKey(h, $"{key}.lora_A.weight") || hasKey(h, $"{key}.lora_A") || hasKey(h, $"{key}.lora_A.default.weight") || hasKey(h, $"{key}.lora_up.weight") || hasKey(h, $"{key}.lora.up.weight") || hasKey(h, $"{key}.lokr_w1") || hasKey(h, $"lora_unet_{key.Replace('.', '_')}.lora_up.weight")
+            || HasGLoRAWeights(h, key) || HasGLoRAWeights(h, $"lycoris_{key.Replace('.', '_')}");
         bool tryGetKey(JObject h, string key, out JToken tok) => h.TryGetValue(key, out tok) || h.TryGetValue($"diffusion_model.{key}", out tok) || h.TryGetValue($"model.diffusion_model.{key}", out tok);
         bool hasBaseModel(JObject h, string expected) => string.Equals(h.Value<string>("BaseModel"), expected, StringComparison.OrdinalIgnoreCase)
             || string.Equals(h["__metadata__"]?.Value<string>("BaseModel"), expected, StringComparison.OrdinalIgnoreCase);
@@ -1066,6 +1074,12 @@ public class T2IModelClassSorter
     /// <summary>Returns the model class that matches this model, or null if none.</summary>
     public static T2IModelClass IdentifyClassFor(T2IModel model, JObject header, string modelType)
     {
+        return IdentifyClassFor(model, header, modelType, true);
+    }
+
+    /// <summary>Classifies a model, optionally suppressing diagnostics for an intermediate metadata pass.</summary>
+    public static T2IModelClass IdentifyClassFor(T2IModel model, JObject header, string modelType, bool reportDiagnostics)
+    {
         if (model.ModelClass is not null)
         {
             return model.ModelClass;
@@ -1130,14 +1144,18 @@ public class T2IModelClassSorter
             return matchedClass;
         }
         matchedClass = null;
-        bool isLora = header.Properties().Any(p => p.Name.StartsWith("lora_") || p.Name.EndsWith(".lora_A.weight") || p.Name.EndsWith(".lora_A.default.weight") || p.Name.EndsWith(".lora_up.weight") || p.Name.EndsWith(".lora.up.weight") || p.Name.EndsWith(".lokr_w1") || p.Name.EndsWith(".diff"));
+        bool isLora = header.Properties().Any(p => p.Name.StartsWith("lora_") || p.Name.EndsWith(".lora_A.weight") || p.Name.EndsWith(".lora_A.default.weight") || p.Name.EndsWith(".lora_up.weight") || p.Name.EndsWith(".lora.up.weight") || p.Name.EndsWith(".lokr_w1") || p.Name.EndsWith(".diff")
+            || (p.Name.EndsWith(".a1.weight") && HasGLoRAWeights(header, p.Name[..^10])));
         foreach (T2IModelClass modelClass in ModelClasses.Values)
         {
             if (isLora == modelClass.IsLora && modelClass.IsThisModelOfClass(model, header))
             {
                 if (matchedClass is not null)
                 {
-                    Logs.Info($"{modelType} Model {model.Name} matches {matchedClass.Name}, but seems to also match type {modelClass.Name}. Class sorter may need refinement.");
+                    if (reportDiagnostics)
+                    {
+                        Logs.Info($"{modelType} Model {model.Name} matches {matchedClass.Name}, but seems to also match type {modelClass.Name}. Class sorter may need refinement.");
+                    }
                 }
                 else
                 {
@@ -1150,7 +1168,7 @@ public class T2IModelClassSorter
         {
             return matchedClass;
         }
-        if (modelType == "Stable-Diffusion" || modelType == "LoRA")
+        if (reportDiagnostics && (modelType == "Stable-Diffusion" || modelType == "LoRA"))
         {
             Logs.Info($"{modelType} Model {model.Name} did not match any of {ModelClasses.Count} options. Class sorter may need refinement, or you may have a model that is not natively supported in SwarmUI.");
         }

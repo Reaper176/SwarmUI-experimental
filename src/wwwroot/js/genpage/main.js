@@ -393,7 +393,7 @@ function tweakNegativePromptBox() {
     altNegText.title = altNegText.placeholder;
 }
 
-function loadUserData(callback) {
+function loadUserData(callback, errorHandle = null) {
     genericRequest('GetMyUserData', {}, data => {
         if (typeof populateUserSessionId == 'function') {
             populateUserSessionId();
@@ -459,7 +459,7 @@ function loadUserData(callback) {
             callback();
         }
         loadAndApplyTranslations();
-    });
+    }, 0, errorHandle);
 }
 
 function updateAllModels(models) {
@@ -1516,6 +1516,20 @@ function clearParamFilterInput() {
     filterClearer.style.display = 'none';
 }
 
+/** Retries failed startup reads without replaying partially completed initialization callbacks. */
+function requestGenpageStartup(name, sendRequest, callback, attempt = 0) {
+    sendRequest(callback, e => {
+        console.warn(`Startup ${name} request failed: ${e}`);
+        if (attempt >= 3) {
+            showError(`Could not finish loading ${name} after 4 attempts: ${e}. Please refresh once the server is ready.`);
+            return;
+        }
+        let delay = 2000 * Math.pow(2, attempt);
+        showError(`Waiting to load ${name}. Retrying in ${delay / 1000} seconds: ${e}`);
+        setTimeout(() => requestGenpageStartup(name, sendRequest, callback, attempt + 1), delay);
+    });
+}
+
 function genpageLoad() {
     $('#toptablist').on('show.bs.tab', function (e) {
         beginTopTabOpenRequest(e.target, true);
@@ -1555,9 +1569,10 @@ function genpageLoad() {
     loadHashHelper().catch((e) => {
         showError(`${e}`);
     });
-    getSession(() => {
+    requestGenpageStartup('GetNewSession', (done, fail) => getSession(done, fail), () => {
         ensureImageHistoryBrowserShellReady();
-        genericRequest('ListT2IParams', {}, data => {
+        scheduleInitialImageHistoryLoad(250);
+        requestGenpageStartup('ListT2IParams', (done, fail) => genericRequest('ListT2IParams', {}, done, 0, fail), data => {
             modelsHelpers.loadClassesFromServer(data.models, data.model_compat_classes, data.model_classes);
             updateAllModels(data.models);
             wildcardHelpers.newWildcardList(data.wildcards);
@@ -1577,7 +1592,7 @@ function genpageLoad() {
             getRequiredElementById('advanced_options_checkbox').checked = localStorage.getItem('display_advanced') == 'true';
             toggle_advanced();
             currentModelHelper.ensureCurrentModel();
-            loadUserData(() => {
+            requestGenpageStartup('GetMyUserData', (done, fail) => loadUserData(done, fail), () => {
                 selectInitialPresetList();
             });
             runSessionReadyCallbacks();
@@ -1585,10 +1600,6 @@ function genpageLoad() {
             automaticWelcomeMessage();
             autoTitle();
             swarmHasLoaded = true;
-            scheduleInitialImageHistoryLoad(250);
-        }, 0, e => {
-            console.warn(`Startup ListT2IParams request failed: ${e}`);
-            scheduleInitialImageHistoryLoad(250);
         });
         if (reviseStatusInterval) {
             clearInterval(reviseStatusInterval);

@@ -139,7 +139,7 @@ function makeWSRequest(url, in_data, callback, depth = 0, errorHandle = null, on
             console.log('Session refused, will get new one and try again.');
             getSession(() => {
                 makeWSRequest(url, in_data, callback, depth + 1, errorHandle, onOpenHandle);
-            });
+            }, fail);
             return;
         }
         if (data.error) {
@@ -196,15 +196,18 @@ function genericRequest(url, in_data, callback, depth = 0, errorHandle = null, t
                 console.log('Session refused, will get new one and try again.');
                 getSession(() => {
                     genericRequest(url, in_data, callback, depth + 1, errorHandle, timeoutMs);
-                });
+                }, fail);
                 return;
             }
             if (url == 'GetNewSession' && data.error_id == 'bad_impersonate') {
                 console.log(`Failed to impersonate user ${impersonateTargetUserId}, will clear and try again.`);
                 impersonateTargetUserId = null;
-                getSession(() => {
-                    genericRequest(url, in_data, callback, depth + 1, errorHandle, timeoutMs);
-                });
+                delete in_data.impersonateUser;
+                let container = document.getElementById('impersonate_user_container');
+                if (container) {
+                    container.style.display = 'none';
+                }
+                genericRequest(url, in_data, callback, depth + 1, errorHandle, timeoutMs);
                 return;
             }
         }
@@ -219,28 +222,45 @@ function genericRequest(url, in_data, callback, depth = 0, errorHandle = null, t
 
 let lastServerVersion = null;
 let versionIsWrong = false;
-let lastSessionCheck = 0;
-let haveBadSession = false;
+let sessionRequestPending = false;
+let sessionRequestCallbacks = [];
 let impersonateTargetUserId = new URLSearchParams(window.location.search).get('impersonate')?.trim() || null;
 
 let serverHasUpdated = translatable(`The server has updated since you opened the page, please refresh.`);
 
-function getSession(callback) {
-    if (lastSessionCheck + 1000 > Date.now()) {
-        setTimeout(() => {
-            if (haveBadSession) {
-                getSession(callback);
+/** Releases all waiting session callers, even if one caller throws during initialization. */
+function completeSessionRequest(error = null) {
+    sessionRequestPending = false;
+    let waiting = sessionRequestCallbacks;
+    sessionRequestCallbacks = [];
+    for (let entry of waiting) {
+        try {
+            if (error != null) {
+                (entry.errorHandle || showError)(error);
             }
-            else {
-                if (callback) {
-                    callback();
-                }
+            else if (entry.callback) {
+                entry.callback();
             }
-        }, 1000);
+        }
+        catch (e) {
+            console.error('Session callback failed:', e);
+            try {
+                showError(`Session initialization failed: ${e}`);
+            }
+            catch (displayError) {
+                console.error('Could not display session error:', displayError);
+            }
+        }
+    }
+}
+
+/** Shares one session request between concurrent callers and propagates failures. */
+function getSession(callback, errorHandle = null) {
+    sessionRequestCallbacks.push({ callback: callback, errorHandle: errorHandle });
+    if (sessionRequestPending) {
         return;
     }
-    lastSessionCheck = Date.now();
-    haveBadSession = true;
+    sessionRequestPending = true;
     let inData = {};
     let impersonateContainer = document.getElementById('impersonate_user_container');
     if (impersonateContainer) {
@@ -251,28 +271,33 @@ function getSession(callback) {
         }
     }
     genericRequest('GetNewSession', inData, data => {
-        haveBadSession = false;
-        console.log("Session started.");
-        session_id = data.session_id;
-        setCookie('session_id', session_id, 31);
-        user_id = data.user_id;
-        outputAppendUser = data.output_append_user;
-        permissions.updateFrom(data.permissions);
-        if (lastServerVersion == null) {
-            lastServerVersion = data.version;
-        }
-        else if (lastServerVersion != data.version) {
-            if (!versionIsWrong) {
-                versionIsWrong = true;
-                showError(serverHasUpdated.get());
+        try {
+            console.log("Session started.");
+            session_id = data.session_id;
+            setCookie('session_id', session_id, 31);
+            user_id = data.user_id;
+            outputAppendUser = data.output_append_user;
+            permissions.updateFrom(data.permissions);
+            if (lastServerVersion == null) {
+                lastServerVersion = data.version;
             }
-            if (typeof reviseStatusBar != 'undefined') {
-                reviseStatusBar();
+            else if (lastServerVersion != data.version) {
+                if (!versionIsWrong) {
+                    versionIsWrong = true;
+                    showError(serverHasUpdated.get());
+                }
+                if (typeof reviseStatusBar != 'undefined') {
+                    reviseStatusBar();
+                }
             }
         }
-        if (callback) {
-            callback();
+        catch (e) {
+            completeSessionRequest(`Could not initialize session: ${e}`);
+            return;
         }
+        completeSessionRequest();
+    }, 0, e => {
+        completeSessionRequest(e);
     });
 }
 

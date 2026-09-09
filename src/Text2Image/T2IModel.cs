@@ -578,10 +578,23 @@ public class T2IModel(T2IModelHandler handler, string folderPath, string filePat
     /// <summary>Display any necessary warnings related to this model in logs.</summary>
     public void AutoWarn()
     {
+        AutoWarn(false);
+    }
+
+    /// <summary>Records model warnings, deferring per-path scan warnings to the handler's summary when requested.</summary>
+    public void AutoWarn(bool summarizeSpecialCharacters)
+    {
         if (DangerousModelNameChars.ContainsAnyMatch(Name))
         {
             Handler?.RecordSpecialCharacterPaths(this);
-            Logs.Warning($"{Handler?.ModelType} model '{Name}' contains special characters in its name, which might cause parsing issues. Consider renaming the file (or folder). A newline-separated path report is written to '{T2IModelHandler.SpecialCharacterReportPath}'.");
+            if (summarizeSpecialCharacters)
+            {
+                Logs.Debug($"{Handler?.ModelType} model '{Name}' contains special characters in its name; included in the model path report.");
+            }
+            else
+            {
+                Logs.Warning($"{Handler?.ModelType} model '{Name}' contains special characters in its name, which might cause parsing issues. Consider renaming the file (or folder). A newline-separated path report is written to '{T2IModelHandler.SpecialCharacterReportPath}'.");
+            }
         }
         if (Handler?.ModelType == "Embedding" && Name.Contains(' '))
         {
