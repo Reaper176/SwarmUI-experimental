@@ -368,6 +368,13 @@ function imageEditingGetLayerInvertMaskButton() {
 }
 
 /**
+ * Gets the Layer Options invert-selection button for mask coverage.
+ */
+function imageEditingGetLayerInvertSelectionButton() {
+    return document.getElementById('imageediting_layer_invert_selection_button');
+}
+
+/**
  * Gets the Layer Options convert-to-mask button.
  */
 function imageEditingGetLayerConvertToMaskButton() {
@@ -854,11 +861,12 @@ function imageEditingRefreshLayerOptionActionButtons() {
     let duplicateButton = imageEditingGetLayerDuplicateButton();
     let convertToImageButton = imageEditingGetLayerConvertToImageButton();
     let invertMaskButton = imageEditingGetLayerInvertMaskButton();
+    let invertSelectionButton = imageEditingGetLayerInvertSelectionButton();
     let convertToMaskButton = imageEditingGetLayerConvertToMaskButton();
     let invertColorsButton = imageEditingGetLayerInvertColorsButton();
     let flipMirrorHorizontalButton = imageEditingGetLayerFlipMirrorHorizontalButton();
     let flipMirrorVerticalButton = imageEditingGetLayerFlipMirrorVerticalButton();
-    if (!deleteButton || !duplicateButton || !convertToImageButton || !invertMaskButton || !convertToMaskButton || !invertColorsButton || !flipMirrorHorizontalButton || !flipMirrorVerticalButton) {
+    if (!deleteButton || !duplicateButton || !convertToImageButton || !invertMaskButton || !invertSelectionButton || !convertToMaskButton || !invertColorsButton || !flipMirrorHorizontalButton || !flipMirrorVerticalButton) {
         return;
     }
     let activeLayer = imageEditingTabEditor ? imageEditingTabEditor.activeLayer : null;
@@ -867,6 +875,7 @@ function imageEditingRefreshLayerOptionActionButtons() {
         duplicateButton.style.display = 'none';
         convertToImageButton.style.display = 'none';
         invertMaskButton.style.display = 'none';
+        invertSelectionButton.style.display = 'none';
         convertToMaskButton.style.display = 'none';
         invertColorsButton.style.display = 'none';
         flipMirrorHorizontalButton.style.display = 'none';
@@ -880,6 +889,7 @@ function imageEditingRefreshLayerOptionActionButtons() {
         flipMirrorVerticalButton.style.display = 'none';
         convertToImageButton.style.display = 'none';
         invertMaskButton.style.display = 'none';
+        invertSelectionButton.style.display = 'none';
         convertToMaskButton.style.display = 'none';
         invertColorsButton.style.display = 'none';
     }
@@ -888,6 +898,7 @@ function imageEditingRefreshLayerOptionActionButtons() {
         flipMirrorVerticalButton.style.display = '';
         convertToImageButton.style.display = '';
         invertMaskButton.style.display = '';
+        invertSelectionButton.style.display = '';
         convertToMaskButton.style.display = 'none';
         invertColorsButton.style.display = 'none';
     }
@@ -896,6 +907,7 @@ function imageEditingRefreshLayerOptionActionButtons() {
         flipMirrorVerticalButton.style.display = '';
         convertToImageButton.style.display = 'none';
         invertMaskButton.style.display = 'none';
+        invertSelectionButton.style.display = 'none';
         convertToMaskButton.style.display = '';
         invertColorsButton.style.display = '';
     }
@@ -1352,11 +1364,12 @@ function imageEditingEnsureLayerOptionsWired() {
     let duplicateButton = imageEditingGetLayerDuplicateButton();
     let convertToImageButton = imageEditingGetLayerConvertToImageButton();
     let invertMaskButton = imageEditingGetLayerInvertMaskButton();
+    let invertSelectionButton = imageEditingGetLayerInvertSelectionButton();
     let convertToMaskButton = imageEditingGetLayerConvertToMaskButton();
     let invertColorsButton = imageEditingGetLayerInvertColorsButton();
     let flipMirrorHorizontalButton = imageEditingGetLayerFlipMirrorHorizontalButton();
     let flipMirrorVerticalButton = imageEditingGetLayerFlipMirrorVerticalButton();
-    if (!slider || !blendModeSelect || !deleteButton || !duplicateButton || !convertToImageButton || !invertMaskButton || !convertToMaskButton || !invertColorsButton || !flipMirrorHorizontalButton || !flipMirrorVerticalButton) {
+    if (!slider || !blendModeSelect || !deleteButton || !duplicateButton || !convertToImageButton || !invertMaskButton || !invertSelectionButton || !convertToMaskButton || !invertColorsButton || !flipMirrorHorizontalButton || !flipMirrorVerticalButton) {
         return;
     }
     for (let def of imageEditingLayerAdjustmentDefinitions) {
@@ -1401,6 +1414,13 @@ function imageEditingEnsureLayerOptionsWired() {
     });
     invertMaskButton.addEventListener('click', () => {
         imageEditingInvertActiveLayerMask();
+    });
+    invertSelectionButton.addEventListener('click', () => {
+        if (!imageEditingTabEditor || !imageEditingTabEditor.activeLayer) {
+            return;
+        }
+        imageEditingTabEditor.activeLayer.invertMaskSelection();
+        imageEditingRefreshLayerOpacityControl();
     });
     convertToMaskButton.addEventListener('click', () => {
         imageEditingConvertActiveLayerToMask();

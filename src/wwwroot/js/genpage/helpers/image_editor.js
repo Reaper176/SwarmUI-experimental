@@ -479,6 +479,16 @@ class ImageEditorLayer {
             this.invert();
         }, true);
         this.menuPopover.appendChild(buttonInvert);
+        if (this.isMask) {
+            let buttonInvertSelection = createDiv(null, 'sui_popover_model_button');
+            buttonInvertSelection.innerText = 'Invert Selection';
+            buttonInvertSelection.addEventListener('click', (e) => {
+                e.preventDefault();
+                hidePopover(popId);
+                this.invertMaskSelection();
+            }, true);
+            this.menuPopover.appendChild(buttonInvertSelection);
+        }
         let buttonFlipMirrorHorizontal = createDiv(null, 'sui_popover_model_button');
         buttonFlipMirrorHorizontal.innerText = 'Flip / Mirror Horizontal';
         buttonFlipMirrorHorizontal.addEventListener('click', (e) => {
@@ -576,6 +586,27 @@ class ImageEditorLayer {
         this.ctx.filter = 'invert(1)';
         this.ctx.drawImage(oldCanvas, 0, 0, this.canvas.width, this.canvas.height);
         this.ctx.restore();
+        this.markContentChanged();
+        this.editor.markOutputChanged();
+        this.editor.redraw();
+    }
+
+    /** Swaps covered and transparent areas within this mask layer, preserving soft edges. */
+    invertMaskSelection() {
+        if (!this.isMask) {
+            return;
+        }
+        this.saveBeforeEdit();
+        let imageData = this.ctx.getImageData(0, 0, this.canvas.width, this.canvas.height);
+        let data = imageData.data;
+        for (let i = 0; i < data.length; i += 4) {
+            data[i] = 255;
+            data[i + 1] = 255;
+            data[i + 2] = 255;
+            data[i + 3] = 255 - data[i + 3];
+        }
+        this.ctx.putImageData(imageData, 0, 0);
+        this.hasAnyContent = true;
         this.markContentChanged();
         this.editor.markOutputChanged();
         this.editor.redraw();
