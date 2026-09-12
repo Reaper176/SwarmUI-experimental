@@ -58,6 +58,11 @@ class ExtensionsManager {
         });
     }
 
+    /** Toggles visibility of available extensions marked as hidden. */
+    toggleShowHidden() {
+        getRequiredElementById('available_extensions_table').classList.toggle('extensions-show-hidden', getRequiredElementById('extensions_show_hidden').checked);
+    }
+
     setExtensionEnabled(extensionName, enabled, button) {
         button.disabled = true;
         button.parentElement.querySelectorAll('.installing_info').forEach(e => e.remove());

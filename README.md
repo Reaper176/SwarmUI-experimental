@@ -217,18 +217,15 @@ ui-screenshot
 
 Status
 
-This project is in Beta status. This means for most tasks, Swarm has excellent tooling available to you, but there is much more planned. Swarm is recommended as an ideal UI for most users, beginners, and pros alike. There are still some things to be worked out.
+Upstream SwarmUI is in **Almost-Release** status. This experimental fork includes additional features and changes described above.
 
 Beginner users will love Swarm’s primary Generate tab interface, making it easy to generate anything with a variety of powerful features. Advanced users may favor the Comfy Workflow tab to get the unrestricted raw graph, but will still have reason to come back to the Generate tab for convenience features (image editor, auto-workflow-generation, etc) and powertools (e.g., Grid Generator).
 
-Those interested in helping push Swarm from Beta to a full, ready-for-anything, perfected Release status are welcome to submit PRs (read the Contributing document first), and you can contact us here on GitHub or on Discord. I highly recommend reaching out to ask about plans for a feature before PRing it. There may already be specific plans or even a work in progress.
+Those interested in helping push Swarm to a full, ready-for-anything, perfected Release status are welcome to submit PRs (read the Contributing document first), and you can contact us here on GitHub or on Discord. I highly recommend reaching out to ask about plans for a feature before PRing it. There may already be specific plans or even a work in progress.
 
 Key feature targets not yet implemented:
 
-* Better mobile browser support
-* Full detail “Current Model” display in UI, separate from the model selector (probably as a tab within the batch sidebar?)
 * LLM-assisted prompting (there’s an extension for it, but LLM control should be natively supported)
-* convenient direct-distribution of Swarm as a program (Tauri, Blazor Desktop, or an Electron app?)
 
 Donate
 
@@ -262,7 +259,7 @@ Note: if you’re on Windows 10, you may need to manually install git and DotNET
   * It should open a command prompt and install itself.
   * If it closes without going further, try running it again; it sometimes needs to run twice. (TODO: Fix that)
   * It will place an icon on your desktop that you can use to re-launch the server at any time.
-  * When the installer completes, it will automatically launch the SwarmUI server and open a browser window to the install page.
+  * When the installer completes, it will automatically launch the SwarmUI server and show the install UI.
   * Follow the installation instructions on the page.
   * After you submit, be patient; some of the installation processing takes a few minutes (downloading models, etc.).
 
@@ -295,6 +292,8 @@ Linux Easy Install
     * chmod +x install-linux.sh
 * Run the ./install-linux.sh script, and it will install everything for you and eventually open the webpage in your browser.
 * Follow the installation instructions on the page.
+* See the [Basic Usage Guide](/docs/Basic%20Usage.md) to go from there.
+* Desktop app mode is not tested for Linux; it may require [WPE WebKit](https://wpewebkit.org/about/get-wpe.html#install-it-from-your-linux-distribution).
 
 Linux Manual Install
 
@@ -332,6 +331,7 @@ Note: You can only run SwarmUI on Mac computers with M-Series Apple silicon proc
 - Clone the SwarmUI GitHub repository: `git clone https://github.com/Reaper176/SwarmUI-experimental`.
 - `cd SwarmUI` and run the installation script: `./launch-macos.sh`.
 - Wait for the web browser to open, and follow the install instructions on-page.
+- See the [Basic Usage Guide](/docs/Basic%20Usage.md) to go from there.
 
 Installing With Docker
 

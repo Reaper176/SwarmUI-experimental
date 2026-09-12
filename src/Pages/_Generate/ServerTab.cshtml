@@ -275,7 +275,8 @@
             </table>
             <br>
             <h3>Available Extensions</h3>
-            <table class="simple-table">
+            <input class="form-check-input" type="checkbox" id="extensions_show_hidden" title="Show Hidden Extensions" onclick="extensionsManager.toggleShowHidden()" autocomplete="off"> <label for="extensions_show_hidden" class="translate">Show Hidden</label>
+            <table class="simple-table" id="available_extensions_table">
                 <tr>
                     <th>Name</th>
                     <th>Tags</th>
@@ -285,9 +286,9 @@
                     <th>License</th>
                     <th>Actions</th>
                 </tr>
-                @foreach (ExtensionsManager.ExtensionInfo ext in Program.Extensions.KnownExtensions.Where(e => !e.FolderNames.Any(fn => Program.Extensions.LoadedExtensionFolders.Contains(fn)) && !e.Tags.Contains("hidden")).OrderBy(e => e.IsDangerTags ? 1 : 0))
+                @foreach (ExtensionsManager.ExtensionInfo ext in Program.Extensions.KnownExtensions.Where(e => !e.FolderNames.Any(fn => Program.Extensions.LoadedExtensionFolders.Contains(fn))).OrderBy(e => e.IsDangerTags ? 1 : 0))
                 {
-                    <tr>
+                    <tr class="@(ext.Tags.Contains("hidden") ? "extension-hidden-row" : "")">
                         <td>@ext.Name</td>
                         <td class="@(ext.IsDangerTags ? "ext-danger-license" : "")">@ExtensionsManager.HtmlTags(ext.Tags)</td>
                         <td>@ext.Author</td>

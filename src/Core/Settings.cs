@@ -42,9 +42,9 @@ public class Settings : AutoConfiguration
     [ConfigComment("Ratelimit, in milliseconds, between Nvidia GPU status queries. Default is 1000 ms (1 second).")]
     public long NvidiaQueryRateLimitMS = 1000;
 
-    [ConfigComment("How to launch the UI. If 'none', just quietly launch.\nIf 'web', launch your web-browser to the page.\nIf 'webinstall', launch web-browser to the install page.\nIf 'electron', launch the UI in an electron window (NOT YET IMPLEMENTED).")]
-    [ManualSettingsOptions(Impl = null, Vals = ["none", "web", "webinstall", "electron"])]
-    public string LaunchMode = "webinstall";
+    [ConfigComment("How to launch the UI. If 'none', just quietly launch.\nIf 'web', launch your web-browser to the page.\nIf 'install', launch to the install page through browser or app depending on context.\nIf 'app', launch the UI as a desktop application.")]
+    [ManualSettingsOptions(Impl = null, Vals = ["none", "web", "install", "app"])]
+    public string LaunchMode = "install";
 
     [ConfigComment("If set true, some additional debugging data will be attached where relevant, such as in image metadata.")]
     public bool AddDebugData = false;
@@ -339,6 +339,12 @@ public class Settings : AutoConfiguration
 
         /// <summary>Converts <see cref="MaxNetworkRequestMegabytes"/> to bytes as a long.</summary>
         public long MaxReceiveBytes => MaxNetworkRequestMegabytes * (1024L * 1024);
+
+        [ConfigComment("How many parallel requests to make at the same time when downloading from HuggingFace.\nIncreasing this number will use more RAM while downloading, but also download faster.\nDepending on your network speed, 16, 32, or 64 are reasonable values.")]
+        public int HuggingFaceDownloadParallelism = 32;
+
+        [ConfigComment("How many parallel requests to make at the same time when downloading from Civitai.\n1 means disabled, civitai may run download faster on fast network connections when setting this to 4.")]
+        public int CivitaiDownloadParallelism = 1;
     }
 
     /// <summary>Settings related to file paths.</summary>
@@ -509,6 +515,12 @@ public class Settings : AutoConfiguration
 
             [ConfigComment("If enabled, metadata will be hidden in the image Full View by default.\nIf disabled, metadata will be shown by default.\nYou zoom still zoom in or out to show or hide the metadata at any time as usual.")]
             public bool DefaultHideMetadataInFullview = false;
+
+            [ConfigComment("If enabled, the Interpreted Prompt is shown above the Original Prompt in image metadata.\nIf disabled, Original Prompt is shown first.\nOnly does anything if the prompt was interpreted (eg a wildcard is used).")]
+            public bool InterpretedPromptOnTop = false;
+
+            [ConfigComment("How much to increase or decrease prompt weight when you hold Control and press the up/down arrow keys on selected text in a prompt box.\nDefault is 0.1.")]
+            public double WeightStep = 0.1;
         }
 
         [ConfigComment("Settings related to the user interface, entirely contained to the frontend.")]
@@ -518,6 +530,9 @@ public class Settings : AutoConfiguration
         {
             [ConfigComment("Whether LoRAs can be added to a generation multiple times.\nIf false, the firstmost usage of a LoRA will be kept and others will be discarded.")]
             public bool AllowLoraStacking = true;
+
+            [ConfigComment("If enabled, Comfy and some Auto1111 prompt syntaxes such as (word:1.5), [a|b], and [from:to:when] are auto-converted to Swarm tags (<weight[1.5]:word>, <alternate:a, b>, <fromto[when]:from, to>).\nIf disabled, only Swarm <tag:value> syntax is parsed.")]
+            public bool ParseAlternativePromptSyntaxes = true;
         }
 
         [ConfigComment("Settings related to the parsing of generation parameters.")]
@@ -672,6 +687,10 @@ public class Settings : AutoConfiguration
             [ConfigComment("What VAE to use with Qwen Image models by default.")]
             [ManualSettingsOptions(Impl = null, Vals = ["None"])]
             public string DefaultQwenVAE = "None";
+
+            [ConfigComment("What VAE to use with MiniMax H3 models by default (the video VAE, not audio).")]
+            [ManualSettingsOptions(Impl = null, Vals = ["None"])]
+            public string DefaultMiniMaxH3VAE = "None";
         }
 
         [ConfigComment("Options to override default VAEs with.")]
@@ -683,8 +702,11 @@ public class Settings : AutoConfiguration
         [ConfigComment("How many images the history view should stop trying to load after.")]
         public int MaxImagesInHistory = 1000;
 
-        [ConfigComment("How many images the history view should scan server-side before deciding the list is sufficient for sorting. Not relevant when sorting by filename.")]
+        [ConfigComment("How many images the history view should scan server-side before deciding the list is sufficient for sorting or filtering.")]
         public int MaxImagesScannedInHistory = 10000;
+
+        [ConfigComment("If true, Image History text filter will query the server (up to MaxImagesScannedInHistory) to find more results.\nIf false, only images already loaded in the browser are filtered.")]
+        public bool ImageHistoryServerFilter = true;
 
         [ConfigComment("If true, the Image History view will cache small preview thumbnails of images.\nThis should make things run faster. You can turn it off if you don't want that.")]
         public bool ImageHistoryUsePreviews = true;
@@ -758,7 +780,7 @@ public class Settings : AutoConfiguration
             [SettingsOptions(Impl = typeof(SourceImpl))]
             public string Source = "";
 
-            [ConfigComment("If true, the auto-completion will escape parentheses with backslashes to prevent parsing errors.")]
+            [ConfigComment("If true, the auto-completion will escape parentheses with backslashes to prevent parsing errors.\nDoes nothing if ParseAlternativePromptSyntaxes is disabled.")]
             public bool EscapeParens = true;
 
             [ConfigComment("Optional suffix to append to autocompletes, eg ', ' to append commas.")]
@@ -787,7 +809,7 @@ public class Settings : AutoConfiguration
         [ConfigComment("Optionally specify a (raw HTML) welcome message here. If specified, will be added to the standard welcome message.")]
         public string ExtraWelcomeInfo = "";
 
-        [ConfigComment("Animated previews make the image history nicer when you've generated videos, but may negatively impact performance.\nIf having image history loaded with videos generated is negatively affecting your experience, disable this checkbox.\nAfter editing this setting, use the Reset All Metadata button in the Utilities tab.")]
+        [ConfigComment("Animated previews make the image history nicer when you've generated videos, but may negatively impact performance.\nIf having image history loaded with videos generated is negatively affecting your experience, disable this checkbox.\nAfter editing this setting, use the Reset Image Metadata button in the Utilities tab.")]
         public bool AllowAnimatedPreviews = true;
     }
 

@@ -66,6 +66,9 @@ public record class T2IModelCompatClass
     /// <summary>The minimum valid multiplier for resolution that models of this family can handle.</summary>
     public int ResolutionPrecision = 16;
 
+    /// <summary>If true, this family supports the legacy (A1111/Comfy) prompt syntax parser.</summary>
+    public bool SupportLegacyPromptParser = false;
+
     /// <summary>Get a networkable JObject for this compat class.</summary>
     public JObject ToNetData()
     {
@@ -79,7 +82,8 @@ public record class T2IModelCompatClass
             ["is_audio_model"] = IsAudioModel,
             ["has_joint_av_latents"] = HasJointAVLatents,
             ["resolution_precision"] = ResolutionPrecision,
-            ["vae_family"] = VaeFamily?.ID
+            ["vae_family"] = VaeFamily?.ID,
+            ["support_legacy_prompt_parser"] = SupportLegacyPromptParser
         };
     }
 }

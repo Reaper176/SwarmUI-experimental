@@ -2,7 +2,7 @@
 
   <PropertyGroup>
     <TargetFramework>net8.0</TargetFramework>
-    <Version>0.9.8.2</Version>
+    <Version>0.9.8.3</Version>
     <NoWarn>CS1998</NoWarn>
     <InvariantGlobalization>true</InvariantGlobalization>
     <AssemblyName>SwarmUI</AssemblyName>
@@ -10,7 +10,7 @@
     <Product>SwarmUI</Product>
     <Authors>Alex "mcmonkey" Goodwin</Authors>
     <Copyright>Copyright (c) 2024-2026 Alex "mcmonkey" Goodwin</Copyright>
-    <Description>SwarmUI, an AI Image Generation User-Interface</Description>
+    <Description>SwarmUI, an AI Media Generation User-Interface</Description>
     <OutputType>exe</OutputType>
     <ApplicationIcon>wwwroot/favicon.ico</ApplicationIcon>
     <RollForward>Major</RollForward>

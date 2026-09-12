@@ -38,6 +38,7 @@ public static class ModelsAPI
         API.RegisterAPICall(GetModelHash, true, Permissions.EditModelMetadata);
         API.RegisterAPICall(ForwardMetadataRequest, false, Permissions.EditModelMetadata);
         API.RegisterAPICall(OpenModelFolder, true, Permissions.LocalImageFolder);
+        API.RegisterAPICall(ForwardImageRequest, false, Permissions.EditModelMetadata);
         API.RegisterAPICall(DeleteModel, false, Permissions.DeleteModels);
         API.RegisterAPICall(RenameModel, false, Permissions.DeleteModels);
     }
@@ -858,32 +859,6 @@ public static class ModelsAPI
         }
         string originalUrl = url;
         url = url.Before('#');
-        if (url.StartsWith("https://civitai.com/"))
-        {
-            url = $"https://civitai.red/{url["https://civitai.com/".Length..]}";
-        }
-        Dictionary<string, string> headers = [];
-        if (url.StartsWith("https://civitai.red/"))
-        {
-            string civitaiApiKey = session.User.GetGenericData("civitai_api", "key");
-            if (!string.IsNullOrEmpty(civitaiApiKey))
-            {
-                if (!url.Contains("?token=") && !url.Contains("&token="))
-                {
-                    url += (url.Contains('?') ? "&token=" : "?token=") + TokenTextLimiter.TrimToMatches(civitaiApiKey);
-                    Logs.Debug($"Added Civitai API Key to download request. Original URL: {originalUrl}");
-                }
-            }
-        }
-        else if (url.StartsWith("https://huggingface.co/"))
-        {
-            string hfApiKey = session.User.GetGenericData("huggingface_api", "key");
-            if (!string.IsNullOrEmpty(hfApiKey))
-            {
-                headers["Authorization"] = $"Bearer {TokenTextLimiter.TrimToMatches(hfApiKey)}";
-                Logs.Debug($"Added HuggingFace API Key to download request.");
-            }
-        }
         try
         {
             string outPath = $"{folder}/{name}.{extension}";
@@ -908,7 +883,7 @@ public static class ModelsAPI
                     ["overall_percent"] = 0.2,
                     ["per_second"] = perSec
                 }, API.WebsocketTimeout).Wait();
-            }, canceller, originalUrl, headers: headers);
+            }, canceller, originalUrl, session: session);
             Task listenForSignal = Utilities.RunCheckedTask(async () =>
             {
                 while (true)
@@ -1123,6 +1098,28 @@ public static class ModelsAPI
             return new JObject() { ["error"] = "Cannot open model folder on this OS." };
         }
         return new JObject() { ["success"] = true };
+    }
+
+    [API.APIDescription("Forwards an image file request, eg to civitai image CDN.", "\"image\": \"data:image/jpeg;base64,...\"")]
+    public static async Task<JObject> ForwardImageRequest(Session session, string url)
+    {
+        if (!url.StartsWithFast("https://image.civitai.com/") && !url.StartsWithFast("https://blobs-b2.civitai.com/"))
+        {
+            return new JObject() { ["error"] = "Invalid URL." };
+        }
+        byte[] data;
+        try
+        {
+            data = await Utilities.UtilWebClient.GetByteArrayAsync(url);
+        }
+        catch (Exception ex)
+        {
+            Logs.Warning($"While making image request to '{url}', got exception: {ex.ReadableString()}");
+            return new JObject() { ["error"] = $"{ex.GetType().Name}: {ex.Message}" };
+        }
+        string ext = url.Before('?').AfterLast('.');
+        MediaType type = MediaType.GetByExtension(ext) ?? MediaType.ImageJpg;
+        return new JObject() { ["image"] = new Image(data, type).AsDataString() };
     }
 
     /// <summary>Internal call for model/image delete to clean up folders recursively.</summary>

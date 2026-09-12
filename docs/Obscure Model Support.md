@@ -23,6 +23,7 @@ This doc tracks specifically the old, bad, unpopular, etc. models that are suppo
 [MageFlow](#mageflow) | MMDiT | 2026 | Microsoft | 4B | No | Very bad quality compared to contemporary models |
 [ERNIE](#ernie) | DiT | 2026 | Baidu | 8B | Minimal | Modern, intelligent, good quality, fast |
 [Lens](#lens) | MMDiT | 2026 | Microsoft | 4B | Minimal | Modern, lightweight, eh quality |
+[SenseNova-U1](#sensenova) | "Pixel UiT" | 2026 | SenseNova | 8B | Minimal | Modern, very intelligent but bad details |
 
 Obscure video models are tracked at the [Video Models heading](#video-models)
 
@@ -294,6 +295,23 @@ Microsoft's [Mage Flow](https://huggingface.co/microsoft/Mage-Flow) is supported
     - **CFG Scale:** For Turbo, `1`, for base normal CFG ranges (around `5`)
     - **Steps:** For Turbo, `4` is recommended, `8` works well. For Base, `20` as normal.
     - **Resolution:** Side length `1440` is the official default, but 1024 is a reasonable option. It retains coherence down to about 512 and up to about 2048.
+
+# SenseNova
+
+- [SenseNova](<https://huggingface.co/sensenova/SenseNova-U1-8B-MoT>) is supported in SwarmUI! It is a derivative of HiDream-O1.
+- Download int8 version here [jtreminio/SenseNova-int8: Regular](<https://huggingface.co/jtreminio/SenseNova-U1.5-8B-MoT-int8_convrot/blob/main/SenseNova-U1.5-8B-MoT-int8_convrot.safetensors>)
+    - Or the SFT version here [jtreminio/SenseNova-int8: SFT](<https://huggingface.co/jtreminio/SenseNova-U1.5-8B-MoT-int8_convrot/blob/main/SenseNova-U1.5-8B-MoT-SFT-T8-int8_convrot.safetensors>)
+    - Guidance on differences between the two unclear. Non-SFT may be better?
+    - Save in `Stable-Diffusion`
+- It has no VAE, but has in-middle dedicated large patch scaling to compensate
+- Its text encoding is similarly native-integrated
+- **Parameters:**
+    - Broadly, see the HiDream-O1 usage info
+    - **CFG Scale:** normal CFG ranges (around `5`)
+    - **Steps:** Normal ranges (around `20`)
+    - **Sigma Shift:** Default is `3`, but higher values such as `7` can help recover detail quality
+    - **Resolution:** Side length `2048` is the model's standard, but a wide range works well.
+        - Because of the aggressive patch scaling, 2048 on this model looks more like 1024 on most other models. 1024 on this model looks noticeably worse. Going above 2048 will have some color distortion.
 
 --------------------------------------------------------------------------
 

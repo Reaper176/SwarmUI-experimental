@@ -43,6 +43,7 @@ Old or bad options also tracked listed via [Obscure Model Support](/docs/Obscure
 [MageFlow](/docs/Obscure%20Model%20Support.md#mageflow) | MMDiT | 2026 | Microsoft | 4B | No | Very bad quality compared to contemporary models |
 [ERNIE](/docs/Obscure%20Model%20Support.md#ernie) | DiT | 2026 | Baidu | 8B | Minimal | Modern, intelligent, good quality, fast |
 [Lens](/docs/Obscure%20Model%20Support.md#lens) | MMDiT | 2026 | Microsoft | 4B | Minimal | Modern, lightweight, eh quality |
+[SenseNova-U1](/docs/Obscure%20Model%20Support.md#sensenova) | "Pixel UiT" | 2026 | SenseNova | 8B | Minimal | Modern, very intelligent but bad details |
 
 - **Architecture** is the fundamental machine learning structure used for the model, UNet's were used in the past but DiT (Diffusion Transformers) are the modern choice
 - **Scale** is how big the model is - "B" for "Billion", so for example "2B" means "Two billion parameters".
@@ -639,7 +640,11 @@ For upscaling with SD3, the `Refiner Do Tiling` parameter is highly recommended 
 - Uses Qwen 3 VL 4B as a text encoder, and the QwenImage VAE, these will be automatically downloaded.
 - **Parameters:**
     - **Prompt:** Normal general model prompting works as expected, but NSFW terms will be stripped by the models internal text-refiner.
-    - **Prompt Images:** Krea 2 is not an editing model per se, but it can take in reference images in the prompt. Be warned it will overpower the prompt. Improvements to this are TBD?
+    - **Prompt Images:** Krea 2 is not an editing model per se, but it can take in reference images in the prompt (by default only the text encoder sees this, not the core model).
+        - There are unofficial "Ostris" edit loras like this: [Ostris/Krea2 Style Reference](<https://huggingface.co/ostris/krea2_turbo_style_reference/blob/main/krea2_style_reference.safetensors>), results may vary.
+            - For those, set **Enable Reference Latents** under Image Prompting to **Index Timestep Zero (Ostris)**.
+        - There are also "identity edit" LoRAs like this: [Krea Identity Edit](<https://huggingface.co/conradlocke/krea2-identity-edit/tree/main>)
+            - use **Index (Identity Edit)** on that same dropdown.
     - **Resolution:** Side length `1024` is the default, but it work anywhere from `128` to `4096`.
     - **Steps:** For Turbo, `8` recommended, `4` minimum. For Base normal step counts (20+).
     - **CFG:** For Turbo, `1`. For Base normal CFG ranges (4+? 7? idk, tbd)

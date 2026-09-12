@@ -4,12 +4,11 @@
 
 ![img](/docs/images/prompt-weight.jpg)
 
-- Prompt weighting, eg `an (orange) cat` or `an (orange:1.5) cat`. Anything in `(parens)` has its weighting modified - meaning, the model will pay more attention to that part of the prompt. Values above `1` are more important, values below `1` (eg `0.5`) are less important.
+- Prompt weighting, eg `an <weight[1.1]:orange> cat` or `an <weight[1.5]:orange> cat`. The model will pay more or less attention to that part of the prompt. Values above `1` are more important, values below `1` (eg `0.5`) are less important.
     - You can also hold Control and press the up/down arrow keys to change the weight of selected text.
     - Note: this presumes a default Comfy backend.
-    - This varies based on models - CLIP-based models (eg Stable Diffusion) work well with this, but newer models based on T5 or an LLM TextEnc do not.
-        - Basically, SDXL and SD3 are the last models this was properly relevant to.
-        - For other models, the syntax is non-present. Parentheses will not be parsed at all, and instead simply forwarded directly to the model.
+    - This varies based on models - CLIP-based models (eg Stable Diffusion) work well with this, models based on T5 do not work very well, newer models based on LLM TextEncs will instead treat weighting as a direct multiplication on the conditioning which can have highly variable results depending on the specific model itself, many models will do nothing. Some models (eg Krea 2) have dedicated model-specific hacks.
+    - Comfy/Auto1111 syntax such as `(orange:1.5)` is parsed for legacy-era models (eg SD1, SDXL) and relevant-to-include models (eg Anima) if the default-on **Parse Alternative Prompt Syntaxes** is enabled in User Settings.
 
 ## Alternating
 
@@ -18,6 +17,8 @@
 - You can use `<alternate:cat, dog>` to alternate every step between `cat` and `dog`, creating a merge/mixture of the two concepts.
     - Similar to `random` you can instead use `|` or `||` to separate entries, eg `<alternate:cat || dog>`. You can have as many unique words as you want, eg `<alternate:cat, dog, horse, wolf, taco>` has 5 words so it will cycle through them every 5 steps.
     - You can shorthand this as `<alt:cat,dog>`
+    - Auto1111 syntax like `[cat|dog]` is parsed if the default-on **Parse Alternative Prompt Syntaxes** is enabled in User Settings.
+    - You can use `<lora:...>` to attach loras to alternating steps. This will have poor performance.
 
 ## From-To
 
@@ -27,6 +28,8 @@
     - The timestep can be like `10` for step 10, or like `0.5` for halfway-through.
     - Similar to `random` you can instead use `|` or `||` to separate entries. Must have exactly two entries.
     - For example, `<fromto[0.5]:cat, dog>` swaps from `cat` to `dog` halfway through a generation.
+    - Auto1111 syntax like `[cat:dog:0.5]` is parsed if the default-on **Parse Alternative Prompt Syntaxes** is enabled in User Settings.
+    - You can use `<lora:...>` to attach loras to one or the other set of steps. This will have poor performance.
 
 ## Random
 
@@ -122,6 +125,7 @@
 - You may use `<lora:filename>` to enable a LoRA, or `<lora:filename:weight>` to enable it and set a weight
     - Note that it's generally preferred to use the GUI at the bottom of the page to select loras
     - Note that usually position within the prompt doesn't matter, loras are not actually a prompt feature, this is just a convenience option for users used to Auto WebUI.
+    - A LoRA tag nested inside `<fromto[...]:...>` or `<alternate:...>` only applies to the steps the prompt section applies to.
     - The one time it does matter, is when you use `<segment:...>` or `<object:...>`: a LoRA inside one of these will apply *only* to that segment or object.
     - `weight` is a multiplier, where `1` is the default, `0.5` is weakened halfway, or `2` is twice as strong. Generally numbers larger than 2 will destroy image quality.
     - You may also use `<lora:filename:backbone_weight:textenc_weight>` to enable a lora and set its backbone (unet/dit) weight separately from its text encoder weight.
@@ -204,7 +208,7 @@
     - You can combine this with sub-syntax, eg `<param[cfgscale]:<random:1,2,3>>` to set CFG Scale to a random value.
     - This supports any parameter in SwarmUI - that is, the inputs listed on the left side of the Generate tab.
     - Some parameters can be 'sectionalized' - that is, apply to specific sections, such as `<refiner>` or `<base>` or `<video>` or `<segment:...>` or `<extend:...>` etc.
-        - This includes: `CFG Scale`, `Steps`, `Sampler`, `Scheduler`
+        - This includes: `CFG Scale`, `Steps`, `Sampler`, `Scheduler`, `Seed`, `Variation Seed`, `Variation Seed Strength`
         - So for example, `<video> <param[cfgscale]:5>` will set the CFG Scale of the video section only to `5`.
 - You can also directly read them thia `<param:paramName>`, for example `<param:CFG Scale>` will fill itself to `1` or whatever your CFG Scale is.
 

@@ -905,7 +905,7 @@ public class ComfyUIBackendExtension : Extension
         }
     }
 
-    public static T2IRegisteredParam<string> CustomWorkflowParam, SamplerParam, SchedulerParam, RefinerSamplerParam, RefinerSchedulerParam, RefinerUpscaleMethod, UseIPAdapterForRevision, IPAdapterWeightType, VideoPreviewType, VideoFrameInterpolationMethod, GligenModel, RegionalPromptingMethod, YoloModelInternal, PreferredDType, UseStyleModel, TeaCacheMode, EasyCacheMode, SetClipDevice;
+    public static T2IRegisteredParam<string> CustomWorkflowParam, SamplerParam, SchedulerParam, RefinerSamplerParam, RefinerSchedulerParam, RefinerUpscaleMethod, UseIPAdapterForRevision, IPAdapterWeightType, VideoPreviewType, VideoFrameInterpolationMethod, GligenModel, RegionalPromptingMethod, YoloModelInternal, PreferredDType, UseStyleModel, TeaCacheMode, EasyCacheMode, SetClipDevice, UseSparseAttention, EnableReferenceLatents, TextEncodedImage;
 
     /// <summary>Parameter that selects a backend-supported model attention implementation.</summary>
     public static T2IRegisteredParam<string> ModelAttentionBackend;
@@ -1085,7 +1085,7 @@ public class ComfyUIBackendExtension : Extension
             "", IgnoreIf: "", FeatureFlag: "sam2", VisibleNormally: false, ExtraHidden: true, DoNotSave: true, DoNotPreview: true, AlwaysRetain: true, Toggleable: true, ID: "sam2bbox"
             ));
         UseIPAdapterForRevision = T2IParamTypes.Register<string>(new("Use IP-Adapter", $"Select an IP-Adapter model to use IP-Adapter for image-prompt input handling.\nModels will automatically be downloaded when you first use them.\nNote if you use a custom model, you must also set your CLIP-Vision Model under Advanced Model Addons, otherwise CLIP Vision G will be presumed.\n<a target=\"_blank\" href=\"{Utilities.RepoDocsRoot}/Features/ImagePrompting.md\">See more docs here.</a>",
-            "None", IgnoreIf: "None", FeatureFlag: "ipadapter", GetValues: _ => IPAdapterModels, Group: T2IParamTypes.GroupImagePrompting, OrderPriority: 15, ChangeWeight: 1
+            "None", IgnoreIf: "None", FeatureFlag: "ipadapter,model_has_ipadapter", GetValues: _ => IPAdapterModels, Group: T2IParamTypes.GroupImagePrompting, OrderPriority: 15, ChangeWeight: 1
             ));
         IPAdapterWeight = T2IParamTypes.Register<double>(new("IP-Adapter Weight", "Weight to use with IP-Adapter (if enabled).",
             "1", Min: -1, Max: 3, Step: 0.05, IgnoreIf: "1", FeatureFlag: "ipadapter", Group: T2IParamTypes.GroupImagePrompting, ViewType: ParamViewType.SLIDER, OrderPriority: 16, DependNonDefault: UseIPAdapterForRevision.Type.ID
@@ -1098,6 +1098,12 @@ public class ComfyUIBackendExtension : Extension
             ));
         IPAdapterWeightType = T2IParamTypes.Register<string>(new("IP-Adapter Weight Type", "How to shift the weighting of the IP-Adapter.\nThis can produce subtle but useful different effects.",
             "standard", FeatureFlag: "ipadapter", Group: T2IParamTypes.GroupImagePrompting, ViewType: ParamViewType.SLIDER, OrderPriority: 19, IsAdvanced: true, GetValues: _ => IPAdapterWeightTypes, DependNonDefault: UseIPAdapterForRevision.Type.ID
+            ));
+        EnableReferenceLatents = T2IParamTypes.Register<string>(new("Enable Reference Latents", "How to feed prompt images as Reference Latents to the model.\nNone leaves images on the text encoder only (correct for the Krea 2 base model).\nIndex Timestep Zero is for Ostris-style edit LoRAs.\nIndex is for Identity Edit LoRAs.",
+            "none", IgnoreIf: "none", FeatureFlag: "optional_reference_latent", Group: T2IParamTypes.GroupImagePrompting, OrderPriority: 13, GetValues: _ => ["none///None (Text Encoder Only)", "index_timestep_zero///Index Timestep Zero (Ostris)", "index///Index (Identity Edit)"]
+            ));
+        TextEncodedImage = T2IParamTypes.Register<string>(new("Text Encoded Image", "How to feed prompt images into the text encoder.\nAutomatic uses the model's default (usually this is large or exact-size-as-input).\nNone skips text-encoder images (reference latents can still apply).\nSmall targets 384px, Large targets 1024px.",
+            "auto", IgnoreIf: "auto", Group: T2IParamTypes.GroupImagePrompting, OrderPriority: 13.5, GetValues: _ => ["auto///Automatic", "none///None (Do Not Encode)", "small///Small Image", "large///Large Image"]
             ));
         UseStyleModel = T2IParamTypes.Register<string>(new("Use Style Model", $"Select a Style model to use it for image-prompt input handling.\nFlux.1 Redux is an example of a style model.\nPlace these models in `(Swarm)/Models/style_models`.",
             "None", IgnoreIf: "None", GetValues: _ => StyleModels, Group: T2IParamTypes.GroupImagePrompting, OrderPriority: 14, ChangeWeight: 1, FeatureFlag: "flux-dev"
@@ -1227,7 +1233,7 @@ public class ComfyUIBackendExtension : Extension
             GetValues: (_) => ["Standard", "Attention Couple"]
             ));
         RefinerHyperTile = T2IParamTypes.Register<int>(new("Refiner HyperTile", "The size of hypertiles to use for the refining stage.\nHyperTile is a technique to speed up sampling of large images by tiling the image and batching the tiles.\nThis is useful when using SDv1 models as the refiner. SDXL-Base models do not benefit as much.",
-            "256", Min: 64, Max: 2048, Step: 32, Toggleable: true, IsAdvanced: true, FeatureFlag: "comfyui", ViewType: ParamViewType.POT_SLIDER, Group: T2IParamTypes.GroupAdvancedSampling, OrderPriority: 20
+            "256", Min: 64, Max: 2048, Step: 32, Toggleable: true, IsAdvanced: true, FeatureFlag: "comfyui,supports_hypertile", ViewType: ParamViewType.POT_SLIDER, Group: T2IParamTypes.GroupAdvancedSampling, OrderPriority: 20
             ));
         List<string> interpolators = ["RIFE", "FILM", "GIMM-VFI"];
         VideoPreviewType = T2IParamTypes.Register<string>(new("Video Preview Type", "How to display previews for generating videos.\n'Animate' shows a low-res animated video preview.\n'iterate' shows one frame at a time while it goes.\n'one' displays just the first frame.\n'none' disables previews.",
@@ -1272,9 +1278,6 @@ public class ComfyUIBackendExtension : Extension
         NunchakuCacheThreshold = T2IParamTypes.Register<double>(new("Nunchaku Cache Threshold", "What threshold to use with Nunchaku block caching.\nThis makes Nunchaku gens faster at the cost of quality.\nOnly applicable to Nunchaku models.\nGenerally 0 to 0.2 is the reasonable range, above that you can start noticing quality drop.",
             "0", IgnoreIf: "0", Min: 0, Max: 1, Step: 0.01, FeatureFlag: "nunchaku", Group: T2IParamTypes.GroupAdvancedSampling, IsAdvanced: true, ViewType: ParamViewType.SLIDER, OrderPriority: 16
             ));
-        SetClipDevice = T2IParamTypes.Register<string>(new("Set CLIP Device", "Override the hardware device that text encoders run on.",
-            "cpu", FeatureFlag: "set_clip_device", Group: T2IParamTypes.GroupAdvancedModelAddons, IsAdvanced: true, Toggleable: true, GetValues: (_) => SetClipDevices, OrderPriority: 70
-            ));
         ModelAttentionBackend = T2IParamTypes.Register<string>(new("Model Attention Backend", "Override which attention implementation the model uses.\n'pytorch attention' is the standard default.\n'comfy kitchen attention' is a new sage-like attention impl from Comfy directly that has better performance, but may not work on all machines.",
             "pytorch attention", FeatureFlag: "model_attention_backend", Group: T2IParamTypes.GroupAdvancedModelAddons, IsAdvanced: true, Toggleable: true, GetValues: (_) => ModelAttentionBackends, OrderPriority: 41
             ));
@@ -1286,6 +1289,12 @@ public class ComfyUIBackendExtension : Extension
             ));
         Anima38AdapterStrength = T2IParamTypes.Register<double>(new("Anima 3.8B Adapter Strength", "Controls how strongly the selected Anima 3.8B progressive semantic adapter affects conditioning.",
             "1", Min: 0, Max: 2, Step: 0.05, FeatureFlag: "anima-3_8b", Permission: Permissions.ModelParams, Group: T2IParamTypes.GroupAdvancedModelAddons, IsAdvanced: true, ViewType: ParamViewType.SLIDER, OrderPriority: 37
+            ));
+        UseSparseAttention = T2IParamTypes.Register<string>(new("Use Sparse Attention", "Apply block-sparse attention to speed up generation with large inputs (especially video model such as H3).\nSol-Attn (adaptive tau) (TODO: Explain this) a training-free adaptive threshold (good general default).\n'Top-K (SLA)' (TODO: Explain this)\n'VSA' is Video Sparse Attention, (TODO: Explain this) only for VSA trained models.",
+            "None", IgnoreIf: "None", Group: T2IParamTypes.GroupAdvancedModelAddons, IsAdvanced: true, Toggleable: true, GetValues: (_) => ["None", "sol///Sol-Attn", "topk///Top-K (SLA)", "vsa///VSA"], OrderPriority: 42
+            ));
+        SetClipDevice = T2IParamTypes.Register<string>(new("Set CLIP Device", "Override the hardware device that text encoders run on.",
+            "cpu", FeatureFlag: "set_clip_device", Group: T2IParamTypes.GroupAdvancedModelAddons, IsAdvanced: true, Toggleable: true, GetValues: (_) => SetClipDevices, OrderPriority: 70
             ));
         // ================================================ SeedVR ================================================
         GroupSeedVR = new T2IParamGroup("SeedVR", Toggles: true, Open: false, OrderPriority: -2.5, Description: "SeedVR2 is a one-step restoration model, run over the result of the normal generation.");
@@ -1467,6 +1476,10 @@ public class ComfyUIBackendExtension : Extension
             {
                 tasks.Add(Utilities.RunCheckedTask(async () =>
                 {
+                    if (!Directory.Exists($"{folder}/.git"))
+                    {
+                        return;
+                    }
                     string nodeName = Path.GetFileName(folder);
                     string latestTarget = ComfyUISelfStartBackend.ComfyNodeGitPins.TryGetValue(nodeName, out string pinCommit) ? pinCommit : null;
                     JObject nodeUpdates = await AdminAPI.GetUpdatesDataFor(folder, true, latestTarget: latestTarget);
@@ -1508,8 +1521,12 @@ public class ComfyUIBackendExtension : Extension
             {
                 tasks.Add(Utilities.RunCheckedTask(async () =>
                 {
-                    string targetCommit = ComfyUISelfStartBackend.ComfyNodeGitPins.TryGetValue(nodeName, out string pinCommit) ? pinCommit : null;
-                    await AdminAPI.DoGitUpdate(folder, aggressive, didWork, didFail, targetCommit: targetCommit);
+                    if (!Directory.Exists($"{folder}/.git"))
+                    {
+                        return;
+                    }
+                    string headTarget = ComfyUISelfStartBackend.ComfyNodeGitPins.TryGetValue(nodeName, out string pinCommit) ? pinCommit : null;
+                    await AdminAPI.DoGitUpdate(folder, aggressive, didWork, didFail, targetCommit: headTarget);
                 }));
             }
         }

@@ -1614,7 +1614,7 @@ class ImageHistoryController {
         let allowAnims = localStorage.getItem('image_history_allow_anims') != 'false';
         let showHidden = this.showHidden;
         let hideGrids = this.hideGrids;
-        let filter = this.browser?.filter || '';
+        let filter = this.browser?.filterServerSide ? this.browser.filter : '';
         let controlElems = this.ensureHeaderControlsReady(sortBy, reverse, allowAnims, showHidden, hideGrids);
         if (controlElems) {
             sortBy = controlElems.sortElem.value;
@@ -2031,7 +2031,9 @@ class ImageHistoryController {
         this.browser.allowMultiSelect = true;
         this.browser.maxPreBuild = IMAGE_HISTORY_FAST_FIRST_LIMIT;
         this.browser.filterMatcher = (desc, filter) => this.filter.matches(desc, filter);
-        this.browser.filterServerSide = true;
+        Object.defineProperty(this.browser, 'filterServerSide', {
+            get: () => getUserSetting('ImageHistoryServerFilter', true)
+        });
         this.browser.folderSelectedEvent = () => {
             this.clearSelection();
         };

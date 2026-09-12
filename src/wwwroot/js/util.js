@@ -927,6 +927,18 @@ function imageToData(src, callback, resize256 = false) {
     if (src.startsWith('inputs/')) {
         src = `${getImageOutPrefix()}/${src}`;
     }
+    if (src.startsWith('https://image.civitai.com/')) {
+        genericRequest('ForwardImageRequest', { 'url': src }, (data) => {
+            if (!data.image) {
+                callback(null);
+                return;
+            }
+            imageToData(data.image, callback, resize256);
+        }, 0, () => {
+            callback(null);
+        });
+        return;
+    }
     if (resize256) {
         var image = new Image();
         image.crossOrigin = 'Anonymous';

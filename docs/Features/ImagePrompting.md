@@ -9,6 +9,11 @@
 - For these model, don't enable anything in the **Image Prompting** parameter group.
 - See the model-specific info in the [Model Support](/docs/Model%20Support.md) doc for details.
 
+# Edit Loras
+
+- Some models don't natively do edit, but have LoRA support for it. Notably **Krea 2** works this way.
+- See the model-specific info in the [Model Support](/docs/Model%20Support.md) doc for details.
+
 ## ReVision
 
 - ReVision is an SDXL-specific image-prompting technique that direct passes your image to the SDXL model. This has a light effect, but biases the model towards your prompt.
@@ -19,6 +24,7 @@
 ## IP-Adapter
 
 - IP-Adapter is a technique developed by [TenCent AI Lab](https://github.com/tencent-ailab/IP-Adapter) to bias Stable Diffusion models strongly towards matching the content of an image.
+    - This is only compatible with Stable Diffusion v1.x, and SDXL.
     - This is similar to [ControlNet](/docs/Features/ControlNet.md), but where ControlNets match images features (such as canny lines, depth maps, etc), IP Adapter matches vaguer concepts (such as the general concept of an image, or the face of a person, or etc).
     - IP-Adapter support in Swarm is powered by a [ComfyUI addon developed by Matteo Spinelli aka cubiq](https://github.com/cubiq/ComfyUI_IPAdapter_plus). They've gone above and beyond in extended IP-Adapter beyond its initial state from TenCent. They have a [GitHub sponsors page](https://github.com/sponsors/cubiq) worth supporting if you use IP-Adapter often.
 - In a default Swarm install, you will have an "`Install IP Adapter`" button in the parameter list.

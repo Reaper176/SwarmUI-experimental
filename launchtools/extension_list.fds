@@ -3,7 +3,7 @@
 # Author should be your name.
 # Description should be a short description of what the extension does.
 # URL should be a link to the GitHub repo. Do not use a sublink, do not end with '/'. This URL is used to git clone the repo.
-# If CI-Test is true, the extension will be downloaded and compile-checked for new Swarm commits.
+# If CI-Test is true, the extension will be downloaded and compile-checked for new Swarm commits. A pull request should never add CI-Test, that is a maintainer decision only.
 
 # License is the shortname of the license, (eg MIT, LGPL, ...).
 # If deciding on a license, MIT is strongly recommended.
@@ -182,6 +182,8 @@ TIPO:
     tags:
     - parameters
     - nodes
+    # Removed from github?
+    - hidden
 
 NegPip:
     author: khanghy1000, orig. Hugs288
@@ -366,6 +368,8 @@ KreaGoneWild:
     tags:
     - parameters
     - nodes
+    # No longer relevant for 99% of Krea usage
+    - hidden
 
 H3Attn:
     author: Juan Treminio
@@ -376,3 +380,12 @@ H3Attn:
     - parameters
     - nodes
     - beta
+
+RTXVideo:
+    author: BetaDoggo
+    description: Adds RTX Video (NVIDIA AI video super resolution + SDR-to-HDR) parameters for image and video outputs.
+    url: https://github.com/BetaDoggo/SwarmUI-RTX-Video
+    license: Mixed
+    tags:
+    - parameters
+    - nodes

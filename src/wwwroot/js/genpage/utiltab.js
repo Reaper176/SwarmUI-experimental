@@ -93,16 +93,23 @@ function pickle2safetensor_run(type) {
     });
 }
 
-function util_massMetadataClear() {
-    let button = getRequiredElementById('util_massmetadataclear_button');
+/** Triggers a mass reset of image or model metadata caches. */
+function util_massMetadataClear(type) {
+    let button = getRequiredElementById(`util_massmetadataclear_${type}_button`);
     button.disabled = true;
-    genericRequest('WipeMetadata', {}, data => {
-        genericRequest('TriggerRefresh', {}, data => {
+    genericRequest('WipeMetadata', { type: type }, data => {
+        if (type == 'model') {
+            genericRequest('TriggerRefresh', {}, data => {
+                button.disabled = false;
+                for (let browser of allModelBrowsers) {
+                    browser.browser.refresh();
+                }
+            });
+        }
+        else {
             button.disabled = false;
-            for (let browser of allModelBrowsers) {
-                browser.browser.refresh();
-            }
-        });
+            imageHistoryBrowser.refresh();
+        }
     });
 }
 
@@ -591,7 +598,11 @@ class ModelDownloaderUtil {
                         video.onerror = () => {
                             done('');
                         };
-                        video.src = url;
+                        genericRequest('ForwardImageRequest', { 'url': url }, (data) => {
+                            video.src = data.image;
+                        }, 0, () => {
+                            done('');
+                        });
                     });
                 }
                 else {
@@ -1011,6 +1022,10 @@ class ActiveModelDownload {
             else if (e == "Model at that save path already exists." || e == "Invalid type.") {
                 this.setBorderColor('#aa0000');
                 hintInfo = "";
+            }
+            else if (e.includes("got response code 401") || e.includes("got response code 403")) {
+                this.setBorderColor('#aa0000');
+                hintInfo = `Set or check your <a href="#" onclick="getRequiredElementById('usersettingstabbutton').click();getRequiredElementById('userinfotabbutton').click();">API Key</a> in User Settings.`;
             }
             else {
                 this.setBorderColor('#aa0000');

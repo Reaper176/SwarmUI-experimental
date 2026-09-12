@@ -113,6 +113,9 @@ public partial class WorkflowGenerator
     /// <summary>Returns true if the current model is HiDream-O1 Image.</summary>
     public bool IsHiDreamO1() => IsModelCompatClass(T2IModelClassSorter.CompatHiDreamO1);
 
+    /// <summary>Returns true if the current model is SenseNova U1.5.</summary>
+    public bool IsSenseNovaU15() => IsModelCompatClass(T2IModelClassSorter.CompatSenseNovaU15);
+
     /// <summary>Returns true if the current model is Lens.</summary>
     public bool IsLens() => IsModelCompatClass(T2IModelClassSorter.CompatLens);
 
@@ -498,7 +501,7 @@ public partial class WorkflowGenerator
                 ["width"] = width
             }, id));
         }
-        else if (IsHiDreamO1()) // TODO: use VAE Family
+        else if (IsHiDreamO1() || IsSenseNovaU15()) // TODO: use VAE Family
         {
             return resultImage(CreateNode("EmptyHiDreamO1LatentImage", new JObject()
             {
@@ -581,7 +584,7 @@ public partial class WorkflowGenerator
                     }
                     if (string.IsNullOrWhiteSpace(vaeFile))
                     {
-                        vaeModel = compatClass is null ? null : vaeHandler.Models.Values.FirstOrDefault(m => m.ModelClass?.CompatClass?.ID == compatClass);
+                        vaeModel = compatClass is null ? null : vaeHandler.Models.Values.FirstOrDefault(m => m.ModelClass?.CompatClass?.ID == compatClass && (m.ModelClass?.ID?.EndsWith("/vae") ?? false));
                         if (vaeModel is not null)
                         {
                             Logs.Debug($"Auto-selected first available VAE of compat class '{compatClass}', VAE '{vaeModel.Name}' will be applied");
@@ -601,7 +604,7 @@ public partial class WorkflowGenerator
             }
             if (downloadRequired)
             {
-                knownFile.DownloadNow().Wait();
+                knownFile.DownloadNow(session: g.UserInput.SourceSession).Wait();
                 Program.RefreshAllModelSets();
             }
             g.LoadingVAE = g.CreateVAELoader(vaeFile, nodeId);
@@ -627,7 +630,7 @@ public partial class WorkflowGenerator
             }
             if (downloadRequired)
             {
-                knownFile.DownloadNow().Wait();
+                knownFile.DownloadNow(session: g.UserInput.SourceSession).Wait();
                 Program.RefreshAllModelSets();
             }
             string avaeLoader = g.CreateNode(ComfyNodeNames.LTXVAudioVAELoader, new JObject()
@@ -644,7 +647,7 @@ public partial class WorkflowGenerator
             string vaeFile = knownFile.FileName;
             if (!Program.T2IModelSets["VAE"].Models.ContainsKey(vaeFile))
             {
-                knownFile.DownloadNow().Wait();
+                knownFile.DownloadNow(session: g.UserInput.SourceSession).Wait();
                 Program.RefreshAllModelSets();
             }
             g.CurrentAudioVae = new WGNodeData(g.CreateVAELoader(vaeFile), g, WGNodeData.DT_AUDIOVAE, g.CurrentCompat());
@@ -1495,7 +1498,7 @@ public partial class WorkflowGenerator
         else if (IsMiniMaxH3())
         {
             helpers.LoadClip("minimax", helpers.GetQwen3vl_32bMiniMaxModel());
-            helpers.DoVaeLoader(null, T2IModelClassSorter.CompatMiniMaxH3, "minimax-h3-video-int8-vae");
+            helpers.DoVaeLoader(UserInput.SourceSession?.User?.Settings?.VAEs?.DefaultMiniMaxH3VAE, T2IModelClassSorter.CompatMiniMaxH3, "minimax-h3-video-int8-vae");
             helpers.StandardAudioVaeLoad("minimax-h3-audio-vae");
             string shiftNode = CreateNode("MiniMaxH3SigmaShift", new JObject()
             {
@@ -1636,7 +1639,7 @@ public partial class WorkflowGenerator
         }
         if (UserInput.TryGet(T2IParamTypes.SigmaShift, out double shiftVal, sectionId: sectionId))
         {
-            if (IsFlux() || IsAnyFlux2())
+            if (IsFlux() || IsAnyFlux2() || IsKrea2())
             {
                 string samplingNode = CreateNode("ModelSamplingFlux", new JObject()
                 {
@@ -1644,11 +1647,11 @@ public partial class WorkflowGenerator
                     ["width"] = UserInput.GetImageWidth(),
                     ["height"] = UserInput.GetImageHeight(),
                     ["max_shift"] = shiftVal,
-                    ["base_shift"] = 0.5 // TODO: Does this need an input?
+                    ["base_shift"] = IsKrea2() ? shiftVal : 0.5 // TODO: Does this need an input?
                 });
                 LoadingModel = [samplingNode, 0];
             }
-            else if (IsZImage() || IsAceStep15() || IsAnima() || IsKrea2() || IsBoogu())
+            else if (IsZImage() || IsAceStep15() || IsAnima() || IsBoogu())
             {
                 string samplingNode = CreateNode("ModelSamplingAuraFlow", new JObject()
                 {
@@ -1660,6 +1663,15 @@ public partial class WorkflowGenerator
             else if (IsHunyuanVideo() || IsHunyuanVideo15() || IsHunyuanImage() || IsWanVideo() || IsWanVideo22() || IsHiDream())
             {
                 string samplingNode = CreateNode("ModelSamplingSD3", new JObject()
+                {
+                    ["model"] = LoadingModel,
+                    ["shift"] = shiftVal
+                });
+                LoadingModel = [samplingNode, 0];
+            }
+            else if (IsSenseNovaU15())
+            {
+                string samplingNode = CreateNode("SenseNovaSamplingOptions", new JObject()
                 {
                     ["model"] = LoadingModel,
                     ["shift"] = shiftVal

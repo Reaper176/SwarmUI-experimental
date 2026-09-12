@@ -1,4 +1,5 @@
 using System.IO;
+using System.Globalization;
 using FreneticUtilities.FreneticExtensions;
 using FreneticUtilities.FreneticToolkit;
 using SwarmUI.Core;
@@ -56,7 +57,7 @@ public class UserImageHistoryHelper
     }
 
     /// <summary>Ffmpeg can get weird with overlapping calls, so max one at a time.</summary>
-    public static ManyReadOneWriteLock FfmpegLock = new(1);
+    public static SemaphoreSlim FfmpegLock = new(1, 1);
 
     /// <summary>Use ffmpeg to generate a preview for a video file.</summary>
     /// <param name="file">The video file.</param>
@@ -69,8 +70,16 @@ public class UserImageHistoryHelper
         }
         else
         {
-            using ManyReadOneWriteLock.WriteClaim claim = FfmpegLock.LockWrite();
-            await Utilities.QuickRunProcess(Utilities.FfmegLocation.Value, ["-i", file, "-vf", "select=eq(n\\,0)", "-q:v", "3", fullPathNoExt + ".swarmpreview.jpg"]);
+            await FfmpegLock.WaitAsync();
+            try
+            {
+                string output = await Utilities.QuickRunProcess(Utilities.FfmegLocation.Value, ["-i", file, "-vf", "select=eq(n\\,0)", "-q:v", "3", fullPathNoExt + ".swarmpreview.jpg"]);
+                Logs.Verbose($"ffmpeg output: {output}");
+            }
+            finally
+            {
+                FfmpegLock.Release();
+            }
             if (Program.ServerSettings.UI.AllowAnimatedPreviews)
             {
                 await Utilities.QuickRunProcess(Utilities.FfmegLocation.Value, ["-i", file, "-vcodec", "libwebp", "-filter:v", "fps=fps=6,scale=-1:128", "-lossless", "0", "-compression_level", "2", "-q:v", "60", "-loop", "0", "-preset", "picture", "-an", "-t", "5", fullPathNoExt + ".swarmpreview.webp"]);
@@ -78,22 +87,33 @@ public class UserImageHistoryHelper
         }
     }
 
-    /// <summary>Use ffmpeg to extract a video's audio track as MP3 data.</summary>
-    /// <param name="file">The video file.</param>
-    public static async Task<byte[]> ExtractVideoAudio(string file)
+    /// <summary>Runs ffmpeg and returns its output file data.</summary>
+    private static async Task<byte[]> RunFfmpegToData(List<string> arguments, string extension, string unavailableError, string outputError)
     {
         if (string.IsNullOrWhiteSpace(Utilities.FfmegLocation.Value))
         {
-            throw new SwarmUserErrorException("Cannot split video audio because ffmpeg is not available.");
+            throw new SwarmUserErrorException(unavailableError);
         }
-        string outputFile = Path.Combine(Path.GetTempPath(), $"swarm-extracted-audio-{Guid.NewGuid():N}.mp3");
+        string outputFile = Path.Combine(Program.TempDir, $"swarm-ffmpeg-output-{Guid.NewGuid():N}.{extension}");
         try
         {
-            using ManyReadOneWriteLock.WriteClaim claim = FfmpegLock.LockWrite();
-            await Utilities.QuickRunProcess(Utilities.FfmegLocation.Value, ["-y", "-i", file, "-vn", "-codec:a", "libmp3lame", "-q:a", "2", "-f", "mp3", outputFile]);
-            if (!File.Exists(outputFile) || new FileInfo(outputFile).Length == 0)
+            arguments.Add(outputFile);
+            int exitCode = -1;
+            string report;
+            await FfmpegLock.WaitAsync();
+            try
             {
-                throw new SwarmUserErrorException("The video does not contain a readable audio track.");
+                report = await Utilities.QuickRunProcess(Utilities.FfmegLocation.Value, [.. arguments], setExitCode: code => exitCode = code);
+            }
+            finally
+            {
+                FfmpegLock.Release();
+            }
+            Logs.Verbose($"Raw ffmpeg report: {report}");
+            if (exitCode != 0 || !File.Exists(outputFile) || new FileInfo(outputFile).Length == 0)
+            {
+                Logs.Debug($"Exit code: {exitCode}, output exists={File.Exists(outputFile)}, output length={(File.Exists(outputFile) ? new FileInfo(outputFile).Length : 0)}");
+                throw new SwarmUserErrorException(outputError);
             }
             return await File.ReadAllBytesAsync(outputFile);
         }
@@ -104,5 +124,61 @@ public class UserImageHistoryHelper
                 File.Delete(outputFile);
             }
         }
+    }
+
+    /// <summary>Use ffmpeg to extract a video's audio track as MP3 data.</summary>
+    /// <param name="file">The video file.</param>
+    /// <param name="start">Trim start in seconds.</param>
+    /// <param name="end">Trim end in seconds, or negative for the remaining video.</param>
+    public static async Task<byte[]> ExtractVideoAudio(string file, double start = 0, double end = -1)
+    {
+        List<string> arguments = ["-y", "-i", file];
+        if (start > 0)
+        {
+            arguments.AddRange(["-ss", $"{start:0.###}"]);
+        }
+        if (end >= 0)
+        {
+            arguments.AddRange(["-t", $"{end - start:0.###}"]);
+        }
+        arguments.AddRange(["-map", "0:a:0", "-vn", "-codec:a", "libmp3lame", "-q:a", "2", "-f", "mp3"]);
+        return await RunFfmpegToData(arguments, "mp3", "Cannot split video audio because ffmpeg is not available.", "The video does not contain a readable audio track or can't be parsed.");
+    }
+
+    /// <summary>Use ffmpeg to trim, crop, and scale a video into MP4 data.</summary>
+    /// <param name="file">The video file.</param>
+    /// <param name="start">Trim start in seconds.</param>
+    /// <param name="end">Trim end in seconds, or negative for the remaining video.</param>
+    /// <param name="cropX">Crop left coordinate in pixels.</param>
+    /// <param name="cropY">Crop top coordinate in pixels.</param>
+    /// <param name="cropWidth">Crop width in pixels, or zero for the full frame.</param>
+    /// <param name="cropHeight">Crop height in pixels, or zero for the full frame.</param>
+    /// <param name="scale">Output scale factor. 1 leaves the cropped size unchanged.</param>
+    public static async Task<byte[]> EditVideo(string file, double start, double end, int cropX, int cropY, int cropWidth, int cropHeight, double scale = 1)
+    {
+        List<string> arguments = ["-y", "-i", file];
+        if (start > 0)
+        {
+            arguments.AddRange(["-ss", $"{start:0.###}"]);
+        }
+        if (end >= 0)
+        {
+            arguments.AddRange(["-t", $"{end - start:0.###}"]);
+        }
+        List<string> filters = [];
+        if (cropWidth > 0)
+        {
+            int leftPad = Math.Max(0, -cropX);
+            int topPad = Math.Max(0, -cropY);
+            filters.Add($"pad={leftPad}+max(iw\\,{cropX + cropWidth}):{topPad}+max(ih\\,{cropY + cropHeight}):{leftPad}:{topPad}:black");
+            filters.Add($"crop={cropWidth}:{cropHeight}:{cropX + leftPad}:{cropY + topPad}");
+        }
+        if (scale != 1)
+        {
+            filters.Add($"scale=max(16\\,16*round(iw*{scale}/16)):max(16\\,16*round(ih*{scale}/16))");
+        }
+        filters.Add("pad=ceil(iw/2)*2:ceil(ih/2)*2");
+        arguments.AddRange(["-map", "0:v:0", "-map", "0:a?", "-vf", string.Join(',', filters), "-c:v", "libx264", "-crf", "19", "-pix_fmt", "yuv420p", "-c:a", "aac", "-movflags", "+faststart"]);
+        return await RunFfmpegToData(arguments, "mp4", "Cannot edit video because ffmpeg is not available.", "ffmpeg could not produce the edited video.");
     }
 }

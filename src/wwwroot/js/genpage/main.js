@@ -266,6 +266,7 @@ function reviseBackendFeatureSet() {
     doCompatFeature('stable-diffusion-v3', 'sd3');
     doCompatFeature('stable-cascade-v1', 'cascade');
     doAnyArchFeature(['Flux.1-dev', 'flux.2-dev', 'flux.2-klein-4b', 'flux.2-klein-9b', 'hunyuan-video'], 'flux-dev');
+    doCompatFeature('krea-2', 'optional_reference_latent');
     doCompatFeature('stable-diffusion-xl-v1', 'sdxl');
     if (currentModelHelper.curArch == 'anima-3_8b') {
         addMe.push('anima-3_8b');
@@ -273,6 +274,9 @@ function reviseBackendFeatureSet() {
     else {
         removeMe.push('anima-3_8b');
     }
+    doAnyCompatFeature(['stable-diffusion-v1', 'stable-diffusion-xl-v1'], 'model_has_ipadapter');
+    doAnyCompatFeature(['stable-diffusion-v1', 'stable-diffusion-v2', 'stable-diffusion-xl-v1'], 'supports_reference_only');
+    doAnyCompatFeature(['stable-diffusion-v1', 'stable-diffusion-v2', 'stable-diffusion-xl-v1'], 'supports_hypertile');
     doAnyCompatFeature(['genmo-mochi-1', 'lightricks-ltx-video', 'hunyuan-video', 'nvidia-cosmos-1', `wan-21`, `wan-22`, 'kandinsky5-vidlite', 'kandinsky5-vidpro', 'minimax-h3'], 'text2video');
     doAnyCompatFeature(['ace-step-1_5', 'minimax-music-3'], 'text2audio');
     for (let changer of featureSetChangers) {
@@ -548,6 +552,7 @@ function installTensorRT() {
 function clearPromptImages(hideRevision = true) {
     let promptImageArea = getRequiredElementById('alt_prompt_image_area');
     promptImageArea.innerHTML = '';
+    persistPromptMediaParams();
     let clearButton = getRequiredElementById('alt_prompt_image_clear_button');
     clearButton.style.display = 'none';
     if (hideRevision) {
@@ -629,21 +634,24 @@ function imagePromptAddImage(file) {
 }
 
 /** Extracts a prompt video's audio on the server and attaches the saved audio result. */
-function imagePromptSplitVideoAudio(video) {
-    genericRequest('ExtractVideoAudio', { video: video.dataset.filedata, filename: video.dataset.filename || '' }, result => {
-        imagePromptAddImageData(result.audio.src, 'audio', result.audio.path, result.audio.path);
+function imagePromptSplitVideoAudio(video, startMilliseconds = 0, endMilliseconds = -1, onComplete = null) {
+    genericRequest('ExtractVideoAudio', { video: video.dataset.filedata, filename: video.dataset.filename || '', startMilliseconds, endMilliseconds }, result => {
+        imagePromptAddImageData(`${getImageOutPrefix()}/${result.result}`, 'audio', result.result, result.result);
         if (inputBrowserHelper.inputImageBrowser) {
             inputBrowserHelper.inputImageBrowser.lightRefresh();
         }
-        mainGenHandler.gotImageResult(result.images[0].image, result.images[0].metadata, '0');
+        mainGenHandler.gotImageResult(`${getImageOutPrefix()}/${result.result}`, '{}', '0');
+        onComplete?.(true);
     }, 0, error => {
         showError(error);
+        onComplete?.(false);
     });
 }
 
 /** Removes one prompt media attachment and updates the surrounding UI. */
 function imagePromptRemoveMedia(media) {
     media.closest('.alt-prompt-image-container').remove();
+    persistPromptMediaParams();
     updatePromptMediaTitles();
     autoRevealRevision();
     genTabLayout.altPromptSizeHandle();
@@ -657,6 +665,11 @@ function showPromptMediaMenu(media, menuButton, x = null, y = null) {
             key: 'Split Audio',
             title: "Extract this video's audio and attach it as a separate prompt audio input",
             action: () => imagePromptSplitVideoAudio(media)
+        });
+        buttons.push({
+            key: 'Advanced Video Editor',
+            title: 'Trim or crop this video and save the result',
+            action: () => videoEditorInterface.open(media)
         });
     }
     buttons.push({
@@ -784,6 +797,7 @@ function imagePromptAddImageData(data, mediaType, fileData = data, fileName = nu
     clearButton.style.display = '';
     showRevisionInputs(true);
     genTabLayout.altPromptSizeHandle();
+    persistPromptMediaParams();
 }
 
 function imagePromptInputHandler() {

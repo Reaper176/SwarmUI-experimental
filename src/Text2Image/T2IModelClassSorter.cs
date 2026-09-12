@@ -81,17 +81,17 @@ public class T2IModelClassSorter
     /// <summary>Core Compatibility classes.</summary>
     public static T2IModelCompatClass
         // The OG Stability SD models
-        CompatSdv1 = RegisterCompat(new() { ID = "stable-diffusion-v1", ShortCode = "SDv1" }),
-        CompatSdv2 = RegisterCompat(new() { ID = "stable-diffusion-v2", ShortCode = "SDv2" }),
-        CompatSdv2Turbo = RegisterCompat(new() { ID = "stable-diffusion-v2-turbo", ShortCode = "SDv2" }),
-        CompatSdxl = RegisterCompat(new() { ID = "stable-diffusion-xl-v1", ShortCode = "SDXL", VaeFamily = VaeSdxl }),
-        CompatSdxlRefiner = RegisterCompat(new() { ID = "stable-diffusion-xl-v1-refiner", ShortCode = "SDXL", VaeFamily = VaeSdxl }),
+        CompatSdv1 = RegisterCompat(new() { ID = "stable-diffusion-v1", ShortCode = "SDv1", SupportLegacyPromptParser = true }),
+        CompatSdv2 = RegisterCompat(new() { ID = "stable-diffusion-v2", ShortCode = "SDv2", SupportLegacyPromptParser = true }),
+        CompatSdv2Turbo = RegisterCompat(new() { ID = "stable-diffusion-v2-turbo", ShortCode = "SDv2", SupportLegacyPromptParser = true }),
+        CompatSdxl = RegisterCompat(new() { ID = "stable-diffusion-xl-v1", ShortCode = "SDXL", VaeFamily = VaeSdxl, SupportLegacyPromptParser = true }),
+        CompatSdxlRefiner = RegisterCompat(new() { ID = "stable-diffusion-xl-v1-refiner", ShortCode = "SDXL", VaeFamily = VaeSdxl, SupportLegacyPromptParser = true }),
         CompatSvd = RegisterCompat(new() { ID = "stable-video-diffusion-img2vid-v1", ShortCode = "SVD", IsImage2Video = true }),
         CompatCascade = RegisterCompat(new() { ID = "stable-cascade-v1", ShortCode = "Casc" }),
-        CompatSd3Medium = RegisterCompat(new() { ID = "stable-diffusion-v3-medium", ShortCode = "SD3m", VaeFamily = VaeSd3 }),
-        CompatSd35Large = RegisterCompat(new() { ID = "stable-diffusion-v3.5-large", ShortCode = "SD35L", VaeFamily = VaeSd3 }),
-        CompatSd35Medium = RegisterCompat(new() { ID = "stable-diffusion-v3.5-medium", ShortCode = "SD35m", VaeFamily = VaeSd3 }),
-        CompatSd3 = RegisterCompat(new() { ID = "stable-diffusion-v3", ShortCode = "SD3", VaeFamily = VaeSd3 }),
+        CompatSd3Medium = RegisterCompat(new() { ID = "stable-diffusion-v3-medium", ShortCode = "SD3m", VaeFamily = VaeSd3, SupportLegacyPromptParser = true }),
+        CompatSd35Large = RegisterCompat(new() { ID = "stable-diffusion-v3.5-large", ShortCode = "SD35L", VaeFamily = VaeSd3, SupportLegacyPromptParser = true }),
+        CompatSd35Medium = RegisterCompat(new() { ID = "stable-diffusion-v3.5-medium", ShortCode = "SD35m", VaeFamily = VaeSd3, SupportLegacyPromptParser = true }),
+        CompatSd3 = RegisterCompat(new() { ID = "stable-diffusion-v3", ShortCode = "SD3", VaeFamily = VaeSd3, SupportLegacyPromptParser = true }),
         // 2024-2025 era models
         CompatFlux = RegisterCompat(new() { ID = "flux-1", ShortCode = "Flux", LorasTargetTextEnc = false, VaeFamily = VaeFlux1 }),
         CompatWan21 = RegisterCompat(new() { ID = "wan-21", ShortCode = "Wan14B", LorasTargetTextEnc = false, IsText2Video = true, IsImage2Video = true }),
@@ -115,8 +115,9 @@ public class T2IModelClassSorter
         CompatLtxv2 = RegisterCompat(new() { ID = "lightricks-ltx-video-2", ShortCode = "LTXV2", IsText2Video = true, IsImage2Video = true, HasJointAVLatents = true }),
         CompatZImage = RegisterCompat(new() { ID = "z-image", ShortCode = "ZImg", LorasTargetTextEnc = false, VaeFamily = VaeFlux1 }),
         CompatZetaChroma = RegisterCompat(new() { ID = "zeta-chroma", ShortCode = "ZChr", LorasTargetTextEnc = false }),
-        CompatAnima = RegisterCompat(new() { ID = "anima", ShortCode = "Anima", VaeFamily = VaeQwenImage }),
+        CompatAnima = RegisterCompat(new() { ID = "anima", ShortCode = "Anima", VaeFamily = VaeQwenImage, SupportLegacyPromptParser = true }),
         CompatHiDreamO1 = RegisterCompat(new() { ID = "hidream-o1", ShortCode = "HiDrO1", LorasTargetTextEnc = false }),
+        CompatSenseNovaU15 = RegisterCompat(new() { ID = "sensenova-u1.5", ShortCode = "SNU15", LorasTargetTextEnc = false }),
         CompatLens = RegisterCompat(new() { ID = "lens", ShortCode = "Lens", LorasTargetTextEnc = false, VaeFamily = VaeFlux2 }),
         CompatPiD = RegisterCompat(new() { ID = "pid", ShortCode = "PiD", LorasTargetTextEnc = false }),
         CompatPixelDiT = RegisterCompat(new() { ID = "pixeldit", ShortCode = "PixDiT", LorasTargetTextEnc = false }),
@@ -256,6 +257,7 @@ public class T2IModelClassSorter
             || (hasLoraKey(h, "transformer_blocks.0.audio_attn1.to_k") && hasLoraKey(h, "transformer_blocks.0.audio_attn1.to_out.0") && hasLoraKey(h, "transformer_blocks.9.audio_attn1.to_v"));
         bool isMiniMaxH3(JObject h) => hasKey(h, "video_patch_proj.weight") && hasKey(h, "audio_patch_proj.weight");
         bool isMiniMaxH3Lora(JObject h) => (hasLoraKey(h, "blocks.0.adaln_proj.linear") || hasLoraKey(h, "blocks.0.attn.qkv_proj")) && hasLoraKey(h, "blocks.49.mlp.fc2") && hasLoraKey(h, "token_refiner.blocks.0.attn.out_proj");
+        bool isMiniMaxH3Embedding(JObject h) => h.ContainsKey("qwen3vl_32b") && h.Properties().Count() < 4;
         bool isMiniMaxH3VideoVae(JObject h) => h.ContainsKey("decoder.transformer_blocks.0.scale1") && h.ContainsKey("encoder.down.5.block.0.conv1.weight");
         bool isMiniMaxH3AudioVae(JObject h) => h.ContainsKey("pre_block.attn.zero_k_bias");
         bool isSana(JObject h) => h.ContainsKey("attention_y_norm.weight") && h.ContainsKey("blocks.0.attn.proj.weight");
@@ -297,6 +299,7 @@ public class T2IModelClassSorter
         bool isHiDreamLora(JObject h) => hasKey(h, "double_stream_blocks.0.block.ff_i.shared_experts.w1.lora_A.weight");
         bool isHiDreamO1(JObject h) => (h.ContainsKey("model.t_embedder1.mlp.0.weight") && h.ContainsKey("model.t_embedder1.mlp.0.bias"));
         bool isHiDreamO1Lora(JObject h) => hasLoraKey(h, "final_layer2.linear") && hasLoraKey(h, "language_model.layers.0.self_attn.q_proj");
+        bool isSenseNovaU15(JObject h) => tryGetKey(h, "fm_modules.vision_model_mot_gen.embeddings.patch_embedding.weight", out JToken visionTok) && visionTok["shape"].ToArray()[0].Value<long>() == 1024 && tryGetKey(h, "language_model.model.layers.0.self_attn.q_proj_mot_gen.weight", out JToken queryTok) && queryTok["shape"].ToArray()[0].Value<long>() == 4096;
         bool isChroma(JObject h) => hasKey(h, "distilled_guidance_layer.in_proj.bias") && hasKey(h, "double_blocks.0.img_attn.proj.bias");
         bool isChromaRadiance(JObject h) => hasKey(h, "nerf_image_embedder.embedder.0.bias");
         bool isPiD(JObject h) => h.ContainsKey("net.lq_proj.latent_proj.0.weight") && h.ContainsKey("net.pixel_blocks.0.attn.q_norm.weight") && h.ContainsKey("net.pixel_blocks.0.compress_to_attn.weight");
@@ -839,13 +842,17 @@ public class T2IModelClassSorter
         {
             return isMiniMaxH3Lora(h);
         }});
+        Register(new() { ID = "minimax-h3/embedding", CompatClass = CompatMiniMaxH3, Name = "MiniMax H3 Embedding", StandardWidth = 960, StandardHeight = 960, IsThisModelOfClass = (m, h) =>
+        {
+            return isMiniMaxH3Embedding(h);
+        }});
         Register(new() { ID = "minimax-h3/vae", CompatClass = CompatMiniMaxH3, Name = "MiniMax H3 Video VAE", StandardWidth = 960, StandardHeight = 960, IsThisModelOfClass = (m, h) =>
         {
-            return isMiniMaxH3VideoVae(h);
+            return isMiniMaxH3VideoVae(h) && !isMiniMaxH3AudioVae(h);
         }});
         Register(new() { ID = "minimax-h3/audio-vae", CompatClass = CompatMiniMaxH3, Name = "MiniMax H3 Audio VAE", StandardWidth = 960, StandardHeight = 960, IsThisModelOfClass = (m, h) =>
         {
-            return isMiniMaxH3AudioVae(h);
+            return isMiniMaxH3AudioVae(h) && !isMiniMaxH3VideoVae(h);
         }});
         // ====================== Random Other Models ======================
         Register(new() { ID = "chroma", CompatClass = CompatChroma, Name = "Chroma", StandardWidth = 1024, StandardHeight = 1024, IsThisModelOfClass = (m, h) =>
@@ -909,6 +916,10 @@ public class T2IModelClassSorter
         Register(new() { ID = "hidream-o1", CompatClass = CompatHiDreamO1, Name = "HiDream O1 Image", StandardWidth = 2048, StandardHeight = 2048, IsThisModelOfClass = (m, h) =>
         {
             return isHiDreamO1(h);
+        }});
+        Register(new() { ID = "sensenova-u1.5", CompatClass = CompatSenseNovaU15, Name = "SenseNova U1.5", StandardWidth = 2048, StandardHeight = 2048, IsThisModelOfClass = (m, h) =>
+        {
+            return isSenseNovaU15(h);
         }});
         Register(new() { ID = "hidream-o1/lora", CompatClass = CompatHiDreamO1, Name = "HiDream O1 LoRA", StandardWidth = 2048, StandardHeight = 2048, IsThisModelOfClass = (m, h) =>
         {

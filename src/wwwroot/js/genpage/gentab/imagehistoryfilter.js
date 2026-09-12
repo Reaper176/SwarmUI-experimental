@@ -108,6 +108,14 @@ class ImageHistoryFilter {
             wildcard: `${extra.prompt_lab_wildcard_values || ''} ${this.valueToSearchText(extra.prompt_lab_wildcards)}`,
             promptlab: `${extra.prompt_lab_id || ''} ${extra.prompt_lab_prompt_id || ''}`
         };
+        for (let section of [params, extra]) {
+            for (let [key, value] of Object.entries(section)) {
+                let field = this.normalizeField(key.toLowerCase());
+                if (!(field in fields)) {
+                    fields[field] = this.valueToSearchText(value);
+                }
+            }
+        }
         fields.allFields = Object.values(fields).join(' ');
         return fields;
     }

@@ -239,6 +239,39 @@ public static class ImageHistoryAPI
         return value ? $"true yes {trueWord}" : $"false no {falseWord}";
     }
 
+    /// <summary>Returns searchable values for arbitrary generation and extra metadata fields.</summary>
+    private static string GetMetadataHistoryFilterField(string metadata, string field)
+    {
+        if (string.IsNullOrWhiteSpace(metadata) || !metadata.StartsWithFast('{'))
+        {
+            return null;
+        }
+        try
+        {
+            JObject parsed = metadata.ParseToJson();
+            List<string> values = [];
+            foreach (string section in new string[] { "sui_image_params", "sui_extra_data" })
+            {
+                if (parsed[section] is not JObject fields)
+                {
+                    continue;
+                }
+                foreach (JProperty property in fields.Properties())
+                {
+                    if (property.Name.Equals(field, StringComparison.OrdinalIgnoreCase))
+                    {
+                        values.Add(property.Value.ToString());
+                    }
+                }
+            }
+            return values.Count == 0 ? null : string.Join(" ", values);
+        }
+        catch (Exception)
+        {
+            return null;
+        }
+    }
+
     /// <summary>Returns searchable text for an indexed history field.</summary>
     private static string GetIndexedHistoryFilterField(OutputMetadataTracker.OutputHistoryIndexEntry entry, string field)
     {
@@ -257,7 +290,7 @@ public static class ImageHistoryAPI
             "hidden" => ImageHistoryBoolSearchText(entry.IsHidden, "hidden", "visible"),
             "favorite" => ImageHistoryBoolSearchText(entry.IsStarred || entry.RelativePath.StartsWith("Starred/"), "starred favorite", "unstarred"),
             "has" => ImageHistoryBoolSearchText(!string.IsNullOrWhiteSpace(entry.Metadata), "metadata", "none"),
-            _ => null
+            _ => GetMetadataHistoryFilterField(entry.Metadata, field)
         };
     }
 
@@ -281,7 +314,7 @@ public static class ImageHistoryAPI
             "hidden" => ImageHistoryBoolSearchText(isHidden, "hidden", "visible"),
             "favorite" => ImageHistoryBoolSearchText(isStarred, "starred favorite", "unstarred"),
             "has" => ImageHistoryBoolSearchText(!string.IsNullOrWhiteSpace(entry.Metadata?.Metadata), "metadata", "none"),
-            _ => null
+            _ => GetMetadataHistoryFilterField(entry.Metadata?.Metadata, field)
         };
     }
 

@@ -288,6 +288,7 @@ class GenPageBrowserClass {
         this.lastFilesMap = new Map();
         this.describeCache = new Map();
         this.enableDescriptionCache = false;
+        this.filterEvent = null;
         this.maxPreBuild = 512;
         this.chunksRendered = 0;
         this.rerenderPlanned = false;
@@ -1327,6 +1328,9 @@ class GenPageBrowserClass {
                             newFilterInput.setSelectionRange(selectionStart, selectionEnd);
                         }
                     });
+                    if (this.filterEvent) {
+                        this.filterEvent();
+                    }
                 }, delayMs);
             });
             if (!this.showFilter) {

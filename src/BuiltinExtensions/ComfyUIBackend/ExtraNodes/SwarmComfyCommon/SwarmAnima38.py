@@ -1349,7 +1349,11 @@ class SwarmAnima38Conditioning:
                     "FLOAT",
                     {"default": 1.0, "min": 0.0, "max": 2.0, "step": 0.05},
                 ),
-            }
+            },
+            "optional": {
+                "steps": ("INT", {"default": 20, "min": 1, "max": 10000}),
+                "lora_hooks": ("HOOKS",),
+            },
         }
 
     RETURN_TYPES = ("CONDITIONING", "CONDITIONING")
@@ -1400,6 +1404,66 @@ class SwarmAnima38Conditioning:
         return states, attention_mask.to(intermediate_device)
 
     def encode(
+        self, source_model, clip, qwen35_clip, adapter_name, prompt,
+        adapter_strength, steps=20, lora_hooks=None,
+    ):
+        """Resolve Swarm prompt tags before running the existing dual encoder."""
+        from .SwarmText import parse_prompt, chunks_from_leaves, legacy_weighted_text
+        import comfy.hooks
+        import torch
+
+        if not any(tag in prompt for tag in ("<weight", "<fromto", "<alternate", "<alt:", "<alt[", "<embed", "<break", "//hook=")):
+            return self._encode_prompt(source_model, clip, qwen35_clip, adapter_name, prompt, adapter_strength)
+        clip = clip.clone(disable_dynamic=True)
+        base_hooks = clip.apply_hooks_to_conds
+        if lora_hooks is not None:
+            all_hooks = base_hooks.clone_and_combine(lora_hooks) if base_hooks is not None else lora_hooks
+            clip.patcher.register_all_hook_patches(all_hooks, comfy.hooks.create_target_dict(comfy.hooks.EnumWeightTarget.Clip))
+        parsed = parse_prompt(prompt)
+        steps = max(1, steps)
+        phases = []
+        for step in range(steps if parsed.has_steps() else 1):
+            leaves = parsed.flatten(step, steps)
+            key = tuple((leaf.text, leaf.embed, leaf.is_break, leaf.weight, leaf.lora_hook) for leaf in leaves)
+            if phases and phases[-1][0] == key:
+                continue
+            phases.append((key, leaves, step / steps))
+        outputs = ([], [])
+        cache = {}
+        for phase_index, (key, leaves, start) in enumerate(phases):
+            end = phases[phase_index + 1][2] if phase_index + 1 < len(phases) else 1.0
+            if key not in cache:
+                active_hooks = base_hooks.clone() if base_hooks is not None else comfy.hooks.HookGroup()
+                if lora_hooks is not None:
+                    for hook_id in dict.fromkeys(leaf.lora_hook for leaf in leaves if leaf.lora_hook is not None):
+                        if 0 <= hook_id < len(lora_hooks.hooks):
+                            active_hooks.add(lora_hooks.hooks[hook_id].clone())
+                if len(active_hooks) == 0:
+                    active_hooks = None
+                clip.patcher.forced_hooks = active_hooks
+                clip.apply_hooks_to_conds = active_hooks
+                chunks = chunks_from_leaves(leaves)
+                encoded = None
+                for chunk in chunks:
+                    chunk_outputs = self._encode_prompt(source_model, clip, qwen35_clip, adapter_name, legacy_weighted_text(chunk), adapter_strength)
+                    if encoded is None:
+                        encoded = tuple([[tensor, dict(metadata)] for tensor, metadata in output] for output in chunk_outputs)
+                    else:
+                        for output, addition in zip(encoded, chunk_outputs):
+                            output[0][0] = torch.cat([output[0][0], addition[0][0]], dim=1)
+                            for metadata_key in ("t5xxl_ids", "t5xxl_weights", "attention_mask"):
+                                if metadata_key in output[0][1] and metadata_key in addition[0][1]:
+                                    output[0][1][metadata_key] = torch.cat([output[0][1][metadata_key], addition[0][1][metadata_key]], dim=-1)
+                cache[key] = encoded
+            for output, encoded in zip(outputs, cache[key]):
+                for tensor, metadata in encoded:
+                    metadata = dict(metadata)
+                    metadata["start_percent"] = max(0.0, start - 0.001)
+                    metadata["end_percent"] = min(1.0, end + 0.001)
+                    output.append([tensor, metadata])
+        return outputs
+
+    def _encode_prompt(
         self,
         source_model,
         clip,

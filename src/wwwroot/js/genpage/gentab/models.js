@@ -612,6 +612,16 @@ function insertTriggerPhraseEntry(button) {
     doNoticePopover('Inserted!', 'notice-pop-green');
 }
 
+/** Switches to the History tab and filters to images generated with the given model. */
+function browseModelHistory(type, model) {
+    let filterInput = getRequiredElementById('imagehistorybrowser_filter_input');
+    let name = cleanModelName(model.name);
+    let quote = name.includes('"') ? "'" : '"';
+    filterInput.value = `${type}:${quote}${name}${quote}`;
+    filterInput.dispatchEvent(new Event('input'));
+    getRequiredElementById('imagehistorytabclickable').click();
+}
+
 class ModelBrowserWrapper {
     constructor(subType, subIds, container, id, selectOne, extraHeader = '') {
         this.subType = subType;
@@ -1222,10 +1232,20 @@ class ModelBrowserWrapper {
         let isStarred = this.isStarred(model.data.name);
         let starButton = { label: isStarred ? 'Unstar' : 'Star', onclick: () => { this.toggleStar(model.data.name); } };
         buttons.push(starButton);
+        if (this.subType == 'Stable-Diffusion') {
+            buttons.push({ label: 'Browse History', onclick: () => browseModelHistory('Model', model.data) });
+        }
+        else if (this.subType == 'LoRA') {
+            buttons.push({ label: 'Browse History', onclick: () => browseModelHistory('LoRAs', model.data) });
+        }
+        else if (this.subType == 'Embedding') {
+            buttons.push({ label: 'Browse History', onclick: () => browseModelHistory('used_embeddings', model.data) });
+        }
         let name = cleanModelName(model.data.name);
         let display = (model.data.display || name).replaceAll('/', ' / ');
         if (this.subType == 'Wildcards') {
             buttons = [starButton];
+            buttons.push({ label: 'Browse History', onclick: () => browseModelHistory('used_wildcards', model.data) });
             if (permissions.hasPermission('edit_wildcards')) {
                 buttons.push({ label: 'Edit Wildcard', onclick: () => wildcardHelpers.editWildcard(model.data) });
                 buttons.push({ label: 'Duplicate Wildcard', onclick: () => wildcardHelpers.duplicateWildcard(model.data), can_multi: true });
