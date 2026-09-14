@@ -322,16 +322,16 @@ public static class ComfyUIWebAPI
     /// <summary>API route to create a TensorRT model.</summary>
     public static async Task<JObject> DoTensorRTCreateWS(Session session, WebSocket ws, string model, string aspect, string aspectRange, int optBatch, int maxBatch, int contextLen = 75)
     {
-        if (ModelsAPI.TryGetRefusalForModel(session, model, out JObject refusal))
-        {
-            await ws.SendJson(refusal, API.WebsocketTimeout);
-            return null;
-        }
         T2IModel modelData;
         using (ManyReadOneWriteLock.ReadClaim claim = Program.RefreshLock.LockRead())
         {
             model = T2IParamTypes.GetBestModelInList(model, Program.MainSDModels.Models.Keys);
             modelData = Program.MainSDModels.Models.GetValueOrDefault(model);
+        }
+        if (ModelsAPI.TryGetRefusalForModel(session, model, out JObject refusal))
+        {
+            await ws.SendJson(refusal, API.WebsocketTimeout);
+            return null;
         }
         if (modelData is null)
         {
@@ -482,19 +482,12 @@ public static class ComfyUIWebAPI
     /// <summary>API route to extract a LoRA from two models.</summary>
     public static async Task<JObject> DoLoraExtractionWS(Session session, WebSocket ws, string baseModel, string otherModel, int rank, string outName)
     {
-        outName = Utilities.StrictFilenameClean(outName);
-        if (ModelsAPI.TryGetRefusalForModel(session, baseModel, out JObject refusal)
-            || ModelsAPI.TryGetRefusalForModel(session, otherModel, out refusal)
-            || ModelsAPI.TryGetRefusalForModel(session, outName, out refusal))
-        {
-            await ws.SendJson(refusal, API.WebsocketTimeout);
-            return null;
-        }
         if (rank < 1 || rank > 320)
         {
             await ws.SendJson(new JObject() { ["error"] = "Rank must be between 1 and 320." }, API.WebsocketTimeout);
             return null;
         }
+        outName = Utilities.StrictFilenameClean(outName);
         T2IModel baseModelData;
         T2IModel otherModelData;
         string loraOutputFolder;
@@ -507,6 +500,13 @@ public static class ComfyUIWebAPI
             otherModelData = Program.MainSDModels.Models.GetValueOrDefault(otherModel);
             inputModelsExist = baseModelData is not null && otherModelData is not null;
             loraOutputFolder = inputModelsExist ? Program.T2IModelSets["LoRA"].DownloadFolderPath : null;
+        }
+        if (ModelsAPI.TryGetRefusalForModel(session, baseModel, out JObject refusal)
+            || ModelsAPI.TryGetRefusalForModel(session, otherModel, out refusal)
+            || ModelsAPI.TryGetRefusalForModel(session, outName, out refusal))
+        {
+            await ws.SendJson(refusal, API.WebsocketTimeout);
+            return null;
         }
         if (!inputModelsExist)
         {

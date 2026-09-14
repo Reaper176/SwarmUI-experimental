@@ -1089,13 +1089,11 @@ function genInputs(delay_final = false, finalCallback = null) {
                 }
                 elem.addEventListener('change', () => {
                     let val = getParamValue(param, elem);
-                    if (val !== null) {
-                        if (val == param.default) {
-                            deleteCookie(`lastparam_input_${param.id}`);
-                        }
-                        else {
-                            setCookie(`lastparam_input_${param.id}`, val, getParamMemoryDays());
-                        }
+                    if (val === null || val == param.default) {
+                        deleteCookie(`lastparam_input_${param.id}`);
+                    }
+                    else {
+                        setCookie(`lastparam_input_${param.id}`, val, getParamMemoryDays());
                     }
                 });
                 if (param.toggleable) {
