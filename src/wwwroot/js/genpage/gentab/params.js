@@ -1597,6 +1597,17 @@ function resetParamsToDefault(exclude = [], doDefaultPreset = true) {
     hideUnsupportableParams();
 }
 
+/** Applies the parameter text filter on live input, Enter, or an explicit filter action. */
+function updateParamFilter(event) {
+    let filterBox = getRequiredElementById('main_inputs_filter');
+    let filterClearer = getRequiredElementById('clear_input_icon');
+    filterClearer.style.display = filterBox.value.length > 0 || filterBox.dataset.appliedFilter ? 'block' : 'none';
+    if (TextFilterHelper.shouldApply(event)) {
+        filterBox.dataset.appliedFilter = filterBox.value.toLowerCase();
+        hideUnsupportableParams();
+    }
+}
+
 function hideUnalteredParameters() {
     let filterBox = getRequiredElementById('main_inputs_filter');
     let filter = filterBox.value.toLowerCase();
@@ -1607,7 +1618,7 @@ function hideUnalteredParameters() {
         filter += '<unaltered>';
     }
     filterBox.value = filter;
-    hideUnsupportableParams();
+    updateParamFilter();
 }
 
 /** Callbacks to run after hideUnsupportableParams, to do extra logic for showing/hiding specific params.
@@ -1631,13 +1642,14 @@ function hideUnsupportableParams() {
     if (videoFrameInterpInstallButton && currentBackendFeatureSet.includes('frameinterps')) {
         videoFrameInterpInstallButton.remove();
     }
-    let filter = getRequiredElementById('main_inputs_filter').value.toLowerCase();
+    let filterBox = getRequiredElementById('main_inputs_filter');
+    let filter = getUserSetting('ui.requireentertoapplyfilters', false) ? (filterBox.dataset.appliedFilter || '') : filterBox.value.toLowerCase();
     let hideUnaltered = filter.includes('<unaltered>');
     if (hideUnaltered) {
         filter = filter.replaceAll('<unaltered>', '');
     }
     let filterClearer = getRequiredElementById('clear_input_icon');
-    filterClearer.style.display = filter.length > 0 ? 'block' : 'none';
+    filterClearer.style.display = filterBox.value.length > 0 || filter.length > 0 ? 'block' : 'none';
     let groups = {};
     let advancedCount = 0;
     let advancedToggler = getRequiredElementById('advanced_options_checkbox');

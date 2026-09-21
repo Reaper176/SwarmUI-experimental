@@ -1,3 +1,22 @@
+/** Shared event policy for text filters that optionally require Enter. */
+class TextFilterHelper {
+    /** Whether a text filter event should apply the draft query. Omit the event to submit explicitly. */
+    static shouldApply(event) {
+        if (!event) {
+            return true;
+        }
+        if (event.type == 'keydown') {
+            if (event.key != 'Enter' || event.isComposing || event.keyCode == 229) {
+                return false;
+            }
+            event.preventDefault();
+            event.stopPropagation();
+            return true;
+        }
+        return !internalSiteJsGetUserSetting('ui.requireentertoapplyfilters', false);
+    }
+}
+
 /** Dirt-simple direct POST request sender. */
 function getSwarmXhrTimeoutMs(timeoutMs = null) {
     return timeoutMs || window.swarmXhrTimeoutMs || 120000;

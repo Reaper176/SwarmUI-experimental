@@ -487,6 +487,10 @@ public class Settings : AutoConfiguration
 
         public class UserUIData : AutoConfiguration
         {
+            /// <summary>Whether Generate tab text filters wait for Enter before applying.</summary>
+            [ConfigComment("If enabled, text filters on the Generate tab (parameters, models, LoRAs, presets, history, etc.) only apply when you press Enter.\nClear buttons still reset filters immediately.\nIf disabled, filters update as you type.")]
+            public bool RequireEnterToApplyFilters = false;
+
             [ConfigComment("If enabled, you can hold ALT and press left/right arrows to move 'tags' in a prompt - that is, your currently selected comma-separated section will be moved left or right relative to other comma-separated sections.")]
             public bool TagMoveHotkeyEnabled = false;
 

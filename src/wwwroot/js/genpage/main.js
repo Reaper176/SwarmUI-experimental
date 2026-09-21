@@ -1520,14 +1520,13 @@ async function loadHashHelper() {
     }
 }
 
+/** Clears both the draft and applied parameter filters immediately. */
 function clearParamFilterInput() {
     let filter = getRequiredElementById('main_inputs_filter');
     let filterClearer = getRequiredElementById('clear_input_icon');
-    if (filter.value.length > 0) {
-        filter.value = '';
-        filter.focus();
-        hideUnsupportableParams();
-    }
+    filter.value = '';
+    filter.focus();
+    updateParamFilter();
     filterClearer.style.display = 'none';
 }
 

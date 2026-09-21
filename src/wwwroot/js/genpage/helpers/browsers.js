@@ -264,6 +264,7 @@ class GenPageBrowserClass {
         this.tree = new BrowserTreePart('', false, true, null, '');
         this.depth = localStorage.getItem(`browser_${id}_depth`) || defaultDepth;
         this.filter = localStorage.getItem(`browser_${id}_filter`) || '';
+        this.filterDraft = this.filter;
         this.folderTreeVerticalSpacing = '0';
         this.splitterMinWidth = 100;
         this.splitterMinWidthMobile = 50;
@@ -1280,7 +1281,7 @@ class GenPageBrowserClass {
                 `<button id="${this.id}_refresh_button" title="Refresh" class="refresh-button translate translate-no-text">&#x21BB;</button>\n`
                 + `<button id="${this.id}_up_button" class="refresh-button translate translate-no-text" disabled autocomplete="off" title="Go back up 1 folder">&#x21d1;</button>\n`
                 + `<span><span class="translate">Depth</span>: <input id="${this.id}_depth_input" class="depth-number-input translate translate-no-text" type="number" min="1" max="10" value="${this.depth}" title="Depth of subfolders to show" autocomplete="off"></span>\n`
-                + `<div class="input_filter_container bottom_filter"><input id="${this.id}_filter_input" type="text" value="${this.filter}" title="Text filter, only show items that contain this text." rows="1" autocomplete="off" class="translate translate-no-text" placeholder="${translate('Filter...')}"><span class="clear_input_icon bottom_filter">&#x2715;</span></div>\n`
+                + `<div class="input_filter_container bottom_filter"><input id="${this.id}_filter_input" type="text" value="${escapeHtml(this.filterDraft)}" title="Text filter, only show items that contain this text." rows="1" autocomplete="off" class="translate translate-no-text" placeholder="${translate('Filter...')}"><span class="clear_input_icon bottom_filter">&#x2715;</span></div>\n`
                 + this.extraHeader);
             let inputArr = buttons.getElementsByTagName('input');
             let depthInput = inputArr[0];
@@ -1294,23 +1295,24 @@ class GenPageBrowserClass {
             }
             let clearFilterBtn = buttons.getElementsByClassName('clear_input_icon')[0];
             let filterInput = inputArr[1];
-            filterInput.addEventListener('input', () => {
-                this.filter = filterInput.value.toLowerCase();
+            let applyFilter = (event) => {
+                this.filterDraft = filterInput.value;
+                clearFilterBtn.style.display = this.filterDraft.length > 0 || this.filter.length > 0 ? 'block' : 'none';
+                if (!TextFilterHelper.shouldApply(event)) {
+                    return;
+                }
+                this.filter = this.filterDraft.toLowerCase();
                 localStorage.setItem(`browser_${this.id}_filter`, this.filter);
-                if (this.filter.length > 0) {
-                    clearFilterBtn.style.display = 'block';
-                }
-                else {
-                    clearFilterBtn.style.display = 'none';
-                }
+                clearFilterBtn.style.display = this.filterDraft.length > 0 ? 'block' : 'none';
                 if (this.filterUpdateTimeout) {
                     clearTimeout(this.filterUpdateTimeout);
+                    this.filterUpdateTimeout = null;
                 }
                 let delayMs = this.filterUpdateDelayMs;
                 if ((this.lastFiles?.length || 0) > 1000) {
                     delayMs = Math.max(delayMs, 450);
                 }
-                this.filterUpdateTimeout = setTimeout(() => {
+                let updateFilter = () => {
                     this.filterUpdateTimeout = null;
                     let hadFocus = document.activeElement == filterInput;
                     let selectionStart = filterInput.selectionStart;
@@ -1331,17 +1333,26 @@ class GenPageBrowserClass {
                     if (this.filterEvent) {
                         this.filterEvent();
                     }
-                }, delayMs);
-            });
+                };
+                if (!event || event.type == 'keydown') {
+                    updateFilter();
+                }
+                else {
+                    this.filterUpdateTimeout = setTimeout(updateFilter, delayMs);
+                }
+            };
+            filterInput.addEventListener('input', applyFilter);
+            filterInput.addEventListener('keydown', applyFilter);
+            filterInput.addEventListener('filterapply', () => applyFilter());
             if (!this.showFilter) {
                 filterInput.parentElement.style.display = 'none';
             }
             clearFilterBtn.addEventListener('click', () => {
                 filterInput.value = '';
                 filterInput.focus();
-                filterInput.dispatchEvent(new Event('input'));
+                applyFilter();
             });
-            if (this.filter.length > 0) {
+            if (this.filterDraft.length > 0 || this.filter.length > 0) {
                 clearFilterBtn.style.display = 'block';
             }
             let buttonArr = buttons.getElementsByTagName('button');

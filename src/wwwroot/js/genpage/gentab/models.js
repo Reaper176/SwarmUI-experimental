@@ -618,7 +618,7 @@ function browseModelHistory(type, model) {
     let name = cleanModelName(model.name);
     let quote = name.includes('"') ? "'" : '"';
     filterInput.value = `${type}:${quote}${name}${quote}`;
-    filterInput.dispatchEvent(new Event('input'));
+    filterInput.dispatchEvent(new Event('filterapply'));
     getRequiredElementById('imagehistorytabclickable').click();
 }
 
