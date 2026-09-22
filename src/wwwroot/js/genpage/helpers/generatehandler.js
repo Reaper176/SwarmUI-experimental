@@ -134,14 +134,19 @@ class GenerateHandler {
             imgHolder.div.appendChild(vid);
         }
         else if (isAudio) {
-            if (imgElem) {
-                imgElem.remove();
+            let audio = src;
+            if (!imgElem) {
+                imgElem = document.createElement('img');
+                imgElem.classList.add('image-block-img-inner');
+                imgHolder.div.appendChild(imgElem);
             }
-            imgElem = document.createElement('audio');
-            imgElem.classList.add('image-block-img-inner');
-            imgElem.controls = true;
-            imgElem.src = src;
-            imgHolder.div.appendChild(imgElem);
+            imgElem.src = 'imgs/audio_placeholder.jpg';
+            renderWaveformImage(audio, 256, 256, waveform => `Audio ${durationStringifyColons(waveform.duration)}`).then(waveformImage => {
+                if (imgHolder.image != audio || !imgElem.isConnected) {
+                    return;
+                }
+                imgElem.src = waveformImage;
+            }).catch(() => { });
         }
         else {
             imgElem.src = src;
@@ -374,12 +379,12 @@ class GenerateHandler {
                 }
             }
             else {
-                this.gotTrackedImageResult(data.image, data.metadata, `${data.request_id}_${data.batch_index}`, div);
                 let imgElem = div.querySelector('img');
                 let spinner = div.querySelector('.loading-spinner-parent');
                 let progress_bars = div.querySelector('.image-preview-progress-wrapper');
                 let isPreviewSwapToCompleted = imgElem.dataset.previewGrow || progress_bars || spinner;
                 this.setImageFor(imgHolder, data.image);
+                this.gotTrackedImageResult(data.image, data.metadata, `${data.request_id}_${data.batch_index}`, div);
                 if (spinner) {
                     spinner.remove();
                 }

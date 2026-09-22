@@ -1721,9 +1721,9 @@ public partial class WorkflowGenerator
     public (JArray, JArray, JArray, JArray) BuildInputImageHandling(List<JArray> images, JArray pos, JArray neg, JArray latent)
     {
         JArray imgNeg = null;
-        if (IsKontext() || IsOmniGen() || IsQwenImage() || IsAnyFlux2() || IsBoogu() || IsMageFlow() || (IsKrea2() && UserInput.Get(ComfyUIBackendExtension.EnableReferenceLatents, "none") != "none"))
+        if (IsKontext() || IsOmniGen() || IsQwenImage() || IsQwenImage21() || IsAnyFlux2() || IsBoogu() || IsMageFlow() || (IsKrea2() && UserInput.Get(ComfyUIBackendExtension.EnableReferenceLatents, "none") != "none"))
         {
-            if (IsOmniGen() || IsQwenImageEditPlus() || IsBoogu() || IsMageFlow())
+            if (IsOmniGen() || IsQwenImageEditPlus() || IsQwenImage21() || IsBoogu() || IsMageFlow())
             {
                 imgNeg = neg;
             }
@@ -1755,7 +1755,7 @@ public partial class WorkflowGenerator
             }
             if (img is not null)
             {
-                if (IsQwenImageEditPlus() || IsBoogu() || IsMageFlow())
+                if (IsQwenImageEditPlus() || IsQwenImage21() || IsBoogu() || IsMageFlow())
                 {
                     neg = imgNeg;
                 }
@@ -1983,7 +1983,7 @@ public partial class WorkflowGenerator
             defscheduler ??= "simple";
         }
         // TODO: Registry of model default preferences instead of this
-        else if (IsFlux() || IsWanVideo() || IsWanVideo22() || IsOmniGen() || IsQwenImage() || IsZImage() || IsZetaChroma() || IsErnie() || IsHiDreamO1() || IsLens() || IsPixelDiT() || IsKrea2() || IsBoogu() || IsMageFlow() || IsMiniMaxMusic3() || IsSeedVR2())
+        else if (IsFlux() || IsWanVideo() || IsWanVideo22() || IsOmniGen() || IsQwenImage() || IsQwenImage21() || IsZImage() || IsZetaChroma() || IsErnie() || IsHiDreamO1() || IsLens() || IsPixelDiT() || IsKrea2() || IsBoogu() || IsMageFlow() || IsMiniMaxMusic3() || IsSeedVR2())
         {
             defscheduler ??= "simple";
         }
@@ -2093,7 +2093,7 @@ public partial class WorkflowGenerator
         }
         else
         {
-            if (IsKontext() || (IsQwenImage() && IsQwenImageEdit()))
+            if (IsKontext() || (IsQwenImage() && IsQwenImageEdit()) || IsQwenImage21())
             {
                 if (MaskShrunkInfo is not null && MaskShrunkInfo.ScaledImage is not null)
                 {
@@ -2757,6 +2757,11 @@ public partial class WorkflowGenerator
                 VideoFPS ??= 24;
                 Frames = MiniMaxH3AlignFrames(Frames ?? 124);
                 origSrcImg = FixMediaLen();
+                WGNodeData explicitAudio = null;
+                if (g.UserInput.TryGet(T2IParamTypes.VideoAudioInput, out AudioFile _) && g.CurrentMedia?.AttachedAudio?.DataType == WGNodeData.DT_AUDIO)
+                {
+                    explicitAudio = g.CurrentMedia.AttachedAudio;
+                }
                 JArray endFramePath = null;
                 if (VideoEndImage is not null)
                 {
@@ -2779,6 +2784,11 @@ public partial class WorkflowGenerator
                     ["last_frame"] = endFramePath
                 });
                 PosCond = [keyframesNode, 0];
+                if (explicitAudio is not null)
+                {
+                    g.CurrentMedia = g.CurrentMedia.AsLatentImage(Vae);
+                    g.CurrentMedia.AttachedAudio = explicitAudio;
+                }
                 DefaultCFG = 1;
             }
             else if (VideoModel.ModelClass?.CompatClass?.ID == "nvidia-cosmos-1")
@@ -3638,7 +3648,13 @@ public partial class WorkflowGenerator
                 ["lyrics"] = prompt,
                 ["seed"] = UserInput.Get(T2IParamTypes.Seed, 0) + 10,
                 ["mode"] = "full", // TODO: Parameter? ("melody", "none" available) ref https://github.com/multimodal-art-projection/YuE ('none' means skip this node and just load plain text)
-                ["max_abc_tokens"] = 1024
+                // TODO: Parameters for these?
+                ["max_abc_tokens"] = 8192,
+                ["temperature"] = 0.7,
+                ["top_p"] = 0.9,
+                ["top_k"] = 30,
+                ["repetition_penalty"] = 1.005,
+                ["penalty_window"] = 100
             });
             node = CreateNode("YuE2GenerateMusic", new JObject()
             {
@@ -3650,7 +3666,7 @@ public partial class WorkflowGenerator
                 ["mode"] = "full",
                 ["max_duration"] = Math.Clamp(UserInput.Get(T2IParamTypes.Text2AudioDuration, 300), 0.04, 900),
                 // TODO: Parameters for these?
-                ["temperature"] = 1,
+                ["temperature"] = 1.0,
                 ["top_p"] = 0.95,
                 ["top_k"] = 100,
                 ["repetition_penalty"] = 1.2
@@ -3773,6 +3789,36 @@ public partial class WorkflowGenerator
                     ["image"] = qwenImage
                 }, id);
             }
+        }
+        else if (IsQwenImage21())
+        {
+            JArray imageNode = GetPromptImage(true, true, 0);
+            for (int i = 1; i < 16; i++)
+            {
+                JArray image2 = GetPromptImage(true, true, i);
+                if (image2 is null)
+                {
+                    break;
+                }
+                string batched = CreateNode("ImageBatch", new JObject()
+                {
+                    ["image1"] = imageNode,
+                    ["image2"] = image2
+                });
+                imageNode = [batched, 0];
+            }
+            node = CreateNode("SwarmTextEncodeAdvanced", new JObject()
+            {
+                ["clip"] = clip,
+                ["lora_hooks"] = CreateDynamicLoraHooks(),
+                ["steps"] = steps,
+                ["prompt"] = prompt,
+                ["width"] = width,
+                ["height"] = height,
+                ["target_width"] = width,
+                ["target_height"] = height,
+                ["images"] = imageNode
+            }, id);
         }
         else if (IsHunyuanVideoI2V() && prompt.StartsWith("<image:"))
         {

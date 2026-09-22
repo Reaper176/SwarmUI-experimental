@@ -17,6 +17,9 @@ public static class ComfyNodeNames
     /// <summary>Comfy class name for saving image output.</summary>
     public const string SaveImageWS = "SwarmSaveImageWS";
 
+    /// <summary>Custom node that streams generated audio back to Swarm.</summary>
+    public const string SaveAudioWS = "SwarmSaveAudioWS";
+
     /// <summary>Comfy class name for assigning a workflow description.</summary>
     public const string WorkflowDescription = "SwarmWorkflowDescription";
 

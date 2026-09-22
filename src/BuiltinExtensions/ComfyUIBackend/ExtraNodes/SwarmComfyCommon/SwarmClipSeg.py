@@ -88,7 +88,7 @@ class SwarmClipSeg:
     def seg(self, images, match_text, threshold):
         start_time = time.perf_counter()
         # TODO: Batch support?
-        i = 255.0 * images[0].cpu().numpy()
+        i = 255.0 * images[0, ..., :3].cpu().numpy()
         img = Image.fromarray(np.clip(i, 0, 255).astype(np.uint8))
         image_ready = time.perf_counter()
         processor, model, device = get_clipseg_cached()

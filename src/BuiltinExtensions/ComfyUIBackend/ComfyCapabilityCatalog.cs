@@ -70,6 +70,7 @@ public static class ComfyCapabilityCatalog
         {
             [ComfyNodeNames.LoadImageB64] = "comfy_loadimage_b64",
             [ComfyNodeNames.SaveImageWS] = "comfy_saveimage_ws",
+            [ComfyNodeNames.SaveAudioWS] = "comfy_saveaudio_ws",
             [ComfyNodeNames.JustLoadTheModelPlease] = "comfy_just_load_model",
             [ComfyNodeNames.LatentBlendMasked] = "comfy_latent_blend_masked",
             [ComfyNodeNames.KSampler] = "variation_seed",

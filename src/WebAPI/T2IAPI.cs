@@ -31,7 +31,7 @@ public static class T2IAPI
         API.RegisterAPICall(GenerateText2Image, true, Permissions.BasicImageGeneration);
         API.RegisterAPICall(GenerateText2ImageWS, true, Permissions.BasicImageGeneration);
         API.RegisterAPICall(ImageHistoryAPI.AddImageToHistory, true, Permissions.BasicImageGeneration);
-        API.RegisterAPICall(ExtractVideoAudio, true, Permissions.BasicImageGeneration);
+        API.RegisterAPICall(EditMedia, true, Permissions.BasicImageGeneration);
         API.RegisterAPICall(ImageHistoryAPI.ListImages, false, Permissions.ViewImageHistory);
         API.RegisterAPICall(ImageHistoryAPI.RescanImageMetadata, true, Permissions.ViewImageHistory);
         API.RegisterAPICall(ImageHistoryAPI.ToggleImageStarred, true, Permissions.UserStarImages);
@@ -48,7 +48,6 @@ public static class T2IAPI
         API.RegisterAPICall(KritaAPI.GetActiveKritaSession, false, Permissions.FundamentalGenerateTabAccess);
         API.RegisterAPICall(ClassicInpaintAPI.ClassicInpaint, true, Permissions.BasicImageGeneration);
         API.RegisterAPICall(ClassicInpaintAPI.GetClassicInpaintBackends, false, Permissions.FundamentalGenerateTabAccess);
-        API.RegisterAPICall(EditVideo, true, Permissions.BasicImageGeneration);
         API.RegisterAPICall(ListT2IParams, false, Permissions.FundamentalGenerateTabAccess);
         API.RegisterAPICall(TriggerRefresh, true, Permissions.FundamentalGenerateTabAccess); // Intentionally weird perm here: internal check for readonly vs true refresh
     }
@@ -589,8 +588,8 @@ public static class T2IAPI
         return await ClassicInpaintAPI.ClassicInpaint(session, imageData, maskData, backend, feather, expandMask);
     }
 
-    /// <summary>Resolves a video data URL or reusable media path to a local file.</summary>
-    private static async Task<(string inputFile, string temporaryInput, string sourceName)> ResolveVideoSource(Session session, string video, string filename, string action)
+    /// <summary>Resolves a video or audio data URL or reusable media path to a local file.</summary>
+    private static async Task<(string inputFile, string temporaryInput, string sourceName, MediaMetaType mediaType)> ResolveMediaSource(Session session, string media, string filename, string action)
     {
         string root = Utilities.CombinePathWithAbsolute(Environment.CurrentDirectory, session.User.OutputDirectory);
         string temporaryInput = null;
@@ -598,36 +597,34 @@ public static class T2IAPI
         try
         {
             string inputFile;
-            if (video.StartsWith("data:"))
+            MediaType sourceType;
+            if (media.StartsWith("data:"))
             {
-                string mimeType = video.Before(";base64,").After("data:");
-                if (!MediaType.TypesByMimeType.TryGetValue(mimeType, out MediaType mediaType) || mediaType.MetaType != MediaMetaType.Video)
+                string mimeType = media.Before(";base64,").After("data:");
+                if (!MediaType.TypesByMimeType.TryGetValue(mimeType, out sourceType) || (sourceType.MetaType != MediaMetaType.Video && sourceType.MetaType != MediaMetaType.Audio))
                 {
-                    throw new SwarmUserErrorException("The supplied data is not a recognized video type.");
+                    throw new SwarmUserErrorException("The supplied data is not a recognized video or audio type.");
                 }
-                VideoFile videoFile = VideoFile.FromDataString(video);
-                temporaryInput = Path.Combine(Program.TempDir, $"swarm-video-source-{Guid.NewGuid():N}.{videoFile.Type.Extension}");
-                await File.WriteAllBytesAsync(temporaryInput, videoFile.RawData);
+                MediaFile mediaFile = sourceType.MetaType.FromDataString(media);
+                temporaryInput = Path.Combine(Program.TempDir, $"swarm-media-source-{Guid.NewGuid():N}.{mediaFile.Type.Extension}");
+                await File.WriteAllBytesAsync(temporaryInput, mediaFile.RawData);
                 inputFile = temporaryInput;
             }
             else
             {
-                if (!video.StartsWith("inputs/") && !video.StartsWith("raw/") && !video.StartsWith("Starred/"))
-                {
-                    throw new SwarmUserErrorException($"Invalid video path supplied for {action}.");
-                }
-                (string checkedPath, string consoleError, string userError) = WebServer.CheckFilePath(root, video);
+                (string checkedPath, string consoleError, string userError) = WebServer.CheckFilePath(root, media);
                 if (consoleError is not null)
                 {
                     Logs.Error(consoleError);
                     throw new SwarmUserErrorException(userError);
                 }
                 inputFile = UserImageHistoryHelper.GetRealPathFor(session.User, checkedPath, root: root);
-                sourceName ??= video;
+                sourceName ??= media;
                 string extension = Path.GetExtension(inputFile).TrimStart('.').ToLowerFast();
-                if (MediaType.GetByExtension(extension)?.MetaType != MediaMetaType.Video)
+                sourceType = MediaType.GetByExtension(extension);
+                if (sourceType is null || (sourceType.MetaType != MediaMetaType.Video && sourceType.MetaType != MediaMetaType.Audio))
                 {
-                    throw new SwarmUserErrorException("The supplied media path is not a video.");
+                    throw new SwarmUserErrorException("The supplied media path is not video or audio.");
                 }
                 string fullInputPath = Path.GetFullPath(inputFile);
                 if (Session.StillSavingFiles.TryGetValue(fullInputPath, out Task<byte[]> pendingData))
@@ -638,10 +635,10 @@ public static class T2IAPI
                 }
                 else if (!File.Exists(inputFile))
                 {
-                    throw new SwarmUserErrorException("The video file does not exist.");
+                    throw new SwarmUserErrorException("The media file does not exist.");
                 }
             }
-            return (inputFile, temporaryInput, sourceName ?? "video");
+            return (inputFile, temporaryInput, sourceName ?? "media", sourceType.MetaType);
         }
         catch
         {
@@ -653,54 +650,86 @@ public static class T2IAPI
         }
     }
 
-    [API.APIDescription("Extracts the audio track from a video, saves it under inputs/extracted_audio, and returns the saved audio.",
+    [API.APIDescription("Applies complex edits to media files (video, audio).",
         """
-            "result": "inputs/extracted_audio/video-audio-1.mp3"
+            "result": "inputs/edited_audio/audio-edited-1.mp3"
         """)]
-    public static async Task<JObject> ExtractVideoAudio(Session session,
-        [API.APIParameter("Video data URL or reusable server media path.")] string video,
-        [API.APIParameter("Original video filename, used to name the extracted audio.")] string filename = null,
+    public static async Task<JObject> EditMedia(Session session,
+        [API.APIParameter("Video or audio data URL or reusable server media path.")] string media,
+        [API.APIParameter("Raw request data.\nOptionally include timelineSections as an ordered JSON array of section objects with: startMilliseconds (int), endMilliseconds (int), excluded (bool), and volume (float [0..1])")] JObject raw,
+        [API.APIParameter("Original media filename, used to name the edited media.")] string filename = null,
         [API.APIParameter("Trim start in milliseconds.")] int startMilliseconds = 0,
-        [API.APIParameter("Trim end in milliseconds, or -1 for the end of the video.")] int endMilliseconds = -1)
+        [API.APIParameter("Trim end in milliseconds, or -1 for the end of the media.")] int endMilliseconds = -1,
+        [API.APIParameter("Video crop left coordinate in pixels.")] int cropX = 0,
+        [API.APIParameter("Video crop top coordinate in pixels.")] int cropY = 0,
+        [API.APIParameter("Video crop width in pixels, or zero to retain the full frame.")] int cropWidth = 0,
+        [API.APIParameter("Video crop height in pixels, or zero to retain the full frame.")] int cropHeight = 0,
+        [API.APIParameter("Video output scale factor. 1 leaves the cropped size unchanged.")] double scale = 1,
+        [API.APIParameter("If true, outputs only the audio track and ignores crop and scale options.")] bool audioOnly = false)
     {
         if (startMilliseconds < 0 || endMilliseconds < -1 || (endMilliseconds >= 0 && endMilliseconds <= startMilliseconds))
         {
-            throw new SwarmUserErrorException("Invalid video trim range.");
+            throw new SwarmUserErrorException("Invalid media trim range.");
         }
         string root = Utilities.CombinePathWithAbsolute(Environment.CurrentDirectory, session.User.OutputDirectory);
-        (string inputFile, string temporaryInput, string sourceName) = await ResolveVideoSource(session, video, filename, "audio extraction");
+        (string inputFile, string temporaryInput, string sourceName, MediaMetaType mediaType) = await ResolveMediaSource(session, media, filename, "media editing");
         try
         {
-            byte[] audioData = await UserImageHistoryHelper.ExtractVideoAudio(inputFile, startMilliseconds / 1000.0, endMilliseconds / 1000.0);
-            string baseName = Utilities.StrictFilenameClean(sourceName);
-            if (baseName.Length > 64)
+            bool audioOutput = mediaType == MediaMetaType.Audio || audioOnly;
+            if (!audioOutput && (cropWidth < 0 || cropHeight < 0 || (cropWidth == 0) != (cropHeight == 0) || cropWidth % 2 != 0 || cropHeight % 2 != 0))
             {
-                baseName = baseName[..60];
+                throw new SwarmUserErrorException("Invalid video crop bounds.");
             }
+            if (!audioOutput && (scale < 0 || scale > 16))
+            {
+                throw new SwarmUserErrorException("Invalid video scale.");
+            }
+            List<MediaEditorSection> timelineSections = ParseMediaTimelineSections(raw, startMilliseconds, endMilliseconds);
+            byte[] mediaData = await UserImageHistoryHelper.EditMedia(inputFile, audioOutput, startMilliseconds / 1000.0, endMilliseconds / 1000.0, cropX, cropY, cropWidth, cropHeight, scale, timelineSections);
+            string typeName = audioOutput ? "audio" : "video";
+            string baseName = Utilities.StrictFilenameClean(sourceName);
             if (string.IsNullOrWhiteSpace(baseName))
             {
-                baseName = "video";
+                baseName = typeName;
             }
             T2IParamInput outputInput = new(session);
-            outputInput.Set(T2IParamTypes.OverrideOutpathFormat, $"inputs/extracted_audio/{baseName.Replace('/', '_')}-audio-[number]");
+            outputInput.Set(T2IParamTypes.OverrideOutpathFormat, $"inputs/edited_{typeName}/{baseName.Replace('/', '_')}-edited-[number]");
             string metadata = T2IParamInput.MetadataToString(new JObject()
             {
                 ["sui_image_params"] = new JObject(),
                 ["sui_extra_data"] = new JObject()
                 {
-                    ["source video"] = filename ?? "raw data",
-                    ["operation applied"] = "Split Audio"
+                    [$"source {mediaType.Name.ToLowerFast()}"] = filename ?? "raw data",
+                    ["operation applied"] = $"{(audioOutput ? "Audio" : "Video")} Edit"
                 }
             });
-            AudioFile audioFile = new(audioData, MediaType.AudioMp3);
-            T2IEngine.ImageOutput outputAudio = new() { File = audioFile };
-            (string src, string localPath) = session.SaveImage(outputAudio, 0, outputInput, metadata);
+            MediaFile outputMedia;
+            if (audioOutput)
+            {
+                AudioFile audioFile = new(mediaData, MediaType.AudioMp3);
+                if (session.User.Settings.FileFormat.SaveMetadata)
+                {
+                    audioFile = audioFile.WithMetadata(metadata);
+                }
+                outputMedia = audioFile;
+            }
+            else
+            {
+                VideoFile videoFile = new(mediaData, MediaType.VideoMp4);
+                if (session.User.Settings.FileFormat.SaveMetadata)
+                {
+                    videoFile = videoFile.WithMetadata(metadata);
+                }
+                outputMedia = videoFile;
+            }
+            T2IEngine.ImageOutput output = new() { File = outputMedia };
+            (string src, string localPath) = session.SaveImage(output, 0, outputInput, metadata);
             if (src == "ERROR" || localPath is null)
             {
-                throw new SwarmUserErrorException("Failed to save the extracted audio. Ensure file saving is enabled.");
+                throw new SwarmUserErrorException($"Failed to save the edited {typeName}. Ensure file saving is enabled.");
             }
             string inputPath = Path.GetRelativePath(root, localPath).Replace('\\', '/');
-            Logs.Info($"User {session.User.UserID} extracted audio from '{sourceName}' to '{inputPath}'.");
+            Logs.Info($"User {session.User.UserID} edited {typeName} '{sourceName}' to '{inputPath}'.");
             return new()
             {
                 ["result"] = inputPath,
@@ -717,75 +746,60 @@ public static class T2IAPI
         }
     }
 
-    [API.APIDescription("Trims, optionally crops, optionally scales a video, saves it under inputs/edited_video, and returns the saved video.",
-        """
-            "result": "inputs/edited_video/video-edited-1.mp4"
-        """)]
-    public static async Task<JObject> EditVideo(Session session,
-        [API.APIParameter("Video data URL or reusable server media path.")] string video,
-        [API.APIParameter("Original video filename, used to name the edited video.")] string filename = null,
-        [API.APIParameter("Trim start in milliseconds.")] int startMilliseconds = 0,
-        [API.APIParameter("Trim end in milliseconds, or -1 for the end of the video.")] int endMilliseconds = -1,
-        [API.APIParameter("Crop left coordinate in pixels.")] int cropX = 0,
-        [API.APIParameter("Crop top coordinate in pixels.")] int cropY = 0,
-        [API.APIParameter("Crop width in pixels, or zero to retain the full frame.")] int cropWidth = 0,
-        [API.APIParameter("Crop height in pixels, or zero to retain the full frame.")] int cropHeight = 0,
-        [API.APIParameter("Output scale factor. 1 leaves the cropped size unchanged.")] double scale = 1)
+    /// <summary>Validates timeline section JSON and returns the sections intersected with the trim range.</summary>
+    private static List<MediaEditorSection> ParseMediaTimelineSections(JObject raw, int startMilliseconds, int endMilliseconds)
     {
-        if (startMilliseconds < 0 || endMilliseconds < -1 || (endMilliseconds >= 0 && endMilliseconds <= startMilliseconds))
+        if (raw?["timelineSections"] is null)
         {
-            throw new SwarmUserErrorException("Invalid video trim range.");
+            return null;
         }
-        if (cropWidth < 0 || cropHeight < 0 || (cropWidth == 0) != (cropHeight == 0) || cropWidth % 2 != 0 || cropHeight % 2 != 0)
+        if (raw["timelineSections"] is not JArray sections || sections.Count == 0 || sections.Count > 100_000)
         {
-            throw new SwarmUserErrorException("Invalid video crop bounds.");
+            return null;
         }
-        if (scale < 0 || scale > 16)
+        List<MediaEditorSection> result = [];
+        int priorEnd = -1;
+        foreach (JToken token in sections)
         {
-            throw new SwarmUserErrorException("Invalid video scale.");
-        }
-        string root = Utilities.CombinePathWithAbsolute(Environment.CurrentDirectory, session.User.OutputDirectory);
-        (string inputFile, string temporaryInput, string sourceName) = await ResolveVideoSource(session, video, filename, "video editing");
-        try
-        {
-            byte[] videoData = await UserImageHistoryHelper.EditVideo(inputFile, startMilliseconds / 1000.0, endMilliseconds / 1000.0, cropX, cropY, cropWidth, cropHeight, scale);
-            string baseName = Utilities.StrictFilenameClean(sourceName);
-            if (string.IsNullOrWhiteSpace(baseName))
+            if (token is not JObject section || section["startMilliseconds"]?.Type != JTokenType.Integer || section["endMilliseconds"]?.Type != JTokenType.Integer)
             {
-                baseName = "video";
+                throw new SwarmUserErrorException("Each timeline section must have integer startMilliseconds and endMilliseconds values.");
             }
-            T2IParamInput outputInput = new(session);
-            outputInput.Set(T2IParamTypes.OverrideOutpathFormat, $"inputs/edited_video/{baseName.Replace('/', '_')}-edited-[number]");
-            string metadata = T2IParamInput.MetadataToString(new JObject()
+            int sectionStart = section["startMilliseconds"].Value<int>();
+            int sectionEnd = section["endMilliseconds"].Value<int>();
+            if (sectionStart < 0 || sectionEnd <= sectionStart || sectionStart < priorEnd)
             {
-                ["sui_image_params"] = new JObject(),
-                ["sui_extra_data"] = new JObject()
-                {
-                    ["source video"] = filename ?? "raw data",
-                    ["operation applied"] = "Video Edit"
-                }
-            });
-            VideoFile videoFile = new(videoData, MediaType.VideoMp4);
-            T2IEngine.ImageOutput outputVideo = new() { File = videoFile };
-            (string src, string localPath) = session.SaveImage(outputVideo, 0, outputInput, metadata);
-            if (src == "ERROR" || localPath is null)
-            {
-                throw new SwarmUserErrorException("Failed to save the edited video. Ensure file saving is enabled.");
+                throw new SwarmUserErrorException("Timeline sections must have valid, ordered, non-overlapping ranges.");
             }
-            string inputPath = Path.GetRelativePath(root, localPath).Replace('\\', '/');
-            Logs.Info($"User {session.User.UserID} edited video '{sourceName}' to '{inputPath}'.");
-            return new()
+            priorEnd = sectionEnd;
+            JToken excludedToken = section["excluded"];
+            if (excludedToken is not null && excludedToken.Type != JTokenType.Boolean)
             {
-                ["result"] = inputPath
-            };
+                throw new SwarmUserErrorException("Timeline section excluded values must be boolean.");
+            }
+            JToken volumeToken = section["volume"];
+            if (volumeToken is not null && volumeToken.Type != JTokenType.Integer && volumeToken.Type != JTokenType.Float)
+            {
+                throw new SwarmUserErrorException("Timeline section volume values must be numbers.");
+            }
+            float volume = volumeToken?.Value<float>() ?? 1;
+            if (!float.IsFinite(volume) || volume < 0 || volume > 1)
+            {
+                throw new SwarmUserErrorException("Timeline section volume values must be between 0 and 1.");
+            }
+            int clippedStart = Math.Max(sectionStart, startMilliseconds);
+            int clippedEnd = endMilliseconds < 0 ? sectionEnd : Math.Min(sectionEnd, endMilliseconds);
+            if (clippedEnd <= clippedStart)
+            {
+                continue;
+            }
+            result.Add(new MediaEditorSection(clippedStart / 1000.0, clippedEnd / 1000.0, excludedToken?.Value<bool>() ?? false, volume));
         }
-        finally
+        if (!result.Any(section => !section.Excluded))
         {
-            if (temporaryInput is not null && File.Exists(temporaryInput))
-            {
-                File.Delete(temporaryInput);
-            }
+            throw new SwarmUserErrorException("The media edit must include at least one timeline section.");
         }
+        return result;
     }
 
     public static HashSet<string> HistoryExtensions = // TODO: Use MediaType?

@@ -1822,6 +1822,15 @@ class ImageHistoryController {
                 }
             });
         }
+        if (mediaType == 'video' || mediaType == 'audio') {
+            buttons.push({
+                label: mediaType == 'video' ? 'Edit Video' : 'Edit Audio',
+                title: `Opens a Timeline Media Editor to edit this ${mediaType}`,
+                onclick: (e) => {
+                    mediaEditorInterface.open(src, metadata, fullsrc);
+                }
+            });
+        }
         if (permissions.hasPermission('local_image_folder') && !isDataImage) {
             buttons.push({
                 label: 'Open In Folder',
@@ -1932,9 +1941,6 @@ class ImageHistoryController {
         if (extension == 'html') {
             forceImage = 'imgs/html.jpg';
             forcePreview = forceImage;
-        }
-        else if (['wav', 'mp3', 'aac', 'ogg', 'flac'].includes(extension)) {
-            forcePreview = 'imgs/audio_placeholder.jpg';
         }
         let dragImage = forceImage ?? `${image.data.src}`;
         let imageSrc = forcePreview ?? `${image.data.src}?preview=true${allowAnimToggle}`;

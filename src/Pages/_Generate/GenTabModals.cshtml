@@ -330,9 +330,17 @@
     </div>
 @WebUtil.ModalFooter()
 
-<!-- =================================== Video Editor Modal =================================== -->
+<!-- =================================== Advanced Timeline Media Editor Modal =================================== -->
 
-@WebUtil.ModalHeader("video_editor_modal", "Advanced Video Editor")
+<span class="sui-popover sui-info-popover" id="popover_video_editor_hotkeys">
+    <span class="translate">Tool to quickly and easily perform basic video/audio edits, such as trimming, cropping, scaling, audio volume editing, cutting, ...</span>
+    <br><b class="translate">Keyboard Shortcuts</b>
+    <br><kbd>S</kbd> <span class="translate">Add or remove a split mark (divides sections for section-specific edits)</span>
+    <br><kbd>&larr;</kbd> / <kbd>&rarr;</kbd> <span class="translate">Move backward or forward one frame</span>
+    <br><kbd>Space</kbd> <span class="translate">Play or pause</span>
+    <br><kbd>Delete</kbd> <span class="translate">Include or exclude the current section</span>
+</span>
+@WebUtil.ModalHeader("video_editor_modal", """<span class="translate">Advanced Timeline Media Editor</span><span class="auto-input-qbutton info-popover-button" role="button" onclick="doPopover('video_editor_hotkeys', arguments[0])">?</span>""")
     <div class="modal-body video_editor_body">
         <div class="video_editor_resolution" id="video_editor_resolution"></div>
         <div class="video_editor_scale_box" id="video_editor_scale_box"></div>
@@ -350,9 +358,12 @@
             </div>
         </div>
         <div class="video_editor_timeline" id="video_editor_timeline">
+            <canvas class="video_editor_waveform" id="video_editor_waveform"></canvas>
             <div class="video_editor_timeline_selection" id="video_editor_timeline_selection"></div>
             <div class="video_editor_timeline_excluded" id="video_editor_timeline_excluded_left"></div>
             <div class="video_editor_timeline_excluded" id="video_editor_timeline_excluded_right"></div>
+            <div class="video_editor_sections" id="video_editor_sections"></div>
+            <div class="video_editor_split_marks" id="video_editor_split_marks"></div>
             <div class="video_editor_timeline_cursor" id="video_editor_timeline_cursor"></div>
             <div class="video_editor_trim_handle" data-trim-handle="left"></div>
             <div class="video_editor_trim_handle" data-trim-handle="right"></div>
@@ -363,9 +374,18 @@
             <span id="video_editor_trim_end">End: 0:00.00</span>
             <span id="video_editor_duration">Duration: 0:00.00</span>
         </div>
+        <div class="video_editor_section_controls" id="video_editor_section_controls" style="display:none">
+            <button type="button" class="btn btn-secondary basic-button translate" id="video_editor_exclude_section">Exclude Section</button>
+            <label for="video_editor_section_volume" class="translate">Volume</label>
+            <span id="video_editor_section_volume_value">100%</span>
+            <div class="auto-slider-range-wrapper" style="--range-value:100%">
+                <input class="auto-slider-range" type="range" id="video_editor_section_volume" value="100" min="0" max="100" step="1" data-ispot="false" autocomplete="off" oninput="updateRangeStyle(this)" onchange="updateRangeStyle(this)">
+            </div>
+        </div>
     </div>
     <div class="modal-footer">
         <button type="button" class="btn btn-secondary basic-button translate" id="video_editor_reset_crop">Reset Cropping</button>
+        <button type="button" class="btn btn-secondary basic-button translate" id="video_editor_split_mark">Add Split Mark</button>
         <button type="button" class="btn btn-primary basic-button translate" id="video_editor_save_audio">Save Split Audio</button>
         <button type="button" class="btn btn-primary basic-button translate" id="video_editor_save_video">Save Video</button>
         <button type="button" class="btn btn-secondary basic-button translate" id="video_editor_close">Close</button>

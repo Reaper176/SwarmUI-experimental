@@ -1,21 +1,13 @@
 
-/** Shared play, volume, mute, time formatting, Swarm volume persistence, and smooth playback progress for custom HTML media control bars. */
+/** Shared play, volume, mute, Swarm volume persistence, and smooth playback progress for custom HTML media control bars. */
 class MediaControlsBase {
 
     constructor(mediaElement) {
         this.media = mediaElement;
+        this.userVolume = mediaElement.volume;
+        this.volumeMultiplier = 1;
         this.isDragging = false;
         this.progressRaf = null;
-    }
-
-    /** Formats seconds as M:SS. */
-    formatTime(seconds) {
-        if (!isFinite(seconds) || isNaN(seconds)) {
-            return '0:00';
-        }
-        let mins = Math.floor(seconds / 60);
-        let secs = Math.floor(seconds % 60);
-        return `${mins}:${secs.toString().padStart(2, '0')}`;
     }
 
     /** Wires play/volume buttons and applies user volume settings (requires element refs already set). */
@@ -37,7 +29,7 @@ class MediaControlsBase {
         else if (userSetting == 'silent') {
             this.volumeSlider.value = 0;
             this.volumeSlider.dataset.lastRealVolume = "0";
-            this.media.volume = 0;
+            this.userVolume = 0;
             this.media.muted = true;
         }
         else {
@@ -45,14 +37,19 @@ class MediaControlsBase {
             let lastMuted = localStorage.getItem('audiovolume_lastmuted') == "true";
             this.volumeSlider.value = lastMuted ? 0 : parseFloat(lastVolume);
             this.volumeSlider.dataset.lastRealVolume = lastVolume;
-            this.media.volume = parseFloat(lastVolume) / 100;
+            this.userVolume = parseFloat(lastVolume) / 100;
             this.media.muted = lastMuted;
         }
+        this.applyPlaybackVolume();
     }
 
     /** Toggles play/pause. */
     togglePlay() {
-        if (this.media.paused) {
+        let isAtEnd = this.media.ended || (Number.isFinite(this.media.duration) && this.media.duration > 0 && this.media.currentTime >= this.media.duration);
+        if (this.media.paused || isAtEnd) {
+            if (isAtEnd) {
+                this.media.currentTime = 0;
+            }
             this.media.play();
         }
         else {
@@ -65,7 +62,8 @@ class MediaControlsBase {
     setVolume(e) {
         let volume = e.target.value / 100;
         e.target.dataset.lastRealVolume = `${e.target.value}`;
-        this.media.volume = volume;
+        this.userVolume = volume;
+        this.applyPlaybackVolume();
         this.media.muted = volume < 0.001;
         localStorage.setItem('audiovolume_last', `${e.target.value}`);
         localStorage.setItem('audiovolume_lastmuted', `${this.media.muted}`);
@@ -79,10 +77,11 @@ class MediaControlsBase {
             this.volumeSlider.value = 0;
         }
         else if (this.volumeSlider.dataset.lastRealVolume) {
-            this.media.volume = parseFloat(this.volumeSlider.dataset.lastRealVolume) / 100;
-            if (this.media.volume < 0.01) {
-                this.media.volume = 0.5;
+            this.userVolume = parseFloat(this.volumeSlider.dataset.lastRealVolume) / 100;
+            if (this.userVolume < 0.01) {
+                this.userVolume = 0.5;
             }
+            this.applyPlaybackVolume();
         }
         localStorage.setItem('audiovolume_lastmuted', `${this.media.muted}`);
         this.updateIcons();
@@ -90,7 +89,7 @@ class MediaControlsBase {
 
     /** Refreshes play/volume glyphs and range fill. */
     updateIcons() {
-        let volume = this.media.muted ? 0 : this.media.volume;
+        let volume = this.media.muted ? 0 : this.userVolume;
         this.volumeSlider.value = volume * 100;
         updateRangeStyle(this.volumeSlider);
         if (volume == 0) {
@@ -108,6 +107,21 @@ class MediaControlsBase {
         else {
             this.playBtn.textContent = '⏸';
         }
+    }
+
+    /** Applies a temporary playback multiplier without changing the user's chosen volume. */
+    setVolumeMultiplier(multiplier) {
+        multiplier = Math.max(0, Math.min(1, multiplier));
+        if (this.volumeMultiplier == multiplier) {
+            return;
+        }
+        this.volumeMultiplier = multiplier;
+        this.applyPlaybackVolume();
+    }
+
+    /** Applies the user volume and temporary playback multiplier to the media element. */
+    applyPlaybackVolume() {
+        this.media.volume = Math.max(0, Math.min(1, this.userVolume * this.volumeMultiplier));
     }
 
     /** Clamped horizontal fraction [0, 1] for scrubbing, or null if the element has no width. */
@@ -240,12 +254,12 @@ class VideoControls extends MediaControlsBase {
         let d = this.media.duration;
         let percent = (d && !isNaN(d) && d > 0) ? (this.media.currentTime / d) * 100 : 0;
         this.progressFilled.style.width = `${percent}%`;
-        this.currentTimeEl.textContent = this.formatTime(this.media.currentTime);
+        this.currentTimeEl.textContent = durationStringifyColons(this.media.currentTime);
     }
 
     /** Updates the duration UI text to match the video. */
     updateDuration() {
-        this.durationEl.textContent = this.formatTime(this.media.duration);
+        this.durationEl.textContent = durationStringifyColons(this.media.duration);
     }
 
     /** Seeks from a click on the progress bar. */
@@ -388,66 +402,16 @@ class AudioControls extends MediaControlsBase {
             this.redrawWaveform();
             return;
         }
-        let tryDecode = (arrayBuffer) => {
-            let Ctx = window.AudioContext || window.webkitAudioContext;
-            if (!Ctx) {
-                this.waveformFailed = true;
-                this.redrawWaveform();
+        getAudioWaveformPeaks(src).then((peaks) => {
+            if (!this.media.isConnected) {
                 return;
             }
-            if (!this.audioContext) {
-                this.audioContext = new Ctx();
-            }
-            this.audioContext.decodeAudioData(arrayBuffer.slice(0), (buffer) => {
-                if (!this.media.isConnected) {
-                    return;
-                }
-                this.buildPeaksFromBuffer(buffer);
-                this.redrawWaveform();
-            }, () => {
-                this.waveformFailed = true;
-                this.redrawWaveform();
-            });
-        };
-        fetch(src, { credentials: 'same-origin' }).then((r) => {
-            if (!r.ok) {
-                throw new Error('fetch failed');
-            }
-            return r.arrayBuffer();
-        }).then(tryDecode).catch(() => {
+            this.peaks = peaks;
+            this.redrawWaveform();
+        }).catch(() => {
             this.waveformFailed = true;
             this.redrawWaveform();
         });
-    }
-
-    /** Downsamples decoded PCM to peak envelopes for drawing. */
-    buildPeaksFromBuffer(buffer) {
-        let numChannels = buffer.numberOfChannels;
-        if (numChannels < 1) {
-            this.waveformFailed = true;
-            return;
-        }
-        let len = buffer.length;
-        let targetBars = 600;
-        let blockSize = Math.max(1, Math.floor(len / targetBars));
-        let numBars = Math.ceil(len / blockSize);
-        let peaks = [];
-        for (let i = 0; i < numBars; i++) {
-            let start = i * blockSize;
-            let end = Math.min(start + blockSize, len);
-            let peak = 0;
-            for (let c = 0; c < numChannels; c++) {
-                let data = buffer.getChannelData(c);
-                for (let s = start; s < end; s++) {
-                    let v = Math.abs(data[s]);
-                    if (v > peak) {
-                        peak = v;
-                    }
-                }
-            }
-            peaks.push(peak);
-        }
-        this.peaks = peaks;
     }
 
     /** Sizes the canvas to the wrapper and redraws peaks. */
@@ -461,78 +425,17 @@ class AudioControls extends MediaControlsBase {
         if (w < 40) {
             w = 400;
         }
-        this.canvas.width = Math.floor(w * dpr);
-        this.canvas.height = Math.floor(h * dpr);
-        this.canvas.style.width = `${w}px`;
-        this.canvas.style.height = `${h}px`;
-        let ctx = this.canvas.getContext('2d');
-        if (!ctx) {
-            return;
-        }
-        ctx.setTransform(1, 0, 0, 1, 0, 0);
-        ctx.scale(dpr, dpr);
-        ctx.clearRect(0, 0, w, h);
-        let mid = h / 2;
         let emphasis = getComputedStyle(document.documentElement).getPropertyValue('--emphasis').trim() || '#6cf';
-        let mutedColor = 'rgba(255, 255, 255, 0.28)';
         let duration = this.media.duration;
         let progress = (duration && !isNaN(duration) && duration > 0) ? this.media.currentTime / duration : 0;
-        let lineHalf = 0.5;
-        if (this.waveformFailed || !this.peaks || this.peaks.length == 0) {
-            ctx.fillStyle = mutedColor;
-            ctx.fillRect(0, mid - lineHalf, w, lineHalf * 2);
-            if (duration && !isNaN(duration) && duration > 0) {
-                ctx.fillStyle = emphasis;
-                ctx.fillRect(0, mid - lineHalf, w * progress, lineHalf * 2);
-            }
-            this.drawWaveformHoverLine(ctx, w, h);
-            return;
-        }
-        let n = this.peaks.length;
-        let maxPeak = 0.0001;
-        for (let i = 0; i < n; i++) {
-            if (this.peaks[i] > maxPeak) {
-                maxPeak = this.peaks[i];
-            }
-        }
-        ctx.fillStyle = mutedColor;
-        ctx.fillRect(0, mid - lineHalf, w, lineHalf * 2);
-        ctx.fillStyle = emphasis;
-        ctx.fillRect(0, mid - lineHalf, w * progress, lineHalf * 2);
-        let maxHalfAmp = h * 0.42;
-        let silenceRel = 0.018;
-        for (let i = 0; i < n; i++) {
-            let norm = this.peaks[i] / maxPeak;
-            if (norm < silenceRel) {
-                continue;
-            }
-            let halfAmp = norm * maxHalfAmp;
-            let x0 = Math.floor((i / n) * w);
-            let x1 = Math.ceil(((i + 1) / n) * w);
-            let barW = Math.max(1, x1 - x0);
-            let barCenter = (i + 0.5) / n;
-            let isPast = barCenter <= progress;
-            ctx.fillStyle = isPast ? emphasis : mutedColor;
-            ctx.fillRect(x0, mid - halfAmp, barW, halfAmp * 2);
-        }
-        this.drawWaveformHoverLine(ctx, w, h);
-    }
-
-    /** Draws a vertical line at the hover scrub position. */
-    drawWaveformHoverLine(ctx, w, h) {
-        if (this.hoverFraction == null || isNaN(this.hoverFraction)) {
-            return;
-        }
-        let x = this.hoverFraction * w;
-        if (x < 0 || x > w) {
-            return;
-        }
-        ctx.strokeStyle = 'rgba(255, 255, 255, 0.75)';
-        ctx.lineWidth = 1;
-        ctx.beginPath();
-        ctx.moveTo(x + 0.5, 0);
-        ctx.lineTo(x + 0.5, h);
-        ctx.stroke();
+        renderWaveform(this.canvas, this.waveformFailed ? null : this.peaks, {
+            width: w,
+            height: h,
+            pixelRatio: dpr,
+            progress,
+            playedColor: emphasis,
+            hoverFraction: this.hoverFraction
+        });
     }
 
     /** Updates hover position from a viewport X coordinate. */
@@ -552,7 +455,7 @@ class AudioControls extends MediaControlsBase {
 
     /** Updates the current-time label and redraws the waveform (playhead). */
     refreshProgressDisplay() {
-        this.currentTimeEl.textContent = this.formatTime(this.media.currentTime);
+        this.currentTimeEl.textContent = durationStringifyColons(this.media.currentTime);
         this.redrawWaveform();
     }
 
@@ -571,7 +474,7 @@ class AudioControls extends MediaControlsBase {
 
     /** Updates duration label. */
     updateDuration() {
-        this.durationEl.textContent = this.formatTime(this.media.duration);
+        this.durationEl.textContent = durationStringifyColons(this.media.duration);
     }
 
     /** Seeks to the time under the given viewport X coordinate. */
@@ -698,11 +601,11 @@ class CompareVideoControls extends VideoControls {
         let d = this.spanDuration();
         let percent = d > 0 ? (this.media.currentTime / d) * 100 : 0;
         this.progressFilled.style.width = `${percent}%`;
-        this.currentTimeEl.textContent = this.formatTime(this.media.currentTime);
+        this.currentTimeEl.textContent = durationStringifyColons(this.media.currentTime);
     }
 
     /** Updates the duration UI text to the spanned duration. */
     updateDuration() {
-        this.durationEl.textContent = this.formatTime(this.spanDuration());
+        this.durationEl.textContent = durationStringifyColons(this.spanDuration());
     }
 }

@@ -340,10 +340,10 @@ public static class OutputMetadataTracker
     }
 
     /// <summary>File format extensions that even can have metadata on them.</summary>
-    public static HashSet<string> ExtensionsWithMetadata = ["png", "jpg", "webp"];
+    public static HashSet<string> ExtensionsWithMetadata = ["png", "jpg", "webp", "wav", "flac", "ogg", "mp3", "aac", "mp4", "webm", "mov"];
 
     /// <summary>File format extensions that require ffmpeg to process image data.</summary>
-    public static HashSet<string> ExtensionsForFfmpegables = ["webm", "mp4", "mov"];
+    public static HashSet<string> ExtensionsForFfmpegables = ["webm", "mp4", "mov", "wav", "flac", "ogg", "mp3", "aac"];
 
     /// <summary>File format extensions that are animations in an image file format.</summary>
     public static HashSet<string> ExtensionsForAnimatedImages = ["webp", "gif"];
@@ -696,11 +696,6 @@ public static class OutputMetadataTracker
         {
             return null;
         }
-        MediaType expectedMediaType = MediaType.GetByExtension(ext);
-        if (expectedMediaType is not null && expectedMediaType.MetaType == MediaMetaType.Audio)
-        {
-            return null;
-        }
         if (TryGetPreviewFromMemoryCache(file, out OutputPreviewEntry cached))
         {
             return cached;
@@ -964,7 +959,8 @@ public static class OutputMetadataTracker
                 {
                     return null;
                 }
-                fileData = new Image(data, MediaType.GetByExtension(ext)).GetMetadata();
+                MediaType type = MediaType.GetByExtension(ext);
+                fileData = type.MetaType.FromRawData(data, type).GetMetadata();
             }
             if (string.IsNullOrWhiteSpace(fileData) && File.Exists(altMetaPath))
             {

@@ -654,13 +654,33 @@ public class WGNodeData(JArray _path, WorkflowGenerator _gen, string _dataType, 
         if (DataType == DT_AUDIO)
         {
             WGAssert(AttachedAudio is null, $"Cannot attach audio onto other audio.");
-            // TODO: SwarmSaveAudio? Better format control instead of just using mp3?
-            return Gen.CreateNode("SaveAudioMP3", new JObject()
+            string audioFormat = UserInput.Get(T2IParamTypes.AudioFormat, "mp3");
+            if (Features.Contains("comfy_saveaudio_ws") && !WorkflowGenerator.RestrictCustomNodes)
             {
-                ["audio"] = Path,
-                ["filename_prefix"] = $"SwarmUI_{Random.Shared.Next():X4}_",
-                ["quality"] = "V0"
-            }, id);
+                return Gen.CreateNode("SwarmSaveAudioWS", new JObject()
+                {
+                    ["audio"] = Path,
+                    ["format"] = audioFormat
+                }, id);
+            }
+            else
+            {
+                WGAssert(audioFormat is "mp3" or "flac", $"Audio format '{audioFormat}' requires SwarmUI custom nodes.");
+                JObject fallbackFormat = new()
+                {
+                    ["format"] = audioFormat
+                };
+                if (audioFormat == "mp3")
+                {
+                    fallbackFormat["quality"] = "V0";
+                }
+                return Gen.CreateNode("SaveAudioAdvanced", new JObject()
+                {
+                    ["audio"] = Path,
+                    ["filename_prefix"] = $"SwarmUI_{Random.Shared.Next():X4}_",
+                    ["format"] = fallbackFormat
+                }, id);
+            }
         }
         WGAssert(false, $"Unknown data type {DataType}, cannot save output.");
         return null;

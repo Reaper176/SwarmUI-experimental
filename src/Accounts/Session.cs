@@ -156,7 +156,7 @@ public class Session : IEquatable<Session>
         }
     }
 
-    /// <summary>Applies metadata to an image and converts the filetype, following the user's preferences.</summary>
+    /// <summary>Applies metadata to a media file and converts the filetype where applicable, following the user's preferences.</summary>
     public (Task<MediaFile>, string) ApplyMetadata(MediaFile file, T2IParamInput user_input, int numImagesGenned, bool maySkipConversion = false)
     {
         if (numImagesGenned > 0 && user_input.TryGet(T2IParamTypes.BatchSize, out int batchSize) && numImagesGenned < batchSize)
@@ -186,7 +186,46 @@ public class Session : IEquatable<Session>
         }
         string metadata = T2IParamInput.MetadataToString(metadataObj);
         Task<MediaFile> resultImg = Task.FromResult(file);
-        if (file is ImageFile img && (!maySkipConversion || !user_input.Get(T2IParamTypes.DoNotSave, false) || user_input.SourceSession.User.Settings.FileFormat.ReformatTransientImages))
+        bool shouldApplyMetadata = !maySkipConversion || !user_input.Get(T2IParamTypes.DoNotSave, false) || user_input.SourceSession.User.Settings.FileFormat.ReformatTransientImages;
+        if (file.Type.MetaType == MediaMetaType.Video)
+        {
+            if (shouldApplyMetadata && User.Settings.FileFormat.SaveMetadata)
+            {
+                VideoFile video = file as VideoFile ?? new(file.RawData, file.Type);
+                resultImg = Task.Run<MediaFile>(() =>
+                {
+                    try
+                    {
+                        return video.WithMetadata(metadata);
+                    }
+                    catch (Exception ex)
+                    {
+                        Logs.Error($"Internal error in async task: {ex.ReadableString()}");
+                        return null;
+                    }
+                });
+            }
+        }
+        else if (file.Type.MetaType == MediaMetaType.Audio)
+        {
+            if (shouldApplyMetadata && User.Settings.FileFormat.SaveMetadata)
+            {
+                AudioFile audio = file as AudioFile ?? new(file.RawData, file.Type);
+                resultImg = Task.Run<MediaFile>(() =>
+                {
+                    try
+                    {
+                        return audio.WithMetadata(metadata);
+                    }
+                    catch (Exception ex)
+                    {
+                        Logs.Error($"Internal error in async task: {ex.ReadableString()}");
+                        return null;
+                    }
+                });
+            }
+        }
+        else if (file is ImageFile img && shouldApplyMetadata)
         {
             string format = user_input.Get(T2IParamTypes.ImageFormat, User.Settings.FileFormat.ImageFormat);
             resultImg = Task.Run<MediaFile>(() =>
@@ -202,7 +241,6 @@ public class Session : IEquatable<Session>
                 }
             });
         }
-        // TODO: Metadata for audio, video, ...?
         return (resultImg, metadata ?? "");
     }
 
