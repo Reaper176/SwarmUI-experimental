@@ -721,7 +721,7 @@ public class T2IModelClassSorter
         }});
         Register(new() { ID = "nvidia-cosmos-predict2-t2i-14b", CompatClass = CompatCosmosPredict2_14b, Name = "NVIDIA Cosmos Predict2 Text2Image 14B", StandardWidth = 1024, StandardHeight = 1024, IsThisModelOfClass = (m, h) =>
         {
-            return isCosmosPredict2_14B(h) && !isAnima(h);
+            return isCosmosPredict2_14B(h) && !IsAnima(h);
         }});
         // ====================== Z-Image ======================
         Register(new() { ID = "z-image", CompatClass = CompatZImage, Name = "Z-Image", StandardWidth = 1024, StandardHeight = 1024, IsThisModelOfClass = (m, h) =>
