@@ -274,8 +274,7 @@ namespace SwarmUI.Text2Image
                 user_input.ApplyFinalRequiredFlags();
                 claim.Extend(backendWaits: 1);
                 sendStatus();
-                backend = await Program.Backends.GetNextT2IBackend(TimeSpan.FromMinutes(backendTimeoutMin), user_input.Get(T2IParamTypes.Model), user_input,
-                    filter: BackendMatcherFor(user_input), session: user_input.SourceSession, notifyWillLoad: sendStatus, cancel: claim.InterruptToken);
+                backend = await Program.Backends.GetNextT2IBackend(TimeSpan.FromMinutes(backendTimeoutMin), user_input.Get(T2IParamTypes.Model), user_input, filter: BackendMatcherFor(user_input), session: user_input.SourceSession, notifyWillLoad: sendStatus, cancel: claim.InterruptToken);
             }
             catch (SwarmReadableErrorException ex)
             {

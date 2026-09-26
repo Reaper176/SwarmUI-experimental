@@ -306,17 +306,26 @@ public static class T2IAPI
             output(BasicAPIFeatures.GetCurrentStatusRaw(session));
         }
         bool continueAfterErrors = false;
+        T2IParamInput user_input = null;
         void setError(string message)
         {
             Logs.Warning($"Refused to generate image for {session.User.UserID}: {message}");
             if (!continueAfterErrors || claim.ShouldCancel)
             {
-                output(new JObject() { ["error"] = message });
+                JObject error = new() { ["error"] = message };
+                if (user_input is not null)
+                {
+                    error["request_id"] = $"{user_input.UserRequestId}";
+                }
+                output(error);
                 claim.LocalClaimInterrupt.Cancel();
+                if (isWS)
+                {
+                    output(BasicAPIFeatures.GetCurrentStatusRaw(session));
+                }
             }
         }
         long timeStart = Environment.TickCount64;
-        T2IParamInput user_input;
         try
         {
             user_input = RequestToParams(session, rawInput);
@@ -344,6 +353,18 @@ public static class T2IAPI
         user_input.ApplySpecialLogic();
         images = user_input.Get(T2IParamTypes.Images, 1);
         claim.Extend(images - claim.WaitingGenerations);
+        int maxQueued = session.User.CalculatedRole.Data.MaxQueued;
+        if (maxQueued < 100_000_000) // (don't waste time calculating for admin/local)
+        {
+            int totalQueued = session.User.CalcTotalQueued;
+            if (totalQueued > maxQueued)
+            {
+                int alreadyRunning = totalQueued - images;
+                int available = maxQueued - alreadyRunning;
+                setError($"Too many gens in queue. Your user account role has a MaxQueued of {maxQueued}, you had {alreadyRunning} already running and tried to request {images} more (total {totalQueued}). {(images > 1 && available > 0 ? $"Try setting your images count to {available} or less." : "Wait for your pending gens, or interrupt them.")}");
+                return;
+            }
+        }
         Logs.Info($"User {session.User.UserID} requested {images} image{(images == 1 ? "" : "s")} with model '{user_input.Get(T2IParamTypes.Model)?.Name}'...");
         if (Logs.MinimumLevel <= Logs.LogLevel.Verbose)
         {

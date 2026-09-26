@@ -1446,7 +1446,7 @@ public class WorkflowGeneratorSteps
                 g.CurrentMedia = g.CurrentMedia.AsSamplingLatent(g.CurrentVae, g.CurrentAudioVae);
                 g.CreateKSampler(g.CurrentModel.Path, g.FinalPrompt, g.FinalNegativePrompt, g.CurrentMedia.Path, cfg, steps, startStep, endStep,
                     g.UserInput.Get(T2IParamTypes.Seed, g.UserInput.Get(T2IParamTypes.Seed), sectionId: T2IParamInput.SectionID_BaseOnly), g.UserInput.Get(T2IParamTypes.RefinerMethod, "none") == "StepSwapNoisy", g.MainSamplerAddNoise, id: "10", isFirstSampler: true, sectionId: T2IParamInput.SectionID_BaseOnly);
-                g.CurrentMedia = g.CurrentMedia.WithPath(["10", 0]);
+                g.CurrentMedia = g.CurrentMedia.WithPath(["10", 0], mayHaveAlpha: g.CurrentCompat()?.SupportsAlpha ?? false);
                 if (g.UserInput.Get(T2IParamTypes.UseReferenceOnly, false))
                 {
                     string fromBatch = g.CreateNode("LatentFromBatch", new JObject()
@@ -1594,7 +1594,7 @@ public class WorkflowGeneratorSteps
                     g.CreateKSampler(model, prompt, negPrompt, g.CurrentMedia.AsLatentImage(g.CurrentVae).Path, cfg, steps, refinerStart, 10000,
                         seed + refinerPassIndex, false, refinerAddNoise, id: id, doTiled: g.UserInput.Get(T2IParamTypes.RefinerDoTiling, false),
                         explicitSampler: explicitSampler, explicitScheduler: explicitScheduler, sectionId: T2IParamInput.SectionID_Refiner);
-                    g.CurrentMedia = g.CurrentMedia.WithPath([id, 0], WGNodeData.DT_LATENT_IMAGE);
+                    g.CurrentMedia = g.CurrentMedia.WithPath([id, 0], WGNodeData.DT_LATENT_IMAGE, mayHaveAlpha: g.CurrentModel.Compat?.SupportsAlpha ?? false);
                     refinerPassIndex++;
                 }
                 bool doPreUpscaleRefiner = doUpscale && refinerControl > 0 && g.UserInput.Get(T2IParamTypes.RefinerPassBeforeUpscale, false);
@@ -1643,6 +1643,7 @@ public class WorkflowGeneratorSteps
                     }
                     if (doPixelUpscale)
                     {
+                        JArray alphaMask = null;
                         if (upscaleMethod.StartsWith("pixel-"))
                         {
                             g.CreateNode("ImageScale", new JObject()
@@ -1656,6 +1657,7 @@ public class WorkflowGeneratorSteps
                         }
                         else
                         {
+                            (decoded, alphaMask) = decoded.AsRawImageNoAlpha(origVae); // TODO: Pending comfy fix for alpha compat
                             g.CreateNode("UpscaleModelLoader", new JObject()
                             {
                                 ["model_name"] = upscaleMethod.After("model-")
@@ -1665,16 +1667,26 @@ public class WorkflowGeneratorSteps
                                 ["upscale_model"] = NodePath("27", 0),
                                 ["image"] = decoded.Path
                             }, "28");
+                            JArray upscaledImage = ["28", 0];
+                            if (alphaMask is not null)
+                            {
+                                string joined = g.CreateNode("JoinImageWithAlpha", new JObject()
+                                {
+                                    ["image"] = upscaledImage,
+                                    ["alpha"] = alphaMask
+                                });
+                                upscaledImage = NodePath(joined, 0);
+                            }
                             g.CreateNode("ImageScale", new JObject()
                             {
-                                ["image"] = NodePath("28", 0),
+                                ["image"] = upscaledImage,
                                 ["width"] = width,
                                 ["height"] = height,
                                 ["upscale_method"] = "lanczos",
                                 ["crop"] = "disabled"
                             }, "26");
                         }
-                        decoded = decoded.WithPath(["26", 0]);
+                        decoded = decoded.WithPath(["26", 0], mayHaveAlpha: alphaMask is not null ? true : null);
                         decoded.Width = width;
                         decoded.Height = height;
                         if (!refinerSamplerRuns)
@@ -1947,7 +1959,7 @@ public class WorkflowGeneratorSteps
                     double cfg = g.UserInput.GetNullable(T2IParamTypes.CFGScale, part.ContextID, false) ?? g.UserInput.GetNullable(T2IParamTypes.SegmentCFGScale, part.ContextID) ?? g.UserInput.GetNullable(T2IParamTypes.RefinerCFGScale, part.ContextID) ?? g.UserInput.Get(T2IParamTypes.CFGScale, 7, sectionId: part.ContextID);
                     WGNodeData beforeImage = g.CurrentMedia;
                     string sampler = g.CreateKSampler(model.Path, prompt, negPrompt, [g.MaskShrunkInfo.MaskedLatent, 0], cfg, steps, startStep, 10000, seed, false, true, sectionId: part.ContextID);
-                    g.CurrentMedia = g.CurrentMedia.WithPath([sampler, 0], WGNodeData.DT_LATENT_IMAGE);
+                    g.CurrentMedia = g.CurrentMedia.WithPath([sampler, 0], WGNodeData.DT_LATENT_IMAGE, mayHaveAlpha: model.Compat?.SupportsAlpha ?? false);
                     g.CurrentMedia = g.CurrentMedia.AsRawImage(vae);
                     JArray composited = g.RecompositeCropped(g.MaskShrunkInfo.BoundsNode, [g.MaskShrunkInfo.CroppedMask, 0], beforeImage.Path, g.CurrentMedia.Path);
                     g.CurrentMedia = g.CurrentMedia.WithPath(composited);
@@ -1977,7 +1989,7 @@ public class WorkflowGeneratorSteps
             RunSegmentationProcessing(g, isBeforeRefiner: false);
         }, 5);
         #endregion
-        #region Segmentation
+        #region Segment Clears
         AddStep(g =>
         {
             PromptRegion.Part[] parts = [.. new PromptRegion(g.UserInput.Get(T2IParamTypes.Prompt, "")).Parts.Where(p => p.Type == PromptRegion.PartType.ClearSegment)];
@@ -2015,7 +2027,7 @@ public class WorkflowGeneratorSteps
                     ["image"] = g.CurrentMedia.Path,
                     ["alpha"] = NodePath(thresholded, 0)
                 });
-                g.CurrentMedia = g.CurrentMedia.WithPath([joined, 0]);
+                g.CurrentMedia = g.CurrentMedia.WithPath([joined, 0], mayHaveAlpha: true);
             }
         }, 7);
         #endregion
@@ -2329,7 +2341,7 @@ public class WorkflowGeneratorSteps
                 {
                     ["images"] = g.CurrentMedia.Path
                 });
-                g.CurrentMedia = g.CurrentMedia.WithPath([removed, 0]);
+                g.CurrentMedia = g.CurrentMedia.WithPath([removed, 0], mayHaveAlpha: true);
             }
         }, 50);
         #endregion

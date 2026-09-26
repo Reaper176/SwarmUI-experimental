@@ -45,6 +45,9 @@ public class WGNodeData(JArray _path, WorkflowGenerator _gen, string _dataType, 
     /// <summary>The semantic Qwen CLIP paired with an Anima 3.8B model, retained across model path copies.</summary>
     public JArray Anima38SemanticClip { get; } = _anima38SemanticClip;
 
+    /// <summary>Whether this media may contain an alpha channel when decoded.</summary>
+    public bool MayHaveAlpha = false;
+
     /// <summary>Returns true if this data has the same compat class as given.</summary>
     public bool IsCompat(T2IModelCompatClass clazz) => Compat is not null && clazz.ID == Compat.ID;
 
@@ -88,12 +91,13 @@ public class WGNodeData(JArray _path, WorkflowGenerator _gen, string _dataType, 
     public (string, JObject) SourceNodeData => Gen.Workflow.TryGetValue($"{Path[0]}", out JToken tok) && tok is JObject node ? ($"{node["class_type"]}", (JObject)node["inputs"]) : (null, null);
 
     /// <summary>Returns a copy of this node data with a different node path and optional different type. Always returns a new object instance.</summary>
-    public WGNodeData WithPath(JArray path, string dataType = null, T2IModelCompatClass compat = null)
+    public WGNodeData WithPath(JArray path, string dataType = null, T2IModelCompatClass compat = null, bool? mayHaveAlpha = null)
     {
         WGNodeData dup = Duplicate();
         dup.Path = path;
         dup.DataType = dataType ?? dup.DataType;
         dup.Compat = compat ?? dup.Compat;
+        dup.MayHaveAlpha = mayHaveAlpha ?? dup.MayHaveAlpha;
         return dup;
     }
 
@@ -336,7 +340,7 @@ public class WGNodeData(JArray _path, WorkflowGenerator _gen, string _dataType, 
                     ["pixels"] = Path
                 }, id);
             }
-            return WithPath([encoded, 0], DataType == DT_IMAGE ? DT_LATENT_IMAGE : DT_LATENT_VIDEO, vae.Compat);
+            return WithPath([encoded, 0], DataType == DT_IMAGE ? DT_LATENT_IMAGE : DT_LATENT_VIDEO, vae.Compat, mayHaveAlpha: vae.Compat?.SupportsAlpha ?? false);
         }
         if (DataType == DT_AUDIO)
         {
@@ -540,6 +544,22 @@ public class WGNodeData(JArray _path, WorkflowGenerator _gen, string _dataType, 
         }
         WGAssert(false, $"Cannot convert data of type '{DataType}' to raw image/video.");
         return null;
+    }
+
+    /// <summary>Returns an object that is definitely compatible with raw RGB image or video inputs, decoding and splitting out alpha as needed.</summary>
+    public (WGNodeData Image, JArray AlphaMask) AsRawImageNoAlpha(WGNodeData vae)
+    {
+        WGNodeData result = AsRawImage(vae);
+        if (!result.MayHaveAlpha)
+        {
+            return (result, null);
+        }
+        string split = Gen.CreateNode("SplitImageWithAlpha", new JObject()
+        {
+            ["image"] = result.Path
+        });
+        result = result.WithPath([split, 0], mayHaveAlpha: false);
+        return (result, [split, 1]);
     }
 
     /// <summary>Returns a copy of this node data. If it has attached audio, the copy's audio will be masked off.</summary>

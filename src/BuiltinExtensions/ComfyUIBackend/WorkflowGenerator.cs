@@ -4230,7 +4230,7 @@ public partial class WorkflowGenerator
         string explicitSampler = UserInput.Get(ComfyUIBackendExtension.SamplerParam, null, sectionId: sectionId, includeBase: false) ?? (isRefiner ? UserInput.Get(ComfyUIBackendExtension.RefinerSamplerParam, null) : null);
         string explicitScheduler = UserInput.Get(ComfyUIBackendExtension.SchedulerParam, null, sectionId: sectionId, includeBase: false) ?? (isRefiner ? UserInput.Get(ComfyUIBackendExtension.RefinerSchedulerParam, null) : null);
         string sampled = CreateKSampler(CurrentModel.Path, [cond, 0], neg, [emptyLatent, 0], cfg, steps, 0, 10000, seed, false, true, explicitSampler: explicitSampler ?? "lcm", explicitScheduler: explicitScheduler ?? "simple", sectionId: sectionId);
-        WGNodeData result = media.WithPath([sampled, 0], WGNodeData.DT_LATENT_IMAGE, pidModel.ModelClass?.CompatClass);
+        WGNodeData result = media.WithPath([sampled, 0], WGNodeData.DT_LATENT_IMAGE, pidModel.ModelClass?.CompatClass, mayHaveAlpha: false);
         result.Width = width;
         result.Height = height;
         result = result.DecodeLatents(CurrentVae, false);
@@ -4313,7 +4313,7 @@ public partial class WorkflowGenerator
             [ComfyNodeInputNames.SeedVR2PostProcessing.OriginalResizedImages] = resized,
             [ComfyNodeInputNames.SeedVR2PostProcessing.ColorCorrectionMethod] = UserInput.Get(ComfyUIBackendExtension.SeedVRColorCorrectionBehavior, "lab")
         });
-        WGNodeData result = raw.WithPath([post, 0]);
+        WGNodeData result = raw.WithPath([post, 0], mayHaveAlpha: false);
         result.Width = raw.Width;
         result.Height = raw.Height;
         FinalLoadedModel = priorFinalModel;
@@ -4391,6 +4391,8 @@ public partial class WorkflowGenerator
                 }
                 else if (method.StartsWith("model-"))
                 {
+                    JArray alphaMask;
+                    (media, alphaMask) = media.AsRawImageNoAlpha(vae);
                     string loaderNode = CreateNode("UpscaleModelLoader", new JObject()
                     {
                         ["model_name"] = method.After("model-")
@@ -4400,7 +4402,17 @@ public partial class WorkflowGenerator
                         ["upscale_model"] = NodePath(loaderNode, 0),
                         ["image"] = media.Path
                     });
-                    media = media.WithPath([upscaledNode, 0]);
+                    JArray upscaledImage = NodePath(upscaledNode, 0);
+                    if (alphaMask is not null)
+                    {
+                        string joined = CreateNode("JoinImageWithAlpha", new JObject()
+                        {
+                            ["image"] = upscaledImage,
+                            ["alpha"] = alphaMask
+                        });
+                        upscaledImage = NodePath(joined, 0);
+                    }
+                    media = media.WithPath(upscaledImage, mayHaveAlpha: alphaMask is not null);
                     media.Width = null; // the model's own scale factor is unknown here, so always correct after
                     media.Height = null;
                 }
