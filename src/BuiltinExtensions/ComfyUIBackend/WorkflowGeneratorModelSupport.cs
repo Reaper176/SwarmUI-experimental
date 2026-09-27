@@ -892,6 +892,33 @@ public partial class WorkflowGenerator
             g.LoadingClip = [singleClipLoader, 0];
         }
 
+        /// <summary>Loads the dedicated encoder for Anima checkpoints with a Qwen3.5-2B source projection.</summary>
+        public void LoadAnimaQwen35Clip()
+        {
+            if (!g.Features.Contains(ComfyCapabilityCatalog.AnimaQwen35NodeFeature) || RestrictCustomNodes)
+            {
+                throw new SwarmUserErrorException("This Anima checkpoint requires the Swarm Load Anima Qwen3.5-2B CLIP node. Enable Swarm custom nodes and update/restart the ComfyUI backend.");
+            }
+            string encoder = "qwen3.5-2B-ntuned.safetensors";
+            if (g.UserInput.TryGet(T2IParamTypes.QwenModel, out T2IModel selectedEncoder))
+            {
+                encoder = selectedEncoder.Name;
+            }
+            using (ManyReadOneWriteLock.ReadClaim claim = Program.RefreshLock.LockRead())
+            {
+                if (!Program.T2IModelSets["Clip"].Models.ContainsKey(encoder))
+                {
+                    throw new SwarmUserErrorException($"This Anima checkpoint requires a Qwen3.5-2B text encoder. Could not find '{encoder}'. Select an installed compatible encoder under Advanced Model Addons > Qwen Model.");
+                }
+            }
+            string loader = g.CreateNode("SwarmLoadAnimaQwen35Clip", new JObject()
+            {
+                ["clip_name"] = encoder.Replace('\\', '/').Replace("/", g.ModelFolderFormat ?? $"{Path.DirectorySeparatorChar}"),
+                ["device"] = "default"
+            });
+            g.LoadingClip = [loader, 0];
+        }
+
         public void LoadClipAudio(string model, string ckpt)
         {
             string loaderType = "LTXAVTextEncoderLoader";
@@ -1381,7 +1408,17 @@ public partial class WorkflowGenerator
         }
         else if (IsAnima())
         {
-            helpers.LoadClip("stable_diffusion", helpers.GetQwen3_600mModel());
+            bool hasProjection = File.Exists(model.RawFilePath)
+                && (model.RawFilePath.EndsWith(".safetensors") || model.RawFilePath.EndsWith(".sft"))
+                && T2IModelClassSorter.IsAnimaQwen35(T2IModel.GetMetadataHeaderFrom(model.RawFilePath));
+            if (hasProjection)
+            {
+                helpers.LoadAnimaQwen35Clip();
+            }
+            else
+            {
+                helpers.LoadClip("stable_diffusion", helpers.GetQwen3_600mModel());
+            }
             helpers.DoVaeLoader(UserInput.SourceSession?.User?.Settings?.VAEs?.DefaultQwenVAE, "qwen-image", "qwen-image-vae");
         }
         else if (IsChroma() || IsChromaRadiance())

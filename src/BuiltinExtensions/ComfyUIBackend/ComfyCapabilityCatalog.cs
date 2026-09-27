@@ -12,6 +12,9 @@ public static class ComfyCapabilityCatalog
     /// <summary>Feature ID requiring the Anima 3.8B Qwen3.5 loader node.</summary>
     public const string Anima38Qwen35NodeFeature = "comfy_anima_38_qwen35_loader";
 
+    /// <summary>Feature ID requiring the projection-enabled Anima Qwen3.5-2B loader node.</summary>
+    public const string AnimaQwen35NodeFeature = "comfy_anima_qwen35_loader";
+
     /// <summary>Feature ID requiring the Anima 3.8B conditioning node.</summary>
     public const string Anima38ConditioningNodeFeature = "comfy_anima_38_conditioning";
 
@@ -77,6 +80,7 @@ public static class ComfyCapabilityCatalog
             [ComfyNodeNames.ModelAttentionBackend] = "model_attention_backend",
             [ComfyNodeNames.EmptyMiniMaxH3LatentAV] = EmptyMiniMaxH3LatentAVFeature,
             [ComfyNodeNames.LoadAnima38Qwen35] = Anima38Qwen35NodeFeature,
+            ["SwarmLoadAnimaQwen35Clip"] = AnimaQwen35NodeFeature,
             [ComfyNodeNames.Anima38Conditioning] = Anima38ConditioningNodeFeature,
             [ComfyNodeNames.Anima38LoraLoader] = Anima38LoraLoaderNodeFeature,
             [ComfyNodeNames.Anima38LoraLoaderModelOnly] = Anima38LoraLoaderModelOnlyNodeFeature,

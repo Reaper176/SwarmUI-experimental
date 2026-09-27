@@ -38,6 +38,24 @@ public class T2IModelClassSorter
         return IsAnima(header) && HasModelKey(header, "blocks.51.adaln_modulation_cross_attn.2.weight");
     }
 
+    /// <summary>Recognizes the ordinary Anima variant with a learned Qwen3.5-2B source projection.</summary>
+    public static bool IsAnimaQwen35(JObject header)
+    {
+        if (header is null || !IsAnima(header) || IsAnima38(header))
+        {
+            return false;
+        }
+        foreach (string prefix in new string[] { "", "diffusion_model.", "model.diffusion_model.", "net.", "transformer." })
+        {
+            if (header[$"{prefix}llm_adapter.source_proj.weight"]?["shape"] is JArray shape
+                && shape.Count == 2 && shape[0].Value<int>() == 1024 && shape[1].Value<int>() == 2048)
+            {
+                return true;
+            }
+        }
+        return false;
+    }
+
     /// <summary>Recognizes the complete four-tensor GLoRA layout used by the backend weight adapter.</summary>
     private static bool HasGLoRAWeights(JObject header, string key)
     {
