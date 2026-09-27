@@ -17,6 +17,28 @@ public class T2IModelHandler
     /// <summary>Revision of model-class cache decisions that require targeted re-evaluation.</summary>
     private const int ModelClassCacheRevision = 5;
 
+    /// <summary>Bounds active model-file processing without recursively multiplying workers.</summary>
+    private const int ModelScanParallelism = 4;
+
+    /// <summary>Per-refresh counters; worker durations are summed and may exceed wall time.</summary>
+    private class ModelScanMetrics
+    {
+        /// <summary>Time spent enumerating directories and building file-name snapshots, in milliseconds.</summary>
+        public long EnumerationMilliseconds;
+
+        /// <summary>Total time workers spend loading metadata, including cache access, in milliseconds.</summary>
+        public long MetadataMilliseconds;
+
+        /// <summary>Time spent opening and querying caches, including lock waits, in milliseconds.</summary>
+        public long CacheMilliseconds;
+
+        /// <summary>Models served by a valid metadata cache entry.</summary>
+        public long CacheHits;
+
+        /// <summary>Models requiring metadata rebuilding.</summary>
+        public long Rebuilds;
+    }
+
     /// <summary>All models known to this handler.</summary>
     public ConcurrentDictionary<string, T2IModel> Models = new();
 
@@ -295,6 +317,8 @@ public class T2IModelHandler
             return;
         }
         SpecialCharacterReportPaths = [];
+        ModelScanMetrics scan = new();
+        long scanStart = Environment.TickCount64;
         try
         {
             List<string> usableFolderPaths = [];
@@ -312,7 +336,7 @@ public class T2IModelHandler
             ConcurrentDictionary<string, T2IModel> newModels = new();
             foreach (string path in usableFolderPaths)
             {
-                AddAllFromFolder(path, "", newModels);
+                AddAllFromFolder(path, "", newModels, scan);
             }
             lock (ModificationLock)
             {
@@ -338,6 +362,13 @@ public class T2IModelHandler
         catch (Exception e)
         {
             Logs.Error($"Error while refreshing {ModelType} models: {e}");
+        }
+        finally
+        {
+            Logs.Debug($"[Model Scan] {ModelType}: wall {(Environment.TickCount64 - scanStart) / 1000.0:0.###}s; "
+                + $"summed worker times: enumeration {scan.EnumerationMilliseconds / 1000.0:0.###}s, metadata {scan.MetadataMilliseconds / 1000.0:0.###}s "
+                + $"(including cache lookup/lock wait {scan.CacheMilliseconds / 1000.0:0.###}s); "
+                + $"cache hits {scan.CacheHits}, rebuilds {scan.Rebuilds}; max file workers {ModelScanParallelism}.");
         }
     }
 
@@ -470,9 +501,36 @@ public class T2IModelHandler
     /// <summary>Builds a stable ordered filesystem fingerprint for all supported model metadata sidecars.</summary>
     private static string GetModelSidecarFingerprint(string altModelPrefix)
     {
+        return GetModelSidecarFingerprint(altModelPrefix, null);
+    }
+
+    /// <summary>Indexes ASCII file names; Unicode folders use live probes to preserve filesystem normalization semantics.</summary>
+    private static HashSet<string> GetModelScanFileNames(IEnumerable<string> files)
+    {
+        HashSet<string> names = new(StringComparer.OrdinalIgnoreCase);
+        foreach (string file in files)
+        {
+            string name = Path.GetFileName(file);
+            if (name.Any(c => c > 127))
+            {
+                return null;
+            }
+            names.Add(name);
+        }
+        return names;
+    }
+
+    /// <summary>Skips absent sidecars from a scan-local snapshot while still statting possible matches.</summary>
+    private static string GetModelSidecarFingerprint(string altModelPrefix, HashSet<string> folderFiles)
+    {
         List<string> entries = [];
         foreach (string altSuffix in AltModelMetadataJsonFileSuffixes)
         {
+            if (folderFiles is not null && !folderFiles.Contains(Path.GetFileName(altModelPrefix) + altSuffix))
+            {
+                entries.Add($"{altSuffix}:missing");
+                continue;
+            }
             FileInfo sidecar = new($"{altModelPrefix}{altSuffix}");
             if (!sidecar.Exists)
             {
@@ -559,6 +617,12 @@ public class T2IModelHandler
     /// <summary>Force-load the metadata for a model.</summary>
     public void LoadMetadata(T2IModel model)
     {
+        LoadMetadata(model, null, null);
+    }
+
+    /// <summary>Loads metadata with optional scan-local file membership and timing counters.</summary>
+    private void LoadMetadata(T2IModel model, HashSet<string> folderFiles, ModelScanMetrics scan)
+    {
         if (model is null)
         {
             Logs.Warning($"Tried to load metadata for a null model?:\n{Environment.StackTrace}");
@@ -572,11 +636,16 @@ public class T2IModelHandler
         string folder = model.RawFilePath.Replace('\\', '/').BeforeAndAfterLast('/', out string fileName);
         long modified = new DateTimeOffset(File.GetLastWriteTimeUtc(model.RawFilePath)).ToUnixTimeMilliseconds();
         string altModelPrefix = $"{model.OriginatingFolderPath}/{model.Name.BeforeLast('.')}";
-        string sidecarFingerprint = GetModelSidecarFingerprint(altModelPrefix);
+        string sidecarFingerprint = GetModelSidecarFingerprint(altModelPrefix, folderFiles);
         bool perFolder = Program.ServerSettings.Metadata.ModelMetadataPerFolder;
+        long cacheStart = Environment.TickCount64;
         ModelDatabase cache = GetCacheForFolder(perFolder ? folder : Program.DataDir);
         if (cache is null)
         {
+            if (scan is not null)
+            {
+                Interlocked.Add(ref scan.CacheMilliseconds, Environment.TickCount64 - cacheStart);
+            }
             return;
         }
         ModelMetadataStore metadata;
@@ -593,6 +662,10 @@ public class T2IModelHandler
                 metadata = null;
             }
         }
+        if (scan is not null)
+        {
+            Interlocked.Add(ref scan.CacheMilliseconds, Environment.TickCount64 - cacheStart);
+        }
         if (metadata is not null && metadata.TextEncoders is null && VariableTextEncModelClasses.Contains(metadata.ModelClassType))
         {
             metadata = null;
@@ -606,6 +679,10 @@ public class T2IModelHandler
         }
         if (metadata is null || metadata.ModelFileVersion != modified || metadata.ModelSidecarFingerprint != sidecarFingerprint || recheckStaleModelClass)
         {
+            if (scan is not null)
+            {
+                Interlocked.Increment(ref scan.Rebuilds);
+            }
             string autoImg = GetAutoFormatImage(model);
             if (autoImg is not null)
             {
@@ -906,6 +983,10 @@ public class T2IModelHandler
                 }
             }
         }
+        else if (scan is not null)
+        {
+            Interlocked.Increment(ref scan.CacheHits);
+        }
         if (!string.IsNullOrWhiteSpace(metadata.ModelClassType))
         {
             metadata.ModelClassType = T2IModelClassSorter.Remaps.GetValueOrDefault(metadata.ModelClassType, metadata.ModelClassType);
@@ -930,7 +1011,13 @@ public class T2IModelHandler
     /// <summary>Internal model adder route. Do not call.</summary>
     public void AddAllFromFolder(string pathBase, string folder, ConcurrentDictionary<string, T2IModel> dict)
     {
-        if (IsShutdown)
+        AddAllFromFolder(pathBase, folder, dict, new ModelScanMetrics());
+    }
+
+    /// <summary>Traverses folders sequentially so only one bounded file-processing loop is active per scan.</summary>
+    private void AddAllFromFolder(string pathBase, string folder, ConcurrentDictionary<string, T2IModel> dict, ModelScanMetrics scan)
+    {
+        if (IsShutdown || Program.GlobalProgramCancel.IsCancellationRequested)
         {
             return;
         }
@@ -942,23 +1029,30 @@ public class T2IModelHandler
             Logs.Verbose($"[Model Scan] Skipping folder {actualFolder}");
             return;
         }
-        Parallel.ForEach(Directory.EnumerateDirectories(actualFolder), subfolder =>
+        long enumerationStart = Environment.TickCount64;
+        string[] subfolders = Directory.GetDirectories(actualFolder);
+        Interlocked.Add(ref scan.EnumerationMilliseconds, Environment.TickCount64 - enumerationStart);
+        foreach (string subfolder in subfolders)
         {
+            if (IsShutdown || Program.GlobalProgramCancel.IsCancellationRequested)
+            {
+                return;
+            }
             string simpleName = subfolder.Replace('\\', '/').AfterLast('/');
             string path = $"{prefix}{simpleName}";
             if (simpleName == ".git")
             {
                 Logs.Warning($"You have a .git folder in your {ModelType} model folder '{pathBase}/{path}'! That's not supposed to be there.");
-                return;
+                continue;
             }
             if (simpleName.StartsWithFast('.'))
             {
                 Logs.Verbose($"[Model Scan] Skipping hidden folder {subfolder}");
-                return;
+                continue;
             }
             try
             {
-                AddAllFromFolder(pathBase, path, dict);
+                AddAllFromFolder(pathBase, path, dict, scan);
             }
             catch (UnauthorizedAccessException)
             {
@@ -968,8 +1062,16 @@ public class T2IModelHandler
             {
                 Logs.Warning($"Error while scanning model {ModelType} subfolder '{path}': {ex.ReadableString()}");
             }
-        });
-        Parallel.ForEach(Directory.EnumerateFiles(actualFolder), file =>
+        }
+        if (IsShutdown || Program.GlobalProgramCancel.IsCancellationRequested)
+        {
+            return;
+        }
+        enumerationStart = Environment.TickCount64;
+        string[] files = Directory.GetFiles(actualFolder);
+        HashSet<string> folderFiles = GetModelScanFileNames(files);
+        Interlocked.Add(ref scan.EnumerationMilliseconds, Environment.TickCount64 - enumerationStart);
+        Parallel.ForEach(files, new ParallelOptions { MaxDegreeOfParallelism = ModelScanParallelism }, file =>
         {
             if (Program.GlobalProgramCancel.IsCancellationRequested)
             {
@@ -1003,9 +1105,10 @@ public class T2IModelHandler
                     PreviewImage = "imgs/model_placeholder.jpg",
                 };
                 dict[fullFilename] = model;
+                long metadataStart = Environment.TickCount64;
                 try
                 {
-                    LoadMetadata(model);
+                    LoadMetadata(model, folderFiles, scan);
                 }
                 catch (UnauthorizedAccessException)
                 {
@@ -1018,6 +1121,10 @@ public class T2IModelHandler
                         throw;
                     }
                     Logs.Warning($"Failed to load metadata for {fullFilename}:\n{ex.ReadableString()}");
+                }
+                finally
+                {
+                    Interlocked.Add(ref scan.MetadataMilliseconds, Environment.TickCount64 - metadataStart);
                 }
                 model.AutoWarn(true);
             }
