@@ -1424,14 +1424,83 @@ function comfyToggleButtonsVisible() {
     }
 }
 
+/** Uploads embedded workflow images to ComfyUI and replaces them with normal image loader nodes. */
+async function comfyUploadWorkflowImages(workflow, api) {
+    let uploaded = new Map();
+    for (let node of Object.values(workflow)) {
+        if (node.class_type != 'SwarmLoadImageB64') {
+            continue;
+        }
+        let encoded = node.inputs.image_base64;
+        if (typeof encoded != 'string') {
+            throw new Error('Cannot import an image loader with a connected base64 input.');
+        }
+        let filename = uploaded.get(encoded);
+        if (!filename) {
+            let binary = atob(encoded);
+            let extension;
+            if (binary.startsWith('\x89PNG\r\n\x1a\n')) {
+                extension = 'png';
+            }
+            else if (binary.startsWith('\xff\xd8\xff')) {
+                extension = 'jpg';
+            }
+            else if (binary.startsWith('RIFF') && binary.substring(8, 12) == 'WEBP') {
+                extension = 'webp';
+            }
+            else if (binary.startsWith('GIF87a') || binary.startsWith('GIF89a')) {
+                extension = 'gif';
+            }
+            else if (binary.startsWith('BM')) {
+                extension = 'bmp';
+            }
+            else if (binary.startsWith('II\x2a\x00') || binary.startsWith('MM\x00\x2a')) {
+                extension = 'tiff';
+            }
+            else {
+                throw new Error('Unsupported embedded image format.');
+            }
+            let bytes = new Uint8Array(binary.length);
+            for (let i = 0; i < binary.length; i++) {
+                bytes[i] = binary.charCodeAt(i);
+            }
+            let body = new FormData();
+            body.append('image', new Blob([bytes]), `swarm-import-${uploaded.size}.${extension}`);
+            body.append('type', 'input');
+            body.append('subfolder', 'swarm-import');
+            let response = await api.fetchApi('/upload/image', { method: 'POST', body });
+            if (!response.ok) {
+                throw new Error(`Image upload failed (${response.status}): ${await response.text()}`);
+            }
+            let result = await response.json();
+            if (!result.name || result.type != 'input') {
+                throw new Error('ComfyUI returned an invalid image upload response.');
+            }
+            filename = result.subfolder ? `${result.subfolder}/${result.name}` : result.name;
+            uploaded.set(encoded, filename);
+        }
+        node.class_type = 'LoadImage';
+        node.inputs = { image: filename };
+    }
+}
+
 /** Triggered when the 'import from generate tab' button is clicked. */
 function comfyImportWorkflow() {
-    genericRequest('ComfyGetGeneratedWorkflow', getGenInput(), (data) => {
+    genericRequest('ComfyGetGeneratedWorkflow', getGenInput(), async (data) => {
         if (!data.workflow) {
             showError('No workflow found.');
             return;
         }
-        comfyFrame().contentWindow.app.loadApiJson(comfyFrame().contentWindow.LiteGraph.cloneObject(JSON.parse(data.workflow)));
+        try {
+            let frame = comfyFrame().contentWindow;
+            let workflow = JSON.parse(data.workflow);
+            await comfyUploadWorkflowImages(workflow, frame.swarmApiDirect);
+            await frame.app.loadApiJson(frame.LiteGraph.cloneObject(workflow));
+        }
+        catch (error) {
+            console.error('Failed to import workflow images:', error);
+            showError(`Failed to import workflow: ${error.message}`);
+        }
     });
 }
 
