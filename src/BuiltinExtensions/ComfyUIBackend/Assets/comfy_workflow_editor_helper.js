@@ -1495,7 +1495,7 @@ function comfyImportWorkflow() {
             let frame = comfyFrame().contentWindow;
             let workflow = JSON.parse(data.workflow);
             await comfyUploadWorkflowImages(workflow, frame.swarmApiDirect);
-            await frame.app.loadApiJson(frame.LiteGraph.cloneObject(workflow));
+            await frame.app.loadApiJson(frame.LiteGraph.cloneObject(workflow), null);
         }
         catch (error) {
             console.error('Failed to import workflow images:', error);
