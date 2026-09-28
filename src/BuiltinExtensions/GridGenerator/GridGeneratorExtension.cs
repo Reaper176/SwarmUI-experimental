@@ -515,7 +515,8 @@ public class GridGeneratorExtension : Extension
     public async Task<JObject> GridGenRun(WebSocket socket, Session session, JObject raw, string outputFolderName, bool doOverwrite, bool fastSkip, bool generatePage, bool publishGenMetadata, bool dryRun, bool weightOrder, string outputType, bool continueOnError, bool showOutputs)
     {
         Utilities.QuickGC();
-        using Session.GenClaim claim = session.Claim(gens: 1);
+        // Track cancellation now; PostPreprocessCallback adds only the actual image generations.
+        using Session.GenClaim claim = session.Claim();
         T2IParamInput baseParams;
         try
         {
@@ -717,7 +718,6 @@ public class GridGeneratorExtension : Extension
         }
         WebhookManager.SendManualAtEndWebhook(baseParams);
         Logs.Info("Grid Generator completed successfully");
-        claim.Complete(gens: 1);
         claim.Dispose();
         await sendStatus();
         JObject success = new() { ["success"] = "complete" };
