@@ -6,6 +6,7 @@ See [The Docs Readme](/docs/README.md) for general listing of documentation and 
 - [Prompt Syntax](/docs/Features/Prompt%20Syntax.md) for info about prompt syntax - the various features available by just typing into the prompt box.
 - [Autocompletions](/docs/Features/Autocompletions.md) for details about the prompt autocompletions engine.
 - [Image Prompting](/docs/Features/ImagePrompting.md) for details about image-prompting with IP-Adapter, ReVision, etc.
+- [Anima LoRAs](/docs/Features/Anima-LoRAs.md) for automatic LoRA block remapping on base, 2.9B, and 3.8B Anima models.
 - [ControlNet](/docs/Features/ControlNet.md) for info about using ControlNets.
 - [Custom Comfy Workflows](/docs/Features/Comfy-Workflows.md) for info about getting the most out of custom Comfy workflows in SwarmUI.
 - [Webhooks](/docs/Features/Webhooks.md) for info about custom defined webhooks triggered by your SwarmUI server.

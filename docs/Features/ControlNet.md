@@ -24,6 +24,16 @@
         - In the param group, you'll have "ControlNet Start" and "End", to limit where the controlnet applies. Starting late prevents it from affecting overall image structure, and ending early prevents it from messing up the finer details.
         - You also get a "ControlNet Two" and "Three" group, if you want to do more ControlNets in a single generation call.
 
+## Anima ControlNets
+
+Anima VACE and LLLite models use the normal Generate tab's ControlNet groups. Select an Anima generation model, a ControlNet model, and a reference image. Strength, Start, End, and the preprocessor controls work as usual. Start with strength `0.6`, start `0`, and end `0.8`; select preprocessor `None` for an already prepared control image.
+
+The Comfy backend needs [ComfyUI-Anima-Remap](https://github.com/shin131002/ComfyUI-Anima-Remap). VACE additionally requires an Anima VACE-capable [Advanced-ControlNet fork](https://github.com/PineCookie/ComfyUI-Advanced-ControlNet/tree/fix/anima-vace-hardening). Swarm uses `ACN_ControlNetLoaderAdvanced` → `AnimaVACEControlNetRemap` → `ACN_AdvancedControlNetApply_v2` for VACE, including the VAE connection. LLLite uses `AnimaLLLiteRemapApply`. The selected backend must expose the required nodes; merely having an ordinary Advanced-ControlNet installation does not guarantee its loader supports VACE weights.
+
+Both paths automatically select the remapping manifest for the loaded Anima model, including supported 28-, 40-, and 52-block models. No manual block mapping is required. LLLite Inpainting needs an Init Image mask; choose preprocessor `None` to preserve its image input. These ControlNet nodes do not replace a checkpoint's own text-encoder requirements.
+
+Place models in Swarm's ControlNet model folder (the remap loader searches Comfy's `controlnet` paths), then refresh the models list. Older unknown or Anima ControlNet classifications are rechecked after updating Swarm. Preview Only runs preprocessing without requiring the Anima control nodes.
+
 ## Troubleshooting
 
 - If you get an error while running with a ControlNet:

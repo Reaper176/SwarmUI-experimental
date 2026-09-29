@@ -143,6 +143,27 @@ public static class ComfyNodeNames
     /// <summary>Comfy class name for applying Anima ControlNet-LLLite weights.</summary>
     public const string AnimaLLLite = "SwarmAnimaLLLite";
 
+    /// <summary>Third-party Anima LLLite application with automatic host-block remapping.</summary>
+    public const string AnimaLLLiteRemap = "AnimaLLLiteRemapApply";
+
+    /// <summary>Advanced-ControlNet model loader, requiring the Anima VACE-capable fork for VACE weights.</summary>
+    public const string AdvancedControlNetLoader = "ACN_ControlNetLoaderAdvanced";
+
+    /// <summary>Third-party Anima VACE injection-block remapper.</summary>
+    public const string AnimaVaceRemap = "AnimaVACEControlNetRemap";
+
+    /// <summary>Advanced-ControlNet conditioning application.</summary>
+    public const string AdvancedControlNetApply = "ACN_AdvancedControlNetApply_v2";
+
+    /// <summary>Runtime-depth-aware Anima LoraLoader node.</summary>
+    public const string AnimaLoraLoader = "SwarmAnimaLoraLoader";
+
+    /// <summary>Runtime-depth-aware Anima LoraLoaderModelOnly node.</summary>
+    public const string AnimaLoraLoaderModelOnly = "SwarmAnimaLoraLoaderModelOnly";
+
+    /// <summary>Runtime-depth-aware Anima CreateHookLora node.</summary>
+    public const string AnimaCreateHookLora = "SwarmAnimaCreateHookLora";
+
     /// <summary>Comfy class name for creating Anima 3.8B LoRA hooks.</summary>
     public const string Anima38CreateHookLora = "SwarmAnima38CreateHookLora";
 

@@ -3,6 +3,12 @@ namespace SwarmUI.Builtin_ComfyUIBackend;
 /// <summary>Provides the built-in mapping of ComfyUI node names to Swarm feature IDs.</summary>
 public static class ComfyCapabilityCatalog
 {
+    /// <summary>Feature requiring all three nodes in the Anima VACE workflow.</summary>
+    public const string AnimaVaceControlNetFeature = "comfy_anima_vace_controlnet";
+
+    /// <summary>Feature requiring the Anima LLLite apply node with automatic block remapping.</summary>
+    public const string AnimaLLLiteRemapFeature = "comfy_anima_lllite_remap";
+
     /// <summary>Feature ID requiring the Swarm MiniMax H3 joint audio/video empty-latent node.</summary>
     public const string EmptyMiniMaxH3LatentAVFeature = "comfy_empty_minimax_h3_latent_av";
 
@@ -17,6 +23,15 @@ public static class ComfyCapabilityCatalog
 
     /// <summary>Feature ID requiring the Anima 3.8B conditioning node.</summary>
     public const string Anima38ConditioningNodeFeature = "comfy_anima_38_conditioning";
+
+    /// <summary>Feature requiring the runtime-depth-aware Anima LoraLoader node.</summary>
+    public const string AnimaLoraLoaderNodeFeature = "comfy_anima_lora_loader";
+
+    /// <summary>Feature requiring the runtime-depth-aware Anima LoraLoaderModelOnly node.</summary>
+    public const string AnimaLoraLoaderModelOnlyNodeFeature = "comfy_anima_lora_loader_model_only";
+
+    /// <summary>Feature requiring the runtime-depth-aware Anima CreateHookLora node.</summary>
+    public const string AnimaCreateHookLoraNodeFeature = "comfy_anima_create_hook_lora";
 
     /// <summary>Feature ID requiring the Anima 3.8B LoRA loader node.</summary>
     public const string Anima38LoraLoaderNodeFeature = "comfy_anima_38_lora_loader";
@@ -71,6 +86,7 @@ public static class ComfyCapabilityCatalog
     {
         return new()
         {
+            [ComfyNodeNames.AnimaLLLiteRemap] = AnimaLLLiteRemapFeature,
             [ComfyNodeNames.LoadImageB64] = "comfy_loadimage_b64",
             [ComfyNodeNames.SaveImageWS] = "comfy_saveimage_ws",
             [ComfyNodeNames.SaveAudioWS] = "comfy_saveaudio_ws",
@@ -82,6 +98,9 @@ public static class ComfyCapabilityCatalog
             [ComfyNodeNames.LoadAnima38Qwen35] = Anima38Qwen35NodeFeature,
             ["SwarmLoadAnimaQwen35Clip"] = AnimaQwen35NodeFeature,
             [ComfyNodeNames.Anima38Conditioning] = Anima38ConditioningNodeFeature,
+            [ComfyNodeNames.AnimaLoraLoader] = AnimaLoraLoaderNodeFeature,
+            [ComfyNodeNames.AnimaLoraLoaderModelOnly] = AnimaLoraLoaderModelOnlyNodeFeature,
+            [ComfyNodeNames.AnimaCreateHookLora] = AnimaCreateHookLoraNodeFeature,
             [ComfyNodeNames.Anima38LoraLoader] = Anima38LoraLoaderNodeFeature,
             [ComfyNodeNames.Anima38LoraLoaderModelOnly] = Anima38LoraLoaderModelOnlyNodeFeature,
             [ComfyNodeNames.Anima38CreateHookLora] = Anima38CreateHookLoraNodeFeature,
@@ -142,6 +161,16 @@ public static class ComfyCapabilityCatalog
         }
 
         features.ExceptWith(unresolvedDiscardFeatures);
+
+        string[] animaVaceNodes = [ComfyNodeNames.AdvancedControlNetLoader, ComfyNodeNames.AnimaVaceRemap, ComfyNodeNames.AdvancedControlNetApply];
+        if (animaVaceNodes.All(nodeTypes.Contains))
+        {
+            features.Add(AnimaVaceControlNetFeature);
+        }
+        else
+        {
+            features.Remove(AnimaVaceControlNetFeature);
+        }
 
         string hookFeature = "hook_lora_scheduling";
         string interpolatedHookFeature = "hook_lora_interpolated_scheduling";

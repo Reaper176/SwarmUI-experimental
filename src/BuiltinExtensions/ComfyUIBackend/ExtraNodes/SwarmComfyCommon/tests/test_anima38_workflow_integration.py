@@ -591,11 +591,11 @@ class Anima38WorkflowIntegrationTests(unittest.TestCase):
         self.assertIn("RequiredFlags.Add(ComfyCapabilityCatalog.Anima38ConditioningNodeFeature)", routing)
         self.assertNotIn("CompatAnima", routing)
 
-    def test_exact_anima_lora_paths_use_bridge_nodes_without_changing_generic_fallbacks(self):
+    def test_anima_lora_paths_use_remapping_nodes_with_standard_fallbacks(self):
         ordinary = method_body(self.workflow, "LoadLorasForConfinement(int confinement")
         self.assertIn("SelectLoraNodeKind(FinalLoadedModel", ordinary)
-        self.assertIn("ComfyNodeNames.Anima38LoraLoaderModelOnly", ordinary)
-        self.assertIn("ComfyNodeNames.Anima38LoraLoader", ordinary)
+        self.assertIn("ComfyNodeNames.AnimaLoraLoaderModelOnly", ordinary)
+        self.assertIn("ComfyNodeNames.AnimaLoraLoader", ordinary)
         self.assertIn('"LoraLoaderModelOnly"', ordinary)
         self.assertIn('"LoraLoader"', ordinary)
         for input_name in (
@@ -614,7 +614,7 @@ class Anima38WorkflowIntegrationTests(unittest.TestCase):
         self.assertIn("clip = [newId, 1];", ordinary)
         self.assertLess(
             ordinary.index("kind == LoraNodeKind.ModelOnlyLoader"),
-            ordinary.index("ComfyNodeNames.Anima38LoraLoaderModelOnly"),
+            ordinary.index("ComfyNodeNames.AnimaLoraLoaderModelOnly"),
         )
         self.assertNotIn("source_block_count", ordinary)
         self.assertNotIn("28", ordinary)
@@ -623,7 +623,7 @@ class Anima38WorkflowIntegrationTests(unittest.TestCase):
 
         hooks = method_body(self.workflow, "CreateHookLorasForConfinement(int confinement")
         self.assertIn("SelectLoraNodeKind(FinalLoadedModel", hooks)
-        self.assertIn("ComfyNodeNames.Anima38CreateHookLora", hooks)
+        self.assertIn("ComfyNodeNames.AnimaCreateHookLora", hooks)
         self.assertIn('"CreateHookLora"', hooks)
         for input_name in (
             "Anima38CreateHookLora.PrevHooks",
@@ -638,11 +638,24 @@ class Anima38WorkflowIntegrationTests(unittest.TestCase):
         self.assertIn('["hooks"] = currentHooks', hooks)
         self.assertIn("last = currentHooks;", hooks)
 
+    def test_anima_hook_remapping_tracks_the_connected_host(self):
+        hooks = method_body(self.workflow, "CreateHookLorasForConfinement(int confinement")
+        self.assertIn('hookInputs["model"] = sourceModel ?? CurrentModel?.Path', hooks)
+        self.assertIn('g.CreateHookLorasForConfinement(-1, g.LoadingClip, true, g.LoadingModel)', self.steps)
+        self.assertIn('g.CreateHookLorasForConfinement(part.ContextID, newClip, true, newModel)', self.steps)
+        dynamic = method_body(self.workflow, "public JArray CreateDynamicLoraHooks()")
+        self.assertIn("ComfyNodeNames.AnimaCreateHookLora", dynamic)
+        self.assertIn("DynamicLoraHooksByModel.TryGetValue(cacheKey", dynamic)
+        self.assertIn('hookInputs["model"] = sourceModel', dynamic)
+        conditioning = method_body(self.workflow, "public JArray CreateConditioningDirect(")
+        self.assertIn("IsAnima() && UserInput.DynamicLoraIndices.Count > 0", conditioning)
+        self.assertLess(conditioning.index("__anima_lora_model_"), conditioning.index("NodeHelpers.TryGetValue"))
+
     def test_exact_anima_lora_bridge_capabilities_follow_shared_workflow_applicability(self):
         bridge_capabilities = (
-            ("Anima38LoraLoader", "Anima38LoraLoaderNodeFeature"),
-            ("Anima38LoraLoaderModelOnly", "Anima38LoraLoaderModelOnlyNodeFeature"),
-            ("Anima38CreateHookLora", "Anima38CreateHookLoraNodeFeature"),
+            ("AnimaLoraLoader", "AnimaLoraLoaderNodeFeature"),
+            ("AnimaLoraLoaderModelOnly", "AnimaLoraLoaderModelOnlyNodeFeature"),
+            ("AnimaCreateHookLora", "AnimaCreateHookLoraNodeFeature"),
         )
         for node_name, feature_name in bridge_capabilities:
             with self.subTest(node_name=node_name):
@@ -652,29 +665,29 @@ class Anima38WorkflowIntegrationTests(unittest.TestCase):
                 )
 
         routing = method_body(self.extension, "RecomputeBackendRoutingRequirements(T2IParamInput input)")
-        self.assertIn("WorkflowGenerator.GetRequiredAnima38LoraNodes(input)", routing)
+        self.assertIn("WorkflowGenerator.GetRequiredAnimaLoraNodes(input)", routing)
         self.assertNotIn("hasAnyAnima38 && hasAnyLoras", routing)
-        bridge_requirement = routing.index("WorkflowGenerator.GetRequiredAnima38LoraNodes(input)")
+        bridge_requirement = routing.index("WorkflowGenerator.GetRequiredAnimaLoraNodes(input)")
         bridge_block = routing[bridge_requirement:]
         capability_mapper = method_body(
-            self.extension, "private static string[] GetAnima38LoraCapabilityRequirements"
+            self.extension, "private static string[] GetAnimaLoraCapabilityRequirements"
         )
         for (_, feature_name), requirement_name in zip(
             bridge_capabilities, ("FullLoader", "ModelOnlyLoader", "HookLoader")
         ):
             with self.subTest(feature_name=feature_name):
                 self.assertIn(
-                    f"HasFlag(WorkflowGenerator.Anima38LoraNodeRequirement.{requirement_name})",
+                    f"HasFlag(WorkflowGenerator.AnimaLoraNodeRequirement.{requirement_name})",
                     capability_mapper,
                 )
                 self.assertIn(
                     f"features.Add(ComfyCapabilityCatalog.{feature_name})",
                     capability_mapper,
                 )
-        self.assertIn("GetAnima38LoraCapabilityRequirements(animaLoraRequirements)", bridge_block)
+        self.assertIn("GetAnimaLoraCapabilityRequirements(animaLoraRequirements)", bridge_block)
 
         applicability = method_body(
-            self.workflow, "internal static Anima38LoraNodeRequirement GetRequiredAnima38LoraNodes(T2IParamInput input)"
+            self.workflow, "internal static AnimaLoraNodeRequirement GetRequiredAnimaLoraNodes(T2IParamInput input)"
         )
         for activation_rule in (
             "NegativeModelIncludeLoras",
@@ -735,11 +748,11 @@ class Anima38WorkflowIntegrationTests(unittest.TestCase):
 
     def test_bridge_routing_excludes_inapplicable_exact_roles(self):
         self.assertIn(
-            "internal static Anima38LoraNodeRequirement GetRequiredAnima38LoraNodes(T2IParamInput input)",
+            "internal static AnimaLoraNodeRequirement GetRequiredAnimaLoraNodes(T2IParamInput input)",
             self.workflow,
         )
         applicability = method_body(
-            self.workflow, "internal static Anima38LoraNodeRequirement GetRequiredAnima38LoraNodes(T2IParamInput input)"
+            self.workflow, "internal static AnimaLoraNodeRequirement GetRequiredAnimaLoraNodes(T2IParamInput input)"
         )
         cases = {
             "negative LoRAs disabled": (
@@ -766,11 +779,11 @@ class Anima38WorkflowIntegrationTests(unittest.TestCase):
 
     def test_bridge_routing_includes_active_exact_roles_with_applicable_loras(self):
         self.assertIn(
-            "internal static Anima38LoraNodeRequirement GetRequiredAnima38LoraNodes(T2IParamInput input)",
+            "internal static AnimaLoraNodeRequirement GetRequiredAnimaLoraNodes(T2IParamInput input)",
             self.workflow,
         )
         applicability = method_body(
-            self.workflow, "internal static Anima38LoraNodeRequirement GetRequiredAnima38LoraNodes(T2IParamInput input)"
+            self.workflow, "internal static AnimaLoraNodeRequirement GetRequiredAnimaLoraNodes(T2IParamInput input)"
         )
         positive_paths = {
             "base": "SectionID_BaseOnly",
@@ -786,7 +799,7 @@ class Anima38WorkflowIntegrationTests(unittest.TestCase):
 
     def test_segment_bridge_routing_matches_phase_model_and_explicit_loader_passes(self):
         applicability = method_body(
-            self.workflow, "internal static Anima38LoraNodeRequirement GetRequiredAnima38LoraNodes(T2IParamInput input)"
+            self.workflow, "internal static AnimaLoraNodeRequirement GetRequiredAnimaLoraNodes(T2IParamInput input)"
         )
         self.assertIn('string segmentApplyAfter = input.Get(T2IParamTypes.SegmentApplyAfter, "Refiner")', applicability)
         self.assertIn(
@@ -816,7 +829,7 @@ class Anima38WorkflowIntegrationTests(unittest.TestCase):
         )
         self.assertIn('schedule.Equals("none", StringComparison.OrdinalIgnoreCase)', schedule)
         applicability = method_body(
-            self.workflow, "internal static Anima38LoraNodeRequirement GetRequiredAnima38LoraNodes(T2IParamInput input)"
+            self.workflow, "internal static AnimaLoraNodeRequirement GetRequiredAnimaLoraNodes(T2IParamInput input)"
         )
         self.assertIn("addLoader(baseModel, T2IParamInput.SectionID_BaseOnly)", applicability)
         self.assertIn("addHooks(baseModel, false, baseRegionalConfinements)", applicability)
@@ -843,7 +856,7 @@ class Anima38WorkflowIntegrationTests(unittest.TestCase):
         model_steps = method_body(self.steps, "public static void Register()")
         self.assertIn("WorkflowGenerator.GetBaseSamplerRange(g.UserInput, g.IsPiD())", model_steps)
         applicability = method_body(
-            self.workflow, "internal static Anima38LoraNodeRequirement GetRequiredAnima38LoraNodes(T2IParamInput input)"
+            self.workflow, "internal static AnimaLoraNodeRequirement GetRequiredAnimaLoraNodes(T2IParamInput input)"
         )
         self.assertIn("GetBaseSamplerRange(input", applicability)
         self.assertIn("if (baseSamplerRange.Runs)", applicability)
@@ -860,7 +873,7 @@ class Anima38WorkflowIntegrationTests(unittest.TestCase):
         self.assertIn('GligenModel', regional)
         self.assertIn("part.ContextID > 1", regional)
         applicability = method_body(
-            self.workflow, "internal static Anima38LoraNodeRequirement GetRequiredAnima38LoraNodes(T2IParamInput input)"
+            self.workflow, "internal static AnimaLoraNodeRequirement GetRequiredAnimaLoraNodes(T2IParamInput input)"
         )
         self.assertIn("positiveRegionalConfinements", applicability)
         self.assertIn("negativeRegionalConfinements", applicability)
@@ -875,7 +888,7 @@ class Anima38WorkflowIntegrationTests(unittest.TestCase):
 
     def test_negative_bridge_routing_covers_every_sampler_section_and_refiner_exit(self):
         applicability = method_body(
-            self.workflow, "internal static Anima38LoraNodeRequirement GetRequiredAnima38LoraNodes(T2IParamInput input)"
+            self.workflow, "internal static AnimaLoraNodeRequirement GetRequiredAnimaLoraNodes(T2IParamInput input)"
         )
         for section in (
             "SectionID_PixelDecoder",
@@ -919,7 +932,7 @@ class Anima38WorkflowIntegrationTests(unittest.TestCase):
             self.assertIn(parameter, preview)
             self.assertIn("TryGetBasicInputImage(input, out Image _)", preview)
         applicability = method_body(
-            self.workflow, "internal static Anima38LoraNodeRequirement GetRequiredAnima38LoraNodes(T2IParamInput input)"
+            self.workflow, "internal static AnimaLoraNodeRequirement GetRequiredAnimaLoraNodes(T2IParamInput input)"
         )
         termination_check = applicability.index("WorkflowTerminatesBeforeSampling(input)")
         base_loader_check = applicability.index("addLoader(baseModel")
@@ -936,7 +949,7 @@ class Anima38WorkflowIntegrationTests(unittest.TestCase):
 
     def test_unsampler_regional_hooks_are_active_and_base_model_only(self):
         applicability = method_body(
-            self.workflow, "internal static Anima38LoraNodeRequirement GetRequiredAnima38LoraNodes(T2IParamInput input)"
+            self.workflow, "internal static AnimaLoraNodeRequirement GetRequiredAnimaLoraNodes(T2IParamInput input)"
         )
         self.assertIn("mainRegionalConfinements", applicability)
         self.assertIn("baseRegionalConfinementSet", applicability)

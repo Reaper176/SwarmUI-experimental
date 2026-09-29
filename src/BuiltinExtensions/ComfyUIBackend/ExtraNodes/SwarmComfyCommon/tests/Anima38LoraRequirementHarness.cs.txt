@@ -29,8 +29,8 @@ internal static class Anima38LoraRequirementHarness
         Type workflowType = typeof(WorkflowGenerator);
         MethodInfo select = workflowType.GetMethod("SelectLoraNodeKind", StaticNonPublic)
             ?? throw new InvalidOperationException("SelectLoraNodeKind is missing or public.");
-        MethodInfo requirement = workflowType.GetMethod("GetAnima38LoraNodeRequirement", StaticNonPublic)
-            ?? throw new InvalidOperationException("GetAnima38LoraNodeRequirement is missing or public.");
+        MethodInfo requirement = workflowType.GetMethod("GetAnimaLoraNodeRequirement", StaticNonPublic)
+            ?? throw new InvalidOperationException("GetAnimaLoraNodeRequirement is missing or public.");
         object kind = select.Invoke(null, [model, hook, clipAvailable, textEncoderStrength]);
         return requirement.Invoke(null, [model, emitted, kind]);
     }
@@ -73,8 +73,8 @@ internal static class Anima38LoraRequirementHarness
 
     private static string[] Capabilities(object requirement)
     {
-        MethodInfo mapper = typeof(ComfyUIBackendExtension).GetMethod("GetAnima38LoraCapabilityRequirements", StaticNonPublic)
-            ?? throw new InvalidOperationException("GetAnima38LoraCapabilityRequirements is missing or public.");
+        MethodInfo mapper = typeof(ComfyUIBackendExtension).GetMethod("GetAnimaLoraCapabilityRequirements", StaticNonPublic)
+            ?? throw new InvalidOperationException("GetAnimaLoraCapabilityRequirements is missing or public.");
         return [.. ((IEnumerable)mapper.Invoke(null, [requirement])).Cast<string>()];
     }
 
@@ -118,7 +118,8 @@ internal static class Anima38LoraRequirementHarness
         ComfyUIBackendExtension.PixelDecoderModel = TestModelParam("testpixeldecodermodel");
         T2IModel exact = Model("anima-3_8b");
         T2IModel exactModelOnly = Model("anima-3_8b", false);
-        T2IModel generic = Model("anima");
+        T2IModel generic = Model("stable-diffusion-xl-v1");
+        T2IModel anima = Model("anima");
         (string Name, string Actual, string Expected)[] cases =
         [
             ("full-only", Predict(exact, true, false, true, 1), "FullLoader"),
@@ -127,6 +128,8 @@ internal static class Anima38LoraRequirementHarness
             ("model-only-zero-text-strength", Predict(exact, true, false, true, 0), "ModelOnlyLoader"),
             ("hook-only", Predict(exact, true, true, true, 1), "HookLoader"),
             ("inactive-confinement", Predict(exact, false, false, true, 1), "None"),
+            ("base-anima", Predict(anima, true, false, true, 1), "FullLoader"),
+            ("base-anima-hooks", Predict(anima, true, true, true, 1), "HookLoader"),
             ("generic", Predict(generic, true, false, true, 1), "None")
         ];
         foreach ((string name, string actual, string expected) in cases)
@@ -145,6 +148,8 @@ internal static class Anima38LoraRequirementHarness
             Console.Error.WriteLine($"mixed: expected FullLoader, HookLoader, got {mixed}");
             return 1;
         }
+        T2IParamInput dynamicAnima = Request(anima, ["-1"], ["none"], ["1"]);
+        dynamicAnima.DynamicLoraIndices.Add(0);
         (string Name, T2IParamInput Input, string Expected)[] requestCases =
         [
             ("request-full-only", Request(exact, ["-1"], ["none"], ["1"]), "FullLoader"),
@@ -153,6 +158,9 @@ internal static class Anima38LoraRequirementHarness
             ("request-mixed", Request(exact, ["-1", "-1"], ["none", "0:1"], ["1", "1"]), "FullLoader, HookLoader"),
             ("request-inactive-confinement", Request(exact, ["1"], ["none"], ["1"]), "None"),
             ("request-no-lora", Request(exact, null, null, null), "None"),
+            ("request-dynamic-anima", dynamicAnima, "HookLoader"),
+            ("request-base-anima", Request(anima, ["-1"], ["none"], ["1"]), "FullLoader"),
+            ("request-base-anima-hooks", Request(anima, ["-1"], ["0:1"], ["1"]), "HookLoader"),
             ("request-generic", Request(generic, ["-1"], ["none"], ["1"]), "None"),
             ("request-active-refiner", WithRefiner(Request(generic, ["-1"], ["none"], ["1"]), exact, true), "FullLoader"),
             ("request-inactive-refiner", WithRefiner(Request(generic, ["-1"], ["none"], ["1"]), exact, false), "None"),
@@ -163,7 +171,7 @@ internal static class Anima38LoraRequirementHarness
         ];
         foreach ((string name, T2IParamInput input, string expected) in requestCases)
         {
-            object predicted = typeof(WorkflowGenerator).GetMethod("GetRequiredAnima38LoraNodes", StaticNonPublic).Invoke(null, [input]);
+            object predicted = typeof(WorkflowGenerator).GetMethod("GetRequiredAnimaLoraNodes", StaticNonPublic).Invoke(null, [input]);
             string actual = predicted.ToString();
             if (actual != expected)
             {
@@ -175,9 +183,9 @@ internal static class Anima38LoraRequirementHarness
                 ? []
                 : [.. expected.Split(", ").Select(value => value switch
                 {
-                    "FullLoader" => "comfy_anima_38_lora_loader",
-                    "ModelOnlyLoader" => "comfy_anima_38_lora_loader_model_only",
-                    "HookLoader" => "comfy_anima_38_create_hook_lora",
+                    "FullLoader" => "comfy_anima_lora_loader",
+                    "ModelOnlyLoader" => "comfy_anima_lora_loader_model_only",
+                    "HookLoader" => "comfy_anima_create_hook_lora",
                     _ => throw new InvalidOperationException(value)
                 })];
             if (!capabilities.SequenceEqual(expectedCapabilities))

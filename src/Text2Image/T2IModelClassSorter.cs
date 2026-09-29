@@ -38,6 +38,13 @@ public class T2IModelClassSorter
         return IsAnima(header) && HasModelKey(header, "blocks.51.adaln_modulation_cross_attn.2.weight");
     }
 
+    /// <summary>Recognizes the Anima VACE control branch accepted by Advanced-ControlNet.</summary>
+    public static bool IsAnimaVaceControlNet(JObject header)
+    {
+        return header is not null && header.ContainsKey("control_blocks.0.after_proj.weight")
+            && header.ContainsKey("control_blocks.0.block.adaln_modulation_cross_attn.2.weight");
+    }
+
     /// <summary>Recognizes the ordinary Anima variant with a learned Qwen3.5-2B source projection.</summary>
     public static bool IsAnimaQwen35(JObject header)
     {
@@ -992,6 +999,10 @@ public class T2IModelClassSorter
         {
             return isAnimaControlnet(h);
         }});
+        Register(new() { ID = "anima/controlnet-vace", CompatClass = CompatAnima, Name = "Anima VACE ControlNet", StandardWidth = 1024, StandardHeight = 1024, IsThisModelOfClass = (m, h) =>
+        {
+            return IsAnimaVaceControlNet(h);
+        }});
         // ====================== Hunyuan Image 2.1 ======================
         Register(new() { ID = "hunyuan-image-2_1", CompatClass = CompatHunyuanImage2_1, Name = "Hunyuan Image", StandardWidth = 2048, StandardHeight = 2048, IsThisModelOfClass = (m, h) =>
         {
@@ -1116,6 +1127,7 @@ public class T2IModelClassSorter
         Remaps["anima-preview"] = "anima";
         Remaps["anima-preview/lora"] = "anima/lora";
         Remaps["anima-preview/control-net-lllite"] = "anima/controlnet";
+        Remaps["anima-preview/control-net-vace"] = "anima/controlnet-vace";
         // ====================== Comfy model_type remaps ======================
         Remaps["hunyuanvideo1.5_480p_t2v_distilled"] = "hunyuan-video-1_5";
         Remaps["hunyuanvideo1.5_480p_i2v_distilled"] = "hunyuan-video-1_5";
@@ -1141,6 +1153,11 @@ public class T2IModelClassSorter
     /// <summary>Classifies a model, optionally suppressing diagnostics for an intermediate metadata pass.</summary>
     public static T2IModelClass IdentifyClassFor(T2IModel model, JObject header, string modelType, bool reportDiagnostics)
     {
+        // Older sidecars may label VACE as generic Anima ControlNet (LLLite).
+        if (modelType == "ControlNet" && IsAnimaVaceControlNet(header))
+        {
+            return ModelClasses["anima/controlnet-vace"];
+        }
         if (model.ModelClass is not null)
         {
             return model.ModelClass;

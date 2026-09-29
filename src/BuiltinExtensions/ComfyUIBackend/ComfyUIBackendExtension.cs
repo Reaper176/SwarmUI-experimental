@@ -1336,9 +1336,23 @@ public class ComfyUIBackendExtension : Extension
         input.RequiredFlags.Remove(ComfyCapabilityCatalog.EmptyMiniMaxH3LatentAVFeature);
         input.RequiredFlags.Remove(ComfyCapabilityCatalog.Anima38Qwen35NodeFeature);
         input.RequiredFlags.Remove(ComfyCapabilityCatalog.Anima38ConditioningNodeFeature);
-        input.RequiredFlags.Remove(ComfyCapabilityCatalog.Anima38LoraLoaderNodeFeature);
-        input.RequiredFlags.Remove(ComfyCapabilityCatalog.Anima38LoraLoaderModelOnlyNodeFeature);
-        input.RequiredFlags.Remove(ComfyCapabilityCatalog.Anima38CreateHookLoraNodeFeature);
+        input.RequiredFlags.Remove(ComfyCapabilityCatalog.AnimaLoraLoaderNodeFeature);
+        input.RequiredFlags.Remove(ComfyCapabilityCatalog.AnimaLoraLoaderModelOnlyNodeFeature);
+        input.RequiredFlags.Remove(ComfyCapabilityCatalog.AnimaCreateHookLoraNodeFeature);
+        input.RequiredFlags.Remove(ComfyCapabilityCatalog.AnimaVaceControlNetFeature);
+        input.RequiredFlags.Remove(ComfyCapabilityCatalog.AnimaLLLiteRemapFeature);
+        bool hasCustomWorkflow = input.TryGet(CustomWorkflowParam, out string customWorkflow) && !string.IsNullOrWhiteSpace(customWorkflow);
+        if (!input.Get(T2IParamTypes.ControlNetPreviewOnly) && !hasCustomWorkflow && !input.TryGetRaw(FakeRawInputType, out _))
+        {
+            foreach (T2IParamTypes.ControlNetParamHolder control in T2IParamTypes.Controlnets)
+            {
+                if (input.TryGet(control.Strength, out double _) && input.TryGet(control.Model, out T2IModel controlModel)
+                    && WorkflowGenerator.GetAnimaControlNetFeature(controlModel) is string feature)
+                {
+                    input.RequiredFlags.Add(feature);
+                }
+            }
+        }
         if (input.TryGet(ModelAttentionBackend, out string attentionBackend))
         {
             input.RequiredFlags.Add(ComfyCapabilityCatalog.ModelAttentionBackendValueFeature(attentionBackend));
@@ -1375,8 +1389,8 @@ public class ComfyUIBackendExtension : Extension
                 ? ComfyCapabilityCatalog.Anima38AdapterAutoFeature
                 : ComfyCapabilityCatalog.Anima38AdapterValueFeature(anima38Adapter));
         }
-        WorkflowGenerator.Anima38LoraNodeRequirement animaLoraRequirements = WorkflowGenerator.GetRequiredAnima38LoraNodes(input);
-        foreach (string feature in GetAnima38LoraCapabilityRequirements(animaLoraRequirements))
+        WorkflowGenerator.AnimaLoraNodeRequirement animaLoraRequirements = WorkflowGenerator.GetRequiredAnimaLoraNodes(input);
+        foreach (string feature in GetAnimaLoraCapabilityRequirements(animaLoraRequirements))
         {
             input.RequiredFlags.Add(feature);
         }
@@ -1391,20 +1405,20 @@ public class ComfyUIBackendExtension : Extension
     }
 
     /// <summary>Maps exact emitted Anima 3.8B LoRA bridge nodes to backend capability IDs.</summary>
-    private static string[] GetAnima38LoraCapabilityRequirements(WorkflowGenerator.Anima38LoraNodeRequirement requirements)
+    private static string[] GetAnimaLoraCapabilityRequirements(WorkflowGenerator.AnimaLoraNodeRequirement requirements)
     {
         List<string> features = [];
-        if (requirements.HasFlag(WorkflowGenerator.Anima38LoraNodeRequirement.FullLoader))
+        if (requirements.HasFlag(WorkflowGenerator.AnimaLoraNodeRequirement.FullLoader))
         {
-            features.Add(ComfyCapabilityCatalog.Anima38LoraLoaderNodeFeature);
+            features.Add(ComfyCapabilityCatalog.AnimaLoraLoaderNodeFeature);
         }
-        if (requirements.HasFlag(WorkflowGenerator.Anima38LoraNodeRequirement.ModelOnlyLoader))
+        if (requirements.HasFlag(WorkflowGenerator.AnimaLoraNodeRequirement.ModelOnlyLoader))
         {
-            features.Add(ComfyCapabilityCatalog.Anima38LoraLoaderModelOnlyNodeFeature);
+            features.Add(ComfyCapabilityCatalog.AnimaLoraLoaderModelOnlyNodeFeature);
         }
-        if (requirements.HasFlag(WorkflowGenerator.Anima38LoraNodeRequirement.HookLoader))
+        if (requirements.HasFlag(WorkflowGenerator.AnimaLoraNodeRequirement.HookLoader))
         {
-            features.Add(ComfyCapabilityCatalog.Anima38CreateHookLoraNodeFeature);
+            features.Add(ComfyCapabilityCatalog.AnimaCreateHookLoraNodeFeature);
         }
         return [.. features];
     }

@@ -163,6 +163,9 @@ public partial class WorkflowGenerator
     /// <summary>Combined Comfy hook group for LoRAs controlled by step-scheduled prompt tags.</summary>
     public JArray DynamicLoraHooks = null;
 
+    /// <summary>Dynamic LoRA hook chains keyed by the model path used for Anima block remapping.</summary>
+    public Dictionary<string, JArray> DynamicLoraHooksByModel = [];
+
     /// <summary>Last used ID, tracked to safely add new nodes with sequential IDs. Note that this starts at 100, as below 100 is reserved for constant node IDs.</summary>
     public int LastID = 100;
 
@@ -469,6 +472,10 @@ public partial class WorkflowGenerator
             {
                 wantedPreproc = "depth";
             }
+            else if (cnName.Contains("lineart"))
+            {
+                wantedPreproc = "lineart";
+            }
             else if (cnName.Contains("sketch"))
             {
                 wantedPreproc = "sketch";
@@ -520,6 +527,22 @@ public partial class WorkflowGenerator
             {
                 getBestFor("lineart");
             }
+            if (preprocessor == "none")
+            {
+                getBestFor("scribble");
+            }
+        }
+        else if (wantedPreproc == "lineart")
+        {
+            getBestFor("lineartpreprocessor");
+            if (preprocessor == "none")
+            {
+                getBestFor("lineart");
+            }
+        }
+        else if (wantedPreproc == "scribble")
+        {
+            getBestFor("scribblepreprocessor");
             if (preprocessor == "none")
             {
                 getBestFor("scribble");
@@ -761,11 +784,11 @@ public partial class WorkflowGenerator
         HookLoader
     }
 
-    /// <summary>Exact Anima 3.8B bridge nodes that a workflow can emit.</summary>
+    /// <summary>Exact automatic Anima LoRA remapping nodes that a workflow can emit.</summary>
     [Flags]
-    internal enum Anima38LoraNodeRequirement
+    internal enum AnimaLoraNodeRequirement
     {
-        /// <summary>No Anima 3.8B LoRA bridge node is emitted.</summary>
+        /// <summary>No Anima LoRA remapping node is emitted.</summary>
         None = 0,
         /// <summary>The model-and-CLIP bridge loader is emitted.</summary>
         FullLoader = 1,
@@ -787,34 +810,34 @@ public partial class WorkflowGenerator
             : LoraNodeKind.FullLoader;
     }
 
-    /// <summary>Maps an emitted node kind to its exact Anima 3.8B bridge requirement.</summary>
-    private static Anima38LoraNodeRequirement GetAnima38LoraNodeRequirement(T2IModel model, bool emitted, LoraNodeKind kind)
+    /// <summary>Maps an emitted node kind to its exact Anima LoRA remapping requirement.</summary>
+    private static AnimaLoraNodeRequirement GetAnimaLoraNodeRequirement(T2IModel model, bool emitted, LoraNodeKind kind)
     {
-        if (!emitted || model?.ModelClass?.ID != "anima-3_8b")
+        if (!emitted || model?.ModelClass?.ID is not ("anima" or "anima-3_8b"))
         {
-            return Anima38LoraNodeRequirement.None;
+            return AnimaLoraNodeRequirement.None;
         }
         return kind switch
         {
-            LoraNodeKind.FullLoader => Anima38LoraNodeRequirement.FullLoader,
-            LoraNodeKind.ModelOnlyLoader => Anima38LoraNodeRequirement.ModelOnlyLoader,
-            LoraNodeKind.HookLoader => Anima38LoraNodeRequirement.HookLoader,
-            _ => Anima38LoraNodeRequirement.None
+            LoraNodeKind.FullLoader => AnimaLoraNodeRequirement.FullLoader,
+            LoraNodeKind.ModelOnlyLoader => AnimaLoraNodeRequirement.ModelOnlyLoader,
+            LoraNodeKind.HookLoader => AnimaLoraNodeRequirement.HookLoader,
+            _ => AnimaLoraNodeRequirement.None
         };
     }
 
-    /// <summary>Returns the exact Anima 3.8B LoRA bridge nodes emitted by active workflow roles.</summary>
-    internal static Anima38LoraNodeRequirement GetRequiredAnima38LoraNodes(T2IParamInput input)
+    /// <summary>Returns the exact Anima LoRA remapping nodes emitted by active workflow roles.</summary>
+    internal static AnimaLoraNodeRequirement GetRequiredAnimaLoraNodes(T2IParamInput input)
     {
         if (!input.TryGet(T2IParamTypes.Loras, out List<string> loras) || loras.Count == 0)
         {
-            return Anima38LoraNodeRequirement.None;
+            return AnimaLoraNodeRequirement.None;
         }
         List<string> weights = input.Get(T2IParamTypes.LoraWeights);
         List<string> textEncoderWeights = input.Get(T2IParamTypes.LoraTencWeights);
         List<string> confinements = input.Get(T2IParamTypes.LoraSectionConfinement);
         List<string> schedules = input.Get(T2IParamTypes.LoraSchedules);
-        Anima38LoraNodeRequirement requirements = Anima38LoraNodeRequirement.None;
+        AnimaLoraNodeRequirement requirements = AnimaLoraNodeRequirement.None;
         float textEncoderStrength(int index)
         {
             float modelStrength = weights is null || index >= weights.Count ? 1 : float.Parse(weights[index]);
@@ -822,29 +845,45 @@ public partial class WorkflowGenerator
         }
         void addOrdinary(T2IModel model, bool clipAvailable, params int[] targetConfinements)
         {
-            if (model?.ModelClass?.ID != "anima-3_8b")
+            if (model?.ModelClass?.ID is not ("anima" or "anima-3_8b"))
             {
                 return;
             }
+            if (input.DynamicLoraIndices.Count > 0)
+            {
+                requirements |= AnimaLoraNodeRequirement.HookLoader;
+            }
             for (int i = 0; i < loras.Count; i++)
             {
+                if (input.DynamicLoraIndices.Contains(i))
+                {
+                    continue;
+                }
                 bool emitted = ResolveLoraScheduleAt(schedules, i) is null && LoraAppliesToConfinements(confinements, i, targetConfinements);
                 if (!emitted)
                 {
                     continue;
                 }
                 LoraNodeKind kind = SelectLoraNodeKind(model, false, clipAvailable, textEncoderStrength(i));
-                requirements |= GetAnima38LoraNodeRequirement(model, emitted, kind);
+                requirements |= GetAnimaLoraNodeRequirement(model, emitted, kind);
             }
         }
         void addHooks(T2IModel model, bool scheduledOnly, params int[] targetConfinements)
         {
-            if (model?.ModelClass?.ID != "anima-3_8b")
+            if (model?.ModelClass?.ID is not ("anima" or "anima-3_8b"))
             {
                 return;
             }
+            if (input.DynamicLoraIndices.Count > 0)
+            {
+                requirements |= AnimaLoraNodeRequirement.HookLoader;
+            }
             for (int i = 0; i < loras.Count; i++)
             {
+                if (input.DynamicLoraIndices.Contains(i))
+                {
+                    continue;
+                }
                 bool scheduled = ResolveLoraScheduleAt(schedules, i) is not null;
                 bool emitted = (!scheduledOnly || scheduled) && LoraAppliesToConfinements(confinements, i, targetConfinements);
                 if (!emitted)
@@ -852,7 +891,7 @@ public partial class WorkflowGenerator
                     continue;
                 }
                 LoraNodeKind kind = SelectLoraNodeKind(model, true, true, 0);
-                requirements |= GetAnima38LoraNodeRequirement(model, emitted, kind);
+                requirements |= GetAnimaLoraNodeRequirement(model, emitted, kind);
             }
         }
         void addLoader(T2IModel model, int roleConfinement)
@@ -1073,7 +1112,7 @@ public partial class WorkflowGenerator
     }
 
     /// <summary>Loads and applies LoRAs in the user parameters for the given LoRA confinement ID, as a Set CLIP Hooks node.</summary>
-    public JArray CreateHookLorasForConfinement(int confinement, JArray clip, bool scheduledOnly = false)
+    public JArray CreateHookLorasForConfinement(int confinement, JArray clip, bool scheduledOnly = false, JArray sourceModel = null)
     {
         if (!UserInput.TryGet(T2IParamTypes.Loras, out List<string> loras))
         {
@@ -1120,15 +1159,21 @@ public partial class WorkflowGenerator
             float weight = weights is null || i >= weights.Count ? 1 : float.Parse(weights[i]);
             float tencWeight = tencWeights is null || i >= tencWeights.Count ? weight : float.Parse(tencWeights[i]);
             LoraNodeKind kind = SelectLoraNodeKind(FinalLoadedModel, true, clip is not null, tencWeight);
-            bool requiresAnimaBridge = GetAnima38LoraNodeRequirement(FinalLoadedModel, true, kind) == Anima38LoraNodeRequirement.HookLoader;
-            string hookLoraNode = requiresAnimaBridge ? ComfyNodeNames.Anima38CreateHookLora : "CreateHookLora";
-            string newId = CreateNode(hookLoraNode, new JObject()
+            bool requiresAnimaBridge = GetAnimaLoraNodeRequirement(FinalLoadedModel, true, kind) == AnimaLoraNodeRequirement.HookLoader;
+            string hookLoraNode = requiresAnimaBridge ? ComfyNodeNames.AnimaCreateHookLora : "CreateHookLora";
+            JObject hookInputs = new()
             {
                 [ComfyNodeInputNames.Anima38CreateHookLora.PrevHooks] = last,
                 [ComfyNodeInputNames.Anima38CreateHookLora.LoraName] = lora.ToString(ModelFolderFormat),
                 [ComfyNodeInputNames.Anima38CreateHookLora.StrengthModel] = weight,
                 [ComfyNodeInputNames.Anima38CreateHookLora.StrengthClip] = tencWeight
-            }, GetStableDynamicID(2500, i), false);
+            };
+            if (requiresAnimaBridge)
+            {
+                hookInputs["model"] = sourceModel ?? CurrentModel?.Path
+                    ?? throw new SwarmUserErrorException("Anima LoRA hooks require a connected diffusion model for block remapping.");
+            }
+            string newId = CreateNode(hookLoraNode, hookInputs, GetStableDynamicID(2500, i), false);
             JArray currentHooks = [newId, 0];
             if (rawSchedule is not null)
             {
@@ -1168,9 +1213,20 @@ public partial class WorkflowGenerator
     /// <summary>Creates the ordered hook list referenced by generated //hook attachments on dynamic LoRA prompt tags.</summary>
     public JArray CreateDynamicLoraHooks()
     {
-        if (DynamicLoraHooks is not null || UserInput.DynamicLoraIndices.Count == 0)
+        if (UserInput.DynamicLoraIndices.Count == 0)
         {
-            return DynamicLoraHooks;
+            return null;
+        }
+        bool requiresAnimaBridge = GetAnimaLoraNodeRequirement(FinalLoadedModel, true, LoraNodeKind.HookLoader) == AnimaLoraNodeRequirement.HookLoader;
+        JArray sourceModel = requiresAnimaBridge ? CurrentModel?.Path : null;
+        if (requiresAnimaBridge && sourceModel is null)
+        {
+            throw new SwarmUserErrorException("Dynamic Anima LoRAs require a connected diffusion model for block remapping.");
+        }
+        string cacheKey = sourceModel?.ToString(Newtonsoft.Json.Formatting.None) ?? "standard";
+        if (DynamicLoraHooksByModel.TryGetValue(cacheKey, out JArray cachedHooks))
+        {
+            return cachedHooks;
         }
         List<string> loras = UserInput.Get(T2IParamTypes.Loras, []);
         List<string> weights = UserInput.Get(T2IParamTypes.LoraWeights);
@@ -1191,15 +1247,22 @@ public partial class WorkflowGenerator
             FinalLoadedModelList.Add(lora);
             float weight = weights is null || i >= weights.Count ? 1 : float.Parse(weights[i], System.Globalization.CultureInfo.InvariantCulture);
             float tencWeight = tencWeights is null || i >= tencWeights.Count ? weight : float.Parse(tencWeights[i], System.Globalization.CultureInfo.InvariantCulture);
-            string newId = CreateNode("CreateHookLora", new JObject()
+            JObject hookInputs = new()
             {
                 ["prev_hooks"] = last,
                 ["lora_name"] = lora.ToString(ModelFolderFormat),
                 ["strength_model"] = weight,
                 ["strength_clip"] = tencWeight
-            }, GetStableDynamicID(3000, hookId), false);
+            };
+            if (requiresAnimaBridge)
+            {
+                hookInputs["model"] = sourceModel;
+            }
+            string newId = CreateNode(requiresAnimaBridge ? ComfyNodeNames.AnimaCreateHookLora : "CreateHookLora", hookInputs,
+                requiresAnimaBridge ? null : GetStableDynamicID(3000, hookId), false);
             last = [newId, 0];
         }
+        DynamicLoraHooksByModel[cacheKey] = last;
         DynamicLoraHooks = last;
         return DynamicLoraHooks;
     }
@@ -1269,8 +1332,8 @@ public partial class WorkflowGenerator
             }
             else if (kind == LoraNodeKind.ModelOnlyLoader)
             {
-                bool requiresAnimaBridge = GetAnima38LoraNodeRequirement(FinalLoadedModel, true, kind) == Anima38LoraNodeRequirement.ModelOnlyLoader;
-                string loaderNode = requiresAnimaBridge ? ComfyNodeNames.Anima38LoraLoaderModelOnly : "LoraLoaderModelOnly";
+                bool requiresAnimaBridge = GetAnimaLoraNodeRequirement(FinalLoadedModel, true, kind) == AnimaLoraNodeRequirement.ModelOnlyLoader;
+                string loaderNode = requiresAnimaBridge ? ComfyNodeNames.AnimaLoraLoaderModelOnly : "LoraLoaderModelOnly";
                 string newId = CreateNode(loaderNode, new JObject()
                 {
                     [ComfyNodeInputNames.Anima38LoraLoaderModelOnly.Model] = model,
@@ -1281,8 +1344,8 @@ public partial class WorkflowGenerator
             }
             else
             {
-                bool requiresAnimaBridge = GetAnima38LoraNodeRequirement(FinalLoadedModel, true, kind) == Anima38LoraNodeRequirement.FullLoader;
-                string loaderNode = requiresAnimaBridge ? ComfyNodeNames.Anima38LoraLoader : "LoraLoader";
+                bool requiresAnimaBridge = GetAnimaLoraNodeRequirement(FinalLoadedModel, true, kind) == AnimaLoraNodeRequirement.FullLoader;
+                string loaderNode = requiresAnimaBridge ? ComfyNodeNames.AnimaLoraLoader : "LoraLoader";
                 string newId = CreateNode(loaderNode, new JObject()
                 {
                     [ComfyNodeInputNames.Anima38LoraLoader.Model] = model,
@@ -3523,6 +3586,10 @@ public partial class WorkflowGenerator
             }
             semanticClip = NodePath(CurrentModel.Anima38SemanticClip[0].ToString(), CurrentModel.Anima38SemanticClip[1].Value<int>());
             anima38TrackerContext = $"__anima38_model_{CurrentModel.Path[0]}_{CurrentModel.Path[1]}_semantic_{semanticClip[0]}_{semanticClip[1]}";
+        }
+        if (IsAnima() && UserInput.DynamicLoraIndices.Count > 0)
+        {
+            anima38TrackerContext += $"__anima_lora_model_{CurrentModel?.Path}";
         }
         string trackerId = $"__cond_direct____{clip[0]}_{clip[1]}_{isPositive}_{tokenNormalization}_{weightInterpretation}____{prompt}_{attachImages}{anima38TrackerContext}_{steps}";
         if (id is null && NodeHelpers.TryGetValue(trackerId, out string nodeId))

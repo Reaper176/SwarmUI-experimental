@@ -112,8 +112,8 @@ public class WorkflowGeneratorSteps
             (g.LoadingModel, g.LoadingClip) = g.LoadLorasForConfinement(-1, g.LoadingModel, g.LoadingClip);
             (g.LoadingModel, g.LoadingClip) = g.LoadLorasForConfinement(0, g.LoadingModel, g.LoadingClip);
             (g.LoadingModel, g.LoadingClip) = g.LoadLorasForConfinement(g.LoadingModelLoraSectionID, g.LoadingModel, g.LoadingClip);
-            g.LoadingClip = g.CreateHookLorasForConfinement(-1, g.LoadingClip, true);
-            g.LoadingClip = g.CreateHookLorasForConfinement(0, g.LoadingClip, true);
+            g.LoadingClip = g.CreateHookLorasForConfinement(-1, g.LoadingClip, true, g.LoadingModel);
+            g.LoadingClip = g.CreateHookLorasForConfinement(0, g.LoadingClip, true, g.LoadingModel);
         }, -10);
         AddModelGenStep(g =>
         {
@@ -1123,24 +1123,10 @@ public class WorkflowGeneratorSteps
                         g.CurrentModel = g.CurrentModel.WithPath([diffsynthNode, 0]);
                         continue;
                     }
-                    if (controlModel.ModelClass?.CompatClass?.ID == T2IModelClassSorter.CompatAnima.ID)
+                    if (WorkflowGenerator.GetAnimaControlNetFeature(controlModel) is not null)
                     {
-                        if (g.IsAnima38())
-                        {
-                            throw new SwarmUserErrorException("Anima 3.8B LLLite is unsupported because its block mapping is not known-safe.");
-                        }
-                        JObject animaInputs = new()
-                        {
-                            [ComfyNodeInputNames.AnimaLLLite.Model] = g.CurrentModel.Path,
-                            [ComfyNodeInputNames.AnimaLLLite.LLLiteName] = controlModel.ToString(g.ModelFolderFormat),
-                            [ComfyNodeInputNames.AnimaLLLite.Image] = imageNodeActual.Path,
-                            [ComfyNodeInputNames.AnimaLLLite.Mask] = g.FinalMask,
-                            [ComfyNodeInputNames.AnimaLLLite.Strength] = controlStrength,
-                            [ComfyNodeInputNames.AnimaLLLite.StartPercent] = g.UserInput.Get(controlnetParams.Start, 0),
-                            [ComfyNodeInputNames.AnimaLLLite.EndPercent] = g.UserInput.Get(controlnetParams.End, 1)
-                        };
-                        string animaApplyNode = g.CreateNode(ComfyNodeNames.AnimaLLLite, animaInputs);
-                        g.CurrentModel = g.CurrentModel.WithPath([animaApplyNode, 0]);
+                        g.ApplyAnimaControlNet(controlModel, imageNodeActual, controlStrength,
+                            g.UserInput.Get(controlnetParams.Start, 0), g.UserInput.Get(controlnetParams.End, 1));
                         continue;
                     }
                     string controlModelNode = g.CreateNode("ControlNetLoader", new JObject()
@@ -1945,7 +1931,7 @@ public class WorkflowGeneratorSteps
                     if (part.ContextID > 0)
                     {
                         (JArray newModel, JArray newClip) = g.LoadLorasForConfinement(part.ContextID, g.CurrentModel.Path, clip.Path);
-                        newClip = g.CreateHookLorasForConfinement(part.ContextID, newClip, true);
+                        newClip = g.CreateHookLorasForConfinement(part.ContextID, newClip, true, newModel);
                         model = model.WithPath(newModel);
                         clip = clip.WithPath(newClip);
                         g.CurrentModel = model;
