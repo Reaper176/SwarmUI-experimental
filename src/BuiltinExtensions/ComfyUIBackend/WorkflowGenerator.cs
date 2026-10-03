@@ -1784,7 +1784,7 @@ public partial class WorkflowGenerator
     public (JArray, JArray, JArray, JArray) BuildInputImageHandling(List<JArray> images, JArray pos, JArray neg, JArray latent)
     {
         JArray imgNeg = null;
-        if (IsKontext() || IsOmniGen() || IsQwenImage() || IsQwenImage21() || IsAnyFlux2() || IsBoogu() || IsMageFlow() || (IsKrea2() && UserInput.Get(ComfyUIBackendExtension.EnableReferenceLatents, "none") != "none"))
+        if (IsKontext() || IsOmniGen() || IsQwenImage() || IsQwenImage21() || IsAnyFlux2() || IsBoogu() || IsMageFlow() || IsMingImage() || (IsKrea2() && UserInput.Get(ComfyUIBackendExtension.EnableReferenceLatents, "none") != "none"))
         {
             if (IsOmniGen() || IsQwenImageEditPlus() || IsQwenImage21() || IsBoogu() || IsMageFlow())
             {
@@ -2046,7 +2046,7 @@ public partial class WorkflowGenerator
             defscheduler ??= "simple";
         }
         // TODO: Registry of model default preferences instead of this
-        else if (IsFlux() || IsWanVideo() || IsWanVideo22() || IsOmniGen() || IsQwenImage() || IsQwenImage21() || IsZImage() || IsZetaChroma() || IsErnie() || IsHiDreamO1() || IsLens() || IsPixelDiT() || IsKrea2() || IsBoogu() || IsMageFlow() || IsMiniMaxMusic3() || IsSeedVR2())
+        else if (IsFlux() || IsWanVideo() || IsWanVideo22() || IsOmniGen() || IsQwenImage() || IsQwenImage21() || IsZImage() || IsMingImage() || IsZetaChroma() || IsErnie() || IsHiDreamO1() || IsLens() || IsPixelDiT() || IsKrea2() || IsBoogu() || IsMageFlow() || IsMiniMaxMusic3() || IsSeedVR2())
         {
             defscheduler ??= "simple";
         }
@@ -2437,6 +2437,10 @@ public partial class WorkflowGenerator
             else if (IsQwenImage())
             {
                 target = 1024; // Qwen image targets 1328 for gen but wants 1024 inputs.
+                doesFit = Math.Abs(actual - target) <= 64;
+            }
+            else if (IsMingImage())
+            {
                 doesFit = Math.Abs(actual - target) <= 64;
             }
             if (fixSize && !doesFit)
@@ -3874,6 +3878,37 @@ public partial class WorkflowGenerator
                 });
                 imageNode = [batched, 0];
             }
+            node = CreateNode("SwarmTextEncodeAdvanced", new JObject()
+            {
+                ["clip"] = clip,
+                ["lora_hooks"] = CreateDynamicLoraHooks(),
+                ["steps"] = steps,
+                ["prompt"] = prompt,
+                ["width"] = width,
+                ["height"] = height,
+                ["target_width"] = width,
+                ["target_height"] = height,
+                ["images"] = imageNode
+            }, id);
+        }
+        else if (IsMingImage() && isPositive)
+        {
+            JArray imageNode = GetPromptImage(true, true, 0);
+            for (int i = 1; i < 8; i++)
+            {
+                JArray image2 = GetPromptImage(true, true, i);
+                if (image2 is null)
+                {
+                    break;
+                }
+                string batched = CreateNode("ImageBatch", new JObject()
+                {
+                    ["image1"] = imageNode,
+                    ["image2"] = image2
+                });
+                imageNode = [batched, 0];
+            }
+            // TODO: Just hit wantsSwarmCustom
             node = CreateNode("SwarmTextEncodeAdvanced", new JObject()
             {
                 ["clip"] = clip,

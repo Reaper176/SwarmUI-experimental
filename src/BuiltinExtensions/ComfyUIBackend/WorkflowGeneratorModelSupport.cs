@@ -134,6 +134,9 @@ public partial class WorkflowGenerator
     /// <summary>Returns true if the current model is a Z-Image model.</summary>
     public bool IsZImage() => IsModelCompatClass(T2IModelClassSorter.CompatZImage);
 
+    /// <summary>Returns true if the current model is a Ming Image model.</summary>
+    public bool IsMingImage() => IsModelCompatClass(T2IModelClassSorter.CompatMingImage);
+
     /// <summary>Returns true if the current model is a Zeta Chroma model.</summary>
     public bool IsZetaChroma() => IsModelCompatClass(T2IModelClassSorter.CompatZetaChroma);
 
@@ -353,7 +356,7 @@ public partial class WorkflowGenerator
                 ["width"] = width
             }, id));
         }
-        else if (IsSD3() || IsFlux() || IsHiDream() || IsChroma() || IsOmniGen() || IsQwenImage() || IsZImage() || IsOvis() || IsKandinsky5ImgLite() || IsAnima() || IsLongcatImage() || IsKrea2())
+        else if (IsSD3() || IsFlux() || IsHiDream() || IsChroma() || IsOmniGen() || IsQwenImage() || IsZImage() || IsOvis() || IsKandinsky5ImgLite() || IsAnima() || IsLongcatImage() || IsKrea2() || IsMingImage())
         {
             return resultImage(CreateNode("EmptySD3LatentImage", new JObject()
             {
@@ -522,7 +525,8 @@ public partial class WorkflowGenerator
                 ["width"] = width
             }, id));
         }
-        else if (UserInput.Get(ComfyUIBackendExtension.ShiftedLatentAverageInit, false))
+        // Note: check type before arg to cause it to fall into unused list if enabled on wrong model type
+        else if ((IsModelCompatClass(T2IModelClassSorter.CompatSdv1) || IsModelCompatClass(T2IModelClassSorter.CompatSdv2) || IsModelCompatClass(T2IModelClassSorter.CompatSdxl)) && UserInput.Get(ComfyUIBackendExtension.ShiftedLatentAverageInit, false))
         {
             double offA = 0, offB = 0, offC = 0, offD = 0;
             switch (FinalLoadedModel.ModelClass?.CompatClass?.ID)
@@ -735,6 +739,11 @@ public partial class WorkflowGenerator
         public string GetQwenImage21TextEncoder()
         {
             return RequireClipModel("qwen3vl_8b_int8_convrot.safetensors", "https://huggingface.co/Comfy-Org/Qwen-Image-2.1/resolve/main/text_encoders/qwen3vl_8b_int8_convrot.safetensors", "8bfd0f6e12abf2d2d697ecc888e5e90b0d6741d6708f05799f53afa560452e8f", T2IParamTypes.QwenModel);
+        }
+
+        public string GetMingImageTextEncoder()
+        {
+            return RequireClipModel("ming_image_0.1_ling_mini_2.0_int8_convrot.safetensors", "https://huggingface.co/Comfy-Org/Ming-Image/resolve/main/text_encoders/ming_image_0.1_ling_mini_2.0_int8_convrot.safetensors", "9d9f31cfce37c24ae1589287f5c33bd9dda80e14ddf773b5e17a0bb69c8cc4b1", null);
         }
 
         public string GetQwenImage25_7b_tenc()
@@ -1504,7 +1513,7 @@ public partial class WorkflowGenerator
         else if (IsQwenImage21())
         {
             helpers.LoadClip("qwen_image", helpers.GetQwenImage21TextEncoder());
-            helpers.DoVaeLoader(null, T2IModelClassSorter.CompatQwenImage21, "qwen-image-2.1-vae");
+            helpers.DoVaeLoader(UserInput.SourceSession?.User?.Settings?.VAEs?.DefaultQwen21VAE, T2IModelClassSorter.CompatQwenImage21, "qwen-image-2.1-vae");
         }
         else if (IsQwenImage())
         {
@@ -1516,6 +1525,11 @@ public partial class WorkflowGenerator
                 ["shift"] = UserInput.Get(T2IParamTypes.SigmaShift, 3, sectionId: sectionId)
             });
             LoadingModel = [samplingNode, 0];
+        }
+        else if (IsMingImage())
+        {
+            helpers.LoadClip("qwen_image", helpers.GetMingImageTextEncoder());
+            helpers.DoVaeLoader(null, T2IModelClassSorter.CompatMingImage, "ming-image-vae");
         }
         else if (IsHunyuanImage())
         {
@@ -1724,7 +1738,7 @@ public partial class WorkflowGenerator
                 });
                 LoadingModel = [samplingNode, 0];
             }
-            else if (IsZImage() || IsAceStep15() || IsAnima() || IsBoogu())
+            else if (IsZImage() || IsAceStep15() || IsAnima() || IsBoogu() || IsMingImage())
             {
                 string samplingNode = CreateNode("ModelSamplingAuraFlow", new JObject()
                 {
