@@ -36,6 +36,9 @@ public class T2IPromptHandling
 
         public string TriggerPhraseExtra = "";
 
+        /// <summary>Chant source used when estimating prompt length without a generation input.</summary>
+        public string ChantSource;
+
         public void TrackWarning(string warning)
         {
             Logs.Warning(warning);
@@ -380,6 +383,20 @@ public class T2IPromptHandling
                 }
             }
             return result.Trim();
+        };
+        PromptTagProcessors["chant"] = (data, context) =>
+        {
+            string source = context.Input?.SourceSession?.User?.Settings.AutoComplete.ChantSource ?? context.ChantSource;
+            if (AutoCompleteListHelper.GetChants(source).TryGetValue(data.Trim(), out AutoCompleteListHelper.Chant chant))
+            {
+                return chant.Content;
+            }
+            context.TrackWarning($"Chant '{data}' was not found in the selected chant file '{source}'.");
+            return null;
+        };
+        PromptTagLengthEstimators["chant"] = (data, context) =>
+        {
+            return AutoCompleteListHelper.GetChants(context.ChantSource).TryGetValue(data.Trim(), out AutoCompleteListHelper.Chant chant) ? chant.Content : null;
         };
         PromptTagProcessors["wc"] = PromptTagProcessors["wildcard"];
         PromptTagLengthEstimators["wildcard"] = (data, context) =>
@@ -940,11 +957,17 @@ public class T2IPromptHandling
 
     public static string ProcessPromptLikeForLength(string val)
     {
+        return ProcessPromptLikeForLength(val, null);
+    }
+
+    /// <summary>Estimates prompt text length using the user's selected chant source.</summary>
+    public static string ProcessPromptLikeForLength(string val, string chantSource)
+    {
         if (val is null)
         {
             return null;
         }
-        PromptTagContext context = new();
+        PromptTagContext context = new() { ChantSource = chantSource };
         void processSet(Dictionary<string, Func<string, PromptTagContext, string>> set)
         {
             val = StringConversionHelper.QuickSimpleTagFiller(val, "<", ">", tag =>

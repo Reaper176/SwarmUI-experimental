@@ -25,3 +25,22 @@ If you want to have autocompletions for word lists (*such as anime booru tags*),
 - Go to `User` -> `User Settings`
 - find the option `AutoCompletionsSource` and select your word list file of choice.
 - Go back to the generate tab, and start typing! Words will pop up and are tab completable or clickable.
+
+### Chants
+
+Chants are named prompt snippets. Select a JSON file under **User → User Settings → AutoComplete → Chant Source** to enable them independently of your word list. Files belong in `Data/Autocompletions`; restart Swarm or reload parameter values after adding or editing a file.
+
+The JSON format is an array of entries:
+
+```json
+[
+    {
+        "name": "Basic-NegativePrompt",
+        "terms": "Basic,Negative,Low,Quality",
+        "content": "(worst quality, low quality, normal quality)",
+        "color": 3
+    }
+]
+```
+
+Type `<chant:` in either the positive or negative prompt to autocomplete names from your selected file. Suggestions also match the optional comma-separated `terms`. For example, `<chant:Basic-NegativePrompt>` expands to `(worst quality, low quality, normal quality)` during generation. Names are case-insensitive and must be unique within the file. Content is inserted as written, including parentheses and line breaks. A missing chant leaves the tag intact and records a parser warning. Leave **Chant Source** empty to disable chants.

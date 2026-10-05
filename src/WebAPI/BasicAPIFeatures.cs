@@ -389,7 +389,8 @@ public static class BasicAPIFeatures
                     "modelnamehere": ["preset_title"]
                 }
             },
-            "autocompletions": ["Word\nword\ntag\n3"]
+            "autocompletions": ["Word\nword\ntag\n3"],
+            "chants": [{"name": "Basic-NegativePrompt", "terms": "Basic,Negative", "color": 3}]
         """)]
     public static async Task<JObject> GetMyUserData(Session session)
     {
@@ -403,7 +404,13 @@ public static class BasicAPIFeatures
             ["starred_models"] = JObject.Parse(session.User.GetGenericData("starred_models", "full") ?? "{}"),
             ["model_preset_links"] = JObject.Parse(session.User.GetGenericData("modelpresetlinks", "full") ?? "{}"),
             // TODO: Paren escaping is model-specific now, so maybe the escape should be handled elsewhere?
-            ["autocompletions"] = string.IsNullOrWhiteSpace(settings.Source) ? null : new JArray(AutoCompleteListHelper.GetData(settings.Source, settings.EscapeParens && session.User.Settings.ParamParsing.ParseAlternativePromptSyntaxes, settings.Suffix, settings.SpacingMode))
+            ["autocompletions"] = string.IsNullOrWhiteSpace(settings.Source) ? null : new JArray(AutoCompleteListHelper.GetData(settings.Source, settings.EscapeParens && session.User.Settings.ParamParsing.ParseAlternativePromptSyntaxes, settings.Suffix, settings.SpacingMode)),
+            ["chants"] = new JArray(AutoCompleteListHelper.GetChants(settings.ChantSource).Values.Select(chant => new JObject
+            {
+                ["name"] = chant.Name,
+                ["terms"] = chant.Terms,
+                ["color"] = chant.Color
+            }))
         };
     }
 

@@ -83,8 +83,8 @@ public static class UtilAPI
     public static void Register()
     {
         API.RegisterAPICall(GetGenPageTabPartial, false, Permissions.FundamentalGenerateTabAccess);
-        API.RegisterAPICall(CountTokens, false, Permissions.UseTokenizer);
-        API.RegisterAPICall(TokenizeInDetail, false, Permissions.UseTokenizer);
+        API.RegisterAPICall((Func<Session, string, bool, string, bool, Task<JObject>>)CountTokens, false, Permissions.UseTokenizer);
+        API.RegisterAPICall((Func<Session, string, bool, string, bool, Task<JObject>>)TokenizeInDetail, false, Permissions.UseTokenizer);
         API.RegisterAPICall(Pickle2SafeTensor, true, Permissions.Pickle2Safetensors);
         API.RegisterAPICall(WipeMetadata, true, Permissions.ResetMetadata);
     }
@@ -229,8 +229,15 @@ public static class UtilAPI
         };
     }
 
+    /// <summary>Preserves the original tokenizer entry point for extensions without a user session.</summary>
+    public static Task<JObject> CountTokens(string text, bool skipPromptSyntax = false, string tokenset = "clip", bool weighting = true)
+    {
+        return CountTokens(null, text, skipPromptSyntax, tokenset, weighting);
+    }
+
     [API.APIDescription("Count the CLIP-like tokens in a given text prompt.", "\"count\": 0")]
     public static async Task<JObject> CountTokens(
+        Session session,
         [API.APIParameter("The text to tokenize.")] string text,
         [API.APIParameter("If false, process prompt syntax (things like `<random:`) as if its regular text. If true, clean it up first.")] bool skipPromptSyntax = false,
         [API.APIParameter("What tokenization set to use.")] string tokenset = "clip",
@@ -247,7 +254,7 @@ public static class UtilAPI
                     text = text[..skippable];
                 }
             }
-            text = T2IPromptHandling.ProcessPromptLikeForLength(text);
+            text = T2IPromptHandling.ProcessPromptLikeForLength(text, session?.User.Settings.AutoComplete.ChantSource);
         }
         (JObject error, CliplikeTokenizer tokenizer) = GetTokenizerForAPI(text, tokenset);
         if (error is not null)
@@ -264,6 +271,12 @@ public static class UtilAPI
         return new JObject() { ["count"] = biggest, ["split_data"] = BuildPromptSplitMetadata(rawText, tokenizer) };
     }
 
+    /// <summary>Preserves the original detailed tokenizer entry point for extensions without a user session.</summary>
+    public static Task<JObject> TokenizeInDetail(string text, bool skipPromptSyntax = false, string tokenset = "clip", bool weighting = true)
+    {
+        return TokenizeInDetail(null, text, skipPromptSyntax, tokenset, weighting);
+    }
+
     [API.APIDescription("Tokenize some prompt text and get thorough detail about it.",
         """
             "tokens":
@@ -276,6 +289,7 @@ public static class UtilAPI
             ]
         """)]
     public static async Task<JObject> TokenizeInDetail(
+        Session session,
         [API.APIParameter("The text to tokenize.")] string text,
         [API.APIParameter("If false, process prompt syntax (things like `<random:`) as if its regular text. If true, clean it up first.")] bool skipPromptSyntax = false,
         [API.APIParameter("What tokenization set to use.")] string tokenset = "clip",
@@ -291,7 +305,7 @@ public static class UtilAPI
                     text = text[..skippable];
                 }
             }
-            text = T2IPromptHandling.ProcessPromptLikeForLength(text);
+            text = T2IPromptHandling.ProcessPromptLikeForLength(text, session?.User.Settings.AutoComplete.ChantSource);
         }
         (JObject error, CliplikeTokenizer tokenizer) = GetTokenizerForAPI(text, tokenset);
         if (error is not null)

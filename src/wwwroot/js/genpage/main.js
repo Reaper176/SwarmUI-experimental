@@ -43,6 +43,8 @@ let lastHistoryImage = null, lastHistoryImageDiv = null;
 let currentMetadataVal = null, currentImgSrc = null;
 
 let autoCompletionsList = null;
+/** Chants available from the user's selected JSON source. */
+let promptChants = [];
 let autoCompletionsOptimize = false;
 window.imageEditor = window.imageEditor || null;
 
@@ -405,6 +407,7 @@ function loadUserData(callback, errorHandle = null) {
         }
         permissions.updateFrom(data.permissions);
         starredModels = data.starred_models;
+        promptChants = data.chants || [];
         autoCompletionsList = {};
         if (data.autocompletions) {
             let allSet = [];

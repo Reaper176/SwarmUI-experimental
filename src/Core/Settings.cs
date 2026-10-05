@@ -788,6 +788,17 @@ public class Settings : AutoConfiguration
             [SettingsOptions(Impl = typeof(SourceImpl))]
             public string Source = "";
 
+            /// <summary>Options for the per-user chant source.</summary>
+            public class ChantSourceImpl : SettingsOptionsAttribute.AbstractImpl
+            {
+                public override string[] GetOptions => ["", .. AutoCompleteListHelper.ChantFileNames.Order()];
+            }
+
+            /// <summary>Selected JSON file for named prompt expansions.</summary>
+            [ConfigComment("Optional chant JSON file inside Data/Autocompletions. Use &lt;chant:Name&gt; in either prompt to insert a chant's content. Leave empty to disable chants. Reload parameter values after editing chant files.")]
+            [SettingsOptions(Impl = typeof(ChantSourceImpl))]
+            public string ChantSource = "";
+
             [ConfigComment("If true, the auto-completion will escape parentheses with backslashes to prevent parsing errors.\nDoes nothing if ParseAlternativePromptSyntaxes is disabled.")]
             public bool EscapeParens = true;
 

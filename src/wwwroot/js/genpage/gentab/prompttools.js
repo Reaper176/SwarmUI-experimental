@@ -39,6 +39,15 @@ class PromptTabCompleteClass {
             let searchWord = prefixLow.substring(colonInd + 1);
             return this.getOrderedMatches(dataHolder.data, searchWord).map(p => `\t${p}`);
         });
+        this.registerPrefix('chant', 'Insert the content of a named chant from your selected chant file', (prefix) => {
+            let prefixLow = prefix.toLowerCase();
+            return promptChants.filter(chant => chant.name.toLowerCase().includes(prefixLow)
+                || chant.terms.toLowerCase().includes(prefixLow)).map(chant => ({
+                    raw: true,
+                    name: `<chant:${chant.name}>`,
+                    clean_html: `<span class="tag-text tag-type-${chant.color}">${escapeHtml(chant.name)}</span>`
+                }));
+        });
         this.registerAltPrefix('wc', 'wildcard');
         this.registerPrefix('wildcard[2-4]', 'Select multiple random lines from a wildcard file (presaved list of options) (works same as "random" but for wildcards)', (prefix) => {
             let prefixLow = prefix.toLowerCase();
