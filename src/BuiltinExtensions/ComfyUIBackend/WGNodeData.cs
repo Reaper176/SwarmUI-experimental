@@ -177,10 +177,15 @@ public class WGNodeData(JArray _path, WorkflowGenerator _gen, string _dataType, 
             }
             else
             {
-                decoded = Gen.CreateNode("VAEDecode", new JObject()
+                // Tile by default instead of waiting for an untiled decode to run out of memory.
+                decoded = Gen.CreateNode("VAEDecodeTiled", new JObject()
                 {
                     ["vae"] = vae.Path,
-                    ["samples"] = Path
+                    ["samples"] = Path,
+                    ["tile_size"] = UserInput.Get(T2IParamTypes.VAETileSize, 256),
+                    ["overlap"] = UserInput.Get(T2IParamTypes.VAETileOverlap, 64),
+                    ["temporal_size"] = UserInput.Get(T2IParamTypes.VAETemporalTileSize, Gen.IsAnyWanModel() || Gen.IsHunyuanVideo15() || Gen.IsMiniMaxH3() ? 4096 : 32),
+                    ["temporal_overlap"] = UserInput.Get(T2IParamTypes.VAETemporalTileOverlap, 4)
                 }, id);
             }
             if (Gen.IsMiniMaxH3() && Frames == 2)
@@ -320,24 +325,17 @@ public class WGNodeData(JArray _path, WorkflowGenerator _gen, string _dataType, 
                     ["compression"] = UserInput.Get(T2IParamTypes.CascadeLatentCompression, 32)
                 }, id);
             }
-            else if (UserInput.TryGet(T2IParamTypes.VAETileSize, out _) || UserInput.TryGet(T2IParamTypes.VAETemporalTileSize, out _))
+            else
             {
+                // Use the same tiled default for init images and refinement crops.
                 encoded = Gen.CreateNode("VAEEncodeTiled", new JObject()
                 {
                     ["vae"] = vae.Path,
                     ["pixels"] = Path,
                     ["tile_size"] = UserInput.Get(T2IParamTypes.VAETileSize, 256),
                     ["overlap"] = UserInput.Get(T2IParamTypes.VAETileOverlap, 64),
-                    ["temporal_size"] = UserInput.Get(T2IParamTypes.VAETemporalTileSize, Gen.IsAnyWanModel() ? 9999 : 32),
+                    ["temporal_size"] = UserInput.Get(T2IParamTypes.VAETemporalTileSize, Gen.IsAnyWanModel() || Gen.IsHunyuanVideo15() || Gen.IsMiniMaxH3() ? 4096 : 32),
                     ["temporal_overlap"] = UserInput.Get(T2IParamTypes.VAETemporalTileOverlap, 4)
-                }, id);
-            }
-            else
-            {
-                encoded = Gen.CreateNode("VAEEncode", new JObject()
-                {
-                    ["vae"] = vae.Path,
-                    ["pixels"] = Path
                 }, id);
             }
             return WithPath([encoded, 0], DataType == DT_IMAGE ? DT_LATENT_IMAGE : DT_LATENT_VIDEO, vae.Compat, mayHaveAlpha: vae.Compat?.SupportsAlpha ?? false);
