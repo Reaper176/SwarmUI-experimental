@@ -172,7 +172,7 @@ public class AnimaControlNetTests : SwarmUITest
     /// <summary>The new classification triggers a one-time recheck only for relevant cached ControlNets.</summary>
     [TestCase(null, 5, true)]
     [TestCase("anima/controlnet", 5, true)]
-    [TestCase("anima/controlnet-vace", 6, false)]
+    [TestCase("anima/controlnet-vace", 7, false)]
     [TestCase("stable-diffusion-xl-v1-base/controlnet", 5, false)]
     public void RefreshesRelevantControlNetCache(string modelClass, int revision, bool stale)
     {

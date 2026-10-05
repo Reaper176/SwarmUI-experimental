@@ -15,7 +15,7 @@ namespace SwarmUI.Text2Image;
 public class T2IModelHandler
 {
     /// <summary>Revision of model-class cache decisions that require targeted re-evaluation.</summary>
-    private const int ModelClassCacheRevision = 6;
+    private const int ModelClassCacheRevision = 7;
 
     /// <summary>Bounds active model-file processing without recursively multiplying workers.</summary>
     private const int ModelScanParallelism = 4;
@@ -583,6 +583,7 @@ public class T2IModelHandler
         return metadata is not null
             && metadata.ModelClassRevision < ModelClassCacheRevision
             && (metadata.ModelClassType == T2IModelClassSorter.CompatCosmosPredict2_14b.ID
+                || (modelType == "Stable-Diffusion" && metadata.ModelClassType == "anima-3_8b")
                 || (modelType == "ControlNet" && (string.IsNullOrWhiteSpace(metadata.ModelClassType) || metadata.ModelClassType.StartsWith("anima", StringComparison.Ordinal)))
                 || (modelType == "LoRA" && string.IsNullOrWhiteSpace(metadata.ModelClassType)));
     }

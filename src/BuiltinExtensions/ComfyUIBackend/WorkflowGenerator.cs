@@ -813,7 +813,7 @@ public partial class WorkflowGenerator
     /// <summary>Maps an emitted node kind to its exact Anima LoRA remapping requirement.</summary>
     private static AnimaLoraNodeRequirement GetAnimaLoraNodeRequirement(T2IModel model, bool emitted, LoraNodeKind kind)
     {
-        if (!emitted || model?.ModelClass?.ID is not ("anima" or "anima-3_8b"))
+        if (!emitted || model?.ModelClass?.ID is not ("anima" or "anima-3_8b" or "anima-3_8b-base"))
         {
             return AnimaLoraNodeRequirement.None;
         }
@@ -845,7 +845,7 @@ public partial class WorkflowGenerator
         }
         void addOrdinary(T2IModel model, bool clipAvailable, params int[] targetConfinements)
         {
-            if (model?.ModelClass?.ID is not ("anima" or "anima-3_8b"))
+            if (model?.ModelClass?.ID is not ("anima" or "anima-3_8b" or "anima-3_8b-base"))
             {
                 return;
             }
@@ -870,7 +870,7 @@ public partial class WorkflowGenerator
         }
         void addHooks(T2IModel model, bool scheduledOnly, params int[] targetConfinements)
         {
-            if (model?.ModelClass?.ID is not ("anima" or "anima-3_8b"))
+            if (model?.ModelClass?.ID is not ("anima" or "anima-3_8b" or "anima-3_8b-base"))
             {
                 return;
             }

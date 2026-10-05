@@ -19,3 +19,9 @@ LoRAs containing only CLIP or text-adapter tensors pass through without block re
 ## Activating an update
 
 Build Swarm, then restart both Swarm and its ComfyUI backend. The new nodes are `SwarmAnimaLoraLoader`, `SwarmAnimaLoraLoaderModelOnly`, and `SwarmAnimaCreateHookLora`. Backend capability checks require the corresponding node before routing a request to it. A restart without rebuilding Swarm does not activate the C# workflow changes.
+
+## Standard and semantic 3.8B checkpoints
+
+A 52-block model does not automatically need the optional Qwen3.5 semantic pipeline. Plain expanded checkpoints such as `anima38B_base.safetensors` are classified as **Anima 3.8B (Standard Encoder)** and use the ordinary Qwen3-0.6B encoder. Their automatic sampler defaults follow standard Anima (`er_sde` / `simple`); explicit sampler selections are preserved. Ordinary checkpoints with a learned Qwen3.5 source projection retain projection-aware encoder selection.
+
+Semantic connector tensors or an explicit `anima-3_8b` architecture declaration retain the semantic path and its encoder/adapter requirements. A model-cache revision refreshes older automatic 3.8B classifications from the checkpoint header after rebuilding and restarting Swarm. LoRA remapping supports both classes.

@@ -270,7 +270,7 @@ internal static class Anima38ClassificationHarness
         bool staleNullLoraResult = isStale(staleNullLora, "LoRA");
         bool staleNullCheckpointResult = isStale(staleNullLora, "Stable-Diffusion");
         bool freshNullLoraResult = isStale(freshNullLora, "LoRA");
-        if (!staleCosmosResult || freshCosmosResult || staleAnimaResult || !staleNullLoraResult || staleNullCheckpointResult || freshNullLoraResult)
+        if (!staleCosmosResult || freshCosmosResult || !staleAnimaResult || !staleNullLoraResult || staleNullCheckpointResult || freshNullLoraResult)
         {
             throw new InvalidOperationException($"Unexpected model-class cache policy: stale Cosmos={staleCosmosResult}, fresh Cosmos={freshCosmosResult}, stale Anima={staleAnimaResult}, stale null LoRA={staleNullLoraResult}, stale null checkpoint={staleNullCheckpointResult}, fresh null LoRA={freshNullLoraResult}.");
         }
@@ -336,8 +336,20 @@ internal static class Anima38ClassificationHarness
         {
             T2IModelClassSorter.Init();
         }
-        AssertClass("Anima 3.8B with declared Cosmos metadata", Anima38Header(true), "anima-3_8b");
-        AssertClass("Anima 3.8B without metadata", Anima38Header(false), "anima-3_8b");
+        AssertClass("Anima 3.8B with declared Cosmos metadata", Anima38Header(true), "anima-3_8b-base");
+        AssertClass("Anima 3.8B without metadata", Anima38Header(false), "anima-3_8b-base");
+        JObject projectedAnima = Anima38Header(false);
+        projectedAnima["net.llm_adapter.source_proj.weight"] = TensorDescriptor(1024, 2048);
+        if (!T2IModelClassSorter.IsAnimaQwen35(projectedAnima))
+        {
+            throw new InvalidOperationException("Standard 52-block Anima must retain ordinary Qwen3.5 projection detection.");
+        }
+        JObject semanticAnima = Anima38Header(false);
+        semanticAnima["net.anima_v2_connector.quality_anchor.layer_mix_logits"] = TensorDescriptor();
+        AssertClass("Anima 3.8B with semantic connector tensors", semanticAnima, "anima-3_8b");
+        JObject declaredSemanticAnima = Anima38Header(false);
+        declaredSemanticAnima["__metadata__"] = new JObject { ["modelspec.architecture"] = "anima-3_8b" };
+        AssertClass("Explicit semantic Anima architecture", declaredSemanticAnima, "anima-3_8b");
         AssertClass("Genuine Cosmos with declared Cosmos metadata", CosmosHeader(true), cosmosId);
         AssertClass("Genuine Cosmos without metadata", CosmosHeader(false), cosmosId);
         AssertClass("Older generic Anima", GenericAnimaHeader(), "anima");

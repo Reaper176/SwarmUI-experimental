@@ -120,6 +120,7 @@ internal static class Anima38LoraRequirementHarness
         T2IModel exactModelOnly = Model("anima-3_8b", false);
         T2IModel generic = Model("stable-diffusion-xl-v1");
         T2IModel anima = Model("anima");
+        T2IModel expandedBase = Model("anima-3_8b-base");
         (string Name, string Actual, string Expected)[] cases =
         [
             ("full-only", Predict(exact, true, false, true, 1), "FullLoader"),
@@ -128,6 +129,7 @@ internal static class Anima38LoraRequirementHarness
             ("model-only-zero-text-strength", Predict(exact, true, false, true, 0), "ModelOnlyLoader"),
             ("hook-only", Predict(exact, true, true, true, 1), "HookLoader"),
             ("inactive-confinement", Predict(exact, false, false, true, 1), "None"),
+            ("expanded-base", Predict(expandedBase, true, false, true, 1), "FullLoader"),
             ("base-anima", Predict(anima, true, false, true, 1), "FullLoader"),
             ("base-anima-hooks", Predict(anima, true, true, true, 1), "HookLoader"),
             ("generic", Predict(generic, true, false, true, 1), "None")

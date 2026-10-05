@@ -82,7 +82,7 @@ public partial class WorkflowGenerator
     /// <summary>Returns true if the current model is Anima.</summary>
     public bool IsAnima() => IsModelCompatClass(T2IModelClassSorter.CompatAnima);
 
-    /// <summary>Returns true if the current model is Anima 3.8B.</summary>
+    /// <summary>Returns true if the current model uses the Anima 3.8B Qwen3.5 semantic path.</summary>
     public bool IsAnima38() => CurrentModelClass()?.ID == "anima-3_8b";
 
     /// <summary>Returns true if the current model is a Kontext model (eg Flux.1 Kontext Dev).</summary>

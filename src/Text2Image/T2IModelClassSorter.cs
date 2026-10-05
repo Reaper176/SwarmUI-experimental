@@ -38,6 +38,15 @@ public class T2IModelClassSorter
         return IsAnima(header) && HasModelKey(header, "blocks.51.adaln_modulation_cross_attn.2.weight");
     }
 
+    /// <summary>Distinguishes expanded standard Anima from an explicitly semantic 3.8B checkpoint.</summary>
+    private static bool IsAnima38Base(JObject header)
+    {
+        return IsAnima38(header)
+            && !HasModelKey(header, "anima_v2_connector.quality_anchor.layer_mix_logits")
+            && header?["__metadata__"]?.Value<string>("modelspec.architecture") != "anima-3_8b"
+            && header?["__metadata__"]?.Value<string>("architecture") != "anima-3_8b";
+    }
+
     /// <summary>Recognizes the Anima VACE control branch accepted by Advanced-ControlNet.</summary>
     public static bool IsAnimaVaceControlNet(JObject header)
     {
@@ -48,7 +57,7 @@ public class T2IModelClassSorter
     /// <summary>Recognizes the ordinary Anima variant with a learned Qwen3.5-2B source projection.</summary>
     public static bool IsAnimaQwen35(JObject header)
     {
-        if (header is null || !IsAnima(header) || IsAnima38(header))
+        if (header is null || !IsAnima(header) || (IsAnima38(header) && !IsAnima38Base(header)))
         {
             return false;
         }
@@ -995,10 +1004,14 @@ public class T2IModelClassSorter
             return isAuraFlow(h);
         }});
         // ====================== Anima ======================
-        // Classification expectations: 52-block Anima models resolve to anima-3_8b, while older/generic Anima models continue to resolve to anima.
-        Register(new() { ID = "anima-3_8b", CompatClass = CompatAnima, Name = "Anima 3.8B", StandardWidth = 1024, StandardHeight = 1024, IsThisModelOfClass = (m, h) =>
+        // Block expansion alone does not require the optional Qwen3.5 semantic encoder.
+        Register(new() { ID = "anima-3_8b-base", CompatClass = CompatAnima, Name = "Anima 3.8B (Standard Encoder)", StandardWidth = 1024, StandardHeight = 1024, IsThisModelOfClass = (m, h) =>
         {
-            return IsAnima38(h);
+            return IsAnima38Base(h);
+        }});
+        Register(new() { ID = "anima-3_8b", CompatClass = CompatAnima, Name = "Anima 3.8B (Qwen3.5 Semantic)", StandardWidth = 1024, StandardHeight = 1024, IsThisModelOfClass = (m, h) =>
+        {
+            return IsAnima38(h) && !IsAnima38Base(h);
         }});
         Register(new() { ID = "anima", CompatClass = CompatAnima, Name = "Anima", StandardWidth = 1024, StandardHeight = 1024, IsThisModelOfClass = (m, h) =>
         {
