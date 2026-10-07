@@ -1,0 +1,2444 @@
+[
+    {
+        "name": "Basic-NegativePrompt",
+        "terms": "Basic,Negative,Low,Quality",
+        "content": "(worst quality, low quality, normal quality)",
+        "color": 3
+    },
+    {
+        "name": "Basic-HighQuality",
+        "terms": "Basic,Best,High,Quality",
+        "content": "(masterpiece, best quality, high quality, highres, ultra-detailed)",
+        "color": 1
+    },
+    {
+        "name": "Basic-Start",
+        "terms": "Basic, Start, Simple, Demo",
+        "content": "(masterpiece, best quality, high quality, highres), 1girl, extremely beautiful detailed face, short curly hair, light smile, flower dress, outdoors, leaf, tree, best shadow",
+        "color": 5
+    },
+    {
+        "name": "Fancy-FireMagic",
+        "terms": "Fire, Magic, Fancy",
+        "content": "(extremely detailed CG unity 8k wallpaper, masterpiece, best quality, ultra-detailed, best illustration,best shadow, an extremely delicate and beautiful, bloom, shine, painting, sketch), dynamic angle, floating, fine detail, glinting stars, classic, a girl, solo, bare shoulders, flat_chest, diamond and glaring eyes, beautiful detailed cold face, very long blue and sliver hair, floating black feathers, wavy hair, extremely delicate and beautiful girls, beautiful detailed eyes, glowing eyes, palace, the best building, ((Fire butterflies, Flying sparks, Flames))",
+        "color": 5
+    },
+    {
+        "name": "Fancy-WaterMagic",
+        "terms": "Water, Magic, Fancy",
+        "content": "(extremely detailed CG unity 8k wallpaper, masterpiece, best quality, ultra-detailed, best illustration,best shadow, an extremely delicate and beautiful, painting, sketch, bloom, shine), classic, dynamic angle, floating, fine detail, Depth of field, classic, glinting stars, a girl, solo, bare shoulders, flat chest, diamond and glaring eyes, beautiful detailed cold face, very long blue and sliver hair, floating black feathers, wavy hair, extremely delicate and beautiful girls, beautiful detailed eyes, glowing eyes, river,palace, (forest,fairyland, feather, flowers, nature,sunlight),Hazy fog, mist",
+        "color": 5
+    },
+    {
+        "name": "Pony-Positive",
+        "terms": "Pony,Score,Positive,Quality",
+        "content": "score_9, score_8_up, score_7_up, score_6_up, source_anime, source_furry, source_pony, source_cartoon",
+        "color": 1
+    },
+    {
+        "name": "Pony-Negative",
+        "terms": "Pony,Score,Negative,Quality",
+        "content": "score_1, score_2, score_3, score_4, score_5, source_anime, source_furry, source_pony, source_cartoon",
+        "color": 3
+    },
+    {
+        "name": "Quality-CrispFineDetail",
+        "terms": "Quality,Detail,Finish,crisp,fine,detail",
+        "content": "crisp fine detail",
+        "color": 1
+    },
+    {
+        "name": "Quality-NaturalSkinTexture",
+        "terms": "Quality,Detail,Finish,natural,skin,texture",
+        "content": "natural skin texture, carefully resolved edges, consistent detail throughout",
+        "color": 1
+    },
+    {
+        "name": "Quality-PreciseLinework",
+        "terms": "Quality,Detail,Finish,precise,linework",
+        "content": "precise linework",
+        "color": 1
+    },
+    {
+        "name": "Quality-RefinedSurfaceDetail",
+        "terms": "Quality,Detail,Finish,refined,surface,detail",
+        "content": "refined surface detail, carefully resolved edges, consistent detail throughout",
+        "color": 1
+    },
+    {
+        "name": "Quality-BalancedVisualHierarchy",
+        "terms": "Quality,Detail,Finish,balanced,visual,hierarchy",
+        "content": "balanced visual hierarchy",
+        "color": 1
+    },
+    {
+        "name": "Quality-CleanSilhouettes",
+        "terms": "Quality,Detail,Finish,clean,silhouettes",
+        "content": "clean silhouettes, carefully resolved edges, consistent detail throughout",
+        "color": 1
+    },
+    {
+        "name": "Quality-RichTonalSeparation",
+        "terms": "Quality,Detail,Finish,rich,tonal,separation",
+        "content": "rich tonal separation",
+        "color": 1
+    },
+    {
+        "name": "Quality-SubtleMicrocontrast",
+        "terms": "Quality,Detail,Finish,subtle,microcontrast",
+        "content": "subtle microcontrast, carefully resolved edges, consistent detail throughout",
+        "color": 1
+    },
+    {
+        "name": "Quality-BelievableProportions",
+        "terms": "Quality,Detail,Finish,believable,proportions",
+        "content": "believable proportions",
+        "color": 1
+    },
+    {
+        "name": "Quality-PolishedEditorialFinish",
+        "terms": "Quality,Detail,Finish,polished,editorial,finish",
+        "content": "polished editorial finish, carefully resolved edges, consistent detail throughout",
+        "color": 1
+    },
+    {
+        "name": "Quality-DelicateFacialDetail",
+        "terms": "Quality,Detail,Finish,delicate,facial,detail",
+        "content": "delicate facial detail",
+        "color": 1
+    },
+    {
+        "name": "Quality-CoherentPerspective",
+        "terms": "Quality,Detail,Finish,coherent,perspective",
+        "content": "coherent perspective, carefully resolved edges, consistent detail throughout",
+        "color": 1
+    },
+    {
+        "name": "Quality-IntricateDecorativeDetail",
+        "terms": "Quality,Detail,Finish,intricate,decorative,detail",
+        "content": "intricate decorative detail",
+        "color": 1
+    },
+    {
+        "name": "Quality-LifelikeFabricFolds",
+        "terms": "Quality,Detail,Finish,lifelike,fabric,folds",
+        "content": "lifelike fabric folds, carefully resolved edges, consistent detail throughout",
+        "color": 1
+    },
+    {
+        "name": "Quality-ControlledHighlightRolloff",
+        "terms": "Quality,Detail,Finish,controlled,highlight,rolloff",
+        "content": "controlled highlight rolloff",
+        "color": 1
+    },
+    {
+        "name": "Quality-FinelyRenderedFoliage",
+        "terms": "Quality,Detail,Finish,finely,rendered,foliage",
+        "content": "finely rendered foliage, carefully resolved edges, consistent detail throughout",
+        "color": 1
+    },
+    {
+        "name": "Quality-NuancedMaterialDefinition",
+        "terms": "Quality,Detail,Finish,nuanced,material,definition",
+        "content": "nuanced material definition",
+        "color": 1
+    },
+    {
+        "name": "Quality-SmoothTonalTransitions",
+        "terms": "Quality,Detail,Finish,smooth,tonal,transitions",
+        "content": "smooth tonal transitions, carefully resolved edges, consistent detail throughout",
+        "color": 1
+    },
+    {
+        "name": "Quality-ExpressiveCharacterDetail",
+        "terms": "Quality,Detail,Finish,expressive,character,detail",
+        "content": "expressive character detail",
+        "color": 1
+    },
+    {
+        "name": "Quality-MeticulousEnvironmentalDetail",
+        "terms": "Quality,Detail,Finish,meticulous,environmental,detail",
+        "content": "meticulous environmental detail, carefully resolved edges, consistent detail throughout",
+        "color": 1
+    },
+    {
+        "name": "Style-ArtNouveauOrnament",
+        "terms": "Style,Art,Aesthetic,art,nouveau,ornament",
+        "content": "art nouveau ornament",
+        "color": 5
+    },
+    {
+        "name": "Style-ArtDecoGeometry",
+        "terms": "Style,Art,Aesthetic,art,deco,geometry",
+        "content": "art deco geometry, cohesive visual language, deliberate shapes, expressive treatment",
+        "color": 5
+    },
+    {
+        "name": "Style-ImpressionistBrushwork",
+        "terms": "Style,Art,Aesthetic,impressionist,brushwork",
+        "content": "impressionist brushwork",
+        "color": 5
+    },
+    {
+        "name": "Style-SurrealDreamImagery",
+        "terms": "Style,Art,Aesthetic,surreal,dream,imagery",
+        "content": "surreal dream imagery, cohesive visual language, deliberate shapes, expressive treatment",
+        "color": 5
+    },
+    {
+        "name": "Style-CubistFragmentation",
+        "terms": "Style,Art,Aesthetic,cubist,fragmentation",
+        "content": "cubist fragmentation",
+        "color": 5
+    },
+    {
+        "name": "Style-MinimalistGraphicDesign",
+        "terms": "Style,Art,Aesthetic,minimalist,graphic,design",
+        "content": "minimalist graphic design, cohesive visual language, deliberate shapes, expressive treatment",
+        "color": 5
+    },
+    {
+        "name": "Style-MaximalistDecorativeAbundance",
+        "terms": "Style,Art,Aesthetic,maximalist,decorative,abundance",
+        "content": "maximalist decorative abundance",
+        "color": 5
+    },
+    {
+        "name": "Style-RomanticLandscapePainting",
+        "terms": "Style,Art,Aesthetic,romantic,landscape,painting",
+        "content": "romantic landscape painting, cohesive visual language, deliberate shapes, expressive treatment",
+        "color": 5
+    },
+    {
+        "name": "Style-BaroqueTheatricality",
+        "terms": "Style,Art,Aesthetic,baroque,theatricality",
+        "content": "baroque theatricality",
+        "color": 5
+    },
+    {
+        "name": "Style-AbstractExpressionism",
+        "terms": "Style,Art,Aesthetic,abstract,expressionism",
+        "content": "abstract expressionism, cohesive visual language, deliberate shapes, expressive treatment",
+        "color": 5
+    },
+    {
+        "name": "Style-JapaneseWoodblockStyle",
+        "terms": "Style,Art,Aesthetic,Japanese,woodblock,style",
+        "content": "Japanese woodblock style",
+        "color": 5
+    },
+    {
+        "name": "Style-PopArtColorBlocking",
+        "terms": "Style,Art,Aesthetic,pop,art,color,blocking",
+        "content": "pop art color blocking, cohesive visual language, deliberate shapes, expressive treatment",
+        "color": 5
+    },
+    {
+        "name": "Style-RetroComicBookStyling",
+        "terms": "Style,Art,Aesthetic,retro,comic,book,styling",
+        "content": "retro comic book styling",
+        "color": 5
+    },
+    {
+        "name": "Style-ContemporaryEditorialIllustration",
+        "terms": "Style,Art,Aesthetic,contemporary,editorial,illustration",
+        "content": "contemporary editorial illustration, cohesive visual language, deliberate shapes, expressive treatment",
+        "color": 5
+    },
+    {
+        "name": "Style-WhimsicalStorybookStyle",
+        "terms": "Style,Art,Aesthetic,whimsical,storybook,style",
+        "content": "whimsical storybook style",
+        "color": 5
+    },
+    {
+        "name": "Style-GothicRomanticism",
+        "terms": "Style,Art,Aesthetic,gothic,romanticism",
+        "content": "gothic romanticism, cohesive visual language, deliberate shapes, expressive treatment",
+        "color": 5
+    },
+    {
+        "name": "Style-BrutalistGraphicStyling",
+        "terms": "Style,Art,Aesthetic,brutalist,graphic,styling",
+        "content": "brutalist graphic styling",
+        "color": 5
+    },
+    {
+        "name": "Style-NaiveFolkArt",
+        "terms": "Style,Art,Aesthetic,naive,folk,art",
+        "content": "naive folk art, cohesive visual language, deliberate shapes, expressive treatment",
+        "color": 5
+    },
+    {
+        "name": "Style-GeometricAbstraction",
+        "terms": "Style,Art,Aesthetic,geometric,abstraction",
+        "content": "geometric abstraction",
+        "color": 5
+    },
+    {
+        "name": "Style-ElegantFashionIllustration",
+        "terms": "Style,Art,Aesthetic,elegant,fashion,illustration",
+        "content": "elegant fashion illustration, cohesive visual language, deliberate shapes, expressive treatment",
+        "color": 5
+    },
+    {
+        "name": "Medium-TransparentWatercolorWashes",
+        "terms": "Medium,Painting,Drawing,transparent,watercolor,washes",
+        "content": "transparent watercolor washes",
+        "color": 5
+    },
+    {
+        "name": "Medium-ThickImpastoOilPaint",
+        "terms": "Medium,Painting,Drawing,thick,impasto,oil,paint",
+        "content": "thick impasto oil paint, visible handmade marks, layered pigment, tactile surface character",
+        "color": 5
+    },
+    {
+        "name": "Medium-SoftPastelDrawing",
+        "terms": "Medium,Painting,Drawing,soft,pastel,drawing",
+        "content": "soft pastel drawing",
+        "color": 5
+    },
+    {
+        "name": "Medium-ExpressiveCharcoalSketch",
+        "terms": "Medium,Painting,Drawing,expressive,charcoal,sketch",
+        "content": "expressive charcoal sketch, visible handmade marks, layered pigment, tactile surface character",
+        "color": 5
+    },
+    {
+        "name": "Medium-CrispPenAndInk",
+        "terms": "Medium,Painting,Drawing,crisp,pen,and,ink",
+        "content": "crisp pen and ink",
+        "color": 5
+    },
+    {
+        "name": "Medium-TexturedGouachePainting",
+        "terms": "Medium,Painting,Drawing,textured,gouache,painting",
+        "content": "textured gouache painting, visible handmade marks, layered pigment, tactile surface character",
+        "color": 5
+    },
+    {
+        "name": "Medium-GraphitePencilShading",
+        "terms": "Medium,Painting,Drawing,graphite,pencil,shading",
+        "content": "graphite pencil shading",
+        "color": 5
+    },
+    {
+        "name": "Medium-ColoredPencilHatching",
+        "terms": "Medium,Painting,Drawing,colored,pencil,hatching",
+        "content": "colored pencil hatching, visible handmade marks, layered pigment, tactile surface character",
+        "color": 5
+    },
+    {
+        "name": "Medium-ScratchboardEngraving",
+        "terms": "Medium,Painting,Drawing,scratchboard,engraving",
+        "content": "scratchboard engraving",
+        "color": 5
+    },
+    {
+        "name": "Medium-DelicateSilverpointDrawing",
+        "terms": "Medium,Painting,Drawing,delicate,silverpoint,drawing",
+        "content": "delicate silverpoint drawing, visible handmade marks, layered pigment, tactile surface character",
+        "color": 5
+    },
+    {
+        "name": "Medium-LinocutPrintmaking",
+        "terms": "Medium,Painting,Drawing,linocut,printmaking",
+        "content": "linocut printmaking",
+        "color": 5
+    },
+    {
+        "name": "Medium-EtchedCopperplateLines",
+        "terms": "Medium,Painting,Drawing,etched,copperplate,lines",
+        "content": "etched copperplate lines, visible handmade marks, layered pigment, tactile surface character",
+        "color": 5
+    },
+    {
+        "name": "Medium-LayeredPaperCollage",
+        "terms": "Medium,Painting,Drawing,layered,paper,collage",
+        "content": "layered paper collage",
+        "color": 5
+    },
+    {
+        "name": "Medium-TornPaperMosaic",
+        "terms": "Medium,Painting,Drawing,torn,paper,mosaic",
+        "content": "torn paper mosaic, visible handmade marks, layered pigment, tactile surface character",
+        "color": 5
+    },
+    {
+        "name": "Medium-TraditionalFrescoTexture",
+        "terms": "Medium,Painting,Drawing,traditional,fresco,texture",
+        "content": "traditional fresco texture",
+        "color": 5
+    },
+    {
+        "name": "Medium-StainedGlassIllustration",
+        "terms": "Medium,Painting,Drawing,stained,glass,illustration",
+        "content": "stained glass illustration, visible handmade marks, layered pigment, tactile surface character",
+        "color": 5
+    },
+    {
+        "name": "Medium-EmbroideredTextileArt",
+        "terms": "Medium,Painting,Drawing,embroidered,textile,art",
+        "content": "embroidered textile art",
+        "color": 5
+    },
+    {
+        "name": "Medium-CeramicTileMosaic",
+        "terms": "Medium,Painting,Drawing,ceramic,tile,mosaic",
+        "content": "ceramic tile mosaic, visible handmade marks, layered pigment, tactile surface character",
+        "color": 5
+    },
+    {
+        "name": "Medium-AirbrushedIllustration",
+        "terms": "Medium,Painting,Drawing,airbrushed,illustration",
+        "content": "airbrushed illustration",
+        "color": 5
+    },
+    {
+        "name": "Medium-InkWashPainting",
+        "terms": "Medium,Painting,Drawing,ink,wash,painting",
+        "content": "ink wash painting, visible handmade marks, layered pigment, tactile surface character",
+        "color": 5
+    },
+    {
+        "name": "Lighting-WarmGoldenHourLight",
+        "terms": "Light,Lighting,Illumination,warm,golden,hour,light",
+        "content": "warm golden hour light",
+        "color": 2
+    },
+    {
+        "name": "Lighting-CoolBlueHourLight",
+        "terms": "Light,Lighting,Illumination,cool,blue,hour,light",
+        "content": "cool blue hour light, soft falloff, readable shadow shapes, carefully balanced highlights",
+        "color": 2
+    },
+    {
+        "name": "Lighting-DramaticRimLighting",
+        "terms": "Light,Lighting,Illumination,dramatic,rim,lighting",
+        "content": "dramatic rim lighting",
+        "color": 2
+    },
+    {
+        "name": "Lighting-SoftWindowIllumination",
+        "terms": "Light,Lighting,Illumination,soft,window,illumination",
+        "content": "soft window illumination, soft falloff, readable shadow shapes, carefully balanced highlights",
+        "color": 2
+    },
+    {
+        "name": "Lighting-DappledForestSunlight",
+        "terms": "Light,Lighting,Illumination,dappled,forest,sunlight",
+        "content": "dappled forest sunlight",
+        "color": 2
+    },
+    {
+        "name": "Lighting-CandlelitAmberGlow",
+        "terms": "Light,Lighting,Illumination,candlelit,amber,glow",
+        "content": "candlelit amber glow, soft falloff, readable shadow shapes, carefully balanced highlights",
+        "color": 2
+    },
+    {
+        "name": "Lighting-HardMiddaySunlight",
+        "terms": "Light,Lighting,Illumination,hard,midday,sunlight",
+        "content": "hard midday sunlight",
+        "color": 2
+    },
+    {
+        "name": "Lighting-OvercastDiffuseLight",
+        "terms": "Light,Lighting,Illumination,overcast,diffuse,light",
+        "content": "overcast diffuse light, soft falloff, readable shadow shapes, carefully balanced highlights",
+        "color": 2
+    },
+    {
+        "name": "Lighting-LowKeyStudioLighting",
+        "terms": "Light,Lighting,Illumination,low,key,studio,lighting",
+        "content": "low key studio lighting",
+        "color": 2
+    },
+    {
+        "name": "Lighting-HighKeyStudioLighting",
+        "terms": "Light,Lighting,Illumination,high,key,studio,lighting",
+        "content": "high key studio lighting, soft falloff, readable shadow shapes, carefully balanced highlights",
+        "color": 2
+    },
+    {
+        "name": "Lighting-SplitPortraitLighting",
+        "terms": "Light,Lighting,Illumination,split,portrait,lighting",
+        "content": "split portrait lighting",
+        "color": 2
+    },
+    {
+        "name": "Lighting-ButterflyPortraitLighting",
+        "terms": "Light,Lighting,Illumination,butterfly,portrait,lighting",
+        "content": "butterfly portrait lighting, soft falloff, readable shadow shapes, carefully balanced highlights",
+        "color": 2
+    },
+    {
+        "name": "Lighting-ReflectedWaterCaustics",
+        "terms": "Light,Lighting,Illumination,reflected,water,caustics",
+        "content": "reflected water caustics",
+        "color": 2
+    },
+    {
+        "name": "Lighting-StainedGlassColoredLight",
+        "terms": "Light,Lighting,Illumination,stained,glass,colored,light",
+        "content": "stained glass colored light, soft falloff, readable shadow shapes, carefully balanced highlights",
+        "color": 2
+    },
+    {
+        "name": "Lighting-NeonSideLighting",
+        "terms": "Light,Lighting,Illumination,neon,side,lighting",
+        "content": "neon side lighting",
+        "color": 2
+    },
+    {
+        "name": "Lighting-MoonlitSilverHighlights",
+        "terms": "Light,Lighting,Illumination,moonlit,silver,highlights",
+        "content": "moonlit silver highlights, soft falloff, readable shadow shapes, carefully balanced highlights",
+        "color": 2
+    },
+    {
+        "name": "Lighting-FireplaceFlicker",
+        "terms": "Light,Lighting,Illumination,fireplace,flicker",
+        "content": "fireplace flicker",
+        "color": 2
+    },
+    {
+        "name": "Lighting-VolumetricSunbeams",
+        "terms": "Light,Lighting,Illumination,volumetric,sunbeams",
+        "content": "volumetric sunbeams, soft falloff, readable shadow shapes, carefully balanced highlights",
+        "color": 2
+    },
+    {
+        "name": "Lighting-BacklitTranslucentEdges",
+        "terms": "Light,Lighting,Illumination,backlit,translucent,edges",
+        "content": "backlit translucent edges",
+        "color": 2
+    },
+    {
+        "name": "Lighting-TheatricalSpotlight",
+        "terms": "Light,Lighting,Illumination,theatrical,spotlight",
+        "content": "theatrical spotlight, soft falloff, readable shadow shapes, carefully balanced highlights",
+        "color": 2
+    },
+    {
+        "name": "Composition-SymmetricalComposition",
+        "terms": "Composition,Framing,Layout,symmetrical,composition",
+        "content": "symmetrical composition",
+        "color": 2
+    },
+    {
+        "name": "Composition-AsymmetricalBalance",
+        "terms": "Composition,Framing,Layout,asymmetrical,balance",
+        "content": "asymmetrical balance, clear focal point, purposeful negative space, balanced visual weight",
+        "color": 2
+    },
+    {
+        "name": "Composition-RuleOfThirdsFraming",
+        "terms": "Composition,Framing,Layout,rule,of,thirds,framing",
+        "content": "rule of thirds framing",
+        "color": 2
+    },
+    {
+        "name": "Composition-StrongDiagonalComposition",
+        "terms": "Composition,Framing,Layout,strong,diagonal,composition",
+        "content": "strong diagonal composition, clear focal point, purposeful negative space, balanced visual weight",
+        "color": 2
+    },
+    {
+        "name": "Composition-CenteredIconicFraming",
+        "terms": "Composition,Framing,Layout,centered,iconic,framing",
+        "content": "centered iconic framing",
+        "color": 2
+    },
+    {
+        "name": "Composition-LayeredForegroundFraming",
+        "terms": "Composition,Framing,Layout,layered,foreground,framing",
+        "content": "layered foreground framing, clear focal point, purposeful negative space, balanced visual weight",
+        "color": 2
+    },
+    {
+        "name": "Composition-SweepingLeadingLines",
+        "terms": "Composition,Framing,Layout,sweeping,leading,lines",
+        "content": "sweeping leading lines",
+        "color": 2
+    },
+    {
+        "name": "Composition-TriangularArrangement",
+        "terms": "Composition,Framing,Layout,triangular,arrangement",
+        "content": "triangular arrangement, clear focal point, purposeful negative space, balanced visual weight",
+        "color": 2
+    },
+    {
+        "name": "Composition-CircularVisualRhythm",
+        "terms": "Composition,Framing,Layout,circular,visual,rhythm",
+        "content": "circular visual rhythm",
+        "color": 2
+    },
+    {
+        "name": "Composition-IntimateCloseCrop",
+        "terms": "Composition,Framing,Layout,intimate,close,crop",
+        "content": "intimate close crop, clear focal point, purposeful negative space, balanced visual weight",
+        "color": 2
+    },
+    {
+        "name": "Composition-ExpansiveNegativeSpace",
+        "terms": "Composition,Framing,Layout,expansive,negative,space",
+        "content": "expansive negative space",
+        "color": 2
+    },
+    {
+        "name": "Composition-FrameWithinAFrame",
+        "terms": "Composition,Framing,Layout,frame,within,a,frame",
+        "content": "frame within a frame, clear focal point, purposeful negative space, balanced visual weight",
+        "color": 2
+    },
+    {
+        "name": "Composition-RepeatingGeometricForms",
+        "terms": "Composition,Framing,Layout,repeating,geometric,forms",
+        "content": "repeating geometric forms",
+        "color": 2
+    },
+    {
+        "name": "Composition-DramaticScaleContrast",
+        "terms": "Composition,Framing,Layout,dramatic,scale,contrast",
+        "content": "dramatic scale contrast, clear focal point, purposeful negative space, balanced visual weight",
+        "color": 2
+    },
+    {
+        "name": "Composition-LowHorizonComposition",
+        "terms": "Composition,Framing,Layout,low,horizon,composition",
+        "content": "low horizon composition",
+        "color": 2
+    },
+    {
+        "name": "Composition-HighHorizonComposition",
+        "terms": "Composition,Framing,Layout,high,horizon,composition",
+        "content": "high horizon composition, clear focal point, purposeful negative space, balanced visual weight",
+        "color": 2
+    },
+    {
+        "name": "Composition-OffsetFocalSubject",
+        "terms": "Composition,Framing,Layout,offset,focal,subject",
+        "content": "offset focal subject",
+        "color": 2
+    },
+    {
+        "name": "Composition-PanoramicSceneLayout",
+        "terms": "Composition,Framing,Layout,panoramic,scene,layout",
+        "content": "panoramic scene layout, clear focal point, purposeful negative space, balanced visual weight",
+        "color": 2
+    },
+    {
+        "name": "Composition-OverlappingDepthLayers",
+        "terms": "Composition,Framing,Layout,overlapping,depth,layers",
+        "content": "overlapping depth layers",
+        "color": 2
+    },
+    {
+        "name": "Composition-SparseIsolatedComposition",
+        "terms": "Composition,Framing,Layout,sparse,isolated,composition",
+        "content": "sparse isolated composition, clear focal point, purposeful negative space, balanced visual weight",
+        "color": 2
+    },
+    {
+        "name": "Camera-MacroPhotography",
+        "terms": "Camera,Lens,Perspective,macro,photography",
+        "content": "macro photography",
+        "color": 2
+    },
+    {
+        "name": "Camera-WideAnglePerspective",
+        "terms": "Camera,Lens,Perspective,wide,angle,perspective",
+        "content": "wide angle perspective, intentional focus placement, convincing perspective, photographic depth",
+        "color": 2
+    },
+    {
+        "name": "Camera-TelephotoCompression",
+        "terms": "Camera,Lens,Perspective,telephoto,compression",
+        "content": "telephoto compression",
+        "color": 2
+    },
+    {
+        "name": "Camera-ShallowDepthOfField",
+        "terms": "Camera,Lens,Perspective,shallow,depth,of,field",
+        "content": "shallow depth of field, intentional focus placement, convincing perspective, photographic depth",
+        "color": 2
+    },
+    {
+        "name": "Camera-DeepFocusPhotography",
+        "terms": "Camera,Lens,Perspective,deep,focus,photography",
+        "content": "deep focus photography",
+        "color": 2
+    },
+    {
+        "name": "Camera-OverheadFlatLay",
+        "terms": "Camera,Lens,Perspective,overhead,flat,lay",
+        "content": "overhead flat lay, intentional focus placement, convincing perspective, photographic depth",
+        "color": 2
+    },
+    {
+        "name": "Camera-LowAngleViewpoint",
+        "terms": "Camera,Lens,Perspective,low,angle,viewpoint",
+        "content": "low angle viewpoint",
+        "color": 2
+    },
+    {
+        "name": "Camera-EyeLevelPortrait",
+        "terms": "Camera,Lens,Perspective,eye,level,portrait",
+        "content": "eye level portrait, intentional focus placement, convincing perspective, photographic depth",
+        "color": 2
+    },
+    {
+        "name": "Camera-BirdSEyeView",
+        "terms": "Camera,Lens,Perspective,bird's,eye,view",
+        "content": "bird's eye view",
+        "color": 2
+    },
+    {
+        "name": "Camera-WormSEyeView",
+        "terms": "Camera,Lens,Perspective,worm's,eye,view",
+        "content": "worm's eye view, intentional focus placement, convincing perspective, photographic depth",
+        "color": 2
+    },
+    {
+        "name": "Camera-FisheyeLensDistortion",
+        "terms": "Camera,Lens,Perspective,fisheye,lens,distortion",
+        "content": "fisheye lens distortion",
+        "color": 2
+    },
+    {
+        "name": "Camera-TiltShiftMiniatureEffect",
+        "terms": "Camera,Lens,Perspective,tilt,shift,miniature,effect",
+        "content": "tilt shift miniature effect, intentional focus placement, convincing perspective, photographic depth",
+        "color": 2
+    },
+    {
+        "name": "Camera-LongExposurePhotography",
+        "terms": "Camera,Lens,Perspective,long,exposure,photography",
+        "content": "long exposure photography",
+        "color": 2
+    },
+    {
+        "name": "Camera-MotionPanningPhotography",
+        "terms": "Camera,Lens,Perspective,motion,panning,photography",
+        "content": "motion panning photography, intentional focus placement, convincing perspective, photographic depth",
+        "color": 2
+    },
+    {
+        "name": "Camera-UnderwaterPhotography",
+        "terms": "Camera,Lens,Perspective,underwater,photography",
+        "content": "underwater photography",
+        "color": 2
+    },
+    {
+        "name": "Camera-InfraredPhotography",
+        "terms": "Camera,Lens,Perspective,infrared,photography",
+        "content": "infrared photography, intentional focus placement, convincing perspective, photographic depth",
+        "color": 2
+    },
+    {
+        "name": "Camera-AnalogFilmPhotography",
+        "terms": "Camera,Lens,Perspective,analog,film,photography",
+        "content": "analog film photography",
+        "color": 2
+    },
+    {
+        "name": "Camera-InstantCameraAesthetic",
+        "terms": "Camera,Lens,Perspective,instant,camera,aesthetic",
+        "content": "instant camera aesthetic, intentional focus placement, convincing perspective, photographic depth",
+        "color": 2
+    },
+    {
+        "name": "Camera-LargeFormatPhotography",
+        "terms": "Camera,Lens,Perspective,large,format,photography",
+        "content": "large format photography",
+        "color": 2
+    },
+    {
+        "name": "Camera-SoftFocusPortraiture",
+        "terms": "Camera,Lens,Perspective,soft,focus,portraiture",
+        "content": "soft focus portraiture, intentional focus placement, convincing perspective, photographic depth",
+        "color": 2
+    },
+    {
+        "name": "Palette-MutedEarthTones",
+        "terms": "Color,Palette,Tones,muted,earth,tones",
+        "content": "muted earth tones",
+        "color": 2
+    },
+    {
+        "name": "Palette-JewelTonePalette",
+        "terms": "Color,Palette,Tones,jewel,tone,palette",
+        "content": "jewel tone palette, harmonized midtones, selective accents, restrained color transitions",
+        "color": 2
+    },
+    {
+        "name": "Palette-PastelCandyColors",
+        "terms": "Color,Palette,Tones,pastel,candy,colors",
+        "content": "pastel candy colors",
+        "color": 2
+    },
+    {
+        "name": "Palette-MonochromeBluePalette",
+        "terms": "Color,Palette,Tones,monochrome,blue,palette",
+        "content": "monochrome blue palette, harmonized midtones, selective accents, restrained color transitions",
+        "color": 2
+    },
+    {
+        "name": "Palette-WarmSepiaTones",
+        "terms": "Color,Palette,Tones,warm,sepia,tones",
+        "content": "warm sepia tones",
+        "color": 2
+    },
+    {
+        "name": "Palette-BlackAndWhiteContrast",
+        "terms": "Color,Palette,Tones,black,and,white,contrast",
+        "content": "black and white contrast, harmonized midtones, selective accents, restrained color transitions",
+        "color": 2
+    },
+    {
+        "name": "Palette-TealAndOrangePalette",
+        "terms": "Color,Palette,Tones,teal,and,orange,palette",
+        "content": "teal and orange palette",
+        "color": 2
+    },
+    {
+        "name": "Palette-DustyRoseAndSage",
+        "terms": "Color,Palette,Tones,dusty,rose,and,sage",
+        "content": "dusty rose and sage, harmonized midtones, selective accents, restrained color transitions",
+        "color": 2
+    },
+    {
+        "name": "Palette-LavenderAndCream",
+        "terms": "Color,Palette,Tones,lavender,and,cream",
+        "content": "lavender and cream",
+        "color": 2
+    },
+    {
+        "name": "Palette-CrimsonAndCharcoal",
+        "terms": "Color,Palette,Tones,crimson,and,charcoal",
+        "content": "crimson and charcoal, harmonized midtones, selective accents, restrained color transitions",
+        "color": 2
+    },
+    {
+        "name": "Palette-EmeraldAndGold",
+        "terms": "Color,Palette,Tones,emerald,and,gold",
+        "content": "emerald and gold",
+        "color": 2
+    },
+    {
+        "name": "Palette-NavyAndCopper",
+        "terms": "Color,Palette,Tones,navy,and,copper",
+        "content": "navy and copper, harmonized midtones, selective accents, restrained color transitions",
+        "color": 2
+    },
+    {
+        "name": "Palette-IcyCyanAndSilver",
+        "terms": "Color,Palette,Tones,icy,cyan,and,silver",
+        "content": "icy cyan and silver",
+        "color": 2
+    },
+    {
+        "name": "Palette-WarmOchreAndIndigo",
+        "terms": "Color,Palette,Tones,warm,ochre,and,indigo",
+        "content": "warm ochre and indigo, harmonized midtones, selective accents, restrained color transitions",
+        "color": 2
+    },
+    {
+        "name": "Palette-ForestGreenAndIvory",
+        "terms": "Color,Palette,Tones,forest,green,and,ivory",
+        "content": "forest green and ivory",
+        "color": 2
+    },
+    {
+        "name": "Palette-CoralAndTurquoise",
+        "terms": "Color,Palette,Tones,coral,and,turquoise",
+        "content": "coral and turquoise, harmonized midtones, selective accents, restrained color transitions",
+        "color": 2
+    },
+    {
+        "name": "Palette-VioletAndAmber",
+        "terms": "Color,Palette,Tones,violet,and,amber",
+        "content": "violet and amber",
+        "color": 2
+    },
+    {
+        "name": "Palette-SoftGrayscalePalette",
+        "terms": "Color,Palette,Tones,soft,grayscale,palette",
+        "content": "soft grayscale palette, harmonized midtones, selective accents, restrained color transitions",
+        "color": 2
+    },
+    {
+        "name": "Palette-DesaturatedCinematicColors",
+        "terms": "Color,Palette,Tones,desaturated,cinematic,colors",
+        "content": "desaturated cinematic colors",
+        "color": 2
+    },
+    {
+        "name": "Palette-VibrantTropicalColors",
+        "terms": "Color,Palette,Tones,vibrant,tropical,colors",
+        "content": "vibrant tropical colors, harmonized midtones, selective accents, restrained color transitions",
+        "color": 2
+    },
+    {
+        "name": "Atmosphere-MorningMist",
+        "terms": "Atmosphere,Weather,Mood,morning,mist",
+        "content": "morning mist",
+        "color": 4
+    },
+    {
+        "name": "Atmosphere-DenseRollingFog",
+        "terms": "Atmosphere,Weather,Mood,dense,rolling,fog",
+        "content": "dense rolling fog, layered atmospheric depth, softened distant forms, immersive environmental cues",
+        "color": 4
+    },
+    {
+        "name": "Atmosphere-DriftingSnow",
+        "terms": "Atmosphere,Weather,Mood,drifting,snow",
+        "content": "drifting snow",
+        "color": 4
+    },
+    {
+        "name": "Atmosphere-GentleSummerRain",
+        "terms": "Atmosphere,Weather,Mood,gentle,summer,rain",
+        "content": "gentle summer rain, layered atmospheric depth, softened distant forms, immersive environmental cues",
+        "color": 4
+    },
+    {
+        "name": "Atmosphere-HeavyMonsoonRain",
+        "terms": "Atmosphere,Weather,Mood,heavy,monsoon,rain",
+        "content": "heavy monsoon rain",
+        "color": 4
+    },
+    {
+        "name": "Atmosphere-ApproachingThunderstorm",
+        "terms": "Atmosphere,Weather,Mood,approaching,thunderstorm",
+        "content": "approaching thunderstorm, layered atmospheric depth, softened distant forms, immersive environmental cues",
+        "color": 4
+    },
+    {
+        "name": "Atmosphere-SunlitDustHaze",
+        "terms": "Atmosphere,Weather,Mood,sunlit,dust,haze",
+        "content": "sunlit dust haze",
+        "color": 4
+    },
+    {
+        "name": "Atmosphere-SaltSprayInTheAir",
+        "terms": "Atmosphere,Weather,Mood,salt,spray,in,the,air",
+        "content": "salt spray in the air, layered atmospheric depth, softened distant forms, immersive environmental cues",
+        "color": 4
+    },
+    {
+        "name": "Atmosphere-FrostLadenStillness",
+        "terms": "Atmosphere,Weather,Mood,frost,laden,stillness",
+        "content": "frost laden stillness",
+        "color": 4
+    },
+    {
+        "name": "Atmosphere-HumidTropicalAir",
+        "terms": "Atmosphere,Weather,Mood,humid,tropical,air",
+        "content": "humid tropical air, layered atmospheric depth, softened distant forms, immersive environmental cues",
+        "color": 4
+    },
+    {
+        "name": "Atmosphere-AutumnLeafFall",
+        "terms": "Atmosphere,Weather,Mood,autumn,leaf,fall",
+        "content": "autumn leaf fall",
+        "color": 4
+    },
+    {
+        "name": "Atmosphere-WarmDesertHaze",
+        "terms": "Atmosphere,Weather,Mood,warm,desert,haze",
+        "content": "warm desert haze, layered atmospheric depth, softened distant forms, immersive environmental cues",
+        "color": 4
+    },
+    {
+        "name": "Atmosphere-SmokeFilledAmbience",
+        "terms": "Atmosphere,Weather,Mood,smoke,filled,ambience",
+        "content": "smoke filled ambience",
+        "color": 4
+    },
+    {
+        "name": "Atmosphere-LuminousTwilightHaze",
+        "terms": "Atmosphere,Weather,Mood,luminous,twilight,haze",
+        "content": "luminous twilight haze, layered atmospheric depth, softened distant forms, immersive environmental cues",
+        "color": 4
+    },
+    {
+        "name": "Atmosphere-LowLyingClouds",
+        "terms": "Atmosphere,Weather,Mood,low,lying,clouds",
+        "content": "low lying clouds",
+        "color": 4
+    },
+    {
+        "name": "Atmosphere-CrispWinterAir",
+        "terms": "Atmosphere,Weather,Mood,crisp,winter,air",
+        "content": "crisp winter air, layered atmospheric depth, softened distant forms, immersive environmental cues",
+        "color": 4
+    },
+    {
+        "name": "Atmosphere-WindsweptAtmosphere",
+        "terms": "Atmosphere,Weather,Mood,windswept,atmosphere",
+        "content": "windswept atmosphere",
+        "color": 4
+    },
+    {
+        "name": "Atmosphere-RainbowAfterRain",
+        "terms": "Atmosphere,Weather,Mood,rainbow,after,rain",
+        "content": "rainbow after rain, layered atmospheric depth, softened distant forms, immersive environmental cues",
+        "color": 4
+    },
+    {
+        "name": "Atmosphere-StarFilledNightAir",
+        "terms": "Atmosphere,Weather,Mood,star,filled,night,air",
+        "content": "star filled night air",
+        "color": 4
+    },
+    {
+        "name": "Atmosphere-HazyMidsummerHeat",
+        "terms": "Atmosphere,Weather,Mood,hazy,midsummer,heat",
+        "content": "hazy midsummer heat, layered atmospheric depth, softened distant forms, immersive environmental cues",
+        "color": 4
+    },
+    {
+        "name": "Texture-WeatheredWoodGrain",
+        "terms": "Texture,Surface,Detail,weathered,wood,grain",
+        "content": "weathered wood grain",
+        "color": 4
+    },
+    {
+        "name": "Texture-CrackedDryEarth",
+        "terms": "Texture,Surface,Detail,cracked,dry,earth",
+        "content": "cracked dry earth, irregular fine detail, tactile variation, natural wear patterns",
+        "color": 4
+    },
+    {
+        "name": "Texture-PeelingPaintedWalls",
+        "terms": "Texture,Surface,Detail,peeling,painted,walls",
+        "content": "peeling painted walls",
+        "color": 4
+    },
+    {
+        "name": "Texture-RoughHandmadePaper",
+        "terms": "Texture,Surface,Detail,rough,handmade,paper",
+        "content": "rough handmade paper, irregular fine detail, tactile variation, natural wear patterns",
+        "color": 4
+    },
+    {
+        "name": "Texture-WovenLinenTexture",
+        "terms": "Texture,Surface,Detail,woven,linen,texture",
+        "content": "woven linen texture",
+        "color": 4
+    },
+    {
+        "name": "Texture-BrushedMetalTexture",
+        "terms": "Texture,Surface,Detail,brushed,metal,texture",
+        "content": "brushed metal texture, irregular fine detail, tactile variation, natural wear patterns",
+        "color": 4
+    },
+    {
+        "name": "Texture-RippledSandPatterns",
+        "terms": "Texture,Surface,Detail,rippled,sand,patterns",
+        "content": "rippled sand patterns",
+        "color": 4
+    },
+    {
+        "name": "Texture-PorousVolcanicRock",
+        "terms": "Texture,Surface,Detail,porous,volcanic,rock",
+        "content": "porous volcanic rock, irregular fine detail, tactile variation, natural wear patterns",
+        "color": 4
+    },
+    {
+        "name": "Texture-SmoothRiverPebbles",
+        "terms": "Texture,Surface,Detail,smooth,river,pebbles",
+        "content": "smooth river pebbles",
+        "color": 4
+    },
+    {
+        "name": "Texture-CrackedCeramicGlaze",
+        "terms": "Texture,Surface,Detail,cracked,ceramic,glaze",
+        "content": "cracked ceramic glaze, irregular fine detail, tactile variation, natural wear patterns",
+        "color": 4
+    },
+    {
+        "name": "Texture-AgedLeatherTexture",
+        "terms": "Texture,Surface,Detail,aged,leather,texture",
+        "content": "aged leather texture",
+        "color": 4
+    },
+    {
+        "name": "Texture-TangledRootPatterns",
+        "terms": "Texture,Surface,Detail,tangled,root,patterns",
+        "content": "tangled root patterns, irregular fine detail, tactile variation, natural wear patterns",
+        "color": 4
+    },
+    {
+        "name": "Texture-MossCoveredStone",
+        "terms": "Texture,Surface,Detail,moss,covered,stone",
+        "content": "moss covered stone",
+        "color": 4
+    },
+    {
+        "name": "Texture-ScratchedEnamelFinish",
+        "terms": "Texture,Surface,Detail,scratched,enamel,finish",
+        "content": "scratched enamel finish, irregular fine detail, tactile variation, natural wear patterns",
+        "color": 4
+    },
+    {
+        "name": "Texture-DelicateLaceTexture",
+        "terms": "Texture,Surface,Detail,delicate,lace,texture",
+        "content": "delicate lace texture",
+        "color": 4
+    },
+    {
+        "name": "Texture-HammeredCopperSurface",
+        "terms": "Texture,Surface,Detail,hammered,copper,surface",
+        "content": "hammered copper surface, irregular fine detail, tactile variation, natural wear patterns",
+        "color": 4
+    },
+    {
+        "name": "Texture-CoarseBurlapWeave",
+        "terms": "Texture,Surface,Detail,coarse,burlap,weave",
+        "content": "coarse burlap weave",
+        "color": 4
+    },
+    {
+        "name": "Texture-FrostedGlassTexture",
+        "terms": "Texture,Surface,Detail,frosted,glass,texture",
+        "content": "frosted glass texture, irregular fine detail, tactile variation, natural wear patterns",
+        "color": 4
+    },
+    {
+        "name": "Texture-ChippedPlasterTexture",
+        "terms": "Texture,Surface,Detail,chipped,plaster,texture",
+        "content": "chipped plaster texture",
+        "color": 4
+    },
+    {
+        "name": "Texture-LayeredTreeBark",
+        "terms": "Texture,Surface,Detail,layered,tree,bark",
+        "content": "layered tree bark, irregular fine detail, tactile variation, natural wear patterns",
+        "color": 4
+    },
+    {
+        "name": "Material-PolishedMarble",
+        "terms": "Material,Surface,Finish,polished,marble",
+        "content": "polished marble",
+        "color": 4
+    },
+    {
+        "name": "Material-TranslucentJade",
+        "terms": "Material,Surface,Finish,translucent,jade",
+        "content": "translucent jade, material specific reflections, plausible surface response, nuanced highlights",
+        "color": 4
+    },
+    {
+        "name": "Material-IridescentMotherOfPearl",
+        "terms": "Material,Surface,Finish,iridescent,mother,of,pearl",
+        "content": "iridescent mother of pearl",
+        "color": 4
+    },
+    {
+        "name": "Material-MatteBlackCeramic",
+        "terms": "Material,Surface,Finish,matte,black,ceramic",
+        "content": "matte black ceramic, material specific reflections, plausible surface response, nuanced highlights",
+        "color": 4
+    },
+    {
+        "name": "Material-ClearBlownGlass",
+        "terms": "Material,Surface,Finish,clear,blown,glass",
+        "content": "clear blown glass",
+        "color": 4
+    },
+    {
+        "name": "Material-BurnishedBronze",
+        "terms": "Material,Surface,Finish,burnished,bronze",
+        "content": "burnished bronze, material specific reflections, plausible surface response, nuanced highlights",
+        "color": 4
+    },
+    {
+        "name": "Material-HammeredGold",
+        "terms": "Material,Surface,Finish,hammered,gold",
+        "content": "hammered gold",
+        "color": 4
+    },
+    {
+        "name": "Material-BrushedStainlessSteel",
+        "terms": "Material,Surface,Finish,brushed,stainless,steel",
+        "content": "brushed stainless steel, material specific reflections, plausible surface response, nuanced highlights",
+        "color": 4
+    },
+    {
+        "name": "Material-GlossyPorcelain",
+        "terms": "Material,Surface,Finish,glossy,porcelain",
+        "content": "glossy porcelain",
+        "color": 4
+    },
+    {
+        "name": "Material-TranslucentWax",
+        "terms": "Material,Surface,Finish,translucent,wax",
+        "content": "translucent wax, material specific reflections, plausible surface response, nuanced highlights",
+        "color": 4
+    },
+    {
+        "name": "Material-SoftVelvet",
+        "terms": "Material,Surface,Finish,soft,velvet",
+        "content": "soft velvet",
+        "color": 4
+    },
+    {
+        "name": "Material-FlowingSilk",
+        "terms": "Material,Surface,Finish,flowing,silk",
+        "content": "flowing silk, material specific reflections, plausible surface response, nuanced highlights",
+        "color": 4
+    },
+    {
+        "name": "Material-WeatheredDenim",
+        "terms": "Material,Surface,Finish,weathered,denim",
+        "content": "weathered denim",
+        "color": 4
+    },
+    {
+        "name": "Material-SuppleLeather",
+        "terms": "Material,Surface,Finish,supple,leather",
+        "content": "supple leather, material specific reflections, plausible surface response, nuanced highlights",
+        "color": 4
+    },
+    {
+        "name": "Material-CarvedIvoryColoredResin",
+        "terms": "Material,Surface,Finish,carved,ivory,colored,resin",
+        "content": "carved ivory colored resin",
+        "color": 4
+    },
+    {
+        "name": "Material-RawConcrete",
+        "terms": "Material,Surface,Finish,raw,concrete",
+        "content": "raw concrete, material specific reflections, plausible surface response, nuanced highlights",
+        "color": 4
+    },
+    {
+        "name": "Material-FacetedCrystal",
+        "terms": "Material,Surface,Finish,faceted,crystal",
+        "content": "faceted crystal",
+        "color": 4
+    },
+    {
+        "name": "Material-WovenRattan",
+        "terms": "Material,Surface,Finish,woven,rattan",
+        "content": "woven rattan, material specific reflections, plausible surface response, nuanced highlights",
+        "color": 4
+    },
+    {
+        "name": "Material-GlazedTerracotta",
+        "terms": "Material,Surface,Finish,glazed,terracotta",
+        "content": "glazed terracotta",
+        "color": 4
+    },
+    {
+        "name": "Material-PolishedEbonyWood",
+        "terms": "Material,Surface,Finish,polished,ebony,wood",
+        "content": "polished ebony wood, material specific reflections, plausible surface response, nuanced highlights",
+        "color": 4
+    },
+    {
+        "name": "Effects-FloatingEmberSparks",
+        "terms": "Effect,Particles,Glow,floating,ember,sparks",
+        "content": "floating ember sparks",
+        "color": 4
+    },
+    {
+        "name": "Effects-DriftingFlowerPetals",
+        "terms": "Effect,Particles,Glow,drifting,flower,petals",
+        "content": "drifting flower petals, controlled intensity, varied particle scale, integrated light and shadow",
+        "color": 4
+    },
+    {
+        "name": "Effects-LuminousDustMotes",
+        "terms": "Effect,Particles,Glow,luminous,dust,motes",
+        "content": "luminous dust motes",
+        "color": 4
+    },
+    {
+        "name": "Effects-SwirlingAutumnLeaves",
+        "terms": "Effect,Particles,Glow,swirling,autumn,leaves",
+        "content": "swirling autumn leaves, controlled intensity, varied particle scale, integrated light and shadow",
+        "color": 4
+    },
+    {
+        "name": "Effects-SparklingWaterDroplets",
+        "terms": "Effect,Particles,Glow,sparkling,water,droplets",
+        "content": "sparkling water droplets",
+        "color": 4
+    },
+    {
+        "name": "Effects-BioluminescentSpecks",
+        "terms": "Effect,Particles,Glow,bioluminescent,specks",
+        "content": "bioluminescent specks, controlled intensity, varied particle scale, integrated light and shadow",
+        "color": 4
+    },
+    {
+        "name": "Effects-SoftLensFlare",
+        "terms": "Effect,Particles,Glow,soft,lens,flare",
+        "content": "soft lens flare",
+        "color": 4
+    },
+    {
+        "name": "Effects-PrismaticLightDispersion",
+        "terms": "Effect,Particles,Glow,prismatic,light,dispersion",
+        "content": "prismatic light dispersion, controlled intensity, varied particle scale, integrated light and shadow",
+        "color": 4
+    },
+    {
+        "name": "Effects-GlowingEnergyTrails",
+        "terms": "Effect,Particles,Glow,glowing,energy,trails",
+        "content": "glowing energy trails",
+        "color": 4
+    },
+    {
+        "name": "Effects-DelicateLightBloom",
+        "terms": "Effect,Particles,Glow,delicate,light,bloom",
+        "content": "delicate light bloom, controlled intensity, varied particle scale, integrated light and shadow",
+        "color": 4
+    },
+    {
+        "name": "Effects-SuspendedSoapBubbles",
+        "terms": "Effect,Particles,Glow,suspended,soap,bubbles",
+        "content": "suspended soap bubbles",
+        "color": 4
+    },
+    {
+        "name": "Effects-FallingConfetti",
+        "terms": "Effect,Particles,Glow,falling,confetti",
+        "content": "falling confetti, controlled intensity, varied particle scale, integrated light and shadow",
+        "color": 4
+    },
+    {
+        "name": "Effects-WispsOfColoredSmoke",
+        "terms": "Effect,Particles,Glow,wisps,of,colored,smoke",
+        "content": "wisps of colored smoke",
+        "color": 4
+    },
+    {
+        "name": "Effects-ShimmeringHeatDistortion",
+        "terms": "Effect,Particles,Glow,shimmering,heat,distortion",
+        "content": "shimmering heat distortion, controlled intensity, varied particle scale, integrated light and shadow",
+        "color": 4
+    },
+    {
+        "name": "Effects-TinyIceCrystals",
+        "terms": "Effect,Particles,Glow,tiny,ice,crystals",
+        "content": "tiny ice crystals",
+        "color": 4
+    },
+    {
+        "name": "Effects-SwirlingSandParticles",
+        "terms": "Effect,Particles,Glow,swirling,sand,particles",
+        "content": "swirling sand particles, controlled intensity, varied particle scale, integrated light and shadow",
+        "color": 4
+    },
+    {
+        "name": "Effects-CascadingGlitter",
+        "terms": "Effect,Particles,Glow,cascading,glitter",
+        "content": "cascading glitter",
+        "color": 4
+    },
+    {
+        "name": "Effects-RipplingShockwaves",
+        "terms": "Effect,Particles,Glow,rippling,shockwaves",
+        "content": "rippling shockwaves, controlled intensity, varied particle scale, integrated light and shadow",
+        "color": 4
+    },
+    {
+        "name": "Effects-ChromaticEdgeFringing",
+        "terms": "Effect,Particles,Glow,chromatic,edge,fringing",
+        "content": "chromatic edge fringing",
+        "color": 4
+    },
+    {
+        "name": "Effects-BranchingElectricArcs",
+        "terms": "Effect,Particles,Glow,branching,electric,arcs",
+        "content": "branching electric arcs, controlled intensity, varied particle scale, integrated light and shadow",
+        "color": 4
+    },
+    {
+        "name": "Fantasy-EnchantedWoodland",
+        "terms": "Fantasy,Magic,Concept,enchanted,woodland",
+        "content": "enchanted woodland",
+        "color": 5
+    },
+    {
+        "name": "Fantasy-ArcaneRunePatterns",
+        "terms": "Fantasy,Magic,Concept,arcane,rune,patterns",
+        "content": "arcane rune patterns, intricate mystical details, believable material textures, a sense of wonder",
+        "color": 5
+    },
+    {
+        "name": "Fantasy-FloatingStoneIslands",
+        "terms": "Fantasy,Magic,Concept,floating,stone,islands",
+        "content": "floating stone islands",
+        "color": 5
+    },
+    {
+        "name": "Fantasy-CrystallineSpellFormations",
+        "terms": "Fantasy,Magic,Concept,crystalline,spell,formations",
+        "content": "crystalline spell formations, intricate mystical details, believable material textures, a sense of wonder",
+        "color": 5
+    },
+    {
+        "name": "Fantasy-AncientDragonMotifs",
+        "terms": "Fantasy,Magic,Concept,ancient,dragon,motifs",
+        "content": "ancient dragon motifs",
+        "color": 5
+    },
+    {
+        "name": "Fantasy-MoonGoddessSymbolism",
+        "terms": "Fantasy,Magic,Concept,moon,goddess,symbolism",
+        "content": "moon goddess symbolism, intricate mystical details, believable material textures, a sense of wonder",
+        "color": 5
+    },
+    {
+        "name": "Fantasy-FairyRingMushrooms",
+        "terms": "Fantasy,Magic,Concept,fairy,ring,mushrooms",
+        "content": "fairy ring mushrooms",
+        "color": 5
+    },
+    {
+        "name": "Fantasy-CelestialObservatory",
+        "terms": "Fantasy,Magic,Concept,celestial,observatory",
+        "content": "celestial observatory, intricate mystical details, believable material textures, a sense of wonder",
+        "color": 5
+    },
+    {
+        "name": "Fantasy-MagicalLibraryAmbience",
+        "terms": "Fantasy,Magic,Concept,magical,library,ambience",
+        "content": "magical library ambience",
+        "color": 5
+    },
+    {
+        "name": "Fantasy-EnchantedArmorDetailing",
+        "terms": "Fantasy,Magic,Concept,enchanted,armor,detailing",
+        "content": "enchanted armor detailing, intricate mystical details, believable material textures, a sense of wonder",
+        "color": 5
+    },
+    {
+        "name": "Fantasy-SpectralAnimalCompanions",
+        "terms": "Fantasy,Magic,Concept,spectral,animal,companions",
+        "content": "spectral animal companions",
+        "color": 5
+    },
+    {
+        "name": "Fantasy-AlchemicalGlassVessels",
+        "terms": "Fantasy,Magic,Concept,alchemical,glass,vessels",
+        "content": "alchemical glass vessels, intricate mystical details, believable material textures, a sense of wonder",
+        "color": 5
+    },
+    {
+        "name": "Fantasy-LivingVineOrnament",
+        "terms": "Fantasy,Magic,Concept,living,vine,ornament",
+        "content": "living vine ornament",
+        "color": 5
+    },
+    {
+        "name": "Fantasy-MysteriousPortalGlow",
+        "terms": "Fantasy,Magic,Concept,mysterious,portal,glow",
+        "content": "mysterious portal glow, intricate mystical details, believable material textures, a sense of wonder",
+        "color": 5
+    },
+    {
+        "name": "Fantasy-ForgottenTempleRelics",
+        "terms": "Fantasy,Magic,Concept,forgotten,temple,relics",
+        "content": "forgotten temple relics",
+        "color": 5
+    },
+    {
+        "name": "Fantasy-LuminousSpiritLanterns",
+        "terms": "Fantasy,Magic,Concept,luminous,spirit,lanterns",
+        "content": "luminous spirit lanterns, intricate mystical details, believable material textures, a sense of wonder",
+        "color": 5
+    },
+    {
+        "name": "Fantasy-StarWovenFabric",
+        "terms": "Fantasy,Magic,Concept,star,woven,fabric",
+        "content": "star woven fabric",
+        "color": 5
+    },
+    {
+        "name": "Fantasy-FrostMagicFiligree",
+        "terms": "Fantasy,Magic,Concept,frost,magic,filigree",
+        "content": "frost magic filigree, intricate mystical details, believable material textures, a sense of wonder",
+        "color": 5
+    },
+    {
+        "name": "Fantasy-PhoenixFeatherMotifs",
+        "terms": "Fantasy,Magic,Concept,phoenix,feather,motifs",
+        "content": "phoenix feather motifs",
+        "color": 5
+    },
+    {
+        "name": "Fantasy-UnderwaterMerfolkArchitecture",
+        "terms": "Fantasy,Magic,Concept,underwater,merfolk,architecture",
+        "content": "underwater merfolk architecture, intricate mystical details, believable material textures, a sense of wonder",
+        "color": 5
+    },
+    {
+        "name": "SciFi-HolographicInterfaces",
+        "terms": "ScienceFiction,Future,Technology,holographic,interfaces",
+        "content": "holographic interfaces",
+        "color": 5
+    },
+    {
+        "name": "SciFi-BiomechanicalOrnament",
+        "terms": "ScienceFiction,Future,Technology,biomechanical,ornament",
+        "content": "biomechanical ornament, functional construction details, layered technology, coherent futuristic design",
+        "color": 5
+    },
+    {
+        "name": "SciFi-OrbitalStationAesthetics",
+        "terms": "ScienceFiction,Future,Technology,orbital,station,aesthetics",
+        "content": "orbital station aesthetics",
+        "color": 5
+    },
+    {
+        "name": "SciFi-RetroFuturisticControls",
+        "terms": "ScienceFiction,Future,Technology,retro,futuristic,controls",
+        "content": "retro futuristic controls, functional construction details, layered technology, coherent futuristic design",
+        "color": 5
+    },
+    {
+        "name": "SciFi-SleekSpacecraftInteriors",
+        "terms": "ScienceFiction,Future,Technology,sleek,spacecraft,interiors",
+        "content": "sleek spacecraft interiors",
+        "color": 5
+    },
+    {
+        "name": "SciFi-IndustrialMechaDetailing",
+        "terms": "ScienceFiction,Future,Technology,industrial,mecha,detailing",
+        "content": "industrial mecha detailing, functional construction details, layered technology, coherent futuristic design",
+        "color": 5
+    },
+    {
+        "name": "SciFi-AlienBotanicalStructures",
+        "terms": "ScienceFiction,Future,Technology,alien,botanical,structures",
+        "content": "alien botanical structures",
+        "color": 5
+    },
+    {
+        "name": "SciFi-CyberneticAccessoryDesign",
+        "terms": "ScienceFiction,Future,Technology,cybernetic,accessory,design",
+        "content": "cybernetic accessory design, functional construction details, layered technology, coherent futuristic design",
+        "color": 5
+    },
+    {
+        "name": "SciFi-LuminousCircuitPatterns",
+        "terms": "ScienceFiction,Future,Technology,luminous,circuit,patterns",
+        "content": "luminous circuit patterns",
+        "color": 5
+    },
+    {
+        "name": "SciFi-ModularSpaceHabitat",
+        "terms": "ScienceFiction,Future,Technology,modular,space,habitat",
+        "content": "modular space habitat, functional construction details, layered technology, coherent futuristic design",
+        "color": 5
+    },
+    {
+        "name": "SciFi-SolarSailStructures",
+        "terms": "ScienceFiction,Future,Technology,solar,sail,structures",
+        "content": "solar sail structures",
+        "color": 5
+    },
+    {
+        "name": "SciFi-FuturisticMedicalEquipment",
+        "terms": "ScienceFiction,Future,Technology,futuristic,medical,equipment",
+        "content": "futuristic medical equipment, functional construction details, layered technology, coherent futuristic design",
+        "color": 5
+    },
+    {
+        "name": "SciFi-WornCargoShipSurfaces",
+        "terms": "ScienceFiction,Future,Technology,worn,cargo,ship,surfaces",
+        "content": "worn cargo ship surfaces",
+        "color": 5
+    },
+    {
+        "name": "SciFi-CrystallineAlienTechnology",
+        "terms": "ScienceFiction,Future,Technology,crystalline,alien,technology",
+        "content": "crystalline alien technology, functional construction details, layered technology, coherent futuristic design",
+        "color": 5
+    },
+    {
+        "name": "SciFi-QuantumLaboratoryAmbience",
+        "terms": "ScienceFiction,Future,Technology,quantum,laboratory,ambience",
+        "content": "quantum laboratory ambience",
+        "color": 5
+    },
+    {
+        "name": "SciFi-SprawlingMegacityLayers",
+        "terms": "ScienceFiction,Future,Technology,sprawling,megacity,layers",
+        "content": "sprawling megacity layers, functional construction details, layered technology, coherent futuristic design",
+        "color": 5
+    },
+    {
+        "name": "SciFi-NanotechnologySurfacePatterns",
+        "terms": "ScienceFiction,Future,Technology,nanotechnology,surface,patterns",
+        "content": "nanotechnology surface patterns",
+        "color": 5
+    },
+    {
+        "name": "SciFi-RuggedExplorationGear",
+        "terms": "ScienceFiction,Future,Technology,rugged,exploration,gear",
+        "content": "rugged exploration gear, functional construction details, layered technology, coherent futuristic design",
+        "color": 5
+    },
+    {
+        "name": "SciFi-ArtificialGravityArchitecture",
+        "terms": "ScienceFiction,Future,Technology,artificial,gravity,architecture",
+        "content": "artificial gravity architecture",
+        "color": 5
+    },
+    {
+        "name": "SciFi-PostIndustrialRobotDesign",
+        "terms": "ScienceFiction,Future,Technology,post,industrial,robot,design",
+        "content": "post industrial robot design, functional construction details, layered technology, coherent futuristic design",
+        "color": 5
+    },
+    {
+        "name": "Nature-AncientRedwoodForest",
+        "terms": "Nature,Landscape,Environment,ancient,redwood,forest",
+        "content": "ancient redwood forest",
+        "color": 4
+    },
+    {
+        "name": "Nature-AlpineWildflowerMeadow",
+        "terms": "Nature,Landscape,Environment,alpine,wildflower,meadow",
+        "content": "alpine wildflower meadow, organic variation, rich habitat detail, natural spatial layering",
+        "color": 4
+    },
+    {
+        "name": "Nature-CoralReefColors",
+        "terms": "Nature,Landscape,Environment,coral,reef,colors",
+        "content": "coral reef colors",
+        "color": 4
+    },
+    {
+        "name": "Nature-WindsweptCoastalCliffs",
+        "terms": "Nature,Landscape,Environment,windswept,coastal,cliffs",
+        "content": "windswept coastal cliffs, organic variation, rich habitat detail, natural spatial layering",
+        "color": 4
+    },
+    {
+        "name": "Nature-TropicalJungleCanopy",
+        "terms": "Nature,Landscape,Environment,tropical,jungle,canopy",
+        "content": "tropical jungle canopy",
+        "color": 4
+    },
+    {
+        "name": "Nature-TranquilBambooGrove",
+        "terms": "Nature,Landscape,Environment,tranquil,bamboo,grove",
+        "content": "tranquil bamboo grove, organic variation, rich habitat detail, natural spatial layering",
+        "color": 4
+    },
+    {
+        "name": "Nature-VastSaltFlats",
+        "terms": "Nature,Landscape,Environment,vast,salt,flats",
+        "content": "vast salt flats",
+        "color": 4
+    },
+    {
+        "name": "Nature-GlacialIceFormations",
+        "terms": "Nature,Landscape,Environment,glacial,ice,formations",
+        "content": "glacial ice formations, organic variation, rich habitat detail, natural spatial layering",
+        "color": 4
+    },
+    {
+        "name": "Nature-FloweringCherryOrchard",
+        "terms": "Nature,Landscape,Environment,flowering,cherry,orchard",
+        "content": "flowering cherry orchard",
+        "color": 4
+    },
+    {
+        "name": "Nature-VolcanicBlackSandCoast",
+        "terms": "Nature,Landscape,Environment,volcanic,black,sand,coast",
+        "content": "volcanic black sand coast, organic variation, rich habitat detail, natural spatial layering",
+        "color": 4
+    },
+    {
+        "name": "Nature-RollingLavenderFields",
+        "terms": "Nature,Landscape,Environment,rolling,lavender,fields",
+        "content": "rolling lavender fields",
+        "color": 4
+    },
+    {
+        "name": "Nature-TangledMangroveRoots",
+        "terms": "Nature,Landscape,Environment,tangled,mangrove,roots",
+        "content": "tangled mangrove roots, organic variation, rich habitat detail, natural spatial layering",
+        "color": 4
+    },
+    {
+        "name": "Nature-GoldenWheatFields",
+        "terms": "Nature,Landscape,Environment,golden,wheat,fields",
+        "content": "golden wheat fields",
+        "color": 4
+    },
+    {
+        "name": "Nature-MossyForestFloor",
+        "terms": "Nature,Landscape,Environment,mossy,forest,floor",
+        "content": "mossy forest floor, organic variation, rich habitat detail, natural spatial layering",
+        "color": 4
+    },
+    {
+        "name": "Nature-RockyMountainScree",
+        "terms": "Nature,Landscape,Environment,rocky,mountain,scree",
+        "content": "rocky mountain scree",
+        "color": 4
+    },
+    {
+        "name": "Nature-DesertCactusGarden",
+        "terms": "Nature,Landscape,Environment,desert,cactus,garden",
+        "content": "desert cactus garden, organic variation, rich habitat detail, natural spatial layering",
+        "color": 4
+    },
+    {
+        "name": "Nature-KelpForestAmbience",
+        "terms": "Nature,Landscape,Environment,kelp,forest,ambience",
+        "content": "kelp forest ambience",
+        "color": 4
+    },
+    {
+        "name": "Nature-WindingRiverDelta",
+        "terms": "Nature,Landscape,Environment,winding,river,delta",
+        "content": "winding river delta, organic variation, rich habitat detail, natural spatial layering",
+        "color": 4
+    },
+    {
+        "name": "Nature-AutumnMapleCanopy",
+        "terms": "Nature,Landscape,Environment,autumn,maple,canopy",
+        "content": "autumn maple canopy",
+        "color": 4
+    },
+    {
+        "name": "Nature-MistyPeatBog",
+        "terms": "Nature,Landscape,Environment,misty,peat,bog",
+        "content": "misty peat bog, organic variation, rich habitat detail, natural spatial layering",
+        "color": 4
+    },
+    {
+        "name": "Architecture-GothicStoneArches",
+        "terms": "Architecture,Building,Design,gothic,stone,arches",
+        "content": "gothic stone arches",
+        "color": 5
+    },
+    {
+        "name": "Architecture-ClassicalMarbleColumns",
+        "terms": "Architecture,Building,Design,classical,marble,columns",
+        "content": "classical marble columns, structural rhythm, convincing scale, distinct surface craftsmanship",
+        "color": 5
+    },
+    {
+        "name": "Architecture-JapaneseTimberJoinery",
+        "terms": "Architecture,Building,Design,Japanese,timber,joinery",
+        "content": "Japanese timber joinery",
+        "color": 5
+    },
+    {
+        "name": "Architecture-MoroccanMosaicCourtyards",
+        "terms": "Architecture,Building,Design,Moroccan,mosaic,courtyards",
+        "content": "Moroccan mosaic courtyards, structural rhythm, convincing scale, distinct surface craftsmanship",
+        "color": 5
+    },
+    {
+        "name": "Architecture-BrutalistConcreteForms",
+        "terms": "Architecture,Building,Design,brutalist,concrete,forms",
+        "content": "brutalist concrete forms",
+        "color": 5
+    },
+    {
+        "name": "Architecture-VictorianIronwork",
+        "terms": "Architecture,Building,Design,Victorian,ironwork",
+        "content": "Victorian ironwork, structural rhythm, convincing scale, distinct surface craftsmanship",
+        "color": 5
+    },
+    {
+        "name": "Architecture-ScandinavianWoodInteriors",
+        "terms": "Architecture,Building,Design,Scandinavian,wood,interiors",
+        "content": "Scandinavian wood interiors",
+        "color": 5
+    },
+    {
+        "name": "Architecture-ByzantineGoldenMosaics",
+        "terms": "Architecture,Building,Design,Byzantine,golden,mosaics",
+        "content": "Byzantine golden mosaics, structural rhythm, convincing scale, distinct surface craftsmanship",
+        "color": 5
+    },
+    {
+        "name": "Architecture-AncientSandstoneRuins",
+        "terms": "Architecture,Building,Design,ancient,sandstone,ruins",
+        "content": "ancient sandstone ruins",
+        "color": 5
+    },
+    {
+        "name": "Architecture-FuturisticCantileveredStructures",
+        "terms": "Architecture,Building,Design,futuristic,cantilevered,structures",
+        "content": "futuristic cantilevered structures, structural rhythm, convincing scale, distinct surface craftsmanship",
+        "color": 5
+    },
+    {
+        "name": "Architecture-TraditionalCourtyardHouses",
+        "terms": "Architecture,Building,Design,traditional,courtyard,houses",
+        "content": "traditional courtyard houses",
+        "color": 5
+    },
+    {
+        "name": "Architecture-OrnateRococoInteriors",
+        "terms": "Architecture,Building,Design,ornate,rococo,interiors",
+        "content": "ornate rococo interiors, structural rhythm, convincing scale, distinct surface craftsmanship",
+        "color": 5
+    },
+    {
+        "name": "Architecture-IndustrialBrickWarehouses",
+        "terms": "Architecture,Building,Design,industrial,brick,warehouses",
+        "content": "industrial brick warehouses",
+        "color": 5
+    },
+    {
+        "name": "Architecture-BambooPavilionDesign",
+        "terms": "Architecture,Building,Design,bamboo,pavilion,design",
+        "content": "bamboo pavilion design, structural rhythm, convincing scale, distinct surface craftsmanship",
+        "color": 5
+    },
+    {
+        "name": "Architecture-MediterraneanStuccoFacades",
+        "terms": "Architecture,Building,Design,Mediterranean,stucco,facades",
+        "content": "Mediterranean stucco facades",
+        "color": 5
+    },
+    {
+        "name": "Architecture-SteppedZigguratForms",
+        "terms": "Architecture,Building,Design,stepped,ziggurat,forms",
+        "content": "stepped ziggurat forms, structural rhythm, convincing scale, distinct surface craftsmanship",
+        "color": 5
+    },
+    {
+        "name": "Architecture-GlassGreenhouseArchitecture",
+        "terms": "Architecture,Building,Design,glass,greenhouse,architecture",
+        "content": "glass greenhouse architecture",
+        "color": 5
+    },
+    {
+        "name": "Architecture-MedievalHalfTimbering",
+        "terms": "Architecture,Building,Design,medieval,half,timbering",
+        "content": "medieval half timbering, structural rhythm, convincing scale, distinct surface craftsmanship",
+        "color": 5
+    },
+    {
+        "name": "Architecture-OrganicCurvedArchitecture",
+        "terms": "Architecture,Building,Design,organic,curved,architecture",
+        "content": "organic curved architecture",
+        "color": 5
+    },
+    {
+        "name": "Architecture-SubterraneanVaultedHalls",
+        "terms": "Architecture,Building,Design,subterranean,vaulted,halls",
+        "content": "subterranean vaulted halls, structural rhythm, convincing scale, distinct surface craftsmanship",
+        "color": 5
+    },
+    {
+        "name": "Era-1920sGlamour",
+        "terms": "Era,Historical,Retro,1920s,glamour",
+        "content": "1920s glamour",
+        "color": 5
+    },
+    {
+        "name": "Era-1930sTravelPosterAesthetic",
+        "terms": "Era,Historical,Retro,1930s,travel,poster,aesthetic",
+        "content": "1930s travel poster aesthetic, period inspired forms, coordinated decorative motifs, consistent visual styling",
+        "color": 5
+    },
+    {
+        "name": "Era-1940sNoirAtmosphere",
+        "terms": "Era,Historical,Retro,1940s,noir,atmosphere",
+        "content": "1940s noir atmosphere",
+        "color": 5
+    },
+    {
+        "name": "Era-1950sDinerStyling",
+        "terms": "Era,Historical,Retro,1950s,diner,styling",
+        "content": "1950s diner styling, period inspired forms, coordinated decorative motifs, consistent visual styling",
+        "color": 5
+    },
+    {
+        "name": "Era-1960sSpaceAgeDesign",
+        "terms": "Era,Historical,Retro,1960s,space,age,design",
+        "content": "1960s space age design",
+        "color": 5
+    },
+    {
+        "name": "Era-1970sPsychedelicGraphics",
+        "terms": "Era,Historical,Retro,1970s,psychedelic,graphics",
+        "content": "1970s psychedelic graphics, period inspired forms, coordinated decorative motifs, consistent visual styling",
+        "color": 5
+    },
+    {
+        "name": "Era-1980sNeonNostalgia",
+        "terms": "Era,Historical,Retro,1980s,neon,nostalgia",
+        "content": "1980s neon nostalgia",
+        "color": 5
+    },
+    {
+        "name": "Era-1990sGrungeAesthetic",
+        "terms": "Era,Historical,Retro,1990s,grunge,aesthetic",
+        "content": "1990s grunge aesthetic, period inspired forms, coordinated decorative motifs, consistent visual styling",
+        "color": 5
+    },
+    {
+        "name": "Era-Early2000sGlossyFuturism",
+        "terms": "Era,Historical,Retro,early,2000s,glossy,futurism",
+        "content": "early 2000s glossy futurism",
+        "color": 5
+    },
+    {
+        "name": "Era-VictorianBotanicalElegance",
+        "terms": "Era,Historical,Retro,Victorian,botanical,elegance",
+        "content": "Victorian botanical elegance, period inspired forms, coordinated decorative motifs, consistent visual styling",
+        "color": 5
+    },
+    {
+        "name": "Era-EdwardianGardenRomance",
+        "terms": "Era,Historical,Retro,Edwardian,garden,romance",
+        "content": "Edwardian garden romance",
+        "color": 5
+    },
+    {
+        "name": "Era-MedievalManuscriptOrnament",
+        "terms": "Era,Historical,Retro,medieval,manuscript,ornament",
+        "content": "medieval manuscript ornament, period inspired forms, coordinated decorative motifs, consistent visual styling",
+        "color": 5
+    },
+    {
+        "name": "Era-RenaissanceAtelierAmbience",
+        "terms": "Era,Historical,Retro,Renaissance,atelier,ambience",
+        "content": "Renaissance atelier ambience",
+        "color": 5
+    },
+    {
+        "name": "Era-AncientRomanGrandeur",
+        "terms": "Era,Historical,Retro,ancient,Roman,grandeur",
+        "content": "ancient Roman grandeur, period inspired forms, coordinated decorative motifs, consistent visual styling",
+        "color": 5
+    },
+    {
+        "name": "Era-AncientEgyptianOrnament",
+        "terms": "Era,Historical,Retro,ancient,Egyptian,ornament",
+        "content": "ancient Egyptian ornament",
+        "color": 5
+    },
+    {
+        "name": "Era-BelleEpoqueSophistication",
+        "terms": "Era,Historical,Retro,Belle,Epoque,sophistication",
+        "content": "Belle Epoque sophistication, period inspired forms, coordinated decorative motifs, consistent visual styling",
+        "color": 5
+    },
+    {
+        "name": "Era-RegencyInteriorStyling",
+        "terms": "Era,Historical,Retro,Regency,interior,styling",
+        "content": "Regency interior styling",
+        "color": 5
+    },
+    {
+        "name": "Era-FrontierWesternAtmosphere",
+        "terms": "Era,Historical,Retro,frontier,western,atmosphere",
+        "content": "frontier western atmosphere, period inspired forms, coordinated decorative motifs, consistent visual styling",
+        "color": 5
+    },
+    {
+        "name": "Era-RetroArcadeAesthetics",
+        "terms": "Era,Historical,Retro,retro,arcade,aesthetics",
+        "content": "retro arcade aesthetics",
+        "color": 5
+    },
+    {
+        "name": "Era-VintageScientificIllustration",
+        "terms": "Era,Historical,Retro,vintage,scientific,illustration",
+        "content": "vintage scientific illustration, period inspired forms, coordinated decorative motifs, consistent visual styling",
+        "color": 5
+    },
+    {
+        "name": "Mood-QuietContemplation",
+        "terms": "Mood,Emotion,Feeling,quiet,contemplation",
+        "content": "quiet contemplation",
+        "color": 4
+    },
+    {
+        "name": "Mood-PlayfulCuriosity",
+        "terms": "Mood,Emotion,Feeling,playful,curiosity",
+        "content": "playful curiosity, expressive visual cues, sensitive color choices, unified emotional tone",
+        "color": 4
+    },
+    {
+        "name": "Mood-WistfulNostalgia",
+        "terms": "Mood,Emotion,Feeling,wistful,nostalgia",
+        "content": "wistful nostalgia",
+        "color": 4
+    },
+    {
+        "name": "Mood-SolemnDignity",
+        "terms": "Mood,Emotion,Feeling,solemn,dignity",
+        "content": "solemn dignity, expressive visual cues, sensitive color choices, unified emotional tone",
+        "color": 4
+    },
+    {
+        "name": "Mood-SereneTranquility",
+        "terms": "Mood,Emotion,Feeling,serene,tranquility",
+        "content": "serene tranquility",
+        "color": 4
+    },
+    {
+        "name": "Mood-HopefulAnticipation",
+        "terms": "Mood,Emotion,Feeling,hopeful,anticipation",
+        "content": "hopeful anticipation, expressive visual cues, sensitive color choices, unified emotional tone",
+        "color": 4
+    },
+    {
+        "name": "Mood-MysteriousIntrigue",
+        "terms": "Mood,Emotion,Feeling,mysterious,intrigue",
+        "content": "mysterious intrigue",
+        "color": 4
+    },
+    {
+        "name": "Mood-GentleTenderness",
+        "terms": "Mood,Emotion,Feeling,gentle,tenderness",
+        "content": "gentle tenderness, expressive visual cues, sensitive color choices, unified emotional tone",
+        "color": 4
+    },
+    {
+        "name": "Mood-HeroicDetermination",
+        "terms": "Mood,Emotion,Feeling,heroic,determination",
+        "content": "heroic determination",
+        "color": 4
+    },
+    {
+        "name": "Mood-UneasySuspense",
+        "terms": "Mood,Emotion,Feeling,uneasy,suspense",
+        "content": "uneasy suspense, expressive visual cues, sensitive color choices, unified emotional tone",
+        "color": 4
+    },
+    {
+        "name": "Mood-JoyfulExuberance",
+        "terms": "Mood,Emotion,Feeling,joyful,exuberance",
+        "content": "joyful exuberance",
+        "color": 4
+    },
+    {
+        "name": "Mood-MelancholySolitude",
+        "terms": "Mood,Emotion,Feeling,melancholy,solitude",
+        "content": "melancholy solitude, expressive visual cues, sensitive color choices, unified emotional tone",
+        "color": 4
+    },
+    {
+        "name": "Mood-DreamlikeWonder",
+        "terms": "Mood,Emotion,Feeling,dreamlike,wonder",
+        "content": "dreamlike wonder",
+        "color": 4
+    },
+    {
+        "name": "Mood-FierceDefiance",
+        "terms": "Mood,Emotion,Feeling,fierce,defiance",
+        "content": "fierce defiance, expressive visual cues, sensitive color choices, unified emotional tone",
+        "color": 4
+    },
+    {
+        "name": "Mood-IntimateWarmth",
+        "terms": "Mood,Emotion,Feeling,intimate,warmth",
+        "content": "intimate warmth",
+        "color": 4
+    },
+    {
+        "name": "Mood-SacredReverence",
+        "terms": "Mood,Emotion,Feeling,sacred,reverence",
+        "content": "sacred reverence, expressive visual cues, sensitive color choices, unified emotional tone",
+        "color": 4
+    },
+    {
+        "name": "Mood-RestrainedElegance",
+        "terms": "Mood,Emotion,Feeling,restrained,elegance",
+        "content": "restrained elegance",
+        "color": 4
+    },
+    {
+        "name": "Mood-AdventurousExcitement",
+        "terms": "Mood,Emotion,Feeling,adventurous,excitement",
+        "content": "adventurous excitement, expressive visual cues, sensitive color choices, unified emotional tone",
+        "color": 4
+    },
+    {
+        "name": "Mood-BittersweetReflection",
+        "terms": "Mood,Emotion,Feeling,bittersweet,reflection",
+        "content": "bittersweet reflection",
+        "color": 4
+    },
+    {
+        "name": "Mood-MischievousCharm",
+        "terms": "Mood,Emotion,Feeling,mischievous,charm",
+        "content": "mischievous charm, expressive visual cues, sensitive color choices, unified emotional tone",
+        "color": 4
+    },
+    {
+        "name": "Motion-FlowingFabricInWind",
+        "terms": "Motion,Action,Gesture,flowing,fabric,in,wind",
+        "content": "flowing fabric in wind",
+        "color": 2
+    },
+    {
+        "name": "Motion-HairSweptByBreeze",
+        "terms": "Motion,Action,Gesture,hair,swept,by,breeze",
+        "content": "hair swept by breeze, directional flow, dynamic silhouettes, convincing movement cues",
+        "color": 2
+    },
+    {
+        "name": "Motion-GracefulDanceMovement",
+        "terms": "Motion,Action,Gesture,graceful,dance,movement",
+        "content": "graceful dance movement",
+        "color": 2
+    },
+    {
+        "name": "Motion-ExplosiveOutwardMotion",
+        "terms": "Motion,Action,Gesture,explosive,outward,motion",
+        "content": "explosive outward motion, directional flow, dynamic silhouettes, convincing movement cues",
+        "color": 2
+    },
+    {
+        "name": "Motion-SlowDriftingMovement",
+        "terms": "Motion,Action,Gesture,slow,drifting,movement",
+        "content": "slow drifting movement",
+        "color": 2
+    },
+    {
+        "name": "Motion-SpiralingUpwardMovement",
+        "terms": "Motion,Action,Gesture,spiraling,upward,movement",
+        "content": "spiraling upward movement, directional flow, dynamic silhouettes, convincing movement cues",
+        "color": 2
+    },
+    {
+        "name": "Motion-PowerfulForwardMomentum",
+        "terms": "Motion,Action,Gesture,powerful,forward,momentum",
+        "content": "powerful forward momentum",
+        "color": 2
+    },
+    {
+        "name": "Motion-SuspendedMidairGesture",
+        "terms": "Motion,Action,Gesture,suspended,midair,gesture",
+        "content": "suspended midair gesture, directional flow, dynamic silhouettes, convincing movement cues",
+        "color": 2
+    },
+    {
+        "name": "Motion-SweepingCircularMotion",
+        "terms": "Motion,Action,Gesture,sweeping,circular,motion",
+        "content": "sweeping circular motion",
+        "color": 2
+    },
+    {
+        "name": "Motion-CascadingDownwardFlow",
+        "terms": "Motion,Action,Gesture,cascading,downward,flow",
+        "content": "cascading downward flow, directional flow, dynamic silhouettes, convincing movement cues",
+        "color": 2
+    },
+    {
+        "name": "Motion-RipplesSpreadingOutward",
+        "terms": "Motion,Action,Gesture,ripples,spreading,outward",
+        "content": "ripples spreading outward",
+        "color": 2
+    },
+    {
+        "name": "Motion-RhythmicRepeatedMovement",
+        "terms": "Motion,Action,Gesture,rhythmic,repeated,movement",
+        "content": "rhythmic repeated movement, directional flow, dynamic silhouettes, convincing movement cues",
+        "color": 2
+    },
+    {
+        "name": "Motion-ElegantReachingGesture",
+        "terms": "Motion,Action,Gesture,elegant,reaching,gesture",
+        "content": "elegant reaching gesture",
+        "color": 2
+    },
+    {
+        "name": "Motion-SuddenTwistingMotion",
+        "terms": "Motion,Action,Gesture,sudden,twisting,motion",
+        "content": "sudden twisting motion, directional flow, dynamic silhouettes, convincing movement cues",
+        "color": 2
+    },
+    {
+        "name": "Motion-GlidingWeightlessMotion",
+        "terms": "Motion,Action,Gesture,gliding,weightless,motion",
+        "content": "gliding weightless motion",
+        "color": 2
+    },
+    {
+        "name": "Motion-EnergeticRunningStride",
+        "terms": "Motion,Action,Gesture,energetic,running,stride",
+        "content": "energetic running stride, directional flow, dynamic silhouettes, convincing movement cues",
+        "color": 2
+    },
+    {
+        "name": "Motion-DelicateFlutteringMovement",
+        "terms": "Motion,Action,Gesture,delicate,fluttering,movement",
+        "content": "delicate fluttering movement",
+        "color": 2
+    },
+    {
+        "name": "Motion-CurlingSmokeMovement",
+        "terms": "Motion,Action,Gesture,curling,smoke,movement",
+        "content": "curling smoke movement, directional flow, dynamic silhouettes, convincing movement cues",
+        "color": 2
+    },
+    {
+        "name": "Motion-TumblingFreeFall",
+        "terms": "Motion,Action,Gesture,tumbling,free,fall",
+        "content": "tumbling free fall",
+        "color": 2
+    },
+    {
+        "name": "Motion-BalancedPoisedStillness",
+        "terms": "Motion,Action,Gesture,balanced,poised,stillness",
+        "content": "balanced poised stillness, directional flow, dynamic silhouettes, convincing movement cues",
+        "color": 2
+    },
+    {
+        "name": "Negative-BlurryEdges",
+        "terms": "Negative,Artifacts,Cleanup,blurry,edges",
+        "content": "blurry edges, smeared detail",
+        "color": 3
+    },
+    {
+        "name": "Negative-DistortedAnatomy",
+        "terms": "Negative,Artifacts,Cleanup,distorted,anatomy",
+        "content": "distorted anatomy, broken joints, poorly resolved detail",
+        "color": 3
+    },
+    {
+        "name": "Negative-ExtraFingers",
+        "terms": "Negative,Artifacts,Cleanup,extra,fingers",
+        "content": "extra fingers, fused fingers",
+        "color": 3
+    },
+    {
+        "name": "Negative-DuplicatedLimbs",
+        "terms": "Negative,Artifacts,Cleanup,duplicated,limbs",
+        "content": "duplicated limbs, extra arms, unwanted visual artifacts",
+        "color": 3
+    },
+    {
+        "name": "Negative-IllegibleText",
+        "terms": "Negative,Artifacts,Cleanup,illegible,text",
+        "content": "illegible text, garbled lettering",
+        "color": 3
+    },
+    {
+        "name": "Negative-UnwantedWatermark",
+        "terms": "Negative,Artifacts,Cleanup,unwanted,watermark",
+        "content": "unwanted watermark, intrusive logo, incoherent shapes",
+        "color": 3
+    },
+    {
+        "name": "Negative-CrushedBlacks",
+        "terms": "Negative,Artifacts,Cleanup,crushed,blacks",
+        "content": "crushed blacks, lost shadow detail",
+        "color": 3
+    },
+    {
+        "name": "Negative-BlownHighlights",
+        "terms": "Negative,Artifacts,Cleanup,blown,highlights",
+        "content": "blown highlights, clipped whites, distracting surface defects",
+        "color": 3
+    },
+    {
+        "name": "Negative-HarshHalos",
+        "terms": "Negative,Artifacts,Cleanup,harsh,halos",
+        "content": "harsh halos, excessive sharpening",
+        "color": 3
+    },
+    {
+        "name": "Negative-MuddyColors",
+        "terms": "Negative,Artifacts,Cleanup,muddy,colors",
+        "content": "muddy colors, weak tonal separation, poorly resolved detail",
+        "color": 3
+    },
+    {
+        "name": "Negative-WarpedPerspective",
+        "terms": "Negative,Artifacts,Cleanup,warped,perspective",
+        "content": "warped perspective, inconsistent scale",
+        "color": 3
+    },
+    {
+        "name": "Negative-RepeatedPatterns",
+        "terms": "Negative,Artifacts,Cleanup,repeated,patterns",
+        "content": "repeated patterns, tiled artifacts, unwanted visual artifacts",
+        "color": 3
+    },
+    {
+        "name": "Negative-NoisyGradients",
+        "terms": "Negative,Artifacts,Cleanup,noisy,gradients",
+        "content": "noisy gradients, color banding",
+        "color": 3
+    },
+    {
+        "name": "Negative-PlasticSkin",
+        "terms": "Negative,Artifacts,Cleanup,plastic,skin",
+        "content": "plastic skin, waxy skin texture, incoherent shapes",
+        "color": 3
+    },
+    {
+        "name": "Negative-FloatingObjects",
+        "terms": "Negative,Artifacts,Cleanup,floating,objects",
+        "content": "floating objects, impossible contact shadows",
+        "color": 3
+    },
+    {
+        "name": "Negative-MismatchedReflections",
+        "terms": "Negative,Artifacts,Cleanup,mismatched,reflections",
+        "content": "mismatched reflections, inconsistent lighting, distracting surface defects",
+        "color": 3
+    },
+    {
+        "name": "Negative-CompressionArtifacts",
+        "terms": "Negative,Artifacts,Cleanup,compression,artifacts",
+        "content": "compression artifacts, blocky detail",
+        "color": 3
+    },
+    {
+        "name": "Negative-ClutteredFraming",
+        "terms": "Negative,Artifacts,Cleanup,cluttered,framing",
+        "content": "cluttered framing, competing focal points, poorly resolved detail",
+        "color": 3
+    },
+    {
+        "name": "Negative-JaggedOutlines",
+        "terms": "Negative,Artifacts,Cleanup,jagged,outlines",
+        "content": "jagged outlines, rough cutout edges",
+        "color": 3
+    },
+    {
+        "name": "Negative-InconsistentStyle",
+        "terms": "Negative,Artifacts,Cleanup,inconsistent,style",
+        "content": "inconsistent style, unfinished rendering, unwanted visual artifacts",
+        "color": 3
+    },
+    {
+        "name": "Presentation-MuseumCatalogPresentation",
+        "terms": "Presentation,Design,Format,museum,catalog,presentation",
+        "content": "museum catalog presentation",
+        "color": 2
+    },
+    {
+        "name": "Presentation-LuxuryProductPhotography",
+        "terms": "Presentation,Design,Format,luxury,product,photography",
+        "content": "luxury product photography, clean visual hierarchy, deliberate spacing, polished arrangement",
+        "color": 2
+    },
+    {
+        "name": "Presentation-EditorialMagazineLayout",
+        "terms": "Presentation,Design,Format,editorial,magazine,layout",
+        "content": "editorial magazine layout",
+        "color": 2
+    },
+    {
+        "name": "Presentation-CinematicConceptArt",
+        "terms": "Presentation,Design,Format,cinematic,concept,art",
+        "content": "cinematic concept art, clean visual hierarchy, deliberate spacing, polished arrangement",
+        "color": 2
+    },
+    {
+        "name": "Presentation-ScientificSpecimenDisplay",
+        "terms": "Presentation,Design,Format,scientific,specimen,display",
+        "content": "scientific specimen display",
+        "color": 2
+    },
+    {
+        "name": "Presentation-MinimalistPosterDesign",
+        "terms": "Presentation,Design,Format,minimalist,poster,design",
+        "content": "minimalist poster design, clean visual hierarchy, deliberate spacing, polished arrangement",
+        "color": 2
+    },
+    {
+        "name": "Presentation-VintageTravelPoster",
+        "terms": "Presentation,Design,Format,vintage,travel,poster",
+        "content": "vintage travel poster",
+        "color": 2
+    },
+    {
+        "name": "Presentation-FashionLookbookStyling",
+        "terms": "Presentation,Design,Format,fashion,lookbook,styling",
+        "content": "fashion lookbook styling, clean visual hierarchy, deliberate spacing, polished arrangement",
+        "color": 2
+    },
+    {
+        "name": "Presentation-BotanicalFieldGuidePlate",
+        "terms": "Presentation,Design,Format,botanical,field,guide,plate",
+        "content": "botanical field guide plate",
+        "color": 2
+    },
+    {
+        "name": "Presentation-ArchitecturalVisualization",
+        "terms": "Presentation,Design,Format,architectural,visualization",
+        "content": "architectural visualization, clean visual hierarchy, deliberate spacing, polished arrangement",
+        "color": 2
+    },
+    {
+        "name": "Presentation-CollectibleTradingCardArt",
+        "terms": "Presentation,Design,Format,collectible,trading,card,art",
+        "content": "collectible trading card art",
+        "color": 2
+    },
+    {
+        "name": "Presentation-IllustratedBookCover",
+        "terms": "Presentation,Design,Format,illustrated,book,cover",
+        "content": "illustrated book cover, clean visual hierarchy, deliberate spacing, polished arrangement",
+        "color": 2
+    },
+    {
+        "name": "Presentation-AlbumCoverComposition",
+        "terms": "Presentation,Design,Format,album,cover,composition",
+        "content": "album cover composition",
+        "color": 2
+    },
+    {
+        "name": "Presentation-TheatricalStageDesign",
+        "terms": "Presentation,Design,Format,theatrical,stage,design",
+        "content": "theatrical stage design, clean visual hierarchy, deliberate spacing, polished arrangement",
+        "color": 2
+    },
+    {
+        "name": "Presentation-IsometricGameAsset",
+        "terms": "Presentation,Design,Format,isometric,game,asset",
+        "content": "isometric game asset",
+        "color": 2
+    },
+    {
+        "name": "Presentation-HandPaintedGameBackground",
+        "terms": "Presentation,Design,Format,hand,painted,game,background",
+        "content": "hand painted game background, clean visual hierarchy, deliberate spacing, polished arrangement",
+        "color": 2
+    },
+    {
+        "name": "Presentation-DetailedModelSheet",
+        "terms": "Presentation,Design,Format,detailed,model,sheet",
+        "content": "detailed model sheet",
+        "color": 2
+    },
+    {
+        "name": "Presentation-OrnamentalDecorativePanel",
+        "terms": "Presentation,Design,Format,ornamental,decorative,panel",
+        "content": "ornamental decorative panel, clean visual hierarchy, deliberate spacing, polished arrangement",
+        "color": 2
+    },
+    {
+        "name": "Presentation-SeamlessTextilePattern",
+        "terms": "Presentation,Design,Format,seamless,textile,pattern",
+        "content": "seamless textile pattern",
+        "color": 2
+    },
+    {
+        "name": "Presentation-ElegantPackagingIllustration",
+        "terms": "Presentation,Design,Format,elegant,packaging,illustration",
+        "content": "elegant packaging illustration, clean visual hierarchy, deliberate spacing, polished arrangement",
+        "color": 2
+    }
+]

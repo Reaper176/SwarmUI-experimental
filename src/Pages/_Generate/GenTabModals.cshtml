@@ -475,3 +475,32 @@
         <button type="button" class="btn btn-secondary basic-button translate" onclick="close_create_new_preset()">Cancel</button>
     </div>
 @WebUtil.ModalFooter()
+
+@WebUtil.ModalHeader("chant_editor_modal", """<span id="chant_editor_title">Edit Chant</span>""")
+    <div class="modal-body chant-editor">
+        <p id="chant_editor_source"></p>
+        <p class="translate">Chants insert prompt text using &lt;chant:Name&gt;. Saved edits affect everyone using this source file. Renaming a chant requires updating existing prompt tags.</p>
+        <label for="chant_editor_name" class="translate">Name</label>
+        <input class="auto-text" id="chant_editor_name" type="text" maxlength="200" />
+        <label for="chant_editor_terms" class="translate">Search terms (comma-separated)</label>
+        <input class="auto-text" id="chant_editor_terms" type="text" maxlength="10000" />
+        <label for="chant_editor_content" class="translate">Prompt content</label>
+        <textarea class="auto-text auto-text-block" id="chant_editor_content" rows="5" maxlength="100000"></textarea>
+        <label for="chant_editor_description" class="translate">Description (optional)</label>
+        <textarea class="auto-text auto-text-block" id="chant_editor_description" rows="3" maxlength="10000"></textarea>
+        <label for="chant_editor_color" class="translate">Color category</label>
+        <select class="auto-dropdown" id="chant_editor_color">
+            <option value="0">0 — Default</option><option value="1">1</option><option value="2">2</option>
+            <option value="3">3</option><option value="4">4</option><option value="5">5</option>
+        </select>
+        <label for="chant_editor_image" class="translate">Thumbnail (optional PNG, JPEG, or WebP, up to 2 MiB)</label>
+        <input id="chant_editor_image" type="file" accept="image/png,image/jpeg,image/webp" />
+        <img id="chant_editor_preview" class="chant-editor-preview" alt="Chant thumbnail preview" hidden />
+        <button id="chant_editor_remove_image" class="basic-button translate" type="button">Remove Thumbnail</button>
+    </div>
+    <div class="modal-footer">
+        <span id="chant_editor_error" class="modal_error_bottom" role="alert"></span>
+        <button id="chant_editor_save" type="button" class="btn btn-primary basic-button translate">Save</button>
+        <button type="button" class="btn btn-secondary basic-button translate" data-bs-dismiss="modal">Close</button>
+    </div>
+@WebUtil.ModalFooter()

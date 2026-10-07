@@ -1,6 +1,8 @@
 using NUnit.Framework;
 using SwarmUI.Utils;
 using SwarmUI.Text2Image;
+using SwarmUI.WebAPI;
+using Newtonsoft.Json.Linq;
 
 namespace SwarmUITests;
 
@@ -30,6 +32,47 @@ public class ChantTests : SwarmUITest
     public void RejectsInvalidOrAmbiguousFiles(string json)
     {
         Assert.Catch(() => AutoCompleteListHelper.ParseChants(json));
+    }
+
+    /// <summary>Editing one chant preserves other chants and unknown metadata.</summary>
+    [Test]
+    public void EditingPreservesUnrelatedChantData()
+    {
+        JObject edit = JObject.Parse("""{"name":"Renamed","terms":"Light","content":"soft light","color":2,"description":"Soft lighting","thumbnail":""}""");
+        JArray result = ChantsAPI.UpdateDocument("""[{"name":"Old","content":"old","custom":42},{"name":"Other","content":"unchanged"}]""", "Old", edit);
+        Assert.That(result[0]["custom"].Value<int>(), Is.EqualTo(42));
+        Assert.That(result[0]["name"].Value<string>(), Is.EqualTo("Renamed"));
+        Assert.That(result[1]["content"].Value<string>(), Is.EqualTo("unchanged"));
+        Assert.That(AutoCompleteListHelper.ParseChants(result.ToString())["Renamed"].Content, Is.EqualTo("soft light"));
+    }
+
+    /// <summary>Names remain unambiguous and thumbnail data cannot contain active content.</summary>
+    [TestCase("Other", "")]
+    [TestCase("New", "data:image/svg+xml;base64,PHN2Zz4=")]
+    [TestCase("New", "https://example.com/tracker.png")]
+    [TestCase("New", "data:image/png;base64,bm90YW5pbWFnZQ==")]
+    [TestCase("Bad:Name", "")]
+    [TestCase(" LeadingSpace", "")]
+    public void RejectsDuplicateNamesAndUnsafeThumbnails(string name, string thumbnail)
+    {
+        JObject edit = new() { ["name"] = name, ["content"] = "updated", ["terms"] = "", ["color"] = 1, ["description"] = "", ["thumbnail"] = thumbnail };
+        Assert.Catch(() => ChantsAPI.UpdateDocument("""[{"name":"Old","content":"old"},{"name":"Other","content":"unchanged"}]""", "Old", edit));
+    }
+
+    /// <summary>Optional card metadata stays outside the prompt expansion text.</summary>
+    [Test]
+    public void CreatesChantWithEmbeddedThumbnail()
+    {
+        JObject edit = new()
+        {
+            ["name"] = "New", ["content"] = "soft light", ["terms"] = "Light", ["color"] = 2,
+            ["description"] = "A gentle lighting treatment.",
+            ["thumbnail"] = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aY9sAAAAASUVORK5CYII="
+        };
+        JArray result = ChantsAPI.UpdateDocument("[]", "", edit);
+        Assert.That(result.Count, Is.EqualTo(1));
+        Assert.That(result[0]["description"].Value<string>(), Is.EqualTo("A gentle lighting treatment."));
+        Assert.That(AutoCompleteListHelper.ParseChants(result.ToString())["New"].Content, Is.EqualTo("soft light"));
     }
 
     /// <summary>Verifies expansion uses only the selected source and preserves unknown tags.</summary>

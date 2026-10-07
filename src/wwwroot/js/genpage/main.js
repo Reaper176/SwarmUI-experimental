@@ -408,6 +408,7 @@ function loadUserData(callback, errorHandle = null) {
         permissions.updateFrom(data.permissions);
         starredModels = data.starred_models;
         promptChants = data.chants || [];
+        chantHelpers.userDataChanged(data);
         autoCompletionsList = {};
         if (data.autocompletions) {
             let allSet = [];

@@ -64,6 +64,7 @@ public static class BasicAPIFeatures
         AdminAPI.Register();
         UtilAPI.Register();
         PromptLabAPI.Register();
+        ChantsAPI.Register();
     }
 
     /// <summary>Rate limiter for <see cref="Login(HttpContext, string, string)"/> to prevent spamming it, limited by IP address.</summary>
@@ -410,7 +411,8 @@ public static class BasicAPIFeatures
                 ["name"] = chant.Name,
                 ["terms"] = chant.Terms,
                 ["color"] = chant.Color
-            }))
+            })),
+            ["chant_source"] = settings.ChantSource
         };
     }
 

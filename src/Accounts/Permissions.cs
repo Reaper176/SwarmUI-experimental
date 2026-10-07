@@ -73,6 +73,8 @@ public static class Permissions
     public static PermInfo ControlMemClean = Register(new("control_mem_clean", "Control Memory Cleaning", "Allows this user to control memory cleaning (eg cleanup VRAM or system RAM usage).", PermissionDefault.POWERUSERS, GroupControl, PermSafetyLevel.SAFE));
     public static PermInfo LoadModelsNow = Register(new("load_models_now", "Load Models Now", "Allows this user to load models immediately across all backends.", PermissionDefault.POWERUSERS, GroupControl, PermSafetyLevel.SAFE));
     public static PermInfo EditWildcards = Register(new("edit_wildcards", "Edit Wildcards", "Allows this user to create, edit, or delete wildcards.", PermissionDefault.POWERUSERS, GroupControl, PermSafetyLevel.SAFE));
+    /// <summary>Allows edits to shared chant JSON files.</summary>
+    public static PermInfo EditChants = Register(new("edit_chants", "Edit Chants", "Allows this user to create and edit chants in shared autocomplete JSON files.", PermissionDefault.POWERUSERS, GroupControl, PermSafetyLevel.UNTESTED));
     public static PermInfo EditModelMetadata = Register(new("edit_model_metadata", "Edit Model Metadata", "Allows this user to edit model metadata.", PermissionDefault.POWERUSERS, GroupControl, PermSafetyLevel.UNTESTED));
     public static PermInfo DownloadModels = Register(new("download_models", "Download Models", "Allows this user to download models.", PermissionDefault.POWERUSERS, GroupControl, PermSafetyLevel.UNTESTED));
     public static PermInfo ResetMetadata = Register(new("reset_metadata", "Reset Metadata", "Allows this user to use the special utility to reset all metadata.", PermissionDefault.POWERUSERS, GroupControl, PermSafetyLevel.SAFE));

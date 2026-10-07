@@ -5140,3 +5140,42 @@ mark.model-search-highlight {
         transition: none !important;
     }
 }
+
+.chant-source-status {
+    margin: 0.5rem 1rem;
+}
+.chant-card .chant-content-preview {
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 5;
+    overflow: hidden;
+    overflow-wrap: anywhere;
+}
+.chant-card .chant-card-description {
+    margin: 0.4rem 0;
+    overflow-wrap: anywhere;
+}
+.chant-editor > label {
+    display: block;
+    margin-top: 0.75rem;
+}
+.chant-editor {
+    width: min(38rem, calc(100vw - 2rem));
+    max-width: 100%;
+    box-sizing: border-box;
+}
+.chant-editor > input.auto-text,
+.chant-editor > textarea {
+    width: 100%;
+    box-sizing: border-box;
+}
+.chant-editor-preview {
+    display: block;
+    max-width: 100%;
+    max-height: 15rem;
+    margin: 0.75rem 0;
+    object-fit: contain;
+}
+.chant-editor-preview[hidden] {
+    display: none;
+}
