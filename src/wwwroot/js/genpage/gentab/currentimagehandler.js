@@ -604,6 +604,8 @@ class ImageFullViewHelper {
             img.style.height = `${geometry.fittedHeightPercent}%`;
             img.style.objectFit = '';
             img.style.maxWidth = '';
+            img.style.marginLeft = '0';
+            img.style.marginRight = '0';
             geometry.wrap.style.textAlign = 'left';
         }
     }
@@ -852,8 +854,6 @@ class ImageFullViewHelper {
             let defaultHeight = Math.min(100, (wrapAspectRatio / videoAspectRatio) * 100);
             container.style.height = `${defaultHeight}%`;
             container.style.left = `${(imagewrap.offsetWidth - container.offsetWidth) / 2}px`;
-            container.style.marginLeft = '0';
-            container.style.marginRight = '0';
             container.style.top = `${(imagewrap.offsetHeight - imagewrap.offsetHeight * defaultHeight / 100) / 2}px`;
         }
     }

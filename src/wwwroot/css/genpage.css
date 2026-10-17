@@ -4207,6 +4207,10 @@ mark.model-search-highlight {
     vertical-align: top;
     text-align: left;
 }
+.card-collection-inline .server-status-card {
+    width: 46rem;
+    max-width: calc(100vw - 2rem);
+}
 .server-resource-list {
     min-width: 18rem;
     text-align: left;

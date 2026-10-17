@@ -835,7 +835,7 @@ class ModelDownloaderUtil {
                                 fUrl += '#.gguf';
                             }
                             let selected = (fileId != null ? vFile.id == fileId : fUrl == url) ? ' selected' : '';
-                            fileOptions += `<option value="${SwarmUtil.escapeHtml(`${vFile.id}`)}"${selected}>${SwarmUtil.escapeHtml(vFile.name)}</option>`;
+                            fileOptions += `<option value="${SwarmUtil.escapeHtml(`${vFile.id}`)}"${selected}>${SwarmUtil.escapeHtml(`${vFile.name} (${vFile.metadata?.fp ?? '?'})`)}</option>`;
                         }
                         this.fileSelect.innerHTML = fileOptions;
                         this.fileWrap.style.display = '';
