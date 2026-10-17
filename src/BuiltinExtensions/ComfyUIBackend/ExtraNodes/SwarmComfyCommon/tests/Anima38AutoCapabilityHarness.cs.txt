@@ -166,6 +166,7 @@ internal static class Anima38AutoCapabilityHarness
         );
 
         T2IParamTypes.RegisterDefaults();
+        ComfyUIBackendExtension.CustomWorkflowParam = StringParam("test-custom-workflow");
         ComfyUIBackendExtension.ModelAttentionBackend = StringParam("test-model-attention");
         ComfyUIBackendExtension.Anima38Qwen35Encoder = StringParam("test-anima-qwen");
         ComfyUIBackendExtension.Anima38Adapter = StringParam("test-anima-adapter");

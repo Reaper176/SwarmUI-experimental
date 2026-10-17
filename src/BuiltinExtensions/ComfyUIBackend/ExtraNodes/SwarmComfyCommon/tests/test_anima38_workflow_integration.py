@@ -150,9 +150,9 @@ class Anima38WorkflowIntegrationTests(unittest.TestCase):
         variation_return = line.index('Features.Contains("variation_seed")')
         split = line.index('prompt.Split("<break>"')
         self.assertLess(split, variation_return)
-        self.assertRegex(
-            line[variation_return:],
-            r'Features\.Contains\("variation_seed"\)\s*&&\s*!IsAnima38\(\)',
+        self.assertIn(
+            "return CreateConditioningDirect(prompt, clip, model, isPositive, id, attachImages, steps);",
+            line[variation_return:line.index("// Backup", variation_return)],
         )
 
         create_conditioning = method_body(self.workflow, "CreateConditioning(string prompt")
@@ -511,7 +511,8 @@ class Anima38WorkflowIntegrationTests(unittest.TestCase):
         sampler = method_body(self.workflow, "CreateKSampler(JArray model")
         exact_start = sampler.index("else if (IsAnima38())")
         generic_start = sampler.index("else if (IsAnima())", exact_start)
-        exact = sampler[exact_start:generic_start]
+        exact_end = sampler.index("else if", exact_start + len("else if"))
+        exact = sampler[exact_start:exact_end]
         generic_end = sampler.index("else if", generic_start + len("else if"))
         generic = sampler[generic_start:generic_end]
         self.assertIn("if (explicitSampler is null)", exact)
@@ -987,21 +988,22 @@ class Anima38WorkflowIntegrationTests(unittest.TestCase):
             self.assertIn("TryGetBasicInputImage(input, out Image _)", preview)
             self.assertNotIn("input.TryGet(T2IParamTypes.InitImage", preview)
 
-    def test_exact_anima_rejects_lllite_before_graph_emission(self):
+    def test_anima_control_dispatches_to_capability_checked_remapping(self):
         steps = method_body(self.steps, "public static void Register()")
-        anima_control_start = steps.index(
-            "controlModel.ModelClass?.CompatClass?.ID == T2IModelClassSorter.CompatAnima.ID"
-        )
-        anima_control_end = steps.index('CreateNode("ControlNetLoader"', anima_control_start)
-        anima_control = steps[anima_control_start:anima_control_end]
-        self.assertIn("if (g.IsAnima38())", anima_control)
-        guard = anima_control.index("if (g.IsAnima38())")
-        error = anima_control.index("throw new SwarmUserErrorException", guard)
-        emission = anima_control.index("CreateNode(ComfyNodeNames.AnimaLLLite", error)
+        dispatch = steps.index("WorkflowGenerator.GetAnimaControlNetFeature(controlModel) is not null")
+        fallback = steps.index('CreateNode("ControlNetLoader"', dispatch)
+        self.assertIn("g.ApplyAnimaControlNet(controlModel", steps[dispatch:fallback])
+        self.assertIn("continue;", steps[dispatch:fallback])
+        helper_path = WORKFLOW_PATH.with_name("WorkflowGeneratorAnimaControlNet.cs")
+        helper = method_body(helper_path.read_text(), "public void ApplyAnimaControlNet(")
+        guard = helper.index("!Features.Contains(feature)")
+        error = helper.index("throw new SwarmUserErrorException", guard)
+        emission = helper.index("CreateNode(", error)
         self.assertLess(guard, error)
         self.assertLess(error, emission)
-        self.assertIn("Anima 3.8B LLLite", anima_control[error:emission])
-        self.assertIn("block mapping is not known-safe", anima_control[error:emission])
+        self.assertIn('["auto_remap"] = true', helper)
+        self.assertIn('["extend_to_new_layers"] = false', helper)
+        self.assertIn("CreateNode(ComfyNodeNames.AnimaLLLiteRemap", helper)
 
     def test_exact_lora_requirement_prediction_uses_production_csharp_decisions(self):
         output_dir = REPOSITORY_ROOT / "src/bin/Debug/net8.0"

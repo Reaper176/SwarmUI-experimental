@@ -53,10 +53,11 @@ public class AnimaQwen35Tests
 
     /// <summary>The distinct 3.8B path remains separate.</summary>
     [Test]
-    public void RejectsAnima38()
+    public void RejectsSemanticAnima38()
     {
         JObject header = Header();
         header["blocks.51.adaln_modulation_cross_attn.2.weight"] = new JObject();
+        header["__metadata__"] = new JObject { ["modelspec.architecture"] = "anima-3_8b" };
         Assert.That(T2IModelClassSorter.IsAnimaQwen35(header), Is.False);
     }
 

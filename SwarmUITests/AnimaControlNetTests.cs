@@ -27,7 +27,7 @@ public class AnimaControlNetTests : SwarmUITest
         WorkflowGenerator g = new()
         {
             Workflow = new JObject(),
-            FinalLoadedModel = new T2IModel { ModelClass = new T2IModelClass { ID = hostClass, CompatClass = T2IModelClassSorter.CompatAnima } },
+            FinalLoadedModel = new T2IModel(null, null, null, "host.safetensors") { ModelClass = new T2IModelClass { ID = hostClass, CompatClass = T2IModelClassSorter.CompatAnima } },
             Features = [ComfyCapabilityCatalog.AnimaVaceControlNetFeature, ComfyCapabilityCatalog.AnimaLLLiteRemapFeature]
         };
         g.CurrentModel = new(["model", 0], g, WGNodeData.DT_MODEL, T2IModelClassSorter.CompatAnima);
@@ -38,9 +38,8 @@ public class AnimaControlNetTests : SwarmUITest
     /// <summary>Creates a classified ControlNet without filesystem access.</summary>
     private static T2IModel Control(bool vace)
     {
-        return new T2IModel
+        return new T2IModel(null, null, null, "control.safetensors")
         {
-            Name = "control.safetensors",
             ModelClass = new T2IModelClass { ID = vace ? "anima/controlnet-vace" : "anima/controlnet", CompatClass = T2IModelClassSorter.CompatAnima }
         };
     }
