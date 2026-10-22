@@ -15,6 +15,9 @@ from comfy.model_patcher import ModelPatcher
 COND = 0
 UNCOND = 1
 COND_UNCOND_COUPLE_KEY = "swarm_cond_or_uncond_couple"
+ANIMA_COUPLE_WRAPPER_KEY = "swarm_attention_couple_anima"
+ANIMA_COUPLE_CONDS_KEY = "swarm_anima_couple_conds"
+ANIMA_COUPLE_MASK_KEY = "swarm_anima_couple_mask"
 
 
 def lcm_for_list(numbers: list[int]) -> int:
@@ -106,6 +109,131 @@ def unet_attn2_output_couple_wrapper(mask: torch.Tensor):
     return attn2_output_patch
 
 
+def anima_couple_sample_wrapper(cond_inputs: list, device):
+    """Run regional text through Anima's native adapter before sampling."""
+    from comfy.sampler_helpers import convert_cond
+    from comfy.samplers import process_conds
+
+    converted_conds = [convert_cond(cond)[0] for cond in cond_inputs]
+
+    def sample_wrapper(executor, *args, **kwargs):
+        guider, _, extra_args, _, noise, latent_image, denoise_mask = args[:7]
+        latent_shape = latent_image.shape if latent_image is not None else noise.shape
+        processed = process_conds(
+            guider.inner_model,
+            noise,
+            {"positive": [cond.copy() for cond in converted_conds]},
+            device,
+            latent_image,
+            denoise_mask,
+            extra_args.get("seed"),
+            latent_shapes=getattr(guider.inner_model, "latent_shapes", None) or [latent_shape],
+        )["positive"]
+        model_options = extra_args["model_options"]
+        options = model_options.get("transformer_options", {}).copy()
+        options[ANIMA_COUPLE_CONDS_KEY] = [cond["model_conds"]["c_crossattn"].cond for cond in processed]
+        model_options["transformer_options"] = options
+        return executor(*args, **kwargs)
+
+    return sample_wrapper
+
+
+def anima_couple_diffusion_wrapper(mask: torch.Tensor):
+    def diffusion_wrapper(executor, *args, **kwargs):
+        shape = list(args[0].shape)
+        patch_spatial = executor.class_obj.patch_spatial
+        # Cosmos pads the input before creating image tokens.
+        shape[-2] = (shape[-2] + patch_spatial - 1) // patch_spatial
+        shape[-1] = (shape[-1] + patch_spatial - 1) // patch_spatial
+        options = (kwargs.get("transformer_options") or {}).copy()
+        options["activations_shape"] = tuple(shape)
+        options[ANIMA_COUPLE_MASK_KEY] = mask
+        kwargs["transformer_options"] = options
+        return executor(*args, **kwargs)
+
+    return diffusion_wrapper
+
+
+def anima_couple_forward_wrapper(previous_forward, base_strength: float, strengths: list[float]):
+    """Expand positive cross-attention by region, then restore its batch order."""
+    def forward_wrapper(x, context=None, rope_emb=None, transformer_options=None):
+        options = (transformer_options or {}).copy()
+        conds = options.get(ANIMA_COUPLE_CONDS_KEY, [])
+        cond_or_uncond = options.get("cond_or_uncond", [])
+        if context is None or not conds or COND not in cond_or_uncond:
+            return previous_forward(x, context, rope_emb, options)
+
+        if any(cond.ndim != 3 or cond.shape[-1] != context.shape[-1] for cond in conds):
+            raise ValueError("Swarm Attention Couple requires matching, preprocessed Anima text conditioning for every region.")
+        num_conds = len(conds) + 1
+        bs = x.shape[0] // len(cond_or_uncond)
+        num_tokens = lcm_for_list([context.shape[1]] + [cond.shape[1] for cond in conds])
+        regional_contexts = torch.cat([
+            cond.to(context).repeat(
+                (bs + cond.shape[0] - 1) // cond.shape[0], num_tokens // cond.shape[1], 1
+            )[:bs] * strength
+            for cond, strength in zip(conds, strengths)
+        ], dim=0)
+        x_chunks = x.chunk(len(cond_or_uncond), dim=0)
+        context_chunks = context.chunk(len(cond_or_uncond), dim=0)
+        xs = []
+        contexts = []
+        expanded_flags = []
+        for flag, x_chunk, context_chunk in zip(cond_or_uncond, x_chunks, context_chunks):
+            context_chunk = context_chunk.repeat(1, num_tokens // context.shape[1], 1)
+            if flag == UNCOND:
+                xs.append(x_chunk)
+                contexts.append(context_chunk)
+                expanded_flags.append(UNCOND)
+            else:
+                xs.append(x_chunk.repeat(num_conds, 1, 1))
+                contexts.append(torch.cat([context_chunk * base_strength, regional_contexts], dim=0))
+                expanded_flags.extend(itertools.repeat(COND, num_conds))
+        options["cond_or_uncond"] = expanded_flags
+        out = previous_forward(torch.cat(xs, dim=0), torch.cat(contexts, dim=0), rope_emb, options)
+
+        mask = options[ANIMA_COUPLE_MASK_KEY]
+        size = tuple(options["activations_shape"][-2:])
+        mask_downsample = reshape_mask(mask, size, bs, out.shape[1]).to(out)
+        outputs = []
+        offset = 0
+        for flag in cond_or_uncond:
+            count = bs if flag == UNCOND else bs * num_conds
+            chunk = out[offset:offset + count]
+            if flag != UNCOND:
+                chunk = (chunk * mask_downsample).reshape(num_conds, bs, *out.shape[1:]).sum(dim=0)
+            outputs.append(chunk)
+            offset += count
+        return torch.cat(outputs, dim=0)
+
+    return forward_wrapper
+
+
+def patch_anima_couple(patcher: ModelPatcher, base_cond, cond_inputs: list, mask: torch.Tensor):
+    """Anima/Cosmos route adapted from ComfyUI-ppm's cosmos_couple.py.
+
+    https://github.com/pamparamm/ComfyUI-ppm/blob/master/src/attention_couple/cosmos_couple.py
+    """
+    from comfy.ldm.cosmos.predict2 import Attention as CosmosAttention
+    from comfy.patcher_extension import WrappersMP
+
+    patcher.add_wrapper_with_key(
+        WrappersMP.SAMPLER_SAMPLE, ANIMA_COUPLE_WRAPPER_KEY,
+        anima_couple_sample_wrapper(cond_inputs, mask.device),
+    )
+    patcher.add_wrapper_with_key(
+        WrappersMP.DIFFUSION_MODEL, ANIMA_COUPLE_WRAPPER_KEY,
+        anima_couple_diffusion_wrapper(mask),
+    )
+    base_strength = base_cond[0][1].get("strength", 1.0)
+    strengths = [cond[0][1].get("strength", 1.0) for cond in cond_inputs]
+    for name, module in patcher.get_model_object("diffusion_model").named_modules():
+        if isinstance(module, CosmosAttention) and "cross_attn" in name:
+            forward_name = f"diffusion_model.{name}.forward"
+            previous_forward = patcher.get_model_object(forward_name)
+            patcher.add_object_patch(forward_name, anima_couple_forward_wrapper(previous_forward, base_strength, strengths))
+
+
 class SwarmAttentionCouple:
     @classmethod
     def INPUT_TYPES(cls):
@@ -162,8 +290,11 @@ class SwarmAttentionCouple:
         if mask.sum(dim=0).min() <= 0:
             raise ValueError("Swarm Attention Couple masks contain non-filled areas.")
         mask = mask / mask.sum(dim=0, keepdim=True)
-        m.set_model_attn2_patch(unet_attn2_couple_wrapper(base_cond, cond_inputs, device, dtype))
-        m.set_model_attn2_output_patch(unet_attn2_output_couple_wrapper(mask))
+        if issubclass(model_type, Anima):
+            patch_anima_couple(m, base_cond, cond_inputs, mask)
+        else:
+            m.set_model_attn2_patch(unet_attn2_couple_wrapper(base_cond, cond_inputs, device, dtype))
+            m.set_model_attn2_output_patch(unet_attn2_output_couple_wrapper(mask))
         return (m,)
 
 
