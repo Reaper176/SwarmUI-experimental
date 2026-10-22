@@ -287,6 +287,7 @@
     - Attention Couple only applies to positive prompt regions. Negative prompts remain global.
     - Attention Couple currently supports SD1/SD2-style models, SDXL, SDXL Refiner, and Anima.
     - Attention Couple cannot be combined with GLIGEN regional prompting.
+    - Anima support is bundled with SwarmUI and does not require ComfyUI-ppm. See the [reference setup](../ReferenceSetups/2026-10-22/README.md) for backend versions, removal of the older Strata override, and a comparison prompt.
 
 ## Regional Object Prompting
 

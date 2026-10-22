@@ -1,0 +1,36 @@
+diff --git a/comfy/model_management.py b/comfy/model_management.py
+index 6e6aaef..9d66e3c 100644
+--- a/comfy/model_management.py
++++ b/comfy/model_management.py
+@@ -30,0 +31 @@ import os
++import ctypes
+@@ -2160,0 +2162,15 @@ def soft_empty_cache(force=False):
++def free_system_memory():
++    empty_host_cache = getattr(getattr(torch, "accelerator", None), "empty_host_cache", None)
++    if empty_host_cache is not None:
++        empty_host_cache()
++
++    if sys.platform == "linux":
++        try:
++            malloc_trim = ctypes.CDLL(None).malloc_trim
++        except (OSError, AttributeError):
++            return
++        malloc_trim.argtypes = [ctypes.c_size_t]
++        malloc_trim.restype = ctypes.c_int
++        malloc_trim(0)
++
++
+diff --git a/execution.py b/execution.py
+index 305f1db..2f0a296 100644
+--- a/execution.py
++++ b/execution.py
+@@ -1324,0 +1325,2 @@ class PromptQueue:
++                if self.flags:
++                    return None
+diff --git a/main.py b/main.py
+index 25dd02f..8070635 100644
+--- a/main.py
++++ b/main.py
+@@ -422,0 +423,2 @@ def prompt_worker(q, server_instance, asset_manager):
++                    if free_memory:
++                        comfy.model_management.free_system_memory()
