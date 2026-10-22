@@ -264,38 +264,79 @@ class AttentionCoupleTests(unittest.TestCase):
         self.addCleanup(stub_scope.__exit__, None, None, None)
         PROCESS_CALLS.clear()
         self.original = ModelPatcher(Anima())
+        self.base_for_sample = conditioning(2, strength=0)
 
-    def patched(self, base=None, region=None, size=(4, 4), masks=None, model=None):
-        base = conditioning(2) if base is None else base
+    def patched(self, base=None, region=None, size=(4, 4), masks=None, model=None, **node_options):
+        legacy = model is not None and not isinstance(model.model, Anima)
+        base = conditioning(2, strength=1 if legacy else 0) if base is None else base
+        self.base_for_sample = base
         region = conditioning(6, tokens=3) if region is None else region
         if masks is None:
             base_mask = torch.zeros((1, *size))
             base_mask[..., :size[1] // 2] = 1
             masks = (base_mask, 1 - base_mask)
-        result, = NODE.SwarmAttentionCouple().patch(model or self.original, base, masks[0], "[]", cond_1=region, mask_1=masks[1])
+        result, = NODE.SwarmAttentionCouple().patch(model or self.original, base, masks[0], "[]", cond_1=region, mask_1=masks[1], **node_options)
         return result
 
-    def sample(self, patcher, order=(1, 0), bs=1, size=(4, 4), base=2, uncond=-2, context_dtype=torch.float32):
+    def sample(self, patcher, order=(1, 0), bs=1, size=(4, 4), base=2, uncond=-2,
+               context_dtype=torch.float32, guider_conds=None, fail=False):
         noise = torch.zeros((bs, 1, 1, *size), device="cpu")
         options = copy.deepcopy(patcher.model_options)
         options["transformer_options"]["wrappers"] = patcher.wrappers
         model_wrap = types.SimpleNamespace(
             inner_model=patcher.model, model_patcher=patcher, model_options=options,
-            conds={"positive": convert_cond(conditioning(base)), "negative": convert_cond(conditioning(uncond))},
+            conds=guider_conds if guider_conds is not None else {
+                "positive": convert_cond(self.base_for_sample),
+                "negative": convert_cond(conditioning(uncond, strength=.25)),
+            },
         )
+        self.last_guider = model_wrap
         sampler = types.SimpleNamespace()
         extra_args = {"model_options": options, "seed": 17}
 
         def sample_impl(model_wrap, sigmas, extra_args, callback, noise, latent_image, denoise_mask, disable_pbar):
+            self.seen_positive = model_wrap.conds["positive"]
+            self.seen_negative = model_wrap.conds["negative"]
+            if fail:
+                raise RuntimeError("sampling failure sentinel")
             context = torch.cat([conditioning(uncond if kind else base)[0][0].repeat(bs, 1, 1) for kind in order]).to(context_dtype)
             x = noise.repeat(len(order), 1, 1, 1, 1)
             transformer_options = dict(extra_args["model_options"]["transformer_options"], cond_or_uncond=list(order), original_shape=x.shape)
-            return patcher.model.diffusion_model(x, torch.ones(x.shape[0]), context, transformer_options=transformer_options)
+            result = patcher.model.diffusion_model(x, torch.ones(x.shape[0]), context, transformer_options=transformer_options)
+            # Comfy accumulates output * mult, then divides by sum(mult) seeded
+            # with epsilon. A zero positive strength erases the entire result.
+            chunks = []
+            for flag, chunk in zip(order, result.chunk(len(order), dim=0)):
+                entries = model_wrap.conds["negative" if flag else "positive"]
+                weighted = torch.zeros_like(chunk)
+                count = torch.full_like(chunk, 1e-37)
+                for entry in entries:
+                    mult = torch.full_like(chunk, entry.get("strength", 1.))
+                    weighted += chunk * mult
+                    count += mult
+                chunks.append(weighted / count)
+            return torch.cat(chunks)
 
         with installed_object_patches(patcher):
             return WrapperExecutor.new_class_executor(
                 sample_impl, sampler, patcher.get_all_wrappers(WrappersMP.SAMPLER_SAMPLE)
             ).execute(model_wrap, torch.tensor([1., 0.]), extra_args, None, noise, noise.clone(), None, True)
+
+    def patched_two_halves(self, global_factor=.5, local_strength=1):
+        base = conditioning(2, strength=global_factor)
+        self.base_for_sample = base
+        cat_strength, dog_strength = local_strength if isinstance(local_strength, tuple) else (local_strength, local_strength)
+        cat_mask = torch.zeros((1, 4, 4))
+        cat_mask[..., :2] = cat_strength
+        dog_mask = torch.zeros_like(cat_mask)
+        dog_mask[..., 2:] = dog_strength
+        base_mask = 1 - cat_mask - dog_mask
+        patched, = NODE.SwarmAttentionCouple().patch(
+            self.original, base, base_mask, "[]",
+            cond_1=conditioning(6, tokens=3, strength=cat_strength), mask_1=cat_mask,
+            cond_2=conditioning(10, tokens=5, strength=dog_strength), mask_2=dog_mask,
+        )
+        return patched
 
     def expected_conditional(self, size=(4, 4), base=2., region=6.):
         mask = torch.zeros((1, 1, *size))
@@ -349,7 +390,7 @@ class AttentionCoupleTests(unittest.TestCase):
         region_two = torch.zeros_like(base_mask)
         region_two[..., 2:] = 2
         patched, = NODE.SwarmAttentionCouple().patch(
-            self.original, conditioning(2), base_mask, "[]",
+            self.original, conditioning(2, strength=0), base_mask, "[]",
             cond_1=conditioning([6, 10], tokens=3), mask_1=region_one,
             cond_2=conditioning([10, 14], tokens=5), mask_2=region_two,
         )
@@ -361,9 +402,106 @@ class AttentionCoupleTests(unittest.TestCase):
                 expected = torch.cat([torch.full((2, 4, 1), -2.) if kind else conditional for kind in order])
                 self.assertTensor(actual, expected)
 
-    def test_base_and_region_strengths_scale_their_contexts(self):
-        actual = self.sample(self.patched(base=conditioning(2, strength=.5), region=conditioning(6, strength=2)), order=(0,))
-        self.assertTensor(actual, self.expected_conditional(base=1, region=12))
+    def test_global_factor_blends_full_amplitude_contexts_spatially(self):
+        patched = self.patched(base=conditioning(2, strength=.5), region=conditioning(6, strength=.1))
+        actual = self.sample(patched, order=(0,))
+        self.assertTensor(actual, self.expected_conditional(base=2, region=4))
+        context, _, _ = patched.model.diffusion_model.blocks[0].cross_attn.calls[-1]
+        self.assertTensor(context.mean(1), torch.tensor([[2.], [6.]]))
+
+    def test_global_factor_endpoints_keep_regions_or_shared_prompt(self):
+        for global_factor, left, right in [(0, 6, 10), (.5, 4, 6), (1, 2, 2)]:
+            with self.subTest(global_factor=global_factor):
+                actual = self.sample(self.patched_two_halves(global_factor), order=(0,))
+                self.assertTensor(actual, torch.tensor([[[left], [right], [left], [right]]], dtype=torch.float32))
+
+    def test_global_factor_is_clamped_to_valid_blend_range(self):
+        for global_factor, left, right in [(-1, 6, 10), (2, 2, 2)]:
+            with self.subTest(global_factor=global_factor):
+                actual = self.sample(self.patched_two_halves(global_factor), order=(0,))
+                self.assertTensor(actual, torch.tensor([[[left], [right], [left], [right]]], dtype=torch.float32))
+
+    def test_explicit_global_factor_one_handles_conditioning_without_strength(self):
+        base = conditioning(2)
+        base[0][1].pop("strength")
+        self.base_for_sample = base
+        left = torch.zeros((1, 4, 4))
+        left[..., :2] = 1
+        patched, = NODE.SwarmAttentionCouple().patch(
+            self.original, base, left, "[]", global_factor=1.,
+            cond_1=conditioning(6, tokens=3), mask_1=1 - left,
+        )
+        self.assertTensor(self.sample(patched, order=(0,)), torch.full((1, 4, 1), 2.))
+
+    def test_missing_global_factor_and_strength_preserves_direct_node_regions(self):
+        base = conditioning(2)
+        base[0][1].pop("strength")
+        actual = self.sample(self.patched(base=base), order=(0,))
+        self.assertTensor(actual, self.expected_conditional())
+
+    def test_explicit_global_factor_overrides_legacy_strength_metadata(self):
+        for legacy_strength, global_factor, right in [(0, .5, 4), (1, 0, 6), (.5, 1, 2)]:
+            with self.subTest(legacy_strength=legacy_strength, global_factor=global_factor):
+                base = conditioning(2, strength=legacy_strength)
+                self.base_for_sample = base
+                left = torch.zeros((1, 4, 4))
+                left[..., :2] = 1
+                patched, = NODE.SwarmAttentionCouple().patch(
+                    self.original, base, left, "[]", global_factor=global_factor,
+                    cond_1=conditioning(6, tokens=3), mask_1=1 - left,
+                )
+                self.assertTensor(self.sample(patched, order=(0,)), self.expected_conditional(region=right))
+
+    def test_local_region_strength_increases_spatial_influence_monotonically(self):
+        for region_index in (0, 1):
+            previous = None
+            for local_strength in (0, .1, 1):
+                with self.subTest(region_index=region_index, local_strength=local_strength):
+                    strengths = [1., 1.]
+                    strengths[region_index] = local_strength
+                    actual = self.sample(self.patched_two_halves(.5, tuple(strengths)), order=(0,))
+                    left, right = 2 + 2 * strengths[0], 2 + 4 * strengths[1]
+                    self.assertTensor(actual, torch.tensor([[[left], [right], [left], [right]]], dtype=torch.float32))
+                    if previous is not None:
+                        self.assertTrue(torch.all(actual[:, region_index::2] > previous[:, region_index::2]))
+                        self.assertTensor(actual[:, 1 - region_index::2], previous[:, 1 - region_index::2])
+                    previous = actual
+
+    def test_zero_global_factor_survives_outer_sampler_strength_normalization(self):
+        actual = self.sample(self.patched_two_halves(0), order=(1, 0))
+        conditional = torch.tensor([[[6.], [10.], [6.], [10.]]])
+        self.assertTensor(actual, torch.cat([torch.full((1, 4, 1), -2.), conditional]))
+        self.assertEqual([entry["strength"] for entry in self.seen_positive], [1.])
+        self.assertEqual(self.last_guider.conds["positive"][0]["strength"], 0)
+
+    def test_sampler_restores_positive_metadata_after_success_and_exception(self):
+        for fail in [False, True]:
+            with self.subTest(fail=fail):
+                patched = self.patched()
+                positive = convert_cond(conditioning(2, strength=0))
+                positive += convert_cond(conditioning(2, strength=.2))
+                negative = convert_cond(conditioning(-2, strength=.25))
+                nested = {"keep": "shared metadata"}
+                positive[0]["model_conds"] = nested
+                original = {"positive": positive, "negative": negative}
+                if fail:
+                    with self.assertRaisesRegex(RuntimeError, "sampling failure sentinel"):
+                        self.sample(patched, guider_conds=original, fail=True)
+                else:
+                    self.sample(patched, guider_conds=original)
+                self.assertTrue(PROCESS_CALLS)
+                self.assertIs(self.last_guider.conds, original)
+                self.assertIs(self.last_guider.conds["positive"], positive)
+                self.assertIsNot(self.seen_positive, positive)
+                self.assertEqual([entry["strength"] for entry in positive], [0, .2])
+                self.assertEqual([entry["strength"] for entry in self.seen_positive], [1., 1.])
+                self.assertTrue(all(new is not old for new, old in zip(self.seen_positive, positive)))
+                self.assertIs(self.seen_positive[0]["model_conds"], nested)
+                self.assertIs(self.seen_positive[0]["cross_attn"], positive[0]["cross_attn"])
+                self.assertIs(self.seen_negative, negative)
+                self.assertIs(self.last_guider.conds["negative"], negative)
+                self.assertEqual(negative[0]["strength"], .25)
+                self.assertEqual(self.base_for_sample[0][1]["strength"], 0)
 
     def test_cfg_chunk_order_is_preserved_in_both_directions(self):
         for order in [(1, 0), (0, 1)]:
@@ -412,7 +550,7 @@ class AttentionCoupleTests(unittest.TestCase):
         self.assertEqual(patched.model_options, self.original.model_options)
 
     def test_sdxl_keeps_existing_legacy_attention_route(self):
-        patched = self.patched(model=ModelPatcher(SDXL()))
+        patched = self.patched(model=ModelPatcher(SDXL()), global_factor=.5)
         hooks = patched.model_options["transformer_options"]["patches"]
         self.assertEqual(len(hooks["attn2_patch"]), 1)
         self.assertEqual(len(hooks["attn2_output_patch"]), 1)

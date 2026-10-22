@@ -4242,6 +4242,7 @@ public partial class WorkflowGenerator
             [ComfyNodeInputNames.AttentionCouple.Model] = model,
             [ComfyNodeInputNames.AttentionCouple.BaseCondition] = plan.BaseCond,
             [ComfyNodeInputNames.AttentionCouple.BaseMask] = plan.BaseMask,
+            [ComfyNodeInputNames.AttentionCouple.GlobalFactor] = UserInput.Get(T2IParamTypes.GlobalRegionFactor, 0.5),
             [ComfyNodeInputNames.AttentionCouple.RegionsJson] = "[]"
         };
         for (int i = 0; i < plan.Regions.Count; i++)

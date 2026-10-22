@@ -133,7 +133,18 @@ def anima_couple_sample_wrapper(cond_inputs: list, device):
         options = model_options.get("transformer_options", {}).copy()
         options[ANIMA_COUPLE_CONDS_KEY] = [cond["model_conds"]["c_crossattn"].cond for cond in processed]
         model_options["transformer_options"] = options
-        return executor(*args, **kwargs)
+        # The global factor is already represented in the attention masks.
+        # Letting Comfy apply it to the entire positive prediction would erase
+        # every region when the global factor is zero.
+        original_conds = guider.conds
+        if "positive" not in original_conds:
+            return executor(*args, **kwargs)
+        guider.conds = original_conds.copy()
+        guider.conds["positive"] = [dict(cond, strength=1.0) for cond in original_conds["positive"]]
+        try:
+            return executor(*args, **kwargs)
+        finally:
+            guider.conds = original_conds
 
     return sample_wrapper
 
@@ -154,7 +165,7 @@ def anima_couple_diffusion_wrapper(mask: torch.Tensor):
     return diffusion_wrapper
 
 
-def anima_couple_forward_wrapper(previous_forward, base_strength: float, strengths: list[float]):
+def anima_couple_forward_wrapper(previous_forward):
     """Expand positive cross-attention by region, then restore its batch order."""
     def forward_wrapper(x, context=None, rope_emb=None, transformer_options=None):
         options = (transformer_options or {}).copy()
@@ -171,8 +182,8 @@ def anima_couple_forward_wrapper(previous_forward, base_strength: float, strengt
         regional_contexts = torch.cat([
             cond.to(context).repeat(
                 (bs + cond.shape[0] - 1) // cond.shape[0], num_tokens // cond.shape[1], 1
-            )[:bs] * strength
-            for cond, strength in zip(conds, strengths)
+            )[:bs]
+            for cond in conds
         ], dim=0)
         x_chunks = x.chunk(len(cond_or_uncond), dim=0)
         context_chunks = context.chunk(len(cond_or_uncond), dim=0)
@@ -187,7 +198,7 @@ def anima_couple_forward_wrapper(previous_forward, base_strength: float, strengt
                 expanded_flags.append(UNCOND)
             else:
                 xs.append(x_chunk.repeat(num_conds, 1, 1))
-                contexts.append(torch.cat([context_chunk * base_strength, regional_contexts], dim=0))
+                contexts.append(torch.cat([context_chunk, regional_contexts], dim=0))
                 expanded_flags.extend(itertools.repeat(COND, num_conds))
         options["cond_or_uncond"] = expanded_flags
         out = previous_forward(torch.cat(xs, dim=0), torch.cat(contexts, dim=0), rope_emb, options)
@@ -209,7 +220,7 @@ def anima_couple_forward_wrapper(previous_forward, base_strength: float, strengt
     return forward_wrapper
 
 
-def patch_anima_couple(patcher: ModelPatcher, base_cond, cond_inputs: list, mask: torch.Tensor):
+def patch_anima_couple(patcher: ModelPatcher, base_cond, cond_inputs: list, mask: torch.Tensor, global_factor=None):
     """Anima/Cosmos route adapted from ComfyUI-ppm's cosmos_couple.py.
 
     https://github.com/pamparamm/ComfyUI-ppm/blob/master/src/attention_couple/cosmos_couple.py
@@ -217,6 +228,13 @@ def patch_anima_couple(patcher: ModelPatcher, base_cond, cond_inputs: list, mask
     from comfy.ldm.cosmos.predict2 import Attention as CosmosAttention
     from comfy.patcher_extension import WrappersMP
 
+    # Region strength is mask coverage. The global factor retains shared
+    # context within those regions, rather than scaling Anima's embeddings.
+    if global_factor is None:
+        global_factor = base_cond[0][1].get("strength", 0.0)
+    global_factor = max(0.0, min(1.0, global_factor))
+    shared_mask = mask[:1] + mask[1:].sum(dim=0, keepdim=True) * global_factor
+    mask = torch.cat([shared_mask, mask[1:] * (1.0 - global_factor)], dim=0)
     patcher.add_wrapper_with_key(
         WrappersMP.SAMPLER_SAMPLE, ANIMA_COUPLE_WRAPPER_KEY,
         anima_couple_sample_wrapper(cond_inputs, mask.device),
@@ -225,13 +243,11 @@ def patch_anima_couple(patcher: ModelPatcher, base_cond, cond_inputs: list, mask
         WrappersMP.DIFFUSION_MODEL, ANIMA_COUPLE_WRAPPER_KEY,
         anima_couple_diffusion_wrapper(mask),
     )
-    base_strength = base_cond[0][1].get("strength", 1.0)
-    strengths = [cond[0][1].get("strength", 1.0) for cond in cond_inputs]
     for name, module in patcher.get_model_object("diffusion_model").named_modules():
         if isinstance(module, CosmosAttention) and "cross_attn" in name:
             forward_name = f"diffusion_model.{name}.forward"
             previous_forward = patcher.get_model_object(forward_name)
-            patcher.add_object_patch(forward_name, anima_couple_forward_wrapper(previous_forward, base_strength, strengths))
+            patcher.add_object_patch(forward_name, anima_couple_forward_wrapper(previous_forward))
 
 
 class SwarmAttentionCouple:
@@ -245,6 +261,7 @@ class SwarmAttentionCouple:
                 "regions_json": ("STRING", {"default": "[]"}),
             },
             "optional": {
+                "global_factor": ("FLOAT", {"default": 0.5, "min": 0.0, "max": 1.0, "step": 0.05, "tooltip": "For Anima, how much shared prompt to retain inside regions: 0 is regional, 1 is shared only."}),
                 "cond_1": ("CONDITIONING",),
                 "mask_1": ("MASK",),
                 "cond_2": ("CONDITIONING",),
@@ -268,7 +285,7 @@ class SwarmAttentionCouple:
     FUNCTION = "patch"
     CATEGORY = "SwarmUI/model"
 
-    def patch(self, model: ModelPatcher, base_cond, base_mask, regions_json, **kwargs):
+    def patch(self, model: ModelPatcher, base_cond, base_mask, regions_json, global_factor=None, **kwargs):
         m = model.clone()
         model_type = type(m.model)
         if not (issubclass(model_type, SDXL) or issubclass(model_type, SDXLRefiner) or issubclass(model_type, Anima) or model_type == BaseModel):
@@ -291,7 +308,7 @@ class SwarmAttentionCouple:
             raise ValueError("Swarm Attention Couple masks contain non-filled areas.")
         mask = mask / mask.sum(dim=0, keepdim=True)
         if issubclass(model_type, Anima):
-            patch_anima_couple(m, base_cond, cond_inputs, mask)
+            patch_anima_couple(m, base_cond, cond_inputs, mask, global_factor)
         else:
             m.set_model_attn2_patch(unet_attn2_couple_wrapper(base_cond, cond_inputs, device, dtype))
             m.set_model_attn2_output_patch(unet_attn2_output_couple_wrapper(mask))
