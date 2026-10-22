@@ -343,17 +343,30 @@ class GenerateHandler {
             return;
         }
         if (isPreview) {
+            let previewData = data.gen_progress ?? data;
+            let previewBatchId = `${previewData.request_id}_${previewData.batch_index}`;
+            let metadata = previewData.metadata;
+            if (previewState) {
+                // Parameters may arrive before the first frame and are only sent once.
+                previewState.metadataByBatch ??= {};
+                if (metadata) {
+                    previewState.metadataByBatch[previewBatchId] = metadata;
+                }
+                else {
+                    metadata = previewState.metadataByBatch[previewBatchId] ?? '';
+                }
+            }
             if (data.image) {
                 if (previewState) {
                     previewState.hadOutput = true;
                 }
-                this.setCurrentImage(data.image, data.metadata, `${data.request_id}_${data.batch_index}`, false, true);
+                this.setCurrentImage(data.image, metadata, `${data.request_id}_${data.batch_index}`, false, true);
             }
             if (data.gen_progress?.preview) {
                 if (previewState) {
                     previewState.hadOutput = true;
                 }
-                this.setCurrentImage(data.gen_progress.preview, data.gen_progress.metadata ?? '', `${data.gen_progress.request_id}_${data.gen_progress.batch_index}`, true);
+                this.setCurrentImage(data.gen_progress.preview, metadata ?? '', `${data.gen_progress.request_id}_${data.gen_progress.batch_index}`, true);
             }
             return;
         }

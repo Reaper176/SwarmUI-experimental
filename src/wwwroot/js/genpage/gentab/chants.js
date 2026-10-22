@@ -14,9 +14,25 @@ class ChantHelpers {
         this.imageReadId = 0;
         this.uploading = false;
         this.saving = false;
+        this.batchPreviewActive = false;
+        this.batchPreviewVersion = 0;
+        this.batchPreviewTimer = null;
+        this.batchPreviewLastImage = '';
+        this.batchPreviewStatus = '';
+        this.currentImageButton = document.getElementById('chant_editor_use_current_image');
+        // Static scripts can update before compiled Razor markup is rebuilt.
+        if (!this.currentImageButton) {
+            this.currentImageButton = document.createElement('button');
+            this.currentImageButton.id = 'chant_editor_use_current_image';
+            this.currentImageButton.type = 'button';
+            this.currentImageButton.className = 'basic-button translate';
+            this.currentImageButton.textContent = 'Use Current Image';
+            let preview = getRequiredElementById('chant_editor_preview');
+            preview.parentNode.insertBefore(this.currentImageButton, preview);
+        }
         this.browser = new GenPageBrowserClass('chant_list', this.list.bind(this), 'chantbrowser', 'Cards', this.describe.bind(this),
             (file) => this.insert(file.data, false),
-            '<button type="button" id="chant_create_button" class="basic-button translate">Create New</button>');
+            '<button type="button" id="chant_create_button" class="basic-button translate">Create New</button> <button type="button" id="chant_batch_preview_button" class="basic-button translate">Watch Batch Preview</button> <span id="chant_batch_preview_status" role="status"></span>');
         this.browser.showDepth = false;
         this.browser.showUpFolder = false;
         this.browser.container.addEventListener('click', event => this.activateCardText(event));
@@ -31,10 +47,12 @@ class ChantHelpers {
                 button.disabled = !this.source || !permissions.hasPermission('edit_chants');
                 button.onclick = () => this.openEditor(null, true);
             }
+            this.updateBatchPreviewControls();
         };
         getRequiredElementById('chantstabheader').addEventListener('shown.bs.tab', () => this.browser.update());
         getRequiredElementById('chant_editor_save').addEventListener('click', () => this.save());
         getRequiredElementById('chant_editor_image').addEventListener('change', () => this.readThumbnail());
+        this.currentImageButton.addEventListener('click', () => this.useCurrentImage());
         getRequiredElementById('chant_editor_remove_image').addEventListener('click', () => {
             this.imageReadId++;
             this.uploading = false;
@@ -48,6 +66,95 @@ class ChantHelpers {
                 this.browser.rerender();
             }
         });
+    }
+
+    /** Updates the preview-following controls after browser headers are rebuilt. */
+    updateBatchPreviewControls() {
+        let button = document.getElementById('chant_batch_preview_button');
+        let status = document.getElementById('chant_batch_preview_status');
+        if (button) {
+            button.textContent = this.batchPreviewActive ? 'Stop Watching Preview' : 'Watch Batch Preview';
+            button.onclick = () => this.toggleBatchPreview();
+        }
+        if (status) {
+            status.textContent = this.batchPreviewStatus;
+        }
+    }
+
+    /** Starts or stops following completed images from the latest chant-thumbnail batch. */
+    toggleBatchPreview() {
+        this.batchPreviewActive = !this.batchPreviewActive;
+        let version = ++this.batchPreviewVersion;
+        clearTimeout(this.batchPreviewTimer);
+        this.batchPreviewStatus = '';
+        this.batchPreviewLastImage = '';
+        this.updateBatchPreviewControls();
+        if (!this.batchPreviewActive) {
+            return;
+        }
+        genericRequest('ListImages', { path: '', depth: 1, sortBy: 'DateEdited', fastFirst: true, fastFirstLimit: 1 }, data => {
+            if (version != this.batchPreviewVersion) {
+                return;
+            }
+            let folders = (data.folders || []).filter(folder => /^chant-thumbnails(?:-|$)/.test(folder)).sort();
+            if (!folders.length) {
+                this.failBatchPreview('No chant-thumbnail batch folder was found in your image history.', version);
+                return;
+            }
+            this.batchPreviewFolder = folders[folders.length - 1];
+            this.pollBatchPreview(version);
+        }, 0, message => this.failBatchPreview(message, version));
+    }
+
+    /** Stops preview following on an error without interrupting the generation batch. */
+    failBatchPreview(message, version) {
+        if (version != this.batchPreviewVersion) {
+            return;
+        }
+        this.batchPreviewActive = false;
+        this.batchPreviewVersion++;
+        clearTimeout(this.batchPreviewTimer);
+        this.batchPreviewStatus = message;
+        this.updateBatchPreviewControls();
+    }
+
+    /** Loads only the newest saved batch image and displays it without growing the batch strip. */
+    pollBatchPreview(version) {
+        if (!this.batchPreviewActive || version != this.batchPreviewVersion) {
+            return;
+        }
+        let schedule = () => {
+            if (this.batchPreviewActive && version == this.batchPreviewVersion) {
+                this.batchPreviewTimer = setTimeout(() => this.pollBatchPreview(version), 3000);
+            }
+        };
+        if (document.visibilityState == 'hidden') {
+            schedule();
+            return;
+        }
+        genericRequest('ListImages', { path: this.batchPreviewFolder, depth: 1, sortBy: 'DateEdited', sortReverse: false, fastFirst: true, fastFirstLimit: 1 }, data => {
+            if (version != this.batchPreviewVersion) {
+                return;
+            }
+            let file = data.files?.[0];
+            if (file && file.src != this.batchPreviewLastImage) {
+                this.batchPreviewLastImage = file.src;
+                let metadata = file.metadata || '';
+                let chantName = '';
+                try {
+                    let parsed = typeof metadata == 'string' ? JSON.parse(metadata) : metadata;
+                    chantName = parsed?.sui_extra_data?.chant_thumbnail_name || '';
+                }
+                catch (error) {
+                    // The image can still be displayed when its metadata is unavailable.
+                }
+                let src = `${getImageOutPrefix()}/${this.batchPreviewFolder}/${file.src}`;
+                setCurrentImage(src, metadata, `chant-thumbnail-preview-${file.src}`, false, true);
+                this.batchPreviewStatus = chantName ? `Latest chant: ${chantName}` : `Watching ${this.batchPreviewFolder}`;
+                this.updateBatchPreviewControls();
+            }
+            schedule();
+        }, 0, message => this.failBatchPreview(message, version));
     }
 
     /** Makes the card's text preview usable with mouse, touch, or keyboard. */
@@ -190,6 +297,7 @@ class ChantHelpers {
         getRequiredElementById('chant_editor_image').value = '';
         getRequiredElementById('chant_editor_image').disabled = !editable;
         getRequiredElementById('chant_editor_remove_image').hidden = !editable;
+        this.currentImageButton.hidden = !editable;
         getRequiredElementById('chant_editor_save').hidden = !editable;
         this.updatePreview();
         this.updateSaveButton();
@@ -211,6 +319,55 @@ class ChantHelpers {
     /** Keeps saving disabled while an upload or save is in progress. */
     updateSaveButton() {
         getRequiredElementById('chant_editor_save').disabled = this.saving || this.uploading;
+        this.currentImageButton.disabled = this.saving || this.uploading;
+    }
+
+    /** Uses the displayed still image as a small embedded thumbnail, preserving the previous one on failure. */
+    useCurrentImage() {
+        if (!this.editable || this.saving || this.uploading || !permissions.hasPermission('edit_chants')) {
+            return;
+        }
+        let error = getRequiredElementById('chant_editor_error');
+        let image = currentImageHelper.getCurrentImage();
+        if (!image || image.tagName != 'IMG' || !image.src) {
+            error.textContent = 'Select or display a still image first.';
+            return;
+        }
+        let readId = ++this.imageReadId;
+        this.uploading = true;
+        error.textContent = '';
+        this.updateSaveButton();
+        let timeout = setTimeout(() => {
+            if (readId == this.imageReadId) {
+                this.imageReadId++;
+                this.uploading = false;
+                error.textContent = 'Could not load the current image. Try again or upload a thumbnail.';
+                this.updateSaveButton();
+            }
+        }, 30000);
+        let finish = data => {
+            clearTimeout(timeout);
+            if (readId != this.imageReadId) {
+                return;
+            }
+            this.uploading = false;
+            let thumbnail = this.safeThumbnail(data);
+            if (thumbnail) {
+                this.thumbnail = thumbnail;
+                getRequiredElementById('chant_editor_image').value = '';
+                this.updatePreview();
+            }
+            else {
+                error.textContent = 'Could not use the current image. Try again or upload a thumbnail.';
+            }
+            this.updateSaveButton();
+        };
+        try {
+            imageToData(image.src, finish, true);
+        }
+        catch (exception) {
+            finish(null);
+        }
     }
 
     /** Reads a bounded raster file into a data URL without uploading elsewhere. */
