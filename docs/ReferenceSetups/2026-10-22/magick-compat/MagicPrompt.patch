@@ -1,0 +1,38 @@
+--- a/BackendSchema.cs
++++ b/BackendSchema.cs
+@@ -1,10 +1,7 @@
+-using SixLabors.ImageSharp.Processing;
++using ImageMagick;
+ using SwarmUI.Utils;
+ using SwarmUI.Media;
+ using Image = SwarmUI.Utils.Image;
+-using ISImage = SixLabors.ImageSharp.Image;
+-using ISImage32 = SixLabors.ImageSharp.Image<SixLabors.ImageSharp.PixelFormats.Rgba32>;
+-using ISImageFrame32 = SixLabors.ImageSharp.ImageFrame<SixLabors.ImageSharp.PixelFormats.Rgba32>;
+ 
+ namespace Hartsy.Extensions.MagicPromptExtension;
+ 
+@@ -73,18 +70,18 @@
+             {
+                 return media.Data;
+             }
+-            ISImage img = image.ToIS;
++            using IMagickImage<ushort> img = image.ToMagick.Clone();
+             int maxDimension = 256; // TODO: This needs to be tested and adjusted
+             if (img.Width > maxDimension || img.Height > maxDimension)
+             {
+                 float scaleFactor = maxDimension / (float)Math.Max(img.Width, img.Height);
+-                int newWidth = (int)(img.Width * scaleFactor);
+-                int newHeight = (int)(img.Height * scaleFactor);
+-                img.Mutate(i => i.Resize(newWidth, newHeight));
++                int newWidth = Math.Max(1, (int)(img.Width * scaleFactor));
++                int newHeight = Math.Max(1, (int)(img.Height * scaleFactor));
++                img.Resize(new MagickGeometry((uint)newWidth, (uint)newHeight) { IgnoreAspectRatio = true });
+             }
+             // Set compression quality based on format TODO: This needs to be tested and adjusted
+             int quality = targetFormat == "PNG" ? 60 : 40;
+-            ImageFile tempImage = new Image(ImageFile.ISImgToPngBytes(img), image.Type);
++            ImageFile tempImage = new Image(ImageFile.MagickImageToPngBytes(img), MediaType.ImagePng);
+             ImageFile compressedImage = tempImage.ConvertTo(targetFormat, quality: quality);
+             // Return just the base64 data (without the data:image/webp;base64, prefix)
+             return compressedImage.AsBase64;

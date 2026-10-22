@@ -1,0 +1,56 @@
+--- a/src/PromptEditApi.cs
++++ b/src/PromptEditApi.cs
+@@ -118,11 +118,11 @@
+                 ImageFile source = img;
+                 if (img.Type.MetaType != MediaMetaType.Image)
+                 {
+-                    if (img.ToIS.Frames.Count > 1)
++                    if (img.ToMagickFrames.Count > 1)
+                     {
+                         return new JObject { ["success"] = false, ["error"] = "Editing the prompt is not supported for animated images." };
+                     }
+-                    source = new Image(ImageFile.ISImgToPngBytes(img.ToIS), MediaType.ImagePng);
++                    source = new Image(ImageFile.MagickImageToPngBytes(img.ToMagick), MediaType.ImagePng);
+                 }
+                 int quality = Math.Clamp(session.User.Settings.FileFormat.ImageQuality, 1, 100);
+                 int dpi = session.User.Settings.FileFormat.DPI;
+--- a/src/WebpExifRewriter.cs
++++ b/src/WebpExifRewriter.cs
+@@ -3,7 +3,8 @@
+ using System.Collections.Generic;
+ using System.IO;
+ using System.Text;
+-using SixLabors.ImageSharp.Metadata.Profiles.Exif;
++using ImageMagick;
++using SwarmUI.Utils;
+ 
+ namespace WhatTheDuck;
+ 
+@@ -60,23 +61,24 @@
+             return null; // no EXIF chunk to rewrite
+         }
+         byte[] origExif = webp.AsSpan(exifStart, exifLen).ToArray();
++        bool origHadHeader = StartsWith(origExif, ExifHeader);
++        byte[] profileBytes = origHadHeader ? origExif : [.. ExifHeader, .. origExif];
+         ExifProfile profile;
+         try
+         {
+-            profile = new ExifProfile(origExif);
++            profile = new ExifProfile(profileBytes);
+         }
+         catch
+         {
+             return null;
+         }
+-        profile.SetValue(ExifTag.UserComment, newUserComment);
++        profile.SetValue(ExifTag.UserComment, MetadataHelper.EncodeExifUserComment(newUserComment));
+         byte[] newExif = profile.ToByteArray();
+         if (newExif is null)
+         {
+             return null;
+         }
+         // Match the original chunk's framing regarding the optional "Exif\0\0" header.
+-        bool origHadHeader = StartsWith(origExif, ExifHeader);
+         bool newHasHeader = StartsWith(newExif, ExifHeader);
+         if (origHadHeader && !newHasHeader)
+         {

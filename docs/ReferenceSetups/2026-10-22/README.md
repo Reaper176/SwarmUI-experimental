@@ -2,6 +2,8 @@
 
 This snapshot accompanies the fork's current source. Pull `master` from `https://github.com/Reaper176/SwarmUI-experimental`, then fully restart SwarmUI and its ComfyUI backend so the C# workflow and Python nodes both reload. The native Anima Attention Couple fixes first appeared in `e11de73b` and `39b26e8d`.
 
+The [Magick.NET migration notes](magick-compat/README.md) cover the key-free image-library replacement, security scope, and required MagicPrompt/WhatTheDuck compatibility patches for installations with those optional extensions.
+
 ## Regional prompting
 
 Anima Attention Couple is included in `SwarmComfyCommon/SwarmAttentionCouple.py`. ComfyUI-ppm and Strata are not required for this path. Select **Attention Couple** under Regional Prompting. Individual region strength controls regional coverage; Global Region Factor controls shared-prompt blending inside regions.

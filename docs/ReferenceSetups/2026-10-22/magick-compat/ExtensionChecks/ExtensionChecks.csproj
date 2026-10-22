@@ -1,0 +1,22 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>disable</Nullable>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+    <MagicPromptSource>$(MSBuildThisFileDirectory)../../../../../src/Extensions/SwarmUI-MagicPromptExtension/BackendSchema.cs</MagicPromptSource>
+    <WhatTheDuckSource>$(MSBuildThisFileDirectory)../../../../../src/Extensions/SwarmUI-WhatTheDuckExtension/src/WebpExifRewriter.cs</WhatTheDuckSource>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../../../../../src/SwarmUI.csproj" />
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+    <Compile Include="Program.cs" />
+    <Compile Include="$(MagicPromptSource)" Link="InstalledExtensions/BackendSchema.cs" Condition="Exists('$(MagicPromptSource)')" />
+    <Compile Include="$(WhatTheDuckSource)" Link="InstalledExtensions/WebpExifRewriter.cs" Condition="Exists('$(WhatTheDuckSource)')" />
+  </ItemGroup>
+  <Target Name="ValidateInstalledExtensionSources" BeforeTargets="PrepareForBuild">
+    <Error Condition="!Exists('$(MagicPromptSource)')" Text="Optional extension check requires MagicPrompt BackendSchema.cs at $(MagicPromptSource). Install the extension or set MagicPromptSource to its source file." />
+    <Error Condition="!Exists('$(WhatTheDuckSource)')" Text="Optional extension check requires WhatTheDuck WebpExifRewriter.cs at $(WhatTheDuckSource). Install the extension or set WhatTheDuckSource to its source file." />
+  </Target>
+</Project>

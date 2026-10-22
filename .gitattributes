@@ -2,3 +2,7 @@
 Dockerfile    text eol=lf
 *.docker      text eol=lf
 .dockerignore text eol=lf
+
+# Unified patch context and the original vendored license retain their literal whitespace.
+docs/ReferenceSetups/2026-10-22/magick-compat/*.patch whitespace=-blank-at-eol
+src/wwwroot/fonts/Unifont-12.0.01-COPYING.txt whitespace=-blank-at-eol,-blank-at-eof

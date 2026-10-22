@@ -1,7 +1,6 @@
 using FreneticUtilities.FreneticExtensions;
+using ImageMagick;
 using Newtonsoft.Json.Linq;
-using SixLabors.ImageSharp;
-using SixLabors.ImageSharp.Processing;
 using SwarmUI.Accounts;
 using SwarmUI.Core;
 using SwarmUI.Media;
@@ -10,7 +9,6 @@ using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using Image = SwarmUI.Utils.Image;
-using ISImageRGBA = SixLabors.ImageSharp.Image<SixLabors.ImageSharp.PixelFormats.Rgba32>;
 
 namespace SwarmUI.WebAPI;
 
@@ -67,29 +65,34 @@ public static class ClassicInpaintAPI
         return (process.ExitCode, result.Trim());
     }
 
-    public static void PrepareClassicInpaintMask(ISImageRGBA maskImage, int expandMask, int feather)
+    /// <summary>Converts any nonzero RGBA channel to an opaque mask, then expands and feathers its selected pixels.</summary>
+    public static void PrepareClassicInpaintMask(IMagickImage<ushort> maskImage, int expandMask, int feather)
     {
-        maskImage.Mutate(ctx =>
+        maskImage.ColorSpace = ColorSpace.sRGB;
+        maskImage.ColorType = ColorType.TrueColorAlpha;
+        maskImage.Depth = 8;
+        using (IPixelCollection<ushort> pixels = maskImage.GetPixels())
         {
-            for (int y = 0; y < maskImage.Height; y++)
+            byte[] rgba = pixels.ToByteArray(PixelMapping.RGBA);
+            for (int i = 0; i < rgba.Length; i += 4)
             {
-                for (int x = 0; x < maskImage.Width; x++)
-                {
-                    SixLabors.ImageSharp.PixelFormats.Rgba32 pixel = maskImage[x, y];
-                    byte value = pixel.A > 0 || pixel.R > 0 || pixel.G > 0 || pixel.B > 0 ? (byte)255 : (byte)0;
-                    maskImage[x, y] = new(value, value, value, 255);
-                }
+                byte value = rgba[i] > 0 || rgba[i + 1] > 0 || rgba[i + 2] > 0 || rgba[i + 3] > 0 ? (byte)255 : (byte)0;
+                rgba[i] = value;
+                rgba[i + 1] = value;
+                rgba[i + 2] = value;
+                rgba[i + 3] = 255;
             }
-            if (expandMask > 0)
-            {
-                ctx.GaussianBlur(Math.Max(0.5f, expandMask * 0.6f));
-                ctx.BinaryThreshold(0.02f);
-            }
-            if (feather > 0)
-            {
-                ctx.GaussianBlur(Math.Max(0.5f, feather * 0.5f));
-            }
-        });
+            pixels.SetPixels(Array.ConvertAll(rgba, value => (ushort)(value * 257)));
+        }
+        if (expandMask > 0)
+        {
+            maskImage.GaussianBlur(0, Math.Max(0.5, expandMask * 0.6), Channels.RGB);
+            maskImage.Threshold(new Percentage(2), Channels.RGB);
+        }
+        if (feather > 0)
+        {
+            maskImage.GaussianBlur(0, Math.Max(0.5, feather * 0.5), Channels.RGB);
+        }
     }
 
     public static async Task<HashSet<string>> GetSupportedClassicInpaintBackends()
@@ -195,9 +198,9 @@ public static class ClassicInpaintAPI
             string outputDir = Path.Combine(taskDir, "output");
             Directory.CreateDirectory(outputDir);
             File.WriteAllBytes(imagePath, imageFile.RawData);
-            using ISImageRGBA maskImage = SixLabors.ImageSharp.Image.Load<SixLabors.ImageSharp.PixelFormats.Rgba32>(maskFile.RawData);
+            using IMagickImage<ushort> maskImage = maskFile.ToMagick.Clone();
             PrepareClassicInpaintMask(maskImage, Math.Max(0, expandMask), Math.Max(0, feather));
-            maskImage.SaveAsPng(maskPath);
+            maskImage.Write(maskPath, MagickFormat.Png);
             List<string[]> commands = [];
             commands.Add(["run", "--model", backend, "--device", device, "--image", imagePath, "--mask", maskPath, "--output", outputDir]);
             commands.Add(["run", "--model", backend, "--device", device, "--input", imagePath, "--mask", maskPath, "--output", outputDir]);

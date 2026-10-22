@@ -361,9 +361,9 @@ This project:
 * can automatically install MIT/BSD/Apache2/PythonSoftwareFoundation pip packages: spandrel, dill, imageio-ffmpeg, opencv-python-headless, matplotlib, rembg, kornia, Cython
 * can automatically install Ultralytics (AGPL) for YOLOv8 face detection (i.e., SwarmYoloDetection node or <segment:yolo-...> syntax usage may become subject to AGPL terms),
 * can automatically install InsightFace (MIT) for IP Adapter - Face support
-* uses JSON.NET (MIT), FreneticUtilities (MIT), LiteDB (MIT), ImageSharp (Apache2 under open-source Split License), ATL.NET (MIT)
+* uses JSON.NET (MIT), FreneticUtilities (MIT), LiteDB (MIT), [Magick.NET](https://github.com/dlemstra/Magick.NET) (Apache2), ATL.NET (MIT)
 * embeds copies of web assets from Bootstrap (MIT), Select2 (MIT), JQuery (MIT), exif-reader (MPL-2.0), music-metadata (MIT).
-* contains some icons from Cristian Munoz (CC-BY-4.0), the font Inter by RSMS (OFL), Unifont by GNU (OFL), and Material Symbols Outlined by Google (Apache2).
+* contains some icons from Cristian Munoz (CC-BY-4.0), the font Inter by RSMS (OFL), GNU Unifont 12.0.01 (GPLv2+ with the font embedding exception), and Material Symbols Outlined by Google (Apache2). See [bundled font notices](src/wwwroot/fonts/README.md).
 * can be used to install some custom node packs, which have individual license notices for any non-pure-FOSS licenses before installation.
 * supports user-built extensions, which may have their own licenses or legal conditions.
 
