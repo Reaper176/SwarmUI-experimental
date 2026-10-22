@@ -488,7 +488,7 @@ public static class ImageHistoryAPI
     }
 
     /// <summary>Attempts to answer a history list request from the persistent history index.</summary>
-    private static JObject TryGetListFromHistoryIndex(Session session, string rawRefPath, int depth, T2IAPI.ImageHistorySortMode sortBy, bool sortReverse, bool includeHidden, bool fastFirst, int fastFirstLimit, int maxInHistory, List<(string Field, string Value, string Raw)> filterTerms, long timeStart)
+    private static JObject TryGetListFromHistoryIndex(Session session, string rawRefPath, int depth, T2IAPI.ImageHistorySortMode sortBy, bool sortReverse, bool includeHidden, bool fastFirst, int fastFirstLimit, int maxInHistory, List<(string Field, string Value, string Raw)> filterTerms, HistoryFolderExclusions excludedFolders, long timeStart)
     {
         string root = Utilities.CombinePathWithAbsolute(Environment.CurrentDirectory, session.User.OutputDirectory);
         int limit = fastFirst ? Math.Max(1, Math.Min(fastFirstLimit, maxInHistory)) : maxInHistory;
@@ -512,7 +512,7 @@ public static class ImageHistoryAPI
         string specialPrefix = requestPrefix == "" ? "" : $"{requestPrefix}/";
         foreach (string specialFolder in UserImageHistoryHelper.SharedSpecialFolders.Keys)
         {
-            if (specialFolder.StartsWith(specialPrefix))
+            if (specialFolder.StartsWith(specialPrefix) && !excludedFolders.IsExcluded(specialFolder))
             {
                 string relativeSpecialFolder = specialFolder[specialPrefix.Length..];
                 relativeSpecialFolder = relativeSpecialFolder.EndsWith('/') ? relativeSpecialFolder[..^1] : relativeSpecialFolder;
@@ -524,6 +524,10 @@ public static class ImageHistoryAPI
         }
         foreach (OutputMetadataTracker.OutputHistoryIndexEntry entry in indexed)
         {
+            if (excludedFolders.IsExcluded(entry.RelativePath))
+            {
+                continue;
+            }
             if (!includeHidden && entry.IsHidden)
             {
                 continue;
@@ -631,6 +635,11 @@ public static class ImageHistoryAPI
             Logs.Error(consoleError);
             return new JObject() { ["error"] = userError };
         }
+        HistoryFolderExclusions excludedFolders = new(session.User.Settings.ExcludedHistoryFolders);
+        if (excludedFolders.IsExcluded(rawPath))
+        {
+            return new JObject() { ["folders"] = new JArray(), ["files"] = new JArray() };
+        }
         try
         {
             ConcurrentDictionary<string, string> finalDirs = [];
@@ -650,13 +659,13 @@ public static class ImageHistoryAPI
                 OutputMetadataTracker.RemoveHistoryIndexForPrefix(root, rawRefPath);
             }
             TryStartImageHistoryIndexWarmup(session, root, path, rawRefPath);
-            JObject indexedResult = forceScan ? null : TryGetListFromHistoryIndex(session, rawRefPath, depth, sortBy, sortReverse, includeHidden, fastFirst, fastFirstLimit, maxInHistory, filterTerms, timeStart);
+            JObject indexedResult = forceScan ? null : TryGetListFromHistoryIndex(session, rawRefPath, depth, sortBy, sortReverse, includeHidden, fastFirst, fastFirstLimit, maxInHistory, filterTerms, excludedFolders, timeStart);
             if (indexedResult is not null)
             {
                 return indexedResult;
             }
             List<string> specialSeedDirs = [.. UserImageHistoryHelper.SharedSpecialFolders.Keys
-                .Where(f => f.StartsWith(rawRefPath))
+                .Where(f => f.StartsWith(rawRefPath) && !excludedFolders.IsExcluded(f))
                 .Select(f => f[rawRefPath.Length..])
                 .Select(f => f.EndsWith('/') ? f[..^1] : f)
                 .Where(f => !string.IsNullOrEmpty(f))
@@ -769,6 +778,10 @@ public static class ImageHistoryAPI
                 files = [];
                 void collectFastFirstFiles(string dir, int subDepth)
                 {
+                    if (excludedFolders.IsExcluded($"{rawPath}/{dir}"))
+                    {
+                        return;
+                    }
                     if (!traversedDirs.Add(dir))
                     {
                         return;
@@ -815,7 +828,7 @@ public static class ImageHistoryAPI
                             continue;
                         }
                         string subPath = dir == "" ? subDir : $"{dir}/{subDir}";
-                        if (!isAllowed(subPath))
+                        if (!isAllowed(subPath) || excludedFolders.IsExcluded($"{rawPath}/{subPath}"))
                         {
                             continue;
                         }
@@ -844,7 +857,7 @@ public static class ImageHistoryAPI
                     {
                         dir = dir[..^1];
                     }
-                    if (!traversedDirs.Add(dir))
+                    if (excludedFolders.IsExcluded($"{rawPath}/{dir}") || !traversedDirs.Add(dir))
                     {
                         return;
                     }

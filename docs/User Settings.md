@@ -32,3 +32,11 @@
 - `[some parameter name here]`: the value of the parameter named. Must have exact parameter name. For example `[refinermodel]` will get you the name of the refiner model.
 
 If names overlap, a numeric index will be appended to the end, eg if `123-a cat.jpg` is your output but it already exists, `123-a cat-1.jpg` will be used.
+
+## Excluded History Folders
+
+In **User → User Settings**, set **Excluded History Folders** to the output folders you want to hide. Enter paths relative to your user's Output directory, separated by `||`, for example `chant-thumbnails-20261007 || renders/drafts`. A comma-separated list is also accepted. Use exact paths; wildcards are not supported.
+
+Each entry hides that folder and every subfolder from Image History browsing and search, including direct history listings and the Show Hidden option. Sibling names such as `renders/drafts-final` remain visible when `renders/drafts` is excluded. Slash directions are interchangeable; case follows the host platform convention (case insensitive on Windows, case sensitive elsewhere). Blank entries are ignored.
+
+Save your settings and refresh Image History. Files and their metadata remain saved, and the setting only affects your user. Remove an entry and refresh history to see the folder again. This is a visibility preference, not an access restriction: existing image links still work.

@@ -710,6 +710,9 @@ public class Settings : AutoConfiguration
         [ConfigComment("How many images the history view should stop trying to load after.")]
         public int MaxImagesInHistory = 1000;
 
+        [ConfigComment("Folders to hide from Image History, relative to your Output directory. Each entry also hides all subfolders.\nSeparate folders with ||, for example: chant-thumbnails-20261007 || renders/drafts. Use exact paths, not wildcards.\nFiles remain saved. Remove an entry to show it again, then refresh Image History.")]
+        public List<string> ExcludedHistoryFolders = [];
+
         [ConfigComment("How many images the history view should scan server-side before deciding the list is sufficient for sorting or filtering.")]
         public int MaxImagesScannedInHistory = 10000;
 
