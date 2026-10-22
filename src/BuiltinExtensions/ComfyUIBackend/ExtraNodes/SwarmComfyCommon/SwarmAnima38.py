@@ -669,17 +669,47 @@ def _validate_qwen35_4b_state_dict(state_dict, selected_name, companion_format):
 
 
 def _qwen_candidates():
-    """Read filtered Qwen choices from Comfy's text-encoder roots."""
+    """Discover encoder headers and collapse physical-file aliases."""
     import folder_paths
+    from safetensors import SafetensorError, safe_open
 
-    return sorted(
-        {
-            name
-            for name in folder_paths.get_filename_list("text_encoders")
-            if is_qwen35_4b_candidate(name)
-        },
-        key=_stable_name,
-    )
+    records = []
+    for name in folder_paths.get_filename_list("text_encoders"):
+        if not is_qwen35_4b_candidate(name):
+            continue
+        path = folder_paths.get_full_path("text_encoders", name)
+        if path is None:
+            continue
+        try:
+            stat = os.stat(path)
+            with safe_open(path, framework="pt", device="cpu") as checkpoint:
+                shapes, _ = normalize_qwen35_state_dict(
+                    {
+                        key: tuple(checkpoint.get_slice(key).get_shape())
+                        for key in checkpoint.keys()
+                    }
+                )
+            if shapes.get("model.embed_tokens.weight") != (248320, 2560):
+                continue
+            if any(
+                shapes.get(f"model.layers.{index}.input_layernorm.weight") != (2560,)
+                for index in range(32)
+            ):
+                continue
+        except (OSError, ValueError, SafetensorError):
+            continue
+        records.append((name, path, (stat.st_dev, stat.st_ino)))
+
+    # Prefer the actual file over a symbolic alias, then retain the established
+    # Anima/canonical priority when multiple names address the same inode.
+    records.sort(key=lambda record: (os.path.islink(record[1]), _qwen_preference(record[0])))
+    seen = set()
+    candidates = []
+    for name, _, identity in records:
+        if identity not in seen:
+            seen.add(identity)
+            candidates.append(name)
+    return sorted(candidates, key=_stable_name)
 
 
 def _runtime_adapter_records(require_complete=True):
